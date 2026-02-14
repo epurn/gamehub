@@ -3,14 +3,43 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from gamehub_common.ids import make_asset_id, make_file_id, make_title_id, sha256_file
-from gamehub_common.models import AssetSpec, FirmwareSpec, LibraryIndex, RomSpec, SystemSpec, TitleEntry
+from gamehub_common.ids import make_file_id, make_title_id, sha256_file
+from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
-ASSET_KINDS = ("grid", "hero", "logo", "icon")
 FIRMWARE_ROOT_NAME = "firmware"
 ROMS_ROOT_NAME = "roms"
 
 SYSTEM_CATALOG = {
+    "GB": {
+        "extensions": (".gb", ".zip"),
+        "emulator": "retroarch",
+        "launch_template": '"{emulator}" -L cores/gambatte_libretro.dll "{rom}"',
+        "firmware": (),
+    },
+    "GBA": {
+        "extensions": (".gba", ".zip"),
+        "emulator": "retroarch",
+        "launch_template": '"{emulator}" -L cores/mgba_libretro.dll "{rom}"',
+        "firmware": (),
+    },
+    "GBC": {
+        "extensions": (".gbc", ".zip"),
+        "emulator": "retroarch",
+        "launch_template": '"{emulator}" -L cores/gambatte_libretro.dll "{rom}"',
+        "firmware": (),
+    },
+    "GC": {
+        "extensions": (".iso", ".gcm", ".rvz"),
+        "emulator": "dolphin",
+        "launch_template": '"{emulator}" -b -e "{rom}"',
+        "firmware": (),
+    },
+    "GEN_MD": {
+        "extensions": (".gen", ".md", ".smd", ".bin", ".zip"),
+        "emulator": "retroarch",
+        "launch_template": '"{emulator}" -L cores/genesis_plus_gx_libretro.dll "{rom}"',
+        "firmware": (),
+    },
     "NES": {
         "extensions": (".nes", ".zip"),
         "emulator": "retroarch",
@@ -29,7 +58,13 @@ SYSTEM_CATALOG = {
         "launch_template": '"{emulator}" -L cores/mupen64plus_next_libretro.dll "{rom}"',
         "firmware": (),
     },
-    "PS1": {
+    "NDS": {
+        "extensions": (".nds", ".zip"),
+        "emulator": "retroarch",
+        "launch_template": '"{emulator}" -L cores/desmume_libretro.dll "{rom}"',
+        "firmware": (),
+    },
+    "PSX": {
         "extensions": (".chd", ".cue", ".iso", ".pbp"),
         "emulator": "retroarch",
         "launch_template": '"{emulator}" -L cores/swanstation_libretro.dll "{rom}"',
@@ -61,56 +96,33 @@ def _relative_unix(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _scan_firmware_specs(data_root: Path, system: str, filenames: tuple[str, ...]) -> tuple[FirmwareSpec, ...]:
+def _scan_firmware_specs(
+    data_root: Path, system: str, required_filenames: tuple[str, ...]
+) -> tuple[tuple[FirmwareSpec, ...], tuple[str, ...]]:
     firmware_specs: list[FirmwareSpec] = []
     firmware_dir = data_root / FIRMWARE_ROOT_NAME / system
-    for filename in sorted(filenames):
-        fw_path = firmware_dir / filename
-        if not fw_path.exists():
-            continue
-        firmware_specs.append(
-            FirmwareSpec(
-                filename=filename,
-                sha256=sha256_file(fw_path),
-                required=True,
+    if firmware_dir.exists() and not firmware_dir.is_dir():
+        raise ValueError(f"Firmware path is not a directory: {firmware_dir}")
+
+    found_required: set[str] = set()
+    required_set = set(required_filenames)
+    if firmware_dir.is_dir():
+        for child in sorted(firmware_dir.iterdir(), key=lambda item: item.name.lower()):
+            if not child.is_file():
+                continue
+            is_required = child.name in required_set
+            if is_required:
+                found_required.add(child.name)
+            firmware_specs.append(
+                FirmwareSpec(
+                    filename=child.name,
+                    sha256=sha256_file(child),
+                    required=is_required,
+                )
             )
-        )
-    return tuple(firmware_specs)
 
-
-def _find_assets(data_root: Path, title_dir: Path) -> tuple[tuple[AssetSpec, ...], dict[str, Path]]:
-    asset_specs: list[AssetSpec] = []
-    asset_paths: dict[str, Path] = {}
-    by_kind: dict[str, list[Path]] = {kind: [] for kind in ASSET_KINDS}
-    for child in sorted(title_dir.iterdir()):
-        if not child.is_file():
-            continue
-        stem = child.stem.lower()
-        if stem in by_kind:
-            by_kind[stem].append(child)
-
-    for kind in ASSET_KINDS:
-        matches = by_kind[kind]
-        if len(matches) > 1:
-            raise ValueError(f"Title directory {title_dir} has multiple '{kind}' assets")
-        if not matches:
-            continue
-        path = matches[0]
-        rel_path = _relative_unix(path, data_root)
-        digest = sha256_file(path)
-        asset_id = make_asset_id(rel_path, digest)
-        asset_specs.append(
-            AssetSpec(
-                asset_id=asset_id,
-                kind=kind,
-                rel_path=rel_path,
-                sha256=digest,
-                size_bytes=path.stat().st_size,
-            )
-        )
-        asset_paths[asset_id] = path
-
-    return tuple(asset_specs), asset_paths
+    missing_required = tuple(sorted(required_set - found_required))
+    return tuple(firmware_specs), missing_required
 
 
 def build_index(data_root: Path) -> IndexBundle:
@@ -132,47 +144,45 @@ def build_index(data_root: Path) -> IndexBundle:
 
         metadata = SYSTEM_CATALOG[system_name]
         extensions = tuple(ext.lower() for ext in metadata["extensions"])
-        firmware_specs = _scan_firmware_specs(data_root, system_name, tuple(metadata["firmware"]))
-        systems.append(
-            SystemSpec(
-                name=system_name,
-                rom_extensions=extensions,
-                default_emulator=metadata["emulator"],
-                launch_template=metadata["launch_template"],
-                firmware=firmware_specs,
-            )
+        firmware_specs, missing_required_firmware = _scan_firmware_specs(
+            data_root, system_name, tuple(metadata["firmware"])
         )
+        system_titles: list[TitleEntry] = []
+        seen_title_names: set[str] = set()
 
-        for title_dir in sorted(system_dir.iterdir()):
-            if not title_dir.is_dir():
-                continue
-            rom_candidates = [
-                candidate
-                for candidate in sorted(title_dir.iterdir())
-                if candidate.is_file() and candidate.suffix.lower() in extensions
-            ]
-            if len(rom_candidates) != 1:
+        for rom_path in sorted(system_dir.iterdir(), key=lambda item: item.name.lower()):
+            if rom_path.is_dir():
                 raise ValueError(
-                    f"Expected exactly one ROM in {title_dir}, found {len(rom_candidates)} "
-                    f"for extensions {extensions}"
+                    f"Unexpected title directory in {system_dir}: {rom_path.name}. "
+                    "Expected layout roms/<system>/<title.ext>"
                 )
+            if not rom_path.is_file():
+                continue
+            if rom_path.suffix.lower() not in extensions:
+                continue
 
-            rom_path = rom_candidates[0]
+            title_name = rom_path.stem
+            title_key = title_name.casefold()
+            if title_key in seen_title_names:
+                raise ValueError(
+                    f"Duplicate title name in {system_name}: {title_name}. "
+                    "Ensure one ROM per title stem in roms/<system>/."
+                )
+            seen_title_names.add(title_key)
+
             rom_rel = _relative_unix(rom_path, data_root)
             rom_sha = sha256_file(rom_path)
             file_id = make_file_id(rom_rel, rom_sha)
             file_paths[file_id] = rom_path
 
-            title_rel_dir = _relative_unix(title_dir, roms_root)
+            title_rel_dir = _relative_unix(rom_path, roms_root)
             title_id = make_title_id(system_name, title_rel_dir)
-            title_assets, title_asset_paths = _find_assets(data_root, title_dir)
-            asset_paths.update(title_asset_paths)
 
-            titles.append(
+            system_titles.append(
                 TitleEntry(
                     title_id=title_id,
                     system=system_name,
-                    title_name=title_dir.name,
+                    title_name=title_name,
                     title_rel_dir=title_rel_dir,
                     emulator=metadata["emulator"],
                     launch_template=metadata["launch_template"],
@@ -183,13 +193,28 @@ def build_index(data_root: Path) -> IndexBundle:
                         size_bytes=rom_path.stat().st_size,
                         extension=rom_path.suffix.lower(),
                     ),
-                    assets=title_assets,
+                    assets=(),
                 )
             )
+
+        if system_titles and missing_required_firmware:
+            missing = ", ".join(missing_required_firmware)
+            raise ValueError(f"Missing required firmware for {system_name}: {missing}")
+
+        systems.append(
+            SystemSpec(
+                name=system_name,
+                rom_extensions=extensions,
+                default_emulator=metadata["emulator"],
+                launch_template=metadata["launch_template"],
+                firmware=firmware_specs,
+            )
+        )
+        titles.extend(system_titles)
 
     index = LibraryIndex(
         index_version=1,
         systems=tuple(sorted(systems, key=lambda item: item.name)),
-        titles=tuple(sorted(titles, key=lambda item: (item.system, item.title_name))),
+        titles=tuple(sorted(titles, key=lambda item: (item.system, item.title_rel_dir))),
     )
     return IndexBundle(index=index, file_paths=file_paths, asset_paths=asset_paths)

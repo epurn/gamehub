@@ -27,6 +27,12 @@ DATA_ROOT = Path(os.environ.get("GAMEHUB_DATA_DIR", "/data")).resolve()
 INDEX_REPO = IndexRepository(DATA_ROOT)
 
 
+def _is_safe_segment(value: str) -> bool:
+    if not value or value in {".", ".."}:
+        return False
+    return "/" not in value and "\\" not in value
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -57,10 +63,18 @@ def get_asset(asset_id: str) -> FileResponse:
 
 @app.get("/v1/firmware/{system}/{filename}")
 def get_firmware(system: str, filename: str) -> FileResponse:
-    path = (DATA_ROOT / FIRMWARE_ROOT_NAME / system / filename).resolve()
-    expected_parent = (DATA_ROOT / FIRMWARE_ROOT_NAME / system).resolve()
-    if expected_parent not in path.parents:
-        raise HTTPException(status_code=400, detail="Invalid firmware path")
+    if not _is_safe_segment(system) or not _is_safe_segment(filename):
+        raise HTTPException(status_code=404, detail="Firmware file not found")
+
+    firmware_root = (DATA_ROOT / FIRMWARE_ROOT_NAME).resolve()
+    system_root = (firmware_root / system).resolve()
+    if not system_root.is_relative_to(firmware_root):
+        raise HTTPException(status_code=404, detail="Firmware file not found")
+
+    path = (system_root / filename).resolve()
+    if not path.is_relative_to(system_root):
+        raise HTTPException(status_code=404, detail="Firmware file not found")
+
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail=f"Firmware file not found: {system}/{filename}")
     return FileResponse(path)

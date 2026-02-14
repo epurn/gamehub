@@ -13,22 +13,30 @@
 - `rom_extensions`: normalized lowercase extensions with `.` prefix
 - `default_emulator`
 - `launch_template`
-- `firmware`: list of `FirmwareSpec`
+- `firmware`: list of `FirmwareSpec` scanned from `firmware/<system>/`
+  - `required=true` for known required firmware filenames (per system catalog)
+  - `required=false` for additional optional firmware files present on disk
+
+## Initial canonical systems (v1)
+- `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
 
 ## `TitleEntry`
 - `title_id`: deterministic from `system + title_rel_dir`
 - `system`
 - `title_name`
-- `title_rel_dir`
+- `title_rel_dir` (system-relative ROM path, for example `NES/SuperMarioBros.nes`)
 - `emulator`
 - `launch_template`
-- `rom`: one `RomSpec` (exactly one ROM per title directory)
-- `assets`: optional `AssetSpec` entries for `grid`, `hero`, `logo`, `icon`
+- `rom`: one `RomSpec` for each file in `roms/<system>/` matching allowed extensions
+- `assets`: currently empty in flat-ROM layout; reserved for artwork ingestion workflow
 
 ## Validation guarantees
 - Unknown fields are rejected (`extra=forbid`)
 - SHA-256 fields must be lowercase 64-char hex
 - ROM extensions are normalized and deduplicated
+- Nested title directories under `roms/<system>/` are rejected (layout is flat files only)
+- Duplicate title stems within a system (for example `Title.iso` + `Title.chd`) are rejected
+- If a system has indexed titles and required firmware is missing on the server, index generation fails
 
 ## Deterministic IDs
 - `title_id`: `make_title_id(system, title_rel_dir)`
