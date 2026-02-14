@@ -315,8 +315,9 @@ def _apply_steam_updates(
         print("Warning: artwork assignments existed but no files were copied")
     if pruned:
         print(f"Pruned {pruned} non-canonical Steam grid artwork files")
-    if was_running:
-        reopen_steam(context)
+    reopened = reopen_steam(context)
+    if not reopened:
+        print("Warning: Steam relaunch command was not found; start Steam manually")
 
 
 def run_sync(

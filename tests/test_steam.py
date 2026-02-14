@@ -577,8 +577,25 @@ def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
         steam_exe=None,
     )
 
-    reopen_steam(context)
+    reopened = reopen_steam(context)
 
     assert launched[0][0] == ["steam", "steam://open/main"]
     assert launched[0][1]["stdout"] is not None
     assert launched[0][1]["stderr"] is not None
+    assert reopened is True
+
+
+def test_reopen_steam_linux_returns_false_when_no_launcher_available(monkeypatch) -> None:
+    monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam.shutil.which", lambda command: None)
+    context = SteamContext(
+        userdata_dir=Path("userdata"),
+        steam_id="76561198000000001",
+        shortcuts_path=Path("shortcuts.vdf"),
+        localconfig_path=Path("localconfig.vdf"),
+        steam_exe=None,
+    )
+
+    reopened = reopen_steam(context)
+
+    assert reopened is False

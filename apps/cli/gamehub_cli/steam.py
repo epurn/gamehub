@@ -834,13 +834,13 @@ def _spawn_detached(command: list[str], *, shell: bool = False) -> None:
     subprocess.Popen(command, **kwargs)
 
 
-def reopen_steam(context: SteamContext) -> None:
+def reopen_steam(context: SteamContext) -> bool:
     if context.steam_exe and context.steam_exe.exists():
         _spawn_detached([str(context.steam_exe)])
-        return
+        return True
     if os.name == "nt":
         _spawn_detached(["cmd", "/c", "start", "", "steam://open/main"], shell=False)
-        return
+        return True
     launchers: list[list[str]] = []
     if shutil.which("steam"):
         launchers.append(["steam", "steam://open/main"])
@@ -851,6 +851,7 @@ def reopen_steam(context: SteamContext) -> None:
     for command in launchers:
         try:
             _spawn_detached(command)
-            return
+            return True
         except OSError:
             continue
+    return False

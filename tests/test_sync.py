@@ -107,7 +107,7 @@ def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:
         "gamehub_cli.sync.prune_grid_noncanonical_variants",
         lambda context, app_ids: order.append("prune") or 0,
     )
-    monkeypatch.setattr("gamehub_cli.sync.reopen_steam", lambda context: order.append("reopen"))
+    monkeypatch.setattr("gamehub_cli.sync.reopen_steam", lambda context: order.append("reopen") or True)
 
     _apply_steam_updates(
         config,
@@ -159,7 +159,7 @@ def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) 
         "gamehub_cli.sync.prune_grid_noncanonical_variants",
         lambda context, app_ids: order.append("prune") or 0,
     )
-    monkeypatch.setattr("gamehub_cli.sync.reopen_steam", lambda context: order.append("reopen"))
+    monkeypatch.setattr("gamehub_cli.sync.reopen_steam", lambda context: order.append("reopen") or True)
 
     _apply_steam_updates(
         config,
@@ -170,6 +170,56 @@ def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) 
 
     assert order == ["close", "wait"]
     assert "Steam is still running after close attempt; skipping Steam updates for safety" in capsys.readouterr().out
+
+
+def test_apply_steam_updates_reopens_even_if_steam_was_not_running(monkeypatch) -> None:
+    order: list[str] = []
+    index = LibraryIndex(index_version=1, systems=(), titles=())
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path("state.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+    )
+
+    monkeypatch.setattr("gamehub_cli.sync.discover_userdata_dir", lambda explicit: Path("userdata"))
+    monkeypatch.setattr(
+        "gamehub_cli.sync.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
+    )
+    monkeypatch.setattr("gamehub_cli.sync.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.is_steam_running", lambda: False)
+    monkeypatch.setattr("gamehub_cli.sync.backup_steam_configs", lambda context: order.append("backup") or [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.upsert_shortcuts",
+        lambda context, desired_shortcuts: order.append("shortcuts")
+        or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})(),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.update_cloud_collections",
+        lambda context, app_ids_by_system: order.append("collections-cloud") or 0,
+    )
+    monkeypatch.setattr("gamehub_cli.sync.copy_grid_art", lambda context, assignments: order.append("art") or [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.prune_grid_noncanonical_variants",
+        lambda context, app_ids: order.append("prune") or 0,
+    )
+    monkeypatch.setattr("gamehub_cli.sync.reopen_steam", lambda context: order.append("reopen") or True)
+
+    _apply_steam_updates(
+        config,
+        index=index,
+        require_steam_closed=False,
+        artwork_by_title={},
+    )
+
+    assert order == ["backup", "shortcuts", "collections", "collections-cloud", "art", "prune", "reopen"]
 
 
 def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
