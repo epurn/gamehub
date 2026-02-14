@@ -249,7 +249,9 @@ def test_run_sync_invokes_retroarch_core_provisioner(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.ensure_retroarch_cores",
-        lambda index, dry_run, verbose: core_args.update({"index": index, "dry_run": dry_run, "verbose": verbose}),
+        lambda index, dry_run, verbose, **kwargs: core_args.update(
+            {"index": index, "dry_run": dry_run, "verbose": verbose, **kwargs}
+        ),
     )
 
     exit_code = run_sync(

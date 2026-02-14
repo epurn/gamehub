@@ -134,7 +134,82 @@ def test_ensure_emulators_linux_non_fedora_reports_unsupported(monkeypatch, caps
 
     ensure_emulators(index=index, dry_run=False, verbose=False)
 
-    assert "Fedora" in capsys.readouterr().out
+    assert "Linux emulator auto-install is unavailable" in capsys.readouterr().out
+
+
+def test_ensure_emulators_linux_auto_uses_flatpak_when_available(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("retroarch")
+    state = {"installed": False}
+
+    def fake_which(name: str) -> str | None:
+        if name == "flatpak":
+            return "/usr/bin/flatpak"
+        if name == "retroarch":
+            return "/usr/bin/retroarch" if state["installed"] else None
+        return None
+
+    class FakeCompleted:
+        returncode = 0
+
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        commands.append(cmd)
+        state["installed"] = True
+        return FakeCompleted()
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+
+    ensure_emulators(index=index, dry_run=False, verbose=False)
+
+    assert commands
+    assert commands[0][:5] == ["flatpak", "install", "--user", "-y", "flathub"]
+    assert commands[0][5] == "org.libretro.RetroArch"
+    assert "Installed emulator: retroarch" in capsys.readouterr().out
+
+
+def test_ensure_emulators_linux_command_backend(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("dolphin")
+    state = {"installed": False}
+
+    def fake_which(name: str) -> str | None:
+        if name in {"dolphin", "dolphin-emu"}:
+            return "/usr/bin/dolphin-emu" if state["installed"] else None
+        return None
+
+    class FakeCompleted:
+        returncode = 0
+
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        commands.append(cmd)
+        state["installed"] = True
+        return FakeCompleted()
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "ubuntu")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+
+    ensure_emulators(
+        index=index,
+        dry_run=False,
+        verbose=False,
+        linux_install_backend="command",
+        linux_install_command="sudo apt install -y {package}",
+    )
+
+    assert commands
+    assert commands[0] == ["sudo", "apt", "install", "-y", "dolphin-emu"]
+    assert "Installed emulator: dolphin" in capsys.readouterr().out
 
 
 def test_ensure_emulators_detects_known_install_without_winget(monkeypatch, capsys) -> None:

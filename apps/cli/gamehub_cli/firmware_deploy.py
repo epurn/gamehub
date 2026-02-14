@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 from typing import Callable
 from uuid import uuid4
@@ -13,6 +14,34 @@ from gamehub_common.models import LibraryIndex
 from .config import GamehubConfig
 from .emulators import resolve_emulator_executable
 from .fsops import replace_file
+
+
+def _override_path(*env_names: str, config_value: Path | None = None) -> Path | None:
+    for env_name in env_names:
+        raw = os.environ.get(env_name)
+        if raw and raw.strip():
+            return Path(raw.strip()).expanduser()
+    if config_value is not None:
+        return config_value.expanduser()
+    return None
+
+
+def _linux_flatpak_retroarch_root() -> Path:
+    return Path.home() / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch"
+
+
+def _linux_flatpak_pcsx2_root() -> Path:
+    return Path.home() / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2"
+
+
+def _linux_flatpak_dolphin_root() -> Path:
+    return Path.home() / ".var" / "app" / "org.DolphinEmu.dolphin-emu" / "data" / "dolphin-emu"
+
+
+def _is_flatpak_command(path: Path, app_id: str) -> bool:
+    value = path.as_posix().lower()
+    app = app_id.casefold()
+    return value.endswith(f"/{app}") or f"flatpak/exports/bin/{app}" in value
 
 
 def _unique_paths(values: list[Path]) -> list[Path]:
@@ -42,24 +71,31 @@ def _parse_simple_kv_config(path: Path) -> dict[str, str]:
     return values
 
 
-def _retroarch_cfg_candidates() -> list[Path]:
+def _retroarch_cfg_candidates(config: GamehubConfig | None = None) -> list[Path]:
     values: list[Path] = []
+    cfg_override = _override_path("GAMEHUB_RETROARCH_CFG_PATH", config_value=config.linux.retroarch_cfg_path if config else None)
+    if cfg_override:
+        values.append(cfg_override)
     appdata = os.environ.get("APPDATA")
-    if appdata:
+    if os.name == "nt" and appdata:
         values.append(Path(appdata) / "RetroArch" / "retroarch.cfg")
     home = Path.home()
     values.append(home / ".config" / "retroarch" / "retroarch.cfg")
-    values.append(home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "retroarch.cfg")
+    values.append(_linux_flatpak_retroarch_root() / "retroarch.cfg")
     return _unique_paths(values)
 
 
-def _resolve_retroarch_system_dirs() -> list[Path]:
+def _resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[Path]:
     values: list[Path] = []
-    env_override = os.environ.get("RETROARCH_SYSTEM_DIR")
-    if env_override:
-        values.append(Path(env_override))
+    system_override = _override_path(
+        "RETROARCH_SYSTEM_DIR",
+        "GAMEHUB_RETROARCH_SYSTEM_DIR",
+        config_value=config.linux.retroarch_system_dir if config else None,
+    )
+    if system_override:
+        values.append(system_override)
 
-    for cfg_path in _retroarch_cfg_candidates():
+    for cfg_path in _retroarch_cfg_candidates(config=config):
         parsed = _parse_simple_kv_config(cfg_path)
         raw = parsed.get("system_directory")
         if not raw:
@@ -72,27 +108,42 @@ def _resolve_retroarch_system_dirs() -> list[Path]:
             candidate = cfg_path.parent / candidate
         values.append(candidate)
 
-    retroarch_exe = Path(resolve_emulator_executable("retroarch").strip('"'))
-    if retroarch_exe.exists():
+    retroarch_raw = resolve_emulator_executable("retroarch").strip('"')
+    retroarch_exe = Path(retroarch_raw)
+    prefer_flatpak = _is_flatpak_command(retroarch_exe, "org.libretro.RetroArch") or (
+        "org.libretro.retroarch" in retroarch_raw.casefold()
+    )
+    if os.name == "nt" and retroarch_exe.exists():
         values.append(retroarch_exe.parent / "system")
+    elif sys.platform.startswith("linux") and prefer_flatpak:
+        values.append(_linux_flatpak_retroarch_root() / "system")
 
     appdata = os.environ.get("APPDATA")
-    if appdata:
+    if os.name == "nt" and appdata:
         values.append(Path(appdata) / "RetroArch" / "system")
     home = Path.home()
-    values.append(home / ".config" / "retroarch" / "system")
-    values.append(home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "system")
+    native = home / ".config" / "retroarch" / "system"
+    flatpak = _linux_flatpak_retroarch_root() / "system"
+    if sys.platform.startswith("linux") and prefer_flatpak:
+        values.append(flatpak)
+        values.append(native)
+    else:
+        values.append(native)
+        values.append(flatpak)
     return _unique_paths(values)
 
 
-def _pcsx2_ini_candidates() -> list[Path]:
+def _pcsx2_ini_candidates(config: GamehubConfig | None = None) -> list[Path]:
     values: list[Path] = []
+    ini_override = _override_path("GAMEHUB_PCSX2_INI_PATH", config_value=config.linux.pcsx2_ini_path if config else None)
+    if ini_override:
+        values.append(ini_override)
     user_profile = os.environ.get("USERPROFILE")
-    if user_profile:
+    if os.name == "nt" and user_profile:
         values.append(Path(user_profile) / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
         values.append(Path(user_profile) / "Documents" / "PCSX2" / "PCSX2.ini")
     appdata = os.environ.get("APPDATA")
-    if appdata:
+    if os.name == "nt" and appdata:
         values.append(Path(appdata) / "PCSX2" / "inis" / "PCSX2.ini")
         values.append(Path(appdata) / "PCSX2" / "PCSX2.ini")
     home = Path.home()
@@ -100,17 +151,21 @@ def _pcsx2_ini_candidates() -> list[Path]:
     values.append(home / "Documents" / "PCSX2" / "PCSX2.ini")
     values.append(home / ".config" / "PCSX2" / "inis" / "PCSX2.ini")
     values.append(home / ".config" / "PCSX2" / "PCSX2.ini")
-    values.append(home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini")
+    values.append(_linux_flatpak_pcsx2_root() / "inis" / "PCSX2.ini")
     return _unique_paths(values)
 
 
-def _resolve_pcsx2_bios_dirs() -> list[Path]:
+def _resolve_pcsx2_bios_dirs(config: GamehubConfig | None = None) -> list[Path]:
     values: list[Path] = []
-    env_override = os.environ.get("PCSX2_BIOS_DIR")
-    if env_override:
-        values.append(Path(env_override))
+    bios_override = _override_path(
+        "PCSX2_BIOS_DIR",
+        "GAMEHUB_PCSX2_BIOS_DIR",
+        config_value=config.linux.pcsx2_bios_dir if config else None,
+    )
+    if bios_override:
+        values.append(bios_override)
 
-    for ini_path in _pcsx2_ini_candidates():
+    for ini_path in _pcsx2_ini_candidates(config=config):
         parsed = _parse_simple_kv_config(ini_path)
         bios_value = parsed.get("bios") or parsed.get("folders.bios")
         if not bios_value:
@@ -123,46 +178,71 @@ def _resolve_pcsx2_bios_dirs() -> list[Path]:
         values.append(candidate)
 
     appdata = os.environ.get("APPDATA")
-    if appdata:
+    if os.name == "nt" and appdata:
         values.append(Path(appdata) / "PCSX2" / "bios")
     user_profile = os.environ.get("USERPROFILE")
-    if user_profile:
+    if os.name == "nt" and user_profile:
         values.append(Path(user_profile) / "Documents" / "PCSX2" / "bios")
     home = Path.home()
-    values.append(home / "Documents" / "PCSX2" / "bios")
-    values.append(home / ".config" / "PCSX2" / "bios")
-    values.append(home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "bios")
+    native = home / ".config" / "PCSX2" / "bios"
+    flatpak = _linux_flatpak_pcsx2_root() / "bios"
+    docs = home / "Documents" / "PCSX2" / "bios"
+    pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
+    pcsx2_exe = Path(pcsx2_raw)
+    prefer_flatpak = _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold())
+    if sys.platform.startswith("linux") and prefer_flatpak:
+        values.extend((flatpak, native, docs))
+    else:
+        values.extend((docs, native, flatpak))
     return _unique_paths(values)
 
 
-def _resolve_dolphin_user_dirs() -> list[Path]:
+def _resolve_dolphin_user_dirs(config: GamehubConfig | None = None) -> list[Path]:
     values: list[Path] = []
-    env_override = os.environ.get("DOLPHIN_EMU_USERPATH")
-    if env_override:
-        values.append(Path(env_override))
+    user_override = _override_path(
+        "DOLPHIN_EMU_USERPATH",
+        "GAMEHUB_DOLPHIN_EMU_USERPATH",
+        config_value=config.linux.dolphin_user_path if config else None,
+    )
+    if user_override:
+        values.append(user_override)
+        return _unique_paths(values)
 
     appdata = os.environ.get("APPDATA")
-    if appdata:
+    if os.name == "nt" and appdata:
         values.append(Path(appdata) / "Dolphin Emulator")
 
     home = Path.home()
     legacy = home / ".dolphin-emu"
     if legacy.exists():
         values.append(legacy)
-    values.append(home / ".local" / "share" / "dolphin-emu")
-    values.append(home / ".var" / "app" / "org.DolphinEmu.dolphin-emu" / "data" / "dolphin-emu")
+    native = home / ".local" / "share" / "dolphin-emu"
+    flatpak = _linux_flatpak_dolphin_root()
+    existing_linux = [path for path in (flatpak, native, legacy) if path.exists()]
+    if existing_linux:
+        values.extend(existing_linux)
+        return _unique_paths(values)
+
+    dolphin_raw = resolve_emulator_executable("dolphin").strip('"')
+    dolphin_exe = Path(dolphin_raw)
+    if _is_flatpak_command(dolphin_exe, "org.DolphinEmu.dolphin-emu") or (
+        "org.dolphinemu.dolphin-emu" in dolphin_raw.casefold()
+    ):
+        values.append(flatpak)
+    else:
+        values.append(native)
     return _unique_paths(values)
 
 
-def _target_dirs_for_system(system_name: str) -> list[Path]:
+def _target_dirs_for_system(system_name: str, config: GamehubConfig | None = None) -> list[Path]:
     if system_name == "PSX":
-        return _resolve_retroarch_system_dirs()
+        return _resolve_retroarch_system_dirs(config=config)
     if system_name == "PS2":
-        return _resolve_pcsx2_bios_dirs()
+        return _resolve_pcsx2_bios_dirs(config=config)
     if system_name == "Wii":
-        return [path / "Wii" for path in _resolve_dolphin_user_dirs()]
+        return [path / "Wii" for path in _resolve_dolphin_user_dirs(config=config)]
     if system_name == "GC":
-        return [path / "GC" for path in _resolve_dolphin_user_dirs()]
+        return [path / "GC" for path in _resolve_dolphin_user_dirs(config=config)]
     return []
 
 
@@ -182,11 +262,21 @@ def _copy_or_link(source: Path, destination: Path) -> str:
     return mode
 
 
-def _default_pcsx2_ini_path() -> Path:
-    candidates = _pcsx2_ini_candidates()
+def _default_pcsx2_ini_path(config: GamehubConfig | None = None) -> Path:
+    override = _override_path("GAMEHUB_PCSX2_INI_PATH", config_value=config.linux.pcsx2_ini_path if config else None)
+    if override is not None:
+        return override
+
+    candidates = _pcsx2_ini_candidates(config=config)
     for candidate in candidates:
         if candidate.exists():
             return candidate
+    if sys.platform.startswith("linux"):
+        pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
+        pcsx2_exe = Path(pcsx2_raw)
+        if _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold()):
+            return _linux_flatpak_pcsx2_root() / "inis" / "PCSX2.ini"
+        return Path.home() / ".config" / "PCSX2" / "inis" / "PCSX2.ini"
     if candidates:
         return candidates[0]
     return Path.home() / "Documents" / "PCSX2" / "inis" / "PCSX2.ini"
@@ -268,8 +358,12 @@ def _configure_pcsx2_runtime(
     verbose: bool,
     writer: Callable[[str], None],
 ) -> None:
-    bios_dir = Path(os.environ.get("PCSX2_BIOS_DIR", str(config.firmware_dir / "PS2"))).expanduser()
-    ini_path = _default_pcsx2_ini_path()
+    bios_dir = _override_path(
+        "PCSX2_BIOS_DIR",
+        "GAMEHUB_PCSX2_BIOS_DIR",
+        config_value=config.linux.pcsx2_bios_dir,
+    ) or (config.firmware_dir / "PS2")
+    ini_path = _default_pcsx2_ini_path(config=config)
     if dry_run:
         if verbose:
             writer(f"pcsx2\tdry-run\tconfigure\t{ini_path}\tbios={bios_dir}")
@@ -303,7 +397,7 @@ def deploy_firmware_to_emulators(
         if system.name == "PS2":
             # PCSX2 reads BIOS directly from configured path (no firmware mirroring copy).
             continue
-        target_dirs = _target_dirs_for_system(system.name)
+        target_dirs = _target_dirs_for_system(system.name, config=config)
         if not target_dirs:
             continue
         for firmware in system.firmware:

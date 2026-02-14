@@ -14,6 +14,8 @@ from gamehub_cli.steam import (
     SteamContext,
     SteamArtworkAssignment,
     SteamShortcutSpec,
+    discover_userdata_dir,
+    reopen_steam,
     steam_id64_from_userdata_id,
     backup_steam_configs,
     copy_grid_art,
@@ -47,6 +49,31 @@ def test_discover_steam_id_uses_lowest_numeric_dir() -> None:
         steam_id = discover_steam_id(temp_root)
 
         assert steam_id == "76561198000000002"
+
+
+def test_discover_userdata_dir_does_not_fallback_when_explicit_missing(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-steam-") as temp_root:
+        existing = temp_root / "detected" / "userdata"
+        existing.mkdir(parents=True, exist_ok=True)
+        missing = temp_root / "missing" / "userdata"
+        monkeypatch.setattr("gamehub_cli.steam._candidate_userdata_dirs", lambda: [existing])
+
+        resolved = discover_userdata_dir(missing)
+
+        assert resolved is None
+
+
+def test_discover_userdata_dir_prefers_env_override(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-steam-") as temp_root:
+        env_path = temp_root / "env" / "userdata"
+        env_path.mkdir(parents=True, exist_ok=True)
+        explicit = temp_root / "explicit" / "userdata"
+        explicit.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("GAMEHUB_STEAM_USERDATA_DIR", str(env_path))
+
+        resolved = discover_userdata_dir(explicit)
+
+        assert resolved == env_path
 
 
 def test_discover_steam_id_prefers_most_recent_profile() -> None:
@@ -532,3 +559,24 @@ def test_prune_grid_noncanonical_variants_removes_signed_when_unsigned_exists() 
 
         assert removed in {0, 1}
         assert (grid_dir / "3692015043p.png").exists()
+
+
+def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
+    launched: list[list[str]] = []
+    monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
+    monkeypatch.setattr(
+        "gamehub_cli.steam.shutil.which",
+        lambda command: "/usr/bin/steam" if command == "steam" else None,
+    )
+    monkeypatch.setattr("gamehub_cli.steam.subprocess.Popen", lambda command: launched.append(command))
+    context = SteamContext(
+        userdata_dir=Path("userdata"),
+        steam_id="76561198000000001",
+        shortcuts_path=Path("shortcuts.vdf"),
+        localconfig_path=Path("localconfig.vdf"),
+        steam_exe=None,
+    )
+
+    reopen_steam(context)
+
+    assert launched == [["steam", "steam://open/main"]]

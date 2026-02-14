@@ -14,6 +14,15 @@ Docker-first home server and CLI sync tool for emulator libraries and Steam inje
 4. Run CLI dry-run:
    - `.\venv\Scripts\python.exe -m gamehub_cli.main sync --dry-run`
 
+## Linux First-Run Notes
+
+- Linux sync is config-first. Put Linux overrides in `config.toml` under `[linux]` and use env vars only when needed.
+- For immutable or Flatpak-heavy hosts, set:
+  - `[linux] emulator_install_backend = "flatpak"`
+- Set `steam.userdata_dir` explicitly (or `GAMEHUB_STEAM_USERDATA_DIR`) for deterministic profile selection.
+- Start with:
+  - `gamehub sync --dry-run --skip-steam --verbose`
+
 ## Production Server (Docker Compose)
 
 1. Copy template:

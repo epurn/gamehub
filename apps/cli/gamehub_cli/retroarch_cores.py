@@ -52,8 +52,10 @@ def _core_suffix() -> str:
     return ""
 
 
-def _core_base_url() -> str | None:
+def _core_base_url(explicit_override: str | None = None) -> str | None:
     override = os.environ.get("GAMEHUB_RETROARCH_CORES_BASE_URL")
+    if not override and explicit_override:
+        override = explicit_override
     if override:
         return override.rstrip("/") + "/"
     if os.name == "nt":
@@ -113,15 +115,37 @@ def required_retroarch_cores(index: LibraryIndex) -> dict[str, str]:
     return required
 
 
-def _retroarch_cfg_candidates() -> list[Path]:
+def _linux_flatpak_retroarch_root() -> Path:
+    return Path.home() / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch"
+
+
+def _is_flatpak_retroarch_command(path: Path) -> bool:
+    value = path.as_posix().lower()
+    return value.endswith("/org.libretro.retroarch") or "flatpak/exports/bin/org.libretro.retroarch" in value
+
+
+def _retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path]:
     values: list[Path] = []
+    env_override = os.environ.get("GAMEHUB_RETROARCH_CFG_PATH")
+    if env_override:
+        values.append(Path(env_override).expanduser())
+    if explicit_cfg_path is not None:
+        values.append(explicit_cfg_path.expanduser())
     appdata = os.environ.get("APPDATA")
-    if appdata:
+    if os.name == "nt" and appdata:
         values.append(Path(appdata) / "RetroArch" / "retroarch.cfg")
     home = Path.home()
     values.append(home / ".config" / "retroarch" / "retroarch.cfg")
-    values.append(home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "retroarch.cfg")
-    return values
+    values.append(_linux_flatpak_retroarch_root() / "retroarch.cfg")
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for value in values:
+        candidate = value.expanduser()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        deduped.append(candidate)
+    return deduped
 
 
 def _parse_cfg(path: Path) -> dict[str, str]:
@@ -137,9 +161,17 @@ def _parse_cfg(path: Path) -> dict[str, str]:
     return values
 
 
-def resolve_retroarch_paths() -> RetroArchPaths | None:
+def resolve_retroarch_paths(
+    explicit_cores_dir: Path | None = None,
+    explicit_info_dir: Path | None = None,
+    explicit_cfg_path: Path | None = None,
+) -> RetroArchPaths | None:
     explicit_cores = os.environ.get("GAMEHUB_RETROARCH_CORES_DIR")
     explicit_info = os.environ.get("GAMEHUB_RETROARCH_INFO_DIR")
+    if not explicit_cores and explicit_cores_dir is not None:
+        explicit_cores = str(explicit_cores_dir)
+    if not explicit_info and explicit_info_dir is not None:
+        explicit_info = str(explicit_info_dir)
     if explicit_cores:
         cores_dir = Path(explicit_cores).expanduser()
         info_dir = Path(explicit_info).expanduser() if explicit_info else cores_dir.parent / "info"
@@ -147,7 +179,7 @@ def resolve_retroarch_paths() -> RetroArchPaths | None:
 
     config_cores: Path | None = None
     config_info: Path | None = None
-    for cfg_path in _retroarch_cfg_candidates():
+    for cfg_path in _retroarch_cfg_candidates(explicit_cfg_path=explicit_cfg_path):
         parsed = _parse_cfg(cfg_path)
         raw_core = parsed.get("libretro_directory")
         raw_info = parsed.get("libretro_info_path")
@@ -167,9 +199,14 @@ def resolve_retroarch_paths() -> RetroArchPaths | None:
     if config_cores:
         return RetroArchPaths(cores_dir=config_cores, info_dir=config_info or config_cores.parent / "info")
 
-    exe = Path(resolve_emulator_executable("retroarch").strip('"'))
-    if exe.exists():
+    exe_raw = resolve_emulator_executable("retroarch").strip('"')
+    exe = Path(exe_raw)
+    flatpak_hint = _is_flatpak_retroarch_command(exe) or "org.libretro.retroarch" in exe_raw.casefold()
+    if exe.exists() and os.name == "nt":
         return RetroArchPaths(cores_dir=exe.parent / "cores", info_dir=exe.parent / "info")
+    if sys.platform.startswith("linux") and flatpak_hint:
+        root = _linux_flatpak_retroarch_root()
+        return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
 
     # Best-effort platform defaults.
     if os.name == "nt":
@@ -178,8 +215,15 @@ def resolve_retroarch_paths() -> RetroArchPaths | None:
             root = Path(appdata) / "RetroArch"
             return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
     if sys.platform.startswith("linux"):
-        root = Path.home() / ".config" / "retroarch"
-        return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
+        native_root = Path.home() / ".config" / "retroarch"
+        flatpak_root = _linux_flatpak_retroarch_root()
+        prefer_flatpak = flatpak_hint
+        roots = [flatpak_root, native_root] if prefer_flatpak else [native_root, flatpak_root]
+        for root in roots:
+            if (root / "cores").exists() or (root / "info").exists():
+                return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
+        fallback = roots[0]
+        return RetroArchPaths(cores_dir=fallback / "cores", info_dir=fallback / "info")
     return None
 
 
@@ -211,7 +255,15 @@ def _install_from_zip_blob(zip_blob: bytes, member_name: str, destination: Path)
     return True
 
 
-def ensure_retroarch_cores(index: LibraryIndex, dry_run: bool, verbose: bool) -> None:
+def ensure_retroarch_cores(
+    index: LibraryIndex,
+    dry_run: bool,
+    verbose: bool,
+    explicit_cores_dir: Path | None = None,
+    explicit_info_dir: Path | None = None,
+    explicit_base_url: str | None = None,
+    explicit_cfg_path: Path | None = None,
+) -> None:
     required = required_retroarch_cores(index)
     if not required:
         return
@@ -221,12 +273,22 @@ def ensure_retroarch_cores(index: LibraryIndex, dry_run: bool, verbose: bool) ->
         print("RetroArch core auto-provision is unsupported on this platform")
         return
 
-    base_url = _core_base_url()
+    if explicit_base_url is not None:
+        base_url = _core_base_url(explicit_base_url)
+    else:
+        base_url = _core_base_url()
     if not base_url:
         print("RetroArch core auto-provision unavailable: unsupported architecture for buildbot URL")
         return
 
-    paths = resolve_retroarch_paths()
+    if explicit_cores_dir or explicit_info_dir or explicit_cfg_path:
+        paths = resolve_retroarch_paths(
+            explicit_cores_dir=explicit_cores_dir,
+            explicit_info_dir=explicit_info_dir,
+            explicit_cfg_path=explicit_cfg_path,
+        )
+    else:
+        paths = resolve_retroarch_paths()
     if paths is None:
         print("RetroArch core auto-provision unavailable: could not resolve RetroArch cores directory")
         return

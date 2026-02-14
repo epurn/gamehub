@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from pathlib import Path
 import tomllib
@@ -16,6 +16,20 @@ except ModuleNotFoundError:
 
 
 @dataclass(frozen=True)
+class LinuxConfig:
+    emulator_install_backend: str | None = None
+    emulator_install_command: str | None = None
+    retroarch_cfg_path: Path | None = None
+    retroarch_system_dir: Path | None = None
+    retroarch_cores_dir: Path | None = None
+    retroarch_info_dir: Path | None = None
+    retroarch_cores_base_url: str | None = None
+    pcsx2_ini_path: Path | None = None
+    pcsx2_bios_dir: Path | None = None
+    dolphin_user_path: Path | None = None
+
+
+@dataclass(frozen=True)
 class GamehubConfig:
     server_url: str
     library_dir: Path
@@ -27,6 +41,7 @@ class GamehubConfig:
     sgdb_api_key: str | None
     sgdb_cache_dir: Path
     sgdb_enabled_kinds: tuple[str, ...]
+    linux: LinuxConfig = field(default_factory=LinuxConfig)
 
 
 _VALID_SGDB_KINDS = ("grid", "hero", "logo", "icon")
@@ -76,6 +91,22 @@ def _normalize_secret(raw: object) -> str | None:
     return value or None
 
 
+def _normalize_optional_path(raw: object) -> Path | None:
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    return Path(value).expanduser()
+
+
+def _normalize_optional_text(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    return value or None
+
+
 def _resolve_paths(paths: dict[str, object]) -> tuple[Path, Path, Path]:
     """
     Resolve client storage locations.
@@ -107,6 +138,7 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
             sgdb_api_key=sgdb_api_key,
             sgdb_cache_dir=default_sgdb_cache_dir(),
             sgdb_enabled_kinds=_VALID_SGDB_KINDS,
+            linux=LinuxConfig(),
         )
 
     data = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -114,6 +146,7 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     paths = data.get("paths", {})
     steam = data.get("steam", {})
     sgdb = data.get("sgdb", {})
+    linux = data.get("linux", {})
     env_api_key = _normalize_secret(os.environ.get("GAMEHUB_SGDB_API_KEY"))
     config_api_key = _normalize_secret(sgdb.get("api_key"))
     sgdb_api_key = env_api_key or config_api_key
@@ -129,4 +162,16 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
         sgdb_api_key=sgdb_api_key,
         sgdb_cache_dir=Path(sgdb.get("cache_dir", default_sgdb_cache_dir())).expanduser(),
         sgdb_enabled_kinds=_normalize_sgdb_kinds(sgdb.get("enabled_kinds")),
+        linux=LinuxConfig(
+            emulator_install_backend=_normalize_optional_text(linux.get("emulator_install_backend")),
+            emulator_install_command=_normalize_optional_text(linux.get("emulator_install_command")),
+            retroarch_cfg_path=_normalize_optional_path(linux.get("retroarch_cfg_path")),
+            retroarch_system_dir=_normalize_optional_path(linux.get("retroarch_system_dir")),
+            retroarch_cores_dir=_normalize_optional_path(linux.get("retroarch_cores_dir")),
+            retroarch_info_dir=_normalize_optional_path(linux.get("retroarch_info_dir")),
+            retroarch_cores_base_url=_normalize_optional_text(linux.get("retroarch_cores_base_url")),
+            pcsx2_ini_path=_normalize_optional_path(linux.get("pcsx2_ini_path")),
+            pcsx2_bios_dir=_normalize_optional_path(linux.get("pcsx2_bios_dir")),
+            dolphin_user_path=_normalize_optional_path(linux.get("dolphin_user_path")),
+        ),
     )

@@ -352,8 +352,22 @@ def run_sync(
             raw_index = json.loads(response.read().decode("utf-8"))
 
     index = LibraryIndex.model_validate(raw_index)
-    ensure_emulators(index=index, dry_run=dry_run, verbose=verbose)
-    ensure_retroarch_cores(index=index, dry_run=dry_run, verbose=verbose)
+    ensure_emulators(
+        index=index,
+        dry_run=dry_run,
+        verbose=verbose,
+        linux_install_backend=config.linux.emulator_install_backend,
+        linux_install_command=config.linux.emulator_install_command,
+    )
+    ensure_retroarch_cores(
+        index=index,
+        dry_run=dry_run,
+        verbose=verbose,
+        explicit_cores_dir=config.linux.retroarch_cores_dir,
+        explicit_info_dir=config.linux.retroarch_info_dir,
+        explicit_base_url=config.linux.retroarch_cores_base_url,
+        explicit_cfg_path=config.linux.retroarch_cfg_path,
+    )
     _bootstrap_firmware_dirs(config=config, index=index, dry_run=dry_run, verbose=verbose)
     plan = create_sync_plan(index=index, config=config, state=state, verify=verify)
     _print_plan(plan)

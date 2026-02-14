@@ -85,6 +85,8 @@ def _candidate_userdata_dirs() -> list[Path]:
     home = Path.home()
     candidates.append(home / ".steam" / "steam" / "userdata")
     candidates.append(home / ".local" / "share" / "Steam" / "userdata")
+    candidates.append(home / ".var" / "app" / "com.valvesoftware.Steam" / ".steam" / "steam" / "userdata")
+    candidates.append(home / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam" / "userdata")
     return candidates
 
 
@@ -119,8 +121,16 @@ def _preferred_steam_id_candidates(preferred_steam_id: str) -> list[str]:
 
 
 def discover_userdata_dir(explicit: Path | None) -> Path | None:
-    if explicit and explicit.exists():
-        return explicit
+    env_override = os.environ.get("GAMEHUB_STEAM_USERDATA_DIR")
+    if env_override:
+        candidate = Path(env_override).expanduser()
+        if candidate.exists():
+            return candidate
+        return None
+    if explicit is not None:
+        if explicit.exists():
+            return explicit
+        return None
     for candidate in _candidate_userdata_dirs():
         if candidate.exists():
             return candidate
@@ -817,3 +827,17 @@ def reopen_steam(context: SteamContext) -> None:
         return
     if os.name == "nt":
         subprocess.Popen(["cmd", "/c", "start", "", "steam://open/main"], shell=False)
+        return
+    launchers: list[list[str]] = []
+    if shutil.which("steam"):
+        launchers.append(["steam", "steam://open/main"])
+    if shutil.which("xdg-open"):
+        launchers.append(["xdg-open", "steam://open/main"])
+    if shutil.which("flatpak"):
+        launchers.append(["flatpak", "run", "com.valvesoftware.Steam", "steam://open/main"])
+    for command in launchers:
+        try:
+            subprocess.Popen(command)
+            return
+        except OSError:
+            continue

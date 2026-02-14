@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 from uuid import uuid4
 
-from gamehub_cli.config import load_config
+from gamehub_cli.config import LinuxConfig, load_config
 from gamehub_cli.state import SyncState, load_state, save_state_atomic
 
 
@@ -42,6 +42,7 @@ def test_load_config_uses_defaults_when_file_is_missing(monkeypatch) -> None:
         assert loaded.sgdb_api_key is None
         assert loaded.sgdb_cache_dir == expected_state_root / "artwork_cache" / "sgdb"
         assert loaded.sgdb_enabled_kinds == ("grid", "hero", "logo", "icon")
+        assert loaded.linux == LinuxConfig()
 
 
 def test_load_config_prefers_workspace_config_when_present(monkeypatch) -> None:
@@ -158,6 +159,42 @@ def test_load_config_prefers_sgdb_api_key_from_env(monkeypatch) -> None:
         loaded = load_config(config_path)
 
         assert loaded.sgdb_api_key == "from-env-key"
+
+
+def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[linux]",
+                    'emulator_install_backend = "flatpak"',
+                    'emulator_install_command = "sudo apt install -y {package}"',
+                    'retroarch_cfg_path = "~/.config/retroarch/retroarch.cfg"',
+                    'retroarch_system_dir = "~/.config/retroarch/system"',
+                    'retroarch_cores_dir = "~/.config/retroarch/cores"',
+                    'retroarch_info_dir = "~/.config/retroarch/info"',
+                    'retroarch_cores_base_url = "https://example.invalid/cores/"',
+                    'pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"',
+                    'pcsx2_bios_dir = "~/.config/PCSX2/bios"',
+                    'dolphin_user_path = "~/.local/share/dolphin-emu"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_config(config_path)
+
+        assert loaded.linux.emulator_install_backend == "flatpak"
+        assert loaded.linux.emulator_install_command == "sudo apt install -y {package}"
+        assert loaded.linux.retroarch_cfg_path == Path("~/.config/retroarch/retroarch.cfg").expanduser()
+        assert loaded.linux.retroarch_system_dir == Path("~/.config/retroarch/system").expanduser()
+        assert loaded.linux.retroarch_cores_dir == Path("~/.config/retroarch/cores").expanduser()
+        assert loaded.linux.retroarch_info_dir == Path("~/.config/retroarch/info").expanduser()
+        assert loaded.linux.retroarch_cores_base_url == "https://example.invalid/cores/"
+        assert loaded.linux.pcsx2_ini_path == Path("~/.config/PCSX2/inis/PCSX2.ini").expanduser()
+        assert loaded.linux.pcsx2_bios_dir == Path("~/.config/PCSX2/bios").expanduser()
+        assert loaded.linux.dolphin_user_path == Path("~/.local/share/dolphin-emu").expanduser()
 
 
 def test_load_config_normalizes_quoted_sgdb_api_key(monkeypatch) -> None:

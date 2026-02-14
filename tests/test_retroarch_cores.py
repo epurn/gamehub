@@ -10,6 +10,7 @@ import zipfile
 from gamehub_cli.retroarch_cores import (
     RetroArchPaths,
     ensure_retroarch_cores,
+    resolve_retroarch_paths,
     required_retroarch_cores,
 )
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
@@ -164,3 +165,38 @@ def test_ensure_retroarch_cores_dry_run_reports_missing(monkeypatch, capsys) -> 
         out = capsys.readouterr().out
         assert "retroarch-core\tmissing\tN64\tmupen64plus_next_libretro.dll" in out
         assert "retroarch-info\tmissing\tN64\tmupen64plus_next_libretro.info" in out
+
+
+def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-retroarch-linux-") as temp_root:
+        home = temp_root / "home"
+        home.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.retroarch_cores._retroarch_cfg_candidates", lambda explicit_cfg_path=None: [])
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch")
+
+        paths = resolve_retroarch_paths()
+
+        assert paths is not None
+        assert paths.cores_dir != Path("/usr/bin/cores")
+        assert paths.info_dir != Path("/usr/bin/info")
+
+
+def test_resolve_retroarch_paths_linux_prefers_flatpak_when_export_detected(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-retroarch-flatpak-") as temp_root:
+        home = temp_root / "home"
+        export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.libretro.RetroArch"
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_bytes(b"#!/bin/sh")
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.retroarch_cores._retroarch_cfg_candidates", lambda explicit_cfg_path=None: [])
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.resolve_emulator_executable", lambda _name: str(export))
+
+        paths = resolve_retroarch_paths()
+
+        assert paths is not None
+        assert paths.cores_dir == home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "cores"

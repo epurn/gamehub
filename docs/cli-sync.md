@@ -26,7 +26,12 @@ Steam close behavior:
    - detects missing emulator binaries from index metadata
    - Windows detection checks executable PATH, common install locations, and uninstall registry locations (not only winget package metadata)
    - on Windows non-dry-run, attempts auto-install via `winget` for known emulators (`retroarch`, `pcsx2`, `dolphin`)
-   - on Fedora Linux non-dry-run, attempts auto-install via `dnf` for known emulators (`retroarch`, `pcsx2`, `dolphin-emu`)
+   - on Linux non-dry-run, uses config-first install backend (`[linux].emulator_install_backend`):
+     - `auto` (default): Fedora `dnf` when available, else `flatpak` when available, else configured command backend
+     - `dnf`: force Fedora package install behavior
+     - `flatpak`: install `org.libretro.RetroArch`, `net.pcsx2.PCSX2`, `org.DolphinEmu.dolphin-emu`
+     - `command`: run `[linux].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
+     - `none`: disable Linux auto-install (sync prints actionable missing emulator output)
    - Steam shortcuts resolve emulator executable paths to concrete binaries when available
 4. Ensure required RetroArch cores are available:
    - detects required cores from index launch templates (`-L cores/<core>`)
@@ -59,9 +64,19 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
 - Dry-run prints intended firmware directory creation in verbose mode, but does not mutate local directories.
 
 ## Firmware Deployment Targets
-- `PSX` firmware is mirrored to RetroArch `system_directory` targets, including portable installs resolved from the RetroArch executable directory (`<retroarch-dir>/system`).
+- `PSX` firmware is mirrored to RetroArch `system_directory` targets discovered from:
+  - explicit overrides (`RETROARCH_SYSTEM_DIR`/`GAMEHUB_RETROARCH_SYSTEM_DIR` or `[linux].retroarch_system_dir`)
+  - `retroarch.cfg` `system_directory`
+  - Linux defaults (`~/.config/retroarch/system` and Flatpak `~/.var/app/org.libretro.RetroArch/config/retroarch/system`)
+  - Windows portable executable directory (`<retroarch-dir>/system`) when applicable
 - `PS2` config is auto-updated so PCSX2 reads BIOS directly from `<gamehub_dir>/firmware/PS2` (no BIOS copy mirror step), and setup wizard completion is written into `PCSX2.ini`.
 - `Wii` firmware is mirrored to Dolphin user path `Wii/`.
+- `GC` firmware is mirrored to Dolphin user path `GC/`.
+
+Linux path notes:
+- RetroArch core provisioning no longer uses Linux executable-parent directories like `/usr/bin/cores`.
+- PCSX2 runtime config defaults are Linux-aware and Flatpak-aware (`~/.config/PCSX2/...` or `~/.var/app/net.pcsx2.PCSX2/...`).
+- Dolphin target selection prefers explicit overrides, then existing user data roots, then a deterministic native/Flatpak default.
 
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`
@@ -86,6 +101,15 @@ Core provisioning environment overrides:
 - `GAMEHUB_RETROARCH_CORES_BASE_URL`: override Libretro buildbot base URL
 - `GAMEHUB_RETROARCH_CORES_DIR`: explicit RetroArch `cores` directory
 - `GAMEHUB_RETROARCH_INFO_DIR`: explicit RetroArch `info` directory
+- `GAMEHUB_RETROARCH_CFG_PATH`: explicit RetroArch config path used for path resolution
+
+Steam Linux notes:
+- Auto userdata discovery includes:
+  - `~/.steam/steam/userdata`
+  - `~/.local/share/Steam/userdata`
+  - Flatpak Steam paths under `~/.var/app/com.valvesoftware.Steam/...`
+- `steam.userdata_dir` (or `GAMEHUB_STEAM_USERDATA_DIR`) remains the preferred explicit override.
+- Linux Steam reopen fallback tries `steam`, then `xdg-open`, then `flatpak run com.valvesoftware.Steam`.
 
 Archive note:
 - `.7z` ROM archives are not supported. Convert to supported formats before sync.

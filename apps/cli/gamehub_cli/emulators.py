@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,12 @@ _DNF_PACKAGES = {
     "retroarch": "retroarch",
     "pcsx2": "pcsx2",
     "dolphin": "dolphin-emu",
+}
+
+_FLATPAK_APP_IDS = {
+    "retroarch": "org.libretro.RetroArch",
+    "pcsx2": "net.pcsx2.PCSX2",
+    "dolphin": "org.DolphinEmu.dolphin-emu",
 }
 
 _EMULATOR_COMMAND_ALIASES = {
@@ -399,7 +406,63 @@ def _install_fedora(missing: list[str], *, verbose: bool) -> None:
             print(f"Warning: {emulator} install command completed but executable not found yet")
 
 
-def ensure_emulators(index: LibraryIndex, dry_run: bool, verbose: bool) -> None:
+def _install_flatpak(missing: list[str], *, verbose: bool) -> None:
+    if shutil.which("flatpak") is None:
+        print("flatpak not found; cannot auto-install missing emulators via flatpak")
+        return
+
+    for emulator in missing:
+        app_id = _FLATPAK_APP_IDS.get(emulator.lower())
+        if not app_id:
+            print(f"No flatpak mapping for emulator '{emulator}'; install it manually")
+            continue
+        print(f"Installing emulator '{emulator}' via flatpak ({app_id})...")
+        result = _run_install_command(["flatpak", "install", "--user", "-y", "flathub", app_id], verbose=verbose)
+        if result != 0:
+            print(f"Warning: flatpak install failed for {emulator} (exit {result}). Install manually and re-run sync.")
+            continue
+        if _is_emulator_available(emulator):
+            print(f"Installed emulator: {emulator}")
+        else:
+            print(f"Warning: {emulator} install command completed but executable not found yet")
+
+
+def _linux_package_name(emulator: str) -> str:
+    return _DNF_PACKAGES.get(emulator.lower(), emulator)
+
+
+def _install_linux_command(missing: list[str], command_template: str, *, verbose: bool) -> None:
+    template = command_template.strip()
+    if not template:
+        print("Linux emulator auto-install command is empty; install missing emulators manually and re-run sync.")
+        return
+    for emulator in missing:
+        package = _linux_package_name(emulator)
+        command = [token.format(package=package, emulator=emulator) for token in shlex.split(template)]
+        if not command:
+            print("Linux emulator auto-install command resolved to empty command; skipping")
+            return
+        print(f"Installing emulator '{emulator}' via configured Linux install command...")
+        result = _run_install_command(command, verbose=verbose)
+        if result != 0:
+            print(
+                "Warning: configured Linux install command failed for "
+                f"{emulator} (exit {result}). Install manually and re-run sync."
+            )
+            continue
+        if _is_emulator_available(emulator):
+            print(f"Installed emulator: {emulator}")
+        else:
+            print(f"Warning: {emulator} install command completed but executable not found yet")
+
+
+def ensure_emulators(
+    index: LibraryIndex,
+    dry_run: bool,
+    verbose: bool,
+    linux_install_backend: str | None = None,
+    linux_install_command: str | None = None,
+) -> None:
     required = sorted(_required_emulators(index))
     if not required:
         return
@@ -419,11 +482,51 @@ def ensure_emulators(index: LibraryIndex, dry_run: bool, verbose: bool) -> None:
         return
 
     if sys.platform.startswith("linux"):
+        backend = (os.environ.get("GAMEHUB_LINUX_EMULATOR_INSTALL_BACKEND") or linux_install_backend or "auto").strip()
+        backend = backend.casefold()
+        custom_command = os.environ.get("GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND") or linux_install_command
         dist_id = _linux_dist_id()
-        if "fedora" in dist_id:
+
+        if backend in {"auto", ""}:
+            if "fedora" in dist_id and shutil.which("dnf") is not None:
+                _install_fedora(missing, verbose=verbose)
+                return
+            if shutil.which("flatpak") is not None:
+                _install_flatpak(missing, verbose=verbose)
+                return
+            if custom_command:
+                _install_linux_command(missing, custom_command, verbose=verbose)
+                return
+            print(
+                "Linux emulator auto-install is unavailable for this host. "
+                "Set [linux].emulator_install_backend to 'flatpak', 'dnf', or 'command', "
+                "or install manually and re-run sync."
+            )
+            return
+
+        if backend == "dnf":
             _install_fedora(missing, verbose=verbose)
             return
-        print("Linux emulator auto-install currently supports Fedora (dnf) only")
+        if backend == "flatpak":
+            _install_flatpak(missing, verbose=verbose)
+            return
+        if backend == "none":
+            print("Linux emulator auto-install disabled by configuration")
+            return
+        if backend == "command":
+            if not custom_command:
+                print(
+                    "Linux emulator install backend is 'command' but no command template is configured. "
+                    "Set [linux].emulator_install_command and re-run sync."
+                )
+                return
+            _install_linux_command(missing, custom_command, verbose=verbose)
+            return
+
+        print(
+            "Unsupported Linux emulator install backend: "
+            f"{backend}. Valid values: auto, dnf, flatpak, none, command."
+        )
         return
 
-    print("Emulator auto-install is currently supported on Windows and Fedora Linux only")
+    print("Emulator auto-install is currently supported on Windows and Linux only")

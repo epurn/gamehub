@@ -6,7 +6,12 @@ import shutil
 from uuid import uuid4
 
 from gamehub_cli.config import GamehubConfig
-from gamehub_cli.firmware_deploy import _resolve_retroarch_system_dirs, _target_dirs_for_system, deploy_firmware_to_emulators
+from gamehub_cli.firmware_deploy import (
+    _default_pcsx2_ini_path,
+    _resolve_retroarch_system_dirs,
+    _target_dirs_for_system,
+    deploy_firmware_to_emulators,
+)
 from gamehub_common.models import FirmwareSpec, LibraryIndex, SystemSpec
 
 
@@ -63,7 +68,7 @@ def test_deploy_firmware_copies_to_target(monkeypatch) -> None:
         target_dir = temp_root / "emulators" / "retroarch" / "system"
         logs: list[str] = []
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name: [target_dir])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=True, writer=logs.append)
 
         target = target_dir / "scph5501.bin"
@@ -80,7 +85,7 @@ def test_deploy_firmware_skips_when_up_to_date(monkeypatch) -> None:
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_bytes(b"bios")
         target_dir = temp_root / "emulators" / "retroarch" / "system"
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name: [target_dir])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
         logs: list[str] = []
@@ -99,7 +104,7 @@ def test_deploy_firmware_dry_run_does_not_mutate(monkeypatch) -> None:
         target_dir = temp_root / "emulators" / "retroarch" / "system"
         logs: list[str] = []
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name: [target_dir])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
 
         assert not (target_dir / "scph5501.bin").exists()
@@ -130,7 +135,7 @@ def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch) -
             "[UI]\nSetupWizardIncomplete = true\n\n[Folders]\nBios = bios\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._pcsx2_ini_candidates", lambda: [ini_path])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._pcsx2_ini_candidates", lambda config=None: [ini_path])
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -144,7 +149,7 @@ def test_deploy_firmware_dry_run_reports_pcsx2_config(monkeypatch) -> None:
         config = _config(temp_root)
         index = _index("PS2", "scph10000.bin")
         ini_path = temp_root / "Documents" / "PCSX2" / "inis" / "PCSX2.ini"
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._pcsx2_ini_candidates", lambda: [ini_path])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._pcsx2_ini_candidates", lambda config=None: [ini_path])
         logs: list[str] = []
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
@@ -166,3 +171,35 @@ def test_resolve_retroarch_system_dirs_includes_portable_exe_system(monkeypatch)
         dirs = _resolve_retroarch_system_dirs()
 
         assert portable_root / "system" in dirs
+
+
+def test_resolve_retroarch_system_dirs_linux_ignores_usr_bin_parent(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        home = temp_root / "home"
+        home.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [])
+
+        dirs = _resolve_retroarch_system_dirs()
+
+        assert Path("/usr/bin/system") not in dirs
+
+
+def test_default_pcsx2_ini_path_prefers_flatpak_when_detected(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        home = temp_root / "home"
+        export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "net.pcsx2.PCSX2"
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_bytes(b"#!/bin/sh")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._pcsx2_ini_candidates", lambda config=None: [])
+
+        ini_path = _default_pcsx2_ini_path()
+
+        assert ini_path == home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
