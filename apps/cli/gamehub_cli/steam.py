@@ -18,6 +18,12 @@ class SteamContext:
     steam_exe: Path | None
 
 
+@dataclass(frozen=True)
+class SteamArtworkAssignment:
+    steam_app_id: str
+    assets_by_kind: dict[str, Path]
+
+
 def _candidate_userdata_dirs() -> list[Path]:
     candidates: list[Path] = []
     if os.name == "nt":
@@ -75,9 +81,12 @@ def is_steam_running() -> bool:
 
 def close_steam_best_effort() -> None:
     if os.name == "nt":
+        # First attempt graceful close; then force kill as fallback.
         subprocess.run(["taskkill", "/IM", "steam.exe", "/T"], check=False, capture_output=True)
+        subprocess.run(["taskkill", "/F", "/IM", "steam.exe", "/T"], check=False, capture_output=True)
         return
     subprocess.run(["pkill", "-f", "steam"], check=False, capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "steam"], check=False, capture_output=True)
 
 
 def wait_for_steam_exit(timeout_seconds: int = 20) -> bool:
@@ -109,8 +118,31 @@ def update_collections_placeholder() -> None:
     return
 
 
-def copy_grid_art_placeholder() -> None:
-    return
+def copy_grid_art_placeholder(context: SteamContext, assignments: list[SteamArtworkAssignment]) -> list[Path]:
+    copied_files: list[Path] = []
+    if not assignments:
+        return copied_files
+
+    grid_dir = context.userdata_dir / context.steam_id / "config" / "grid"
+    grid_dir.mkdir(parents=True, exist_ok=True)
+    suffix_by_kind = {
+        "grid": "p",
+        "hero": "_hero",
+        "logo": "_logo",
+        "icon": "_icon",
+    }
+    for assignment in assignments:
+        if not assignment.steam_app_id:
+            continue
+        for kind, source in assignment.assets_by_kind.items():
+            if kind not in suffix_by_kind:
+                continue
+            if not source.exists():
+                continue
+            destination = grid_dir / f"{assignment.steam_app_id}{suffix_by_kind[kind]}{source.suffix.lower() or '.png'}"
+            shutil.copy2(source, destination)
+            copied_files.append(destination)
+    return copied_files
 
 
 def reopen_steam(context: SteamContext) -> None:

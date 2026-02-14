@@ -17,6 +17,12 @@ Current implementation is a safe skeleton in `apps/cli/gamehub_cli/steam.py`.
 - Update `user-collections` JSON in `localconfig.vdf` with system collections
 - Copy artwork to `userdata/<steamid>/config/grid`
 
+## Artwork copy hook (current behavior)
+- Steam art-copy entrypoint accepts provider-agnostic assignments (`steam_app_id` + `assets_by_kind`).
+- Supported kinds: `grid`, `hero`, `logo`, `icon`.
+- Missing source files are skipped without failing sync.
+- Until binary VDF mutation is implemented, app IDs used for copy are deterministic sync-time placeholders derived from title IDs.
+
 ## Safety requirements
 - Always close Steam before writes
 - Always backup before writes

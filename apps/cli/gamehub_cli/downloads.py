@@ -11,6 +11,22 @@ try:
 except ModuleNotFoundError:
     httpx = None
 
+from .fsops import replace_file
+
+
+def _cleanup_part_file(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+        return
+    except PermissionError:
+        pass
+    if not path.exists():
+        return
+    with path.open("wb") as handle:
+        handle.truncate(0)
+        handle.flush()
+        os.fsync(handle.fileno())
+
 
 def download_with_atomic_write(
     server_url: str,
@@ -46,7 +62,7 @@ def download_with_atomic_write(
 
     actual = digest.hexdigest()
     if actual != expected_sha256:
-        part_path.unlink(missing_ok=True)
+        _cleanup_part_file(part_path)
         raise ValueError(f"Checksum mismatch for {url}: expected {expected_sha256}, got {actual}")
 
-    part_path.replace(destination)
+    replace_file(part_path, destination)

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import gc
+import os
 from pathlib import Path
 import shutil
+import time
 import uuid
 
 import pytest
@@ -34,6 +37,29 @@ def _write_file(path: Path, payload: bytes = b"x") -> None:
     path.write_bytes(payload)
 
 
+def _remove_readonly_and_retry(func, path, _exc_info) -> None:
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        pass
+    try:
+        func(path)
+    except OSError:
+        pass
+
+
+def _cleanup_tree(path: Path) -> None:
+    for _ in range(10):
+        try:
+            shutil.rmtree(path, onexc=_remove_readonly_and_retry)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            gc.collect()
+            time.sleep(0.05)
+
+
 @contextmanager
 def _workspace_tempdir(prefix: str):
     path = TMP_ROOT / f"{prefix}{uuid.uuid4().hex}"
@@ -41,7 +67,7 @@ def _workspace_tempdir(prefix: str):
     try:
         yield path
     finally:
-        shutil.rmtree(path, ignore_errors=True)
+        _cleanup_tree(path)
 
 
 def test_build_index_scans_single_title() -> None:

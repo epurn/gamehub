@@ -14,12 +14,18 @@ from .sync import run_sync
 if typer is not None:
     app = typer.Typer(add_completion=False, no_args_is_help=True)
 
+    @app.callback()
+    def root() -> None:
+        """GAMEHUB CLI entrypoint."""
+        return
+
     @app.command()
     def sync(
         config: Path | None = typer.Option(None, "--config", help="Path to config TOML"),
         dry_run: bool = typer.Option(False, "--dry-run", help="Plan only; do not download or modify Steam"),
         verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
         verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
+        skip_steam: bool = typer.Option(False, "--skip-steam", help="Skip Steam lifecycle and update hooks"),
         require_steam_closed: bool = typer.Option(
             False,
             "--require-steam-closed",
@@ -34,6 +40,7 @@ if typer is not None:
                 verbose=verbose,
                 verify=verify,
                 require_steam_closed=require_steam_closed,
+                skip_steam=skip_steam,
             )
         )
 else:
@@ -52,6 +59,7 @@ def main() -> None:
     sync_parser.add_argument("--dry-run", action="store_true")
     sync_parser.add_argument("--verbose", action="store_true")
     sync_parser.add_argument("--verify", action="store_true")
+    sync_parser.add_argument("--skip-steam", action="store_true")
     sync_parser.add_argument("--require-steam-closed", action="store_true")
     args = parser.parse_args()
     if args.command == "sync":
@@ -63,6 +71,7 @@ def main() -> None:
                 verbose=args.verbose,
                 verify=args.verify,
                 require_steam_closed=args.require_steam_closed,
+                skip_steam=args.skip_steam,
             )
         )
 

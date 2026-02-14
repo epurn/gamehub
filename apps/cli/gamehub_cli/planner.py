@@ -39,8 +39,10 @@ def _from_rel_path(base: Path, rel_path: str) -> Path:
     return base.joinpath(*rel.parts)
 
 
-def _is_file_valid(path: Path, expected_sha256: str, verify: bool) -> bool:
+def _is_file_valid(path: Path, expected_sha256: str, verify: bool, expected_size_bytes: int | None = None) -> bool:
     if not path.exists():
+        return False
+    if expected_size_bytes is not None and path.stat().st_size != expected_size_bytes:
         return False
     if verify:
         return sha256_file(path) == expected_sha256
@@ -57,7 +59,7 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
             key = f"{system_name}/{firmware.filename}"
             destination = config.firmware_dir / system_name / firmware.filename
             known_fw_sha = state.firmware_checksums.get(key)
-            firmware_ok = _is_file_valid(destination, firmware.sha256, verify) and (
+            firmware_ok = _is_file_valid(destination, firmware.sha256, verify, expected_size_bytes=None) and (
                 known_fw_sha is None or known_fw_sha == firmware.sha256
             )
             if not firmware_ok:
@@ -81,7 +83,7 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
 
         rom_path = _from_rel_path(config.library_dir, title.rom.rel_path)
         known_sha = state.downloaded_checksums.get(title.rom.file_id)
-        rom_ok = _is_file_valid(rom_path, title.rom.sha256, verify) and (
+        rom_ok = _is_file_valid(rom_path, title.rom.sha256, verify, expected_size_bytes=title.rom.size_bytes) and (
             known_sha is None or known_sha == title.rom.sha256
         )
         if not rom_ok:
@@ -101,7 +103,7 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
         for asset in title.assets:
             asset_path = _from_rel_path(config.library_dir, asset.rel_path)
             known_asset_sha = state.downloaded_checksums.get(asset.asset_id)
-            asset_ok = _is_file_valid(asset_path, asset.sha256, verify) and (
+            asset_ok = _is_file_valid(asset_path, asset.sha256, verify, expected_size_bytes=asset.size_bytes) and (
                 known_asset_sha is None or known_asset_sha == asset.sha256
             )
             if asset_ok:

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+from .fsops import replace_file
 
 
 @dataclass
@@ -41,8 +44,12 @@ def load_state(path: Path) -> SyncState:
 def save_state_atomic(path: Path, state: SyncState) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(f"{path.suffix}.tmp")
-    tmp.write_text(json.dumps(state.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
-    tmp.replace(path)
+    payload = json.dumps(state.to_dict(), indent=2, sort_keys=True)
+    with tmp.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+    replace_file(tmp, path)
 
 
 def mark_synced(state: SyncState) -> None:
