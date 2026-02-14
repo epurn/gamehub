@@ -821,7 +821,7 @@ def prune_grid_noncanonical_variants(context: SteamContext, steam_app_ids: list[
     return removed
 
 
-def _spawn_detached(command: list[str], *, shell: bool = False) -> None:
+def _spawn_detached(command: list[str], *, shell: bool = False) -> subprocess.Popen:
     kwargs = {
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
@@ -831,16 +831,38 @@ def _spawn_detached(command: list[str], *, shell: bool = False) -> None:
     }
     if os.name != "nt":
         kwargs["start_new_session"] = True
-    subprocess.Popen(command, **kwargs)
+    return subprocess.Popen(command, **kwargs)
+
+
+def _wait_for_steam_start(timeout_seconds: float = 12.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    consecutive_running = 0
+    while time.time() < deadline:
+        if is_steam_running():
+            consecutive_running += 1
+            if consecutive_running >= 2:
+                return True
+        else:
+            consecutive_running = 0
+        time.sleep(0.5)
+    return is_steam_running()
 
 
 def reopen_steam(context: SteamContext) -> bool:
     if context.steam_exe and context.steam_exe.exists():
-        _spawn_detached([str(context.steam_exe)])
-        return True
+        try:
+            _spawn_detached([str(context.steam_exe)])
+        except OSError:
+            pass
+        else:
+            if _wait_for_steam_start():
+                return True
     if os.name == "nt":
-        _spawn_detached(["cmd", "/c", "start", "", "steam://open/main"], shell=False)
-        return True
+        try:
+            _spawn_detached(["cmd", "/c", "start", "", "steam://open/main"], shell=False)
+        except OSError:
+            return False
+        return _wait_for_steam_start()
     launchers: list[list[str]] = []
     if shutil.which("steam"):
         launchers.append(["steam", "steam://open/main"])
@@ -851,7 +873,8 @@ def reopen_steam(context: SteamContext) -> bool:
     for command in launchers:
         try:
             _spawn_detached(command)
-            return True
         except OSError:
             continue
+        if _wait_for_steam_start():
+            return True
     return False

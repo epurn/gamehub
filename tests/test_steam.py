@@ -564,6 +564,7 @@ def test_prune_grid_noncanonical_variants_removes_signed_when_unsigned_exists() 
 def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
     launched: list[tuple[list[str], dict]] = []
     monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam._wait_for_steam_start", lambda timeout_seconds=12.0: True)
     monkeypatch.setattr(
         "gamehub_cli.steam.shutil.which",
         lambda command: "/usr/bin/steam" if command == "steam" else None,
@@ -587,6 +588,7 @@ def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
 
 def test_reopen_steam_linux_returns_false_when_no_launcher_available(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam._wait_for_steam_start", lambda timeout_seconds=12.0: False)
     monkeypatch.setattr("gamehub_cli.steam.shutil.which", lambda command: None)
     context = SteamContext(
         userdata_dir=Path("userdata"),
