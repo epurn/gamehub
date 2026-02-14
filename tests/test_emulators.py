@@ -217,6 +217,52 @@ def test_ensure_emulators_linux_flatpak_remote_override(monkeypatch, capsys) -> 
     assert "Installed emulator: pcsx2" in capsys.readouterr().out
 
 
+def test_ensure_emulators_linux_flatpak_remote_fallbacks_to_unpinned(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("retroarch")
+    state = {"installed": False}
+
+    def fake_which(name: str) -> str | None:
+        if name == "flatpak":
+            return "/usr/bin/flatpak"
+        if name == "retroarch":
+            return "/usr/bin/retroarch" if state["installed"] else None
+        return None
+
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        commands.append(cmd)
+        if cmd[:3] == ["flatpak", "remotes", "--columns=name"]:
+            return type("Completed", (), {"returncode": 0, "stdout": "flathub\nflathub-user\n"})()
+        if cmd == ["flatpak", "install", "--user", "-y", "flathub", "org.libretro.RetroArch"]:
+            return type("Completed", (), {"returncode": 1, "stdout": ""})()
+        if cmd == ["flatpak", "install", "--user", "-y", "org.libretro.RetroArch"]:
+            state["installed"] = True
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+        return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+
+    ensure_emulators(
+        index=index,
+        dry_run=False,
+        verbose=False,
+        linux_install_backend="flatpak",
+        linux_flatpak_remote="flathub",
+    )
+
+    assert ["flatpak", "install", "--user", "-y", "flathub", "org.libretro.RetroArch"] in commands
+    assert ["flatpak", "install", "--user", "-y", "org.libretro.RetroArch"] in commands
+    out = capsys.readouterr().out
+    assert "retrying with automatic remote resolution" in out
+    assert "Installed emulator: retroarch" in out
+
+
 def test_ensure_emulators_linux_command_backend(monkeypatch, capsys) -> None:
     index = _index_with_emulators("dolphin")
     state = {"installed": False}

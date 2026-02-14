@@ -446,17 +446,42 @@ def _install_flatpak(missing: list[str], *, verbose: bool, remote: str | None = 
             print(f"No flatpak mapping for emulator '{emulator}'; install it manually")
             continue
         print(f"Installing emulator '{emulator}' via flatpak ({app_id})...")
-        command = ["flatpak", "install", "--user", "-y"]
+        command_candidates: list[list[str]] = []
         if configured_remote:
-            command.append(configured_remote)
-        command.append(app_id)
-        result = _run_install_command(command, verbose=verbose)
-        if result != 0:
+            command_candidates.append(["flatpak", "install", "--user", "-y", configured_remote, app_id])
+        # Fallback to unpinned remote resolution. This handles filtered/alias remotes on some distros.
+        command_candidates.append(["flatpak", "install", "--user", "-y", app_id])
+        deduped_commands: list[list[str]] = []
+        seen: set[tuple[str, ...]] = set()
+        for command in command_candidates:
+            key = tuple(command)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped_commands.append(command)
+
+        success = False
+        for position, command in enumerate(deduped_commands):
+            result = _run_install_command(command, verbose=verbose)
+            if result == 0:
+                success = True
+                break
+            if configured_remote and position == 0 and len(deduped_commands) > 1:
+                print(
+                    "Warning: flatpak install via configured remote failed; retrying with automatic remote resolution."
+                )
+
+        if not success:
             if not remotes:
                 print(
                     "Warning: flatpak install failed and no remotes are configured. "
                     "Add one (for example: flatpak remote-add --if-not-exists flathub "
                     "https://flathub.org/repo/flathub.flatpakrepo)."
+                )
+            elif configured_remote:
+                print(
+                    "Warning: flatpak install failed for configured remote "
+                    f"'{configured_remote}'. This remote may be filtered on your distro."
                 )
             print(f"Warning: flatpak install failed for {emulator} (exit {result}). Install manually and re-run sync.")
             continue
