@@ -1,0 +1,11 @@
+services:
+  gamehub-server:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+    environment:
+      GAMEHUB_DATA_DIR: /data
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../data:/data:ro

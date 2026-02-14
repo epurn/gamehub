@@ -1,0 +1,53 @@
+# Local agent/planning files
+AGENTS.md
+kanban/
+
+# Python cache/bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build/packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test/coverage artifacts
+.pytest_cache/
+.pytest_tmp/
+.pytest_tmp*/
+pytest-cache-files-*/
+tmp*/
+.tmp/
+.tmp*/
+.coverage
+.coverage.*
+htmlcov/
+
+# Type checker / linter caches
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Local runtime/config
+.env
+.env.*
+data/

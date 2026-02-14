@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gamehub"
+version = "0.1.0"
+description = "GAMEHUB server and CLI"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.116.0",
+  "httpx>=0.28.0",
+  "platformdirs>=4.3.0",
+  "pydantic>=2.11.0",
+  "rich>=14.0.0",
+  "typer>=0.16.0",
+  "uvicorn>=0.35.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3.0"]
+
+[project.scripts]
+gamehub = "gamehub_cli.main:main"
+gamehub-server = "gamehub_server.main:run"
+
+[tool.setuptools]
+package-dir = { "" = "." }
+
+[tool.setuptools.packages.find]
+where = ["apps/cli", "apps/server", "shared/gamehub_common"]
+include = ["gamehub_cli*", "gamehub_server*", "gamehub_common*"]
