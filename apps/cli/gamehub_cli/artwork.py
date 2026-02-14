@@ -55,10 +55,6 @@ def redact_secret(secret: str | None) -> str:
     return f"{secret[:3]}...{secret[-3:]}"
 
 
-def build_stub_steam_app_id(title_id: str) -> str:
-    return str(int(hashlib.sha256(title_id.encode("utf-8")).hexdigest()[:8], 16))
-
-
 def build_lookup_plan(titles: tuple[TitleEntry, ...], kinds: tuple[str, ...]) -> list[SgdbLookupPlan]:
     return [SgdbLookupPlan(title_id=title.title_id, title_name=title.title_name, kinds=kinds) for title in titles]
 
@@ -82,9 +78,22 @@ def _cleanup_temp(path: Path) -> None:
 
 def _extension_from_url(url: str) -> str:
     suffix = PurePosixPath(urlparse(url).path).suffix.lower()
-    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".ico"}:
+    if suffix in {".png", ".jpg", ".jpeg", ".ico", ".webp"}:
         return suffix
     return ".png"
+
+
+def _url_format_priority(url: str) -> int:
+    suffix = PurePosixPath(urlparse(url).path).suffix.lower()
+    if suffix == ".png":
+        return 0
+    if suffix in {".jpg", ".jpeg"}:
+        return 1
+    if suffix == ".ico":
+        return 2
+    if suffix == ".webp":
+        return 3
+    return 4
 
 
 class SgdbClient:
@@ -194,7 +203,7 @@ class SgdbClient:
                     if isinstance(nested_url, str) and nested_url and nested_url not in seen:
                         seen.add(nested_url)
                         candidates.append(nested_url)
-        return tuple(candidates)
+        return tuple(sorted(candidates, key=_url_format_priority))
 
     def _download_once(self, url: str, destination: Path, *, use_auth: bool) -> bool:
         client = self._api_client if use_auth else self._download_client
@@ -263,9 +272,16 @@ class SgdbArtworkPipeline:
         extension = _extension_from_url(url)
         return self._cache_dir / title_id / f"{kind}-{digest}{extension}"
 
-    def sync(self, titles: tuple[TitleEntry, ...]) -> ArtworkSyncResult:
+    def sync(
+        self,
+        titles: tuple[TitleEntry, ...],
+        progress_cb: Callable[[int, int, str], None] | None = None,
+    ) -> ArtworkSyncResult:
         result = ArtworkSyncResult()
-        for title in titles:
+        total = len(titles)
+        for index, title in enumerate(titles, start=1):
+            if progress_cb is not None:
+                progress_cb(index, total, title.title_name)
             result.lookups += 1
             bundle = TitleArtworkBundle(title_id=title.title_id, title_name=title.title_name, files={})
             try:

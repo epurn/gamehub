@@ -33,11 +33,14 @@ _VALID_SGDB_KINDS = ("grid", "hero", "logo", "icon")
 
 
 def default_config_path() -> Path:
+    local_config = Path.cwd() / "config.toml"
+    if local_config.exists():
+        return local_config
     return Path(user_config_dir("gamehub")) / "config.toml"
 
 
-def default_state_path() -> Path:
-    return Path(user_state_dir("gamehub")) / "state.json"
+def default_gamehub_dir() -> Path:
+    return Path(user_state_dir("gamehub"))
 
 
 def default_sgdb_cache_dir() -> Path:
@@ -73,15 +76,31 @@ def _normalize_secret(raw: object) -> str | None:
     return value or None
 
 
+def _resolve_paths(paths: dict[str, object]) -> tuple[Path, Path, Path]:
+    """
+    Resolve client storage locations.
+
+    Canonical config key is `paths.gamehub_dir`.
+    Legacy keys are accepted as fallback for compatibility.
+    """
+    root = Path(paths.get("gamehub_dir", paths.get("library_dir", default_gamehub_dir()))).expanduser()
+    if "gamehub_dir" in paths:
+        return root, root / "firmware", root / "state.json"
+    firmware = Path(paths.get("firmware_dir", root / "firmware")).expanduser()
+    state = Path(paths.get("state_path", root / "state.json")).expanduser()
+    return root, firmware, state
+
+
 def load_config(config_path: Path | None = None) -> GamehubConfig:
     path = config_path or default_config_path()
+    default_root = default_gamehub_dir()
     if not path.exists():
         sgdb_api_key = _normalize_secret(os.environ.get("GAMEHUB_SGDB_API_KEY"))
         return GamehubConfig(
             server_url="http://127.0.0.1:8000",
-            library_dir=Path(user_state_dir("gamehub")) / "library",
-            firmware_dir=Path(user_state_dir("gamehub")) / "firmware",
-            state_path=default_state_path(),
+            library_dir=default_root,
+            firmware_dir=default_root / "firmware",
+            state_path=default_root / "state.json",
             steam_userdata_dir=None,
             steam_id=None,
             steam_exe=None,
@@ -98,11 +117,12 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     env_api_key = _normalize_secret(os.environ.get("GAMEHUB_SGDB_API_KEY"))
     config_api_key = _normalize_secret(sgdb.get("api_key"))
     sgdb_api_key = env_api_key or config_api_key
+    library_dir, firmware_dir, state_path = _resolve_paths(paths)
     return GamehubConfig(
         server_url=str(server.get("url", "http://127.0.0.1:8000")),
-        library_dir=Path(paths.get("library_dir", Path(user_state_dir("gamehub")) / "library")).expanduser(),
-        firmware_dir=Path(paths.get("firmware_dir", Path(user_state_dir("gamehub")) / "firmware")).expanduser(),
-        state_path=Path(paths.get("state_path", default_state_path())).expanduser(),
+        library_dir=library_dir,
+        firmware_dir=firmware_dir,
+        state_path=state_path,
         steam_userdata_dir=Path(steam["userdata_dir"]).expanduser() if steam.get("userdata_dir") else None,
         steam_id=str(steam["steam_id"]) if steam.get("steam_id") else None,
         steam_exe=Path(steam["steam_exe"]).expanduser() if steam.get("steam_exe") else None,

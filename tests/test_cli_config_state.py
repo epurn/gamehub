@@ -33,14 +33,48 @@ def test_load_config_uses_defaults_when_file_is_missing(monkeypatch) -> None:
 
         expected_state_root = state_home / "gamehub"
         assert loaded.server_url == "http://127.0.0.1:8000"
-        assert loaded.library_dir == expected_state_root / "library"
+        assert loaded.library_dir == expected_state_root
         assert loaded.firmware_dir == expected_state_root / "firmware"
         assert loaded.state_path == expected_state_root / "state.json"
         assert loaded.steam_userdata_dir is None
+        assert loaded.steam_id is None
         assert loaded.steam_exe is None
         assert loaded.sgdb_api_key is None
         assert loaded.sgdb_cache_dir == expected_state_root / "artwork_cache" / "sgdb"
         assert loaded.sgdb_enabled_kinds == ("grid", "hero", "logo", "icon")
+
+
+def test_load_config_prefers_workspace_config_when_present(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+        monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
+        config_home = temp_root / "cfg-home"
+        state_home = temp_root / "state-home"
+        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(config_home / appname))
+        monkeypatch.setattr("gamehub_cli.config.user_state_dir", lambda appname: str(state_home / appname))
+        monkeypatch.chdir(temp_root)
+        (temp_root / "config.toml").write_text(
+            "\n".join(
+                [
+                    "[server]",
+                    'url = "http://example.invalid:9999"',
+                    "",
+                    "[paths]",
+                    'gamehub_dir = "D:/GamehubOutput"',
+                    "",
+                    "[steam]",
+                    'steam_id = "76561198000000001"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_config()
+
+        assert loaded.server_url == "http://example.invalid:9999"
+        assert loaded.library_dir == Path("D:/GamehubOutput")
+        assert loaded.firmware_dir == Path("D:/GamehubOutput/firmware")
+        assert loaded.state_path == Path("D:/GamehubOutput/state.json")
+        assert loaded.steam_id == "76561198000000001"
 
 
 def test_load_config_toml_overrides_defaults(monkeypatch) -> None:
@@ -54,12 +88,11 @@ def test_load_config_toml_overrides_defaults(monkeypatch) -> None:
                     'url = "http://example.invalid:9000"',
                     "",
                     "[paths]",
-                    'library_dir = "C:/library"',
-                    'firmware_dir = "C:/firmware"',
-                    'state_path = "C:/state/state.json"',
+                    'gamehub_dir = "C:/gamehub"',
                     "",
                     "[steam]",
                     'userdata_dir = "C:/Steam/userdata"',
+                    'steam_id = "76561198000000001"',
                     'steam_exe = "C:/Steam/steam.exe"',
                     "",
                     "[sgdb]",
@@ -74,14 +107,38 @@ def test_load_config_toml_overrides_defaults(monkeypatch) -> None:
         loaded = load_config(config_path)
 
         assert loaded.server_url == "http://example.invalid:9000"
-        assert loaded.library_dir == Path("C:/library")
-        assert loaded.firmware_dir == Path("C:/firmware")
-        assert loaded.state_path == Path("C:/state/state.json")
+        assert loaded.library_dir == Path("C:/gamehub")
+        assert loaded.firmware_dir == Path("C:/gamehub/firmware")
+        assert loaded.state_path == Path("C:/gamehub/state.json")
         assert loaded.steam_userdata_dir == Path("C:/Steam/userdata")
+        assert loaded.steam_id == "76561198000000001"
         assert loaded.steam_exe == Path("C:/Steam/steam.exe")
         assert loaded.sgdb_api_key == "from-config-key"
         assert loaded.sgdb_cache_dir == Path("C:/cache/sgdb")
         assert loaded.sgdb_enabled_kinds == ("grid", "icon")
+
+
+def test_load_config_supports_legacy_path_keys(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+        monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[paths]",
+                    'library_dir = "C:/legacy-library"',
+                    'firmware_dir = "C:/legacy-firmware"',
+                    'state_path = "C:/legacy/state.json"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_config(config_path)
+
+        assert loaded.library_dir == Path("C:/legacy-library")
+        assert loaded.firmware_dir == Path("C:/legacy-firmware")
+        assert loaded.state_path == Path("C:/legacy/state.json")
 
 
 def test_load_config_prefers_sgdb_api_key_from_env(monkeypatch) -> None:

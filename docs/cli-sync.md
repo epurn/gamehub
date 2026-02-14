@@ -22,17 +22,70 @@ Steam close behavior:
 ## Pipeline order
 1. Load config and local state
 2. Fetch and validate `/v1/index`
-3. Build plan:
+3. Ensure required emulators are available:
+   - detects missing emulator binaries from index metadata
+   - Windows detection checks executable PATH, common install locations, and uninstall registry locations (not only winget package metadata)
+   - on Windows non-dry-run, attempts auto-install via `winget` for known emulators (`retroarch`, `pcsx2`, `dolphin`)
+   - on Fedora Linux non-dry-run, attempts auto-install via `dnf` for known emulators (`retroarch`, `pcsx2`, `dolphin-emu`)
+   - Steam shortcuts resolve emulator executable paths to concrete binaries when available
+4. Ensure required RetroArch cores are available:
+   - detects required cores from index launch templates (`-L cores/<core>`)
+   - auto-downloads missing cores from Libretro buildbot on Windows/Linux x86_64
+   - auto-installs matching `.info` metadata from `assets/frontend/info.zip`
+   - dry-run reports missing core/info files without writing
+5. Build plan:
    - firmware actions first
    - missing required firmware blocks title sync for that system
    - size mismatch detection for local ROM/assets runs even when `--verify` is off
-4. SGDB artwork phase (only when SGDB API key is configured):
+6. SGDB artwork phase (only when SGDB API key is configured):
    - `--dry-run`: prints planned SGDB lookups/downloads only (no cache writes)
    - real sync: look up titles, fetch configured artwork kinds, cache to local files with safe writes
    - SGDB lookup/download failures emit warnings and do not abort unaffected titles
-5. If not `--dry-run`:
+   - if SGDB lookups are unavailable, cached artwork is reused when present (self-heals missing Steam artwork)
+   - SGDB URL selection prefers Steam-friendly formats (`png`/`jpg`/`ico`) before `webp`
+7. If not `--dry-run`:
    - download firmware then ROM/assets
    - write to `*.part`, verify SHA-256, atomic rename
-6. Discover Steam userdata + SteamID
-7. Close Steam (best effort), backup configs, run Steam update placeholders, copy cached artwork into Steam grid, reopen Steam
-8. Save `state.json`
+8. Deploy firmware files into emulator-native BIOS locations (copy/link from `<gamehub_dir>/firmware/...`)
+9. Discover Steam userdata + SteamID
+10. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
+11. Save `state.json`
+
+Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
+Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.
+
+## Local layout bootstrap
+- Sync auto-creates firmware directories under `<gamehub_dir>/firmware` for indexed systems (non-dry-run).
+- Dry-run prints intended firmware directory creation in verbose mode, but does not mutate local directories.
+
+## Firmware Deployment Targets
+- `PSX` firmware is mirrored to RetroArch `system_directory` targets, including portable installs resolved from the RetroArch executable directory (`<retroarch-dir>/system`).
+- `PS2` config is auto-updated so PCSX2 reads BIOS directly from `<gamehub_dir>/firmware/PS2` (no BIOS copy mirror step), and setup wizard completion is written into `PCSX2.ini`.
+- `Wii` firmware is mirrored to Dolphin user path `Wii/`.
+
+Environment overrides:
+- `RETROARCH_SYSTEM_DIR`
+- `PCSX2_BIOS_DIR`
+- `DOLPHIN_EMU_USERPATH`
+
+## RetroArch Core Defaults
+For systems that launch via RetroArch, GAMEHUB uses these general-purpose core defaults when a core cannot be parsed from the index launch template:
+- `GB`: `gambatte_libretro`
+- `GBA`: `mgba_libretro`
+- `GBC`: `gambatte_libretro`
+- `GEN_MD`: `genesis_plus_gx_libretro`
+- `N64`: `mupen64plus_next_libretro`
+- `NDS`: `melondsds_libretro`
+- `NES`: `fceumm_libretro`
+- `PSX`: `swanstation_libretro`
+- `SNES`: `snes9x_libretro`
+
+RetroArch launch templates are emitted with `-f` so synced Steam shortcuts request fullscreen on launch.
+
+Core provisioning environment overrides:
+- `GAMEHUB_RETROARCH_CORES_BASE_URL`: override Libretro buildbot base URL
+- `GAMEHUB_RETROARCH_CORES_DIR`: explicit RetroArch `cores` directory
+- `GAMEHUB_RETROARCH_INFO_DIR`: explicit RetroArch `info` directory
+
+Archive note:
+- `.7z` ROM archives are not supported. Convert to supported formats before sync.

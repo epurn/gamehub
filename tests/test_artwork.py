@@ -213,6 +213,35 @@ def test_sgdb_pipeline_tries_next_candidate_url_after_download_401() -> None:
         assert not result.warnings
 
 
+def test_sgdb_client_prefers_steam_compatible_artwork_formats() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/grids/game/99"):
+            return httpx.Response(
+                status_code=200,
+                json={
+                    "success": True,
+                    "data": [
+                        {"url": "https://cdn.example/assets/grid.webp"},
+                        {"url": "https://cdn.example/assets/grid.png"},
+                        {"url": "https://cdn.example/assets/grid.jpg"},
+                    ],
+                },
+            )
+        return httpx.Response(status_code=404, json={"success": False})
+
+    client = SgdbClient("test-key", transport=httpx.MockTransport(handler))
+    try:
+        urls = client.resolve_asset_urls(99, "grid")
+    finally:
+        client.close()
+
+    assert urls[:3] == (
+        "https://cdn.example/assets/grid.png",
+        "https://cdn.example/assets/grid.jpg",
+        "https://cdn.example/assets/grid.webp",
+    )
+
+
 def test_build_artwork_assignments_dry_run_reports_plan(capsys) -> None:
     index = _index_with_titles(_title("title_mario", "Super Mario Bros", "file_mario"))
     config = GamehubConfig(
@@ -221,6 +250,7 @@ def test_build_artwork_assignments_dry_run_reports_plan(capsys) -> None:
         firmware_dir=Path("firmware"),
         state_path=Path("state.json"),
         steam_userdata_dir=None,
+        steam_id=None,
         steam_exe=None,
         sgdb_api_key="sgdb-secret-key",
         sgdb_cache_dir=Path("artwork_cache"),
@@ -235,7 +265,7 @@ def test_build_artwork_assignments_dry_run_reports_plan(capsys) -> None:
         verbose=False,
     )
 
-    assert assignments == []
+    assert assignments == {}
     output = capsys.readouterr().out
     assert "SGDB dry-run" in output
     assert "Super Mario Bros" in output

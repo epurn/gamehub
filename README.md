@@ -14,6 +14,16 @@ Docker-first home server and CLI sync tool for emulator libraries and Steam inje
 4. Run CLI dry-run:
    - `.\venv\Scripts\python.exe -m gamehub_cli.main sync --dry-run`
 
+## Production Server (Docker Compose)
+
+1. Copy template:
+   - `Copy-Item .env.production.template .env.production`
+2. Update `.env.production` values (`GAMEHUB_DATA_HOST_PATH`, `GAMEHUB_SERVER_PORT`, `GAMEHUB_IMAGE_TAG`)
+3. Launch:
+   - `docker compose -f docker/compose.yaml --env-file .env.production up -d --build`
+4. Verify:
+   - `.\scripts\verify_server_deploy.ps1`
+
 ## Layout
 
 - `apps/server/` FastAPI server
@@ -30,3 +40,7 @@ Docker-first home server and CLI sync tool for emulator libraries and Steam inje
 - `docs/config-and-state.md`
 - `docs/steam-integration.md`
 - `docs/index-schema.md`
+- `docs/deployment-server.md`
+- `docs/runbook.md`
+- `docs/client-install.md`
+- `docs/release-process.md`

@@ -139,6 +139,7 @@ def test_system_catalog_matches_initial_supported_set() -> None:
     assert set(SYSTEM_CATALOG) == INITIAL_SYSTEM_SET
     assert "PS1" not in SYSTEM_CATALOG
     assert SYSTEM_CATALOG["PSX"]["firmware"] == ("scph5501.bin",)
+    assert ' -fullscreen "{rom}"' in SYSTEM_CATALOG["PS2"]["launch_template"]
 
 
 def test_build_index_supports_all_initial_systems() -> None:
@@ -172,3 +173,12 @@ def test_build_index_supports_all_initial_systems() -> None:
         assert all(title.system != "PS1" for title in bundle.index.titles)
         assert any(title.system == "PSX" for title in bundle.index.titles)
         assert len(bundle.index.titles) == len(INITIAL_SYSTEM_SET)
+
+
+def test_build_index_ignores_psx_and_ps2_7z_archives() -> None:
+    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "PSX" / "Ape Escape.7z", b"archive")
+        _write_file(root / "roms" / "PS2" / "Shadow of the Colossus.7z", b"archive")
+
+        bundle = build_index(root)
+        assert not bundle.index.titles

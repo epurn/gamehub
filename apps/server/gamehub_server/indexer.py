@@ -13,19 +13,19 @@ SYSTEM_CATALOG = {
     "GB": {
         "extensions": (".gb", ".zip"),
         "emulator": "retroarch",
-        "launch_template": '"{emulator}" -L cores/gambatte_libretro.dll "{rom}"',
+        "launch_template": '"{emulator}" -f -L cores/gambatte_libretro.dll "{rom}"',
         "firmware": (),
     },
     "GBA": {
         "extensions": (".gba", ".zip"),
         "emulator": "retroarch",
-        "launch_template": '"{emulator}" -L cores/mgba_libretro.dll "{rom}"',
+        "launch_template": '"{emulator}" -f -L cores/mgba_libretro.dll "{rom}"',
         "firmware": (),
     },
     "GBC": {
         "extensions": (".gbc", ".zip"),
         "emulator": "retroarch",
-        "launch_template": '"{emulator}" -L cores/gambatte_libretro.dll "{rom}"',
+        "launch_template": '"{emulator}" -f -L cores/gambatte_libretro.dll "{rom}"',
         "firmware": (),
     },
     "GC": {
@@ -37,43 +37,43 @@ SYSTEM_CATALOG = {
     "GEN_MD": {
         "extensions": (".gen", ".md", ".smd", ".bin", ".zip"),
         "emulator": "retroarch",
-        "launch_template": '"{emulator}" -L cores/genesis_plus_gx_libretro.dll "{rom}"',
+        "launch_template": '"{emulator}" -f -L cores/genesis_plus_gx_libretro.dll "{rom}"',
         "firmware": (),
     },
     "NES": {
         "extensions": (".nes", ".zip"),
         "emulator": "retroarch",
-        "launch_template": '"{emulator}" -L cores/fceumm_libretro.dll "{rom}"',
+        "launch_template": '"{emulator}" -f -L cores/fceumm_libretro.dll "{rom}"',
         "firmware": (),
     },
     "SNES": {
         "extensions": (".sfc", ".smc", ".zip"),
         "emulator": "retroarch",
-        "launch_template": '"{emulator}" -L cores/snes9x_libretro.dll "{rom}"',
+        "launch_template": '"{emulator}" -f -L cores/snes9x_libretro.dll "{rom}"',
         "firmware": (),
     },
     "N64": {
         "extensions": (".n64", ".z64", ".v64", ".zip"),
         "emulator": "retroarch",
-        "launch_template": '"{emulator}" -L cores/mupen64plus_next_libretro.dll "{rom}"',
+        "launch_template": '"{emulator}" -f -L cores/mupen64plus_next_libretro.dll "{rom}"',
         "firmware": (),
     },
     "NDS": {
         "extensions": (".nds", ".zip"),
         "emulator": "retroarch",
-        "launch_template": '"{emulator}" -L cores/desmume_libretro.dll "{rom}"',
+        "launch_template": '"{emulator}" -f -L cores/melondsds_libretro.dll "{rom}"',
         "firmware": (),
     },
     "PSX": {
         "extensions": (".chd", ".cue", ".iso", ".pbp"),
         "emulator": "retroarch",
-        "launch_template": '"{emulator}" -L cores/swanstation_libretro.dll "{rom}"',
+        "launch_template": '"{emulator}" -f -L cores/swanstation_libretro.dll "{rom}"',
         "firmware": ("scph5501.bin",),
     },
     "PS2": {
         "extensions": (".iso", ".chd"),
         "emulator": "pcsx2",
-        "launch_template": '"{emulator}" --fullscreen "{rom}"',
+        "launch_template": '"{emulator}" -fullscreen "{rom}"',
         "firmware": ("scph10000.bin",),
     },
     "Wii": {

@@ -23,7 +23,7 @@ python -m venv venv
 
 ## Run tests
 ```powershell
-.\venv\Scripts\python.exe -m pytest -q
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
 ```
 
 ## EPIC-001 smoke test (server index + file serving)

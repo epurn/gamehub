@@ -26,6 +26,7 @@ Base URL: `http://<host>:8000`
 
 ## Index generation notes
 - ROMs are discovered from files in `roms/<system>/` matching the system's allowed extensions.
+- `.7z` archives are not indexed/supported for `PSX`/`PS2`; use supported disc formats (for example `.chd`, `.cue` + `.bin`, `.iso`, `.pbp`).
 - Nested title directories under `roms/<system>/` are rejected.
 - Duplicate title stems in one system are rejected (for example `Title.iso` and `Title.chd`).
 - Firmware metadata in `/v1/index` is scanned from `firmware/<system>/` and includes SHA256 per file.
