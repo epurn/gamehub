@@ -19,6 +19,7 @@ except ModuleNotFoundError:
 class LinuxConfig:
     emulator_install_backend: str | None = None
     emulator_install_command: str | None = None
+    flatpak_remote: str | None = None
     retroarch_cfg_path: Path | None = None
     retroarch_system_dir: Path | None = None
     retroarch_cores_dir: Path | None = None
@@ -165,6 +166,7 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
         linux=LinuxConfig(
             emulator_install_backend=_normalize_optional_text(linux.get("emulator_install_backend")),
             emulator_install_command=_normalize_optional_text(linux.get("emulator_install_command")),
+            flatpak_remote=_normalize_optional_text(linux.get("flatpak_remote")),
             retroarch_cfg_path=_normalize_optional_path(linux.get("retroarch_cfg_path")),
             retroarch_system_dir=_normalize_optional_path(linux.get("retroarch_system_dir")),
             retroarch_cores_dir=_normalize_optional_path(linux.get("retroarch_cores_dir")),

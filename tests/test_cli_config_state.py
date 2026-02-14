@@ -170,6 +170,7 @@ def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
                     "[linux]",
                     'emulator_install_backend = "flatpak"',
                     'emulator_install_command = "sudo apt install -y {package}"',
+                    'flatpak_remote = "flathub"',
                     'retroarch_cfg_path = "~/.config/retroarch/retroarch.cfg"',
                     'retroarch_system_dir = "~/.config/retroarch/system"',
                     'retroarch_cores_dir = "~/.config/retroarch/cores"',
@@ -187,6 +188,7 @@ def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
 
         assert loaded.linux.emulator_install_backend == "flatpak"
         assert loaded.linux.emulator_install_command == "sudo apt install -y {package}"
+        assert loaded.linux.flatpak_remote == "flathub"
         assert loaded.linux.retroarch_cfg_path == Path("~/.config/retroarch/retroarch.cfg").expanduser()
         assert loaded.linux.retroarch_system_dir == Path("~/.config/retroarch/system").expanduser()
         assert loaded.linux.retroarch_cores_dir == Path("~/.config/retroarch/cores").expanduser()

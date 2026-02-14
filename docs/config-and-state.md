@@ -30,6 +30,8 @@ enabled_kinds = ["grid", "hero", "logo", "icon"]
 emulator_install_backend = "auto"
 # Used when emulator_install_backend = "command"
 emulator_install_command = "sudo apt install -y {package}"
+# Optional remote name used when backend is flatpak (for example: flathub)
+flatpak_remote = "flathub"
 
 # Optional Linux path hints (all optional)
 retroarch_cfg_path = "~/.config/retroarch/retroarch.cfg"
@@ -74,6 +76,7 @@ Firmware deployment env overrides:
 - `GAMEHUB_RETROARCH_INFO_DIR`: explicit RetroArch info directory for `.info` metadata auto-provisioning.
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_BACKEND`: overrides `[linux].emulator_install_backend`.
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND`: overrides `[linux].emulator_install_command`.
+- `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
 

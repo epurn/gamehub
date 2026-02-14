@@ -148,15 +148,16 @@ def test_ensure_emulators_linux_auto_uses_flatpak_when_available(monkeypatch, ca
             return "/usr/bin/retroarch" if state["installed"] else None
         return None
 
-    class FakeCompleted:
-        returncode = 0
-
     commands: list[list[str]] = []
 
     def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
         commands.append(cmd)
-        state["installed"] = True
-        return FakeCompleted()
+        if cmd[:3] == ["flatpak", "remotes", "--columns=name"]:
+            return type("Completed", (), {"returncode": 0, "stdout": "flathub\n"})()
+        if cmd[:4] == ["flatpak", "install", "--user", "-y"]:
+            state["installed"] = True
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+        return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
     monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
     monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
@@ -168,9 +169,52 @@ def test_ensure_emulators_linux_auto_uses_flatpak_when_available(monkeypatch, ca
     ensure_emulators(index=index, dry_run=False, verbose=False)
 
     assert commands
-    assert commands[0][:5] == ["flatpak", "install", "--user", "-y", "flathub"]
-    assert commands[0][5] == "org.libretro.RetroArch"
+    assert commands[0][:3] == ["flatpak", "remotes", "--columns=name"]
+    assert commands[1][:4] == ["flatpak", "install", "--user", "-y"]
+    assert commands[1][4] == "org.libretro.RetroArch"
     assert "Installed emulator: retroarch" in capsys.readouterr().out
+
+
+def test_ensure_emulators_linux_flatpak_remote_override(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("pcsx2")
+    state = {"installed": False}
+
+    def fake_which(name: str) -> str | None:
+        if name == "flatpak":
+            return "/usr/bin/flatpak"
+        if name in {"pcsx2", "pcsx2-qt"}:
+            return "/usr/bin/pcsx2-qt" if state["installed"] else None
+        return None
+
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        commands.append(cmd)
+        if cmd[:3] == ["flatpak", "remotes", "--columns=name"]:
+            return type("Completed", (), {"returncode": 0, "stdout": "fedora\nflathub\n"})()
+        if cmd[:4] == ["flatpak", "install", "--user", "-y"]:
+            state["installed"] = True
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+        return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+
+    ensure_emulators(
+        index=index,
+        dry_run=False,
+        verbose=False,
+        linux_install_backend="flatpak",
+        linux_flatpak_remote="flathub",
+    )
+
+    assert commands[1][:5] == ["flatpak", "install", "--user", "-y", "flathub"]
+    assert commands[1][5] == "net.pcsx2.PCSX2"
+    assert "Installed emulator: pcsx2" in capsys.readouterr().out
 
 
 def test_ensure_emulators_linux_command_backend(monkeypatch, capsys) -> None:

@@ -358,6 +358,7 @@ def run_sync(
         verbose=verbose,
         linux_install_backend=config.linux.emulator_install_backend,
         linux_install_command=config.linux.emulator_install_command,
+        linux_flatpak_remote=config.linux.flatpak_remote,
     )
     ensure_retroarch_cores(
         index=index,

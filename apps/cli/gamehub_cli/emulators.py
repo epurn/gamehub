@@ -341,6 +341,26 @@ def _run_install_command(command: list[str], *, verbose: bool) -> int:
     return int(completed.returncode)
 
 
+def _flatpak_remotes() -> list[str]:
+    completed = subprocess.run(
+        ["flatpak", "remotes", "--columns=name"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return []
+    values: list[str] = []
+    for line in completed.stdout.splitlines():
+        item = line.strip()
+        if not item:
+            continue
+        if item.casefold() in {"name", "names"}:
+            continue
+        values.append(item)
+    return values
+
+
 def _install_windows(missing: list[str], *, verbose: bool) -> None:
     winget_cmd = _resolve_winget_command()
     if winget_cmd is None:
@@ -406,9 +426,18 @@ def _install_fedora(missing: list[str], *, verbose: bool) -> None:
             print(f"Warning: {emulator} install command completed but executable not found yet")
 
 
-def _install_flatpak(missing: list[str], *, verbose: bool) -> None:
+def _install_flatpak(missing: list[str], *, verbose: bool, remote: str | None = None) -> None:
     if shutil.which("flatpak") is None:
         print("flatpak not found; cannot auto-install missing emulators via flatpak")
+        return
+
+    configured_remote = (os.environ.get("GAMEHUB_LINUX_FLATPAK_REMOTE") or remote or "").strip() or None
+    remotes = _flatpak_remotes()
+    if configured_remote and configured_remote not in remotes:
+        print(
+            f"Configured flatpak remote '{configured_remote}' is not available. "
+            f"Known remotes: {', '.join(remotes) if remotes else '<none>'}"
+        )
         return
 
     for emulator in missing:
@@ -417,8 +446,18 @@ def _install_flatpak(missing: list[str], *, verbose: bool) -> None:
             print(f"No flatpak mapping for emulator '{emulator}'; install it manually")
             continue
         print(f"Installing emulator '{emulator}' via flatpak ({app_id})...")
-        result = _run_install_command(["flatpak", "install", "--user", "-y", "flathub", app_id], verbose=verbose)
+        command = ["flatpak", "install", "--user", "-y"]
+        if configured_remote:
+            command.append(configured_remote)
+        command.append(app_id)
+        result = _run_install_command(command, verbose=verbose)
         if result != 0:
+            if not remotes:
+                print(
+                    "Warning: flatpak install failed and no remotes are configured. "
+                    "Add one (for example: flatpak remote-add --if-not-exists flathub "
+                    "https://flathub.org/repo/flathub.flatpakrepo)."
+                )
             print(f"Warning: flatpak install failed for {emulator} (exit {result}). Install manually and re-run sync.")
             continue
         if _is_emulator_available(emulator):
@@ -462,6 +501,7 @@ def ensure_emulators(
     verbose: bool,
     linux_install_backend: str | None = None,
     linux_install_command: str | None = None,
+    linux_flatpak_remote: str | None = None,
 ) -> None:
     required = sorted(_required_emulators(index))
     if not required:
@@ -492,7 +532,7 @@ def ensure_emulators(
                 _install_fedora(missing, verbose=verbose)
                 return
             if shutil.which("flatpak") is not None:
-                _install_flatpak(missing, verbose=verbose)
+                _install_flatpak(missing, verbose=verbose, remote=linux_flatpak_remote)
                 return
             if custom_command:
                 _install_linux_command(missing, custom_command, verbose=verbose)
@@ -508,7 +548,7 @@ def ensure_emulators(
             _install_fedora(missing, verbose=verbose)
             return
         if backend == "flatpak":
-            _install_flatpak(missing, verbose=verbose)
+            _install_flatpak(missing, verbose=verbose, remote=linux_flatpak_remote)
             return
         if backend == "none":
             print("Linux emulator auto-install disabled by configuration")

@@ -821,12 +821,25 @@ def prune_grid_noncanonical_variants(context: SteamContext, steam_app_ids: list[
     return removed
 
 
+def _spawn_detached(command: list[str], *, shell: bool = False) -> None:
+    kwargs = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+        "shell": shell,
+    }
+    if os.name != "nt":
+        kwargs["start_new_session"] = True
+    subprocess.Popen(command, **kwargs)
+
+
 def reopen_steam(context: SteamContext) -> None:
     if context.steam_exe and context.steam_exe.exists():
-        subprocess.Popen([str(context.steam_exe)])
+        _spawn_detached([str(context.steam_exe)])
         return
     if os.name == "nt":
-        subprocess.Popen(["cmd", "/c", "start", "", "steam://open/main"], shell=False)
+        _spawn_detached(["cmd", "/c", "start", "", "steam://open/main"], shell=False)
         return
     launchers: list[list[str]] = []
     if shutil.which("steam"):
@@ -837,7 +850,7 @@ def reopen_steam(context: SteamContext) -> None:
         launchers.append(["flatpak", "run", "com.valvesoftware.Steam", "steam://open/main"])
     for command in launchers:
         try:
-            subprocess.Popen(command)
+            _spawn_detached(command)
             return
         except OSError:
             continue

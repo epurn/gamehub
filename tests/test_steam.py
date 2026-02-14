@@ -562,13 +562,13 @@ def test_prune_grid_noncanonical_variants_removes_signed_when_unsigned_exists() 
 
 
 def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
-    launched: list[list[str]] = []
+    launched: list[tuple[list[str], dict]] = []
     monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
     monkeypatch.setattr(
         "gamehub_cli.steam.shutil.which",
         lambda command: "/usr/bin/steam" if command == "steam" else None,
     )
-    monkeypatch.setattr("gamehub_cli.steam.subprocess.Popen", lambda command: launched.append(command))
+    monkeypatch.setattr("gamehub_cli.steam.subprocess.Popen", lambda command, **kwargs: launched.append((command, kwargs)))
     context = SteamContext(
         userdata_dir=Path("userdata"),
         steam_id="76561198000000001",
@@ -579,4 +579,6 @@ def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
 
     reopen_steam(context)
 
-    assert launched == [["steam", "steam://open/main"]]
+    assert launched[0][0] == ["steam", "steam://open/main"]
+    assert launched[0][1]["stdout"] is not None
+    assert launched[0][1]["stderr"] is not None

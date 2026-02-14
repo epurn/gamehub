@@ -29,7 +29,7 @@ Steam close behavior:
    - on Linux non-dry-run, uses config-first install backend (`[linux].emulator_install_backend`):
      - `auto` (default): Fedora `dnf` when available, else `flatpak` when available, else configured command backend
      - `dnf`: force Fedora package install behavior
-     - `flatpak`: install `org.libretro.RetroArch`, `net.pcsx2.PCSX2`, `org.DolphinEmu.dolphin-emu`
+     - `flatpak`: install `org.libretro.RetroArch`, `net.pcsx2.PCSX2`, `org.DolphinEmu.dolphin-emu` (remote optional via `[linux].flatpak_remote` / `GAMEHUB_LINUX_FLATPAK_REMOTE`)
      - `command`: run `[linux].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
      - `none`: disable Linux auto-install (sync prints actionable missing emulator output)
    - Steam shortcuts resolve emulator executable paths to concrete binaries when available
