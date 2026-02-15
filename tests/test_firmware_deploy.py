@@ -224,7 +224,7 @@ def test_default_pcsx2_ini_path_prefers_flatpak_over_existing_native_ini(monkeyp
         assert ini_path == home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
 
 
-def test_deploy_firmware_dry_run_reports_flatpak_visible_pcsx2_bios_path(monkeypatch) -> None:
+def test_deploy_firmware_dry_run_reports_resolved_pcsx2_bios_path(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = GamehubConfig(
             server_url="http://localhost:8000",
@@ -251,4 +251,4 @@ def test_deploy_firmware_dry_run_reports_flatpak_visible_pcsx2_bios_path(monkeyp
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
 
         pcsx2_logs = [line.replace("\\", "/") for line in logs if line.startswith("pcsx2\tdry-run")]
-        assert any("/home/deck/GameHub/firmware/PS2" in line for line in pcsx2_logs)
+        assert any("/var/home/deck/GameHub/firmware/PS2" in line for line in pcsx2_logs)

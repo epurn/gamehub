@@ -76,7 +76,7 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - Linux defaults (`~/.config/retroarch/system` and Flatpak `~/.var/app/org.libretro.RetroArch/config/retroarch/system`)
   - Windows portable executable directory (`<retroarch-dir>/system`) when applicable
 - `PS2` config is auto-updated so PCSX2 reads BIOS directly from `<gamehub_dir>/firmware/PS2` (no BIOS copy mirror step), and setup wizard completion is written into `PCSX2.ini`.
-  - for Flatpak PCSX2 on Linux, GAMEHUB writes BIOS paths using sandbox-visible `/home/...` form when host paths are under `/var/home/...`
+  - for Flatpak PCSX2 on Linux, GAMEHUB writes BIOS paths using the canonical resolved host path (for example `/var/home/...` on Fedora-family hosts)
 - `Wii` firmware is mirrored to Dolphin user path `Wii/`.
 - `GC` firmware is mirrored to Dolphin user path `GC/`.
 

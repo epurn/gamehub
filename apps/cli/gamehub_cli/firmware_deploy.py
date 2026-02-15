@@ -44,13 +44,6 @@ def _is_flatpak_command(path: Path, app_id: str) -> bool:
     return value.endswith(f"/{app}") or f"flatpak/exports/bin/{app}" in value
 
 
-def _flatpak_visible_home_path(path: Path) -> Path:
-    value = path.as_posix()
-    if value.startswith("/var/home/"):
-        return Path("/home") / value[len("/var/home/") :]
-    return path
-
-
 def _unique_paths(values: list[Path]) -> list[Path]:
     result: list[Path] = []
     seen: set[Path] = set()
@@ -376,10 +369,7 @@ def _configure_pcsx2_runtime(
         "GAMEHUB_PCSX2_BIOS_DIR",
         config_value=config.linux.pcsx2_bios_dir,
     ) or (config.firmware_dir / "PS2")
-    pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
-    pcsx2_exe = Path(pcsx2_raw)
-    prefer_flatpak = _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold())
-    bios_dir_for_config = _flatpak_visible_home_path(bios_dir) if prefer_flatpak else bios_dir
+    bios_dir_for_config = bios_dir.resolve(strict=False)
     ini_path = _default_pcsx2_ini_path(config=config)
     if dry_run:
         if verbose:
