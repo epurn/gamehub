@@ -41,6 +41,10 @@ gamehub sync --dry-run --skip-steam --verbose
 grep -n "Bios" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ls ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios
 ```
+8. Linux PCSX2 controller autoconfig writes generic SDL mappings for Pad1+Pad2 by default. Verify with:
+```bash
+grep -nE "^\[Pad1\]|^\[Pad2\]|^Type =|^Cross =|^Start =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
+```
 
 ## Steam Deck notes
 - Steam Deck installs may use `~/.steam/steam/userdata` or `~/.local/share/Steam/userdata`.

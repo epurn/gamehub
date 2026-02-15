@@ -48,6 +48,8 @@ retroarch_info_dir = "~/.config/retroarch/info"
 retroarch_cores_base_url = "https://buildbot.libretro.com/nightly/linux/x86_64/latest/"
 pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"
 pcsx2_bios_dir = "~/.config/PCSX2/bios"
+# Linux PCSX2 controller bootstrap (generic SDL mapping for Pad1 + Pad2)
+pcsx2_controller_autoconfig = true
 dolphin_user_path = "~/.local/share/dolphin-emu"
 ```
 
@@ -83,6 +85,7 @@ Firmware deployment env overrides:
 - `DOLPHIN_EMU_USERPATH` or `GAMEHUB_DOLPHIN_EMU_USERPATH`: explicit Dolphin user directory target (Wii firmware deploys into `<userpath>/Wii`).
 - `GAMEHUB_RETROARCH_CFG_PATH`: explicit RetroArch config file path.
 - `GAMEHUB_PCSX2_INI_PATH`: explicit PCSX2 ini path.
+- `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG`: overrides `[linux].pcsx2_controller_autoconfig` (`true`/`false`).
 - `GAMEHUB_RETROARCH_CORES_BASE_URL`: optional base URL override for RetroArch core downloads.
 - `GAMEHUB_RETROARCH_CORES_DIR`: explicit RetroArch cores directory for core auto-provisioning.
 - `GAMEHUB_RETROARCH_INFO_DIR`: explicit RetroArch info directory for `.info` metadata auto-provisioning.
@@ -95,6 +98,7 @@ Firmware deployment env overrides:
 
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
+- On Linux, GAMEHUB can also bootstrap generic SDL controller mappings for `Pad1` and `Pad2` so first-run PCSX2 controller setup works for Xbox/DS4/DS5/other SDL controllers without per-device hardcoding.
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
 

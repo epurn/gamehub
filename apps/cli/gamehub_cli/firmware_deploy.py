@@ -294,6 +294,84 @@ def _read_ini_lines(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8", errors="ignore").splitlines()
 
 
+def _read_ini_key(lines: list[str], section: str, key: str) -> str | None:
+    section_name = section.lower()
+    key_name = key.lower()
+    in_section = False
+    for line in lines:
+        stripped = line.strip()
+        is_section = stripped.startswith("[") and stripped.endswith("]")
+        if is_section:
+            current = stripped[1:-1].strip().lower()
+            in_section = current == section_name
+            continue
+        if not in_section or "=" not in line:
+            continue
+        current_key, value = line.split("=", 1)
+        if current_key.strip().lower() != key_name:
+            continue
+        return value.strip()
+    return None
+
+
+def _is_missing_pad_binding(value: str | None) -> bool:
+    if value is None:
+        return True
+    normalized = value.strip().strip('"').strip("'").casefold()
+    return normalized in {"", "none", "nul", "null", "unbound"}
+
+
+def _pcsx2_pad_bindings(pad_index: int) -> tuple[tuple[str, str], ...]:
+    prefix = f"SDL-{pad_index}/"
+    return (
+        ("Up", f"{prefix}DPadUp"),
+        ("Right", f"{prefix}DPadRight"),
+        ("Down", f"{prefix}DPadDown"),
+        ("Left", f"{prefix}DPadLeft"),
+        ("Triangle", f"{prefix}Y"),
+        ("Circle", f"{prefix}B"),
+        ("Cross", f"{prefix}A"),
+        ("Square", f"{prefix}X"),
+        ("Select", f"{prefix}Back"),
+        ("Start", f"{prefix}Start"),
+        ("L1", f"{prefix}LeftShoulder"),
+        ("L2", f"{prefix}+LeftTrigger"),
+        ("R1", f"{prefix}RightShoulder"),
+        ("R2", f"{prefix}+RightTrigger"),
+        ("L3", f"{prefix}LeftStick"),
+        ("R3", f"{prefix}RightStick"),
+        ("LUp", f"{prefix}-LeftY"),
+        ("LRight", f"{prefix}+LeftX"),
+        ("LDown", f"{prefix}+LeftY"),
+        ("LLeft", f"{prefix}-LeftX"),
+        ("RUp", f"{prefix}-RightY"),
+        ("RRight", f"{prefix}+RightX"),
+        ("RDown", f"{prefix}+RightY"),
+        ("RLeft", f"{prefix}-RightX"),
+        ("LargeMotor", f"{prefix}LargeMotor"),
+        ("SmallMotor", f"{prefix}SmallMotor"),
+    )
+
+
+def _bootstrap_pcsx2_controllers(lines: list[str]) -> tuple[list[str], bool]:
+    changed = False
+    lines, changed_sdl = _upsert_ini_key(lines, "InputSources", "SDL", "true")
+    changed |= changed_sdl
+    for pad_index in (1, 2):
+        section = f"Pad{pad_index}"
+        pad_type = _read_ini_key(lines, section, "Type")
+        if _is_missing_pad_binding(pad_type):
+            lines, changed_type = _upsert_ini_key(lines, section, "Type", "DualShock2")
+            changed |= changed_type
+        for key, value in _pcsx2_pad_bindings(pad_index - 1):
+            existing = _read_ini_key(lines, section, key)
+            if not _is_missing_pad_binding(existing):
+                continue
+            lines, changed_binding = _upsert_ini_key(lines, section, key, value)
+            changed |= changed_binding
+    return lines, changed
+
+
 def _upsert_ini_key(lines: list[str], section: str, key: str, value: str) -> tuple[list[str], bool]:
     section_name = section.lower()
     key_name = key.lower()
@@ -384,17 +462,24 @@ def _configure_pcsx2_runtime(
     ini_path = _default_pcsx2_ini_path(config=config)
     if dry_run:
         if verbose:
-            writer(f"pcsx2\tdry-run\tconfigure\t{ini_path}\tbios={bios_dir_for_config}")
+            writer(
+                f"pcsx2\tdry-run\tconfigure\t{ini_path}\tbios={bios_dir_for_config}\tcontrollers={config.linux.pcsx2_controller_autoconfig}"
+            )
         return bios_dir_for_config
 
     lines = _read_ini_lines(ini_path)
     lines, changed_ui = _upsert_ini_key(lines, "UI", "SetupWizardIncomplete", "false")
     lines, changed_bios = _upsert_ini_key(lines, "Folders", "Bios", str(bios_dir_for_config))
-    if changed_ui or changed_bios or not ini_path.exists():
+    changed_controllers = False
+    if sys.platform.startswith("linux") and config.linux.pcsx2_controller_autoconfig:
+        lines, changed_controllers = _bootstrap_pcsx2_controllers(lines)
+    if changed_ui or changed_bios or changed_controllers or not ini_path.exists():
         _write_ini_atomic(ini_path, lines)
     bios_dir_for_config.mkdir(parents=True, exist_ok=True)
     if verbose:
-        writer(f"pcsx2\tconfigured\t{ini_path}\tbios={bios_dir_for_config}")
+        writer(
+            f"pcsx2\tconfigured\t{ini_path}\tbios={bios_dir_for_config}\tcontrollers={config.linux.pcsx2_controller_autoconfig}"
+        )
     return bios_dir_for_config
 
 

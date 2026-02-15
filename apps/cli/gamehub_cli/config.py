@@ -27,6 +27,7 @@ class LinuxConfig:
     retroarch_cores_base_url: str | None = None
     pcsx2_ini_path: Path | None = None
     pcsx2_bios_dir: Path | None = None
+    pcsx2_controller_autoconfig: bool = True
     dolphin_user_path: Path | None = None
 
 
@@ -139,6 +140,22 @@ def _normalize_optional_int(raw: object, *, minimum: int = 0) -> int | None:
     return value
 
 
+def _normalize_optional_bool(raw: object) -> bool | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)) and raw in (0, 1):
+        return bool(raw)
+    if isinstance(raw, str):
+        value = raw.strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        if value in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
 def _resolve_paths(paths: dict[str, object]) -> tuple[Path, Path, Path]:
     """
     Resolve client storage locations.
@@ -191,6 +208,8 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     env_index_attempts = _normalize_optional_int(os.environ.get("GAMEHUB_INDEX_FETCH_ATTEMPTS"), minimum=1)
     config_index_backoff = _normalize_optional_float(server.get("index_retry_backoff_seconds"), minimum=0.0)
     env_index_backoff = _normalize_optional_float(os.environ.get("GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS"), minimum=0.0)
+    config_pcsx2_controller_autoconfig = _normalize_optional_bool(linux.get("pcsx2_controller_autoconfig"))
+    env_pcsx2_controller_autoconfig = _normalize_optional_bool(os.environ.get("GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG"))
     library_dir, firmware_dir, state_path = _resolve_paths(paths)
     return GamehubConfig(
         server_url=str(server.get("url", "http://127.0.0.1:8000")),
@@ -219,6 +238,11 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
             retroarch_cores_base_url=_normalize_optional_text(linux.get("retroarch_cores_base_url")),
             pcsx2_ini_path=_normalize_optional_path(linux.get("pcsx2_ini_path")),
             pcsx2_bios_dir=_normalize_optional_path(linux.get("pcsx2_bios_dir")),
+            pcsx2_controller_autoconfig=(
+                env_pcsx2_controller_autoconfig
+                if env_pcsx2_controller_autoconfig is not None
+                else (config_pcsx2_controller_autoconfig if config_pcsx2_controller_autoconfig is not None else True)
+            ),
             dolphin_user_path=_normalize_optional_path(linux.get("dolphin_user_path")),
         ),
     )

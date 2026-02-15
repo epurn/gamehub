@@ -78,6 +78,7 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
 - `PS2` config is auto-updated and setup wizard completion is written into `PCSX2.ini`.
   - default BIOS target is `<gamehub_dir>/firmware/PS2` unless overridden by `PCSX2_BIOS_DIR`/`GAMEHUB_PCSX2_BIOS_DIR`/`[linux].pcsx2_bios_dir`
   - for Flatpak PCSX2 on Linux (no explicit BIOS override), GAMEHUB targets `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there so the sandbox can read them reliably
+  - on Linux, GAMEHUB bootstraps generic SDL pad bindings for `Pad1` and `Pad2` (no controller-model hardcoding) unless disabled with `[linux].pcsx2_controller_autoconfig = false`
 - `Wii` firmware is mirrored to Dolphin user path `Wii/`.
 - `GC` firmware is mirrored to Dolphin user path `GC/`.
 
@@ -91,6 +92,7 @@ Linux path notes:
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`
 - `PCSX2_BIOS_DIR`
+- `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG`
 - `DOLPHIN_EMU_USERPATH`
 
 ## RetroArch Core Defaults

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 import shutil
 from uuid import uuid4
@@ -283,3 +284,80 @@ def test_deploy_firmware_flatpak_pcsx2_mirrors_bios_and_updates_ini(monkeypatch)
         text = ini_path.read_text(encoding="utf-8")
         assert f"Bios = {flatpak_bios_dir}" in text
         assert "SetupWizardIncomplete = false" in text
+        assert "[InputSources]" in text
+        assert "SDL = true" in text
+        assert "[Pad1]" in text
+        assert "Cross = SDL-0/A" in text
+        assert "[Pad2]" in text
+        assert "Type = DualShock2" in text
+        assert "Cross = SDL-1/A" in text
+
+
+def test_deploy_firmware_flatpak_pcsx2_preserves_existing_pad_bindings(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        home = temp_root / "home"
+        config = _config(temp_root)
+        index = _index("PS2", "scph10000.bin")
+        source = config.firmware_dir / "PS2" / "scph10000.bin"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"bios")
+        export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "net.pcsx2.PCSX2"
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_bytes(b"#!/bin/sh")
+        ini_path = home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text(
+            "\n".join(
+                [
+                    "[Pad1]",
+                    "Type = DualShock2",
+                    "Cross = SDL-0/B",
+                    "",
+                    "[Pad2]",
+                    "Type = None",
+                    "Cross = None",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        text = ini_path.read_text(encoding="utf-8")
+        assert "Cross = SDL-0/B" in text
+        assert "Type = DualShock2" in text
+        assert "Cross = SDL-1/A" in text
+
+
+def test_deploy_firmware_flatpak_pcsx2_can_disable_controller_autoconfig(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        home = temp_root / "home"
+        base = _config(temp_root)
+        config = replace(base, linux=replace(base.linux, pcsx2_controller_autoconfig=False))
+        index = _index("PS2", "scph10000.bin")
+        source = config.firmware_dir / "PS2" / "scph10000.bin"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"bios")
+        export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "net.pcsx2.PCSX2"
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_bytes(b"#!/bin/sh")
+        ini_path = home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text("[Pad1]\nType = None\n", encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        text = ini_path.read_text(encoding="utf-8")
+        assert "SDL = true" not in text
+        assert "Cross = SDL-0/A" not in text
