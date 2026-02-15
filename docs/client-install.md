@@ -36,7 +36,11 @@ gamehub sync --dry-run --skip-steam --verbose
 ```
 5. Run first non-`--skip-steam` sync from a desktop session so Steam can relaunch after config mutation.
 6. If RetroArch games do not launch, set `[linux].retroarch_cfg_path` or `[linux].retroarch_cores_dir` explicitly and re-run sync.
-7. If PS2 (Flatpak PCSX2) does not see BIOS/ISO on Fedora-family immutable hosts, re-run sync to rewrite PCSX2 config and Steam launch options with Flatpak file-forwarding launch arguments.
+7. For Flatpak PCSX2, sync writes `PCSX2.ini` and mirrors BIOS into `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` by default (unless you set an explicit BIOS override). Verify with:
+```bash
+grep -n "Bios" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
+ls ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios
+```
 
 ## Steam Deck notes
 - Steam Deck installs may use `~/.steam/steam/userdata` or `~/.local/share/Steam/userdata`.

@@ -363,27 +363,39 @@ def _configure_pcsx2_runtime(
     dry_run: bool,
     verbose: bool,
     writer: Callable[[str], None],
-) -> None:
-    bios_dir = _override_path(
+) -> Path:
+    override_bios_dir = _override_path(
         "PCSX2_BIOS_DIR",
         "GAMEHUB_PCSX2_BIOS_DIR",
         config_value=config.linux.pcsx2_bios_dir,
-    ) or (config.firmware_dir / "PS2")
+    )
+    pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
+    pcsx2_exe = Path(pcsx2_raw)
+    prefer_flatpak = _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold())
+    if override_bios_dir is not None:
+        bios_dir = override_bios_dir
+    elif prefer_flatpak:
+        # Flatpak sandbox cannot reliably access arbitrary host paths.
+        bios_dir = _linux_flatpak_pcsx2_root() / "bios"
+    else:
+        bios_dir = config.firmware_dir / "PS2"
+
     bios_dir_for_config = bios_dir.resolve(strict=False)
     ini_path = _default_pcsx2_ini_path(config=config)
     if dry_run:
         if verbose:
             writer(f"pcsx2\tdry-run\tconfigure\t{ini_path}\tbios={bios_dir_for_config}")
-        return
+        return bios_dir_for_config
 
     lines = _read_ini_lines(ini_path)
     lines, changed_ui = _upsert_ini_key(lines, "UI", "SetupWizardIncomplete", "false")
     lines, changed_bios = _upsert_ini_key(lines, "Folders", "Bios", str(bios_dir_for_config))
     if changed_ui or changed_bios or not ini_path.exists():
         _write_ini_atomic(ini_path, lines)
-    bios_dir.mkdir(parents=True, exist_ok=True)
+    bios_dir_for_config.mkdir(parents=True, exist_ok=True)
     if verbose:
         writer(f"pcsx2\tconfigured\t{ini_path}\tbios={bios_dir_for_config}")
+    return bios_dir_for_config
 
 
 def deploy_firmware_to_emulators(
@@ -397,14 +409,15 @@ def deploy_firmware_to_emulators(
     applied = 0
     skipped = 0
     has_ps2 = any(system.name == "PS2" for system in index.systems)
+    ps2_bios_target: Path | None = None
     if has_ps2:
-        _configure_pcsx2_runtime(config=config, dry_run=dry_run, verbose=verbose, writer=writer)
+        ps2_bios_target = _configure_pcsx2_runtime(config=config, dry_run=dry_run, verbose=verbose, writer=writer)
 
     for system in index.systems:
         if system.name == "PS2":
-            # PCSX2 reads BIOS directly from configured path (no firmware mirroring copy).
-            continue
-        target_dirs = _target_dirs_for_system(system.name, config=config)
+            target_dirs = [ps2_bios_target] if ps2_bios_target is not None else []
+        else:
+            target_dirs = _target_dirs_for_system(system.name, config=config)
         if not target_dirs:
             continue
         for firmware in system.firmware:
