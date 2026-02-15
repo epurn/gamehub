@@ -26,6 +26,11 @@ if typer is not None:
         verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
         verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
         skip_steam: bool = typer.Option(False, "--skip-steam", help="Skip Steam lifecycle and update hooks"),
+        skip_steam_relaunch: bool = typer.Option(
+            False,
+            "--skip-steam-relaunch",
+            help="Apply Steam updates but do not relaunch Steam afterward",
+        ),
         require_steam_closed: bool = typer.Option(
             False,
             "--require-steam-closed",
@@ -41,6 +46,7 @@ if typer is not None:
                 verify=verify,
                 require_steam_closed=require_steam_closed,
                 skip_steam=skip_steam,
+                skip_steam_relaunch=skip_steam_relaunch,
             )
         )
 else:
@@ -60,6 +66,7 @@ def main() -> None:
     sync_parser.add_argument("--verbose", action="store_true")
     sync_parser.add_argument("--verify", action="store_true")
     sync_parser.add_argument("--skip-steam", action="store_true")
+    sync_parser.add_argument("--skip-steam-relaunch", action="store_true")
     sync_parser.add_argument("--require-steam-closed", action="store_true")
     args = parser.parse_args()
     if args.command == "sync":
@@ -72,6 +79,7 @@ def main() -> None:
                 verify=args.verify,
                 require_steam_closed=args.require_steam_closed,
                 skip_steam=args.skip_steam,
+                skip_steam_relaunch=args.skip_steam_relaunch,
             )
         )
 

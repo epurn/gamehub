@@ -10,6 +10,7 @@ Command:
 - `--verbose`: longer network timeout and extra output context
 - `--verify`: re-hash local files before diff decisions
 - `--skip-steam`: run sync downloads/state updates but skip Steam lifecycle and Steam file updates
+- `--skip-steam-relaunch`: apply Steam updates but do not relaunch Steam at end
 - `--require-steam-closed`: fail if Steam cannot be closed before config writes
 - `--config <path>`: TOML config path override
 
@@ -58,6 +59,7 @@ Steam close behavior:
 10. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
    - managed shortcuts persist stable `appid` values on write, so first-run artwork/category mapping does not depend on a later Steam rewrite pass
    - collection membership appids are canonicalized to unsigned numeric values in both localconfig and cloud payloads
+   - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 11. Save `state.json`
 
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
@@ -83,7 +85,7 @@ Linux path notes:
 - PCSX2 runtime config defaults are Linux-aware and Flatpak-aware (`~/.config/PCSX2/...` or `~/.var/app/net.pcsx2.PCSX2/...`).
 - Dolphin target selection prefers explicit overrides, then existing user data roots, then a deterministic native/Flatpak default.
 - Linux RetroArch Steam launch options rewrite `-L cores/<core>.dll` templates to Linux core paths (`.so`) and prefer absolute core paths from resolved RetroArch config/overrides.
-- Linux Flatpak PCSX2 Steam launch options normalize ROM paths from `/var/home/...` to `/home/...` and inject `--` before the ROM argument for robust file target parsing.
+- Linux Flatpak PCSX2 Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so host ROM paths are forwarded reliably to the sandbox.
 
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`

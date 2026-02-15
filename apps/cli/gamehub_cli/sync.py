@@ -53,6 +53,7 @@ from .steam import (
 )
 
 _RETROARCH_CORE_TOKEN_RE = re.compile(r"(?P<prefix>-L\s+)(?P<token>[^\s]+)")
+_PCSX2_FLATPAK_APP_ID = "net.pcsx2.PCSX2"
 
 
 def _print_plan(plan: SyncPlan) -> None:
@@ -248,13 +249,6 @@ def _is_flatpak_command(path_value: str, app_id: str) -> bool:
     return normalized.endswith(f"/{app}") or f"flatpak/exports/bin/{app}" in normalized
 
 
-def _flatpak_visible_home_path(path: Path) -> str:
-    value = path.as_posix()
-    if value.startswith("/var/home/"):
-        return "/home/" + value[len("/var/home/") :]
-    return value
-
-
 def _build_shortcut_specs(
     index: LibraryIndex,
     config: GamehubConfig,
@@ -266,17 +260,29 @@ def _build_shortcut_specs(
         pcsx2_flatpak = (
             sys.platform.startswith("linux")
             and "pcsx2" in title.emulator.casefold()
-            and _is_flatpak_command(emulator_exe, "net.pcsx2.PCSX2")
+            and _is_flatpak_command(emulator_exe, _PCSX2_FLATPAK_APP_ID)
         )
-        rom_for_launch = str(rom_path)
         if pcsx2_flatpak:
-            rom_for_launch = _flatpak_visible_home_path(rom_path)
+            rom_for_flatpak = rom_path.as_posix()
+            specs.append(
+                SteamShortcutSpec(
+                    title_id=title.title_id,
+                    system=title.system,
+                    title_name=title.title_name,
+                    exe="flatpak",
+                    launch_options=(
+                        f'run --file-forwarding {_PCSX2_FLATPAK_APP_ID} '
+                        f'-fullscreen -- @@ "{rom_for_flatpak}" @@'
+                    ),
+                    start_dir="",
+                    icon_path="",
+                )
+            )
+            continue
         launch_template = title.launch_template
         if "retroarch" in title.emulator.casefold():
             launch_template = _normalize_linux_retroarch_launch_template(launch_template, config)
-        if pcsx2_flatpak and "--" not in launch_template and '"{rom}"' in launch_template:
-            launch_template = launch_template.replace('"{rom}"', '-- "{rom}"', 1)
-        launch_line = launch_template.format(emulator=emulator_exe, rom=rom_for_launch)
+        launch_line = launch_template.format(emulator=emulator_exe, rom=str(rom_path))
         parts = shlex.split(launch_line, posix=False)
         if parts:
             exe = parts[0]
@@ -384,6 +390,7 @@ def _apply_steam_updates(
     index: LibraryIndex,
     require_steam_closed: bool,
     artwork_by_title: dict[str, dict[str, Path]],
+    reopen_steam_after_update: bool = True,
 ) -> None:
     context = _resolve_steam_context(config)
     if context is None:
@@ -440,6 +447,9 @@ def _apply_steam_updates(
         print("Warning: artwork assignments existed but no files were copied")
     if pruned:
         print(f"Pruned {pruned} non-canonical Steam grid artwork files")
+    if not reopen_steam_after_update:
+        print("Skipping Steam relaunch (--skip-steam-relaunch)")
+        return
     reopened = reopen_steam(context)
     if not reopened:
         print("Warning: Steam relaunch command was not found; start Steam manually")
@@ -452,6 +462,7 @@ def run_sync(
     verify: bool,
     require_steam_closed: bool,
     skip_steam: bool = False,
+    skip_steam_relaunch: bool = False,
 ) -> int:
     if verbose:
         print(
@@ -528,6 +539,7 @@ def run_sync(
             index=index,
             require_steam_closed=require_steam_closed,
             artwork_by_title=artwork_assignments,
+            reopen_steam_after_update=not skip_steam_relaunch,
         )
     mark_synced(state)
     save_state_atomic(config.state_path, state)

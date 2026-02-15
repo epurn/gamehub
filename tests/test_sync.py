@@ -222,6 +222,58 @@ def test_apply_steam_updates_reopens_even_if_steam_was_not_running(monkeypatch) 
     assert order == ["backup", "shortcuts", "collections", "collections-cloud", "art", "prune", "reopen"]
 
 
+def test_apply_steam_updates_skip_relaunch_still_updates_steam(monkeypatch, capsys) -> None:
+    order: list[str] = []
+    index = LibraryIndex(index_version=1, systems=(), titles=())
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path("state.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+    )
+
+    monkeypatch.setattr("gamehub_cli.sync.discover_userdata_dir", lambda explicit: Path("userdata"))
+    monkeypatch.setattr(
+        "gamehub_cli.sync.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
+    )
+    monkeypatch.setattr("gamehub_cli.sync.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.is_steam_running", lambda: False)
+    monkeypatch.setattr("gamehub_cli.sync.backup_steam_configs", lambda context: order.append("backup") or [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.upsert_shortcuts",
+        lambda context, desired_shortcuts: order.append("shortcuts")
+        or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})(),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.update_cloud_collections",
+        lambda context, app_ids_by_system: order.append("collections-cloud") or 0,
+    )
+    monkeypatch.setattr("gamehub_cli.sync.copy_grid_art", lambda context, assignments: order.append("art") or [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.prune_grid_noncanonical_variants",
+        lambda context, app_ids: order.append("prune") or 0,
+    )
+    monkeypatch.setattr("gamehub_cli.sync.reopen_steam", lambda context: order.append("reopen") or True)
+
+    _apply_steam_updates(
+        config,
+        index=index,
+        require_steam_closed=False,
+        artwork_by_title={},
+        reopen_steam_after_update=False,
+    )
+
+    assert order == ["backup", "shortcuts", "collections", "collections-cloud", "art", "prune"]
+    assert "Skipping Steam relaunch (--skip-steam-relaunch)" in capsys.readouterr().out
+
+
 def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
     class FakeResponse:
         def raise_for_status(self) -> None:
@@ -252,7 +304,7 @@ def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync._apply_steam_updates",
-        lambda _config, index, require_steam_closed, artwork_by_title: steam_called.__setitem__("value", True),
+        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True: steam_called.__setitem__("value", True),
     )
 
     exit_code = run_sync(
@@ -267,6 +319,56 @@ def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
     assert exit_code == 0
     assert steam_called["value"] is False
     assert "Skipping Steam lifecycle and config updates (--skip-steam)" in capsys.readouterr().out
+
+
+def test_run_sync_skip_steam_relaunch_still_applies_steam_updates(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": []}
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-skip-steam-relaunch.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+    )
+    received: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
+    monkeypatch.setattr(
+        "gamehub_cli.sync._apply_steam_updates",
+        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True: received.update(
+            {"called": True, "reopen": reopen_steam_after_update}
+        ),
+    )
+
+    exit_code = run_sync(
+        config=config,
+        dry_run=False,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=False,
+        skip_steam_relaunch=True,
+    )
+
+    assert exit_code == 0
+    assert received.get("called") is True
+    assert received.get("reopen") is False
 
 
 def test_run_sync_retries_index_fetch_after_timeout(monkeypatch) -> None:
@@ -442,7 +544,7 @@ def test_run_sync_applies_steam_updates_even_when_no_downloads(monkeypatch) -> N
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync._apply_steam_updates",
-        lambda _config, index, require_steam_closed, artwork_by_title: steam_called.__setitem__("value", True),
+        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True: steam_called.__setitem__("value", True),
     )
 
     exit_code = run_sync(
@@ -734,7 +836,7 @@ def test_build_shortcut_specs_linux_normalizes_retroarch_core_token(monkeypatch)
         assert "/var/home/deck/.var/app/org.libretro.RetroArch/config/retroarch/cores" in specs[0].launch_options
 
 
-def test_build_shortcut_specs_linux_flatpak_pcsx2_normalizes_rom_path(monkeypatch) -> None:
+def test_build_shortcut_specs_linux_flatpak_pcsx2_uses_file_forwarding(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-sync-shortcuts-linux-ps2-") as temp_root:
         config = GamehubConfig(
             server_url="http://localhost:8000",
@@ -778,10 +880,9 @@ def test_build_shortcut_specs_linux_flatpak_pcsx2_normalizes_rom_path(monkeypatc
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert specs[0].exe == '"/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2"'
-        assert "--" in specs[0].launch_options
-        assert "/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso" in specs[0].launch_options
-        assert "/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso" not in specs[0].launch_options
+        assert specs[0].exe == "flatpak"
+        assert "run --file-forwarding net.pcsx2.PCSX2 -fullscreen -- @@" in specs[0].launch_options
+        assert "/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso" in specs[0].launch_options
 
 
 def test_build_shortcut_specs_uses_title_rom_path_for_all_titles(monkeypatch) -> None:
