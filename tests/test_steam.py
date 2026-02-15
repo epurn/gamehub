@@ -11,10 +11,13 @@ from uuid import uuid4
 import vdf
 
 from gamehub_cli.steam import (
+    LINUX_STEAM_PROCESS_NAMES,
     SteamContext,
     SteamArtworkAssignment,
     SteamShortcutSpec,
+    close_steam_best_effort,
     discover_userdata_dir,
+    is_steam_running,
     reopen_steam,
     steam_id64_from_userdata_id,
     backup_steam_configs,
@@ -161,6 +164,38 @@ def test_wait_for_steam_exit_returns_true_when_process_stops(monkeypatch) -> Non
     monkeypatch.setattr("gamehub_cli.steam.time.sleep", lambda _seconds: None)
 
     assert wait_for_steam_exit(timeout_seconds=2) is True
+
+
+def test_is_steam_running_linux_checks_exact_process_names(monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        del check, capture_output, text
+        commands.append(cmd)
+        process_name = cmd[-1]
+        return type("Completed", (), {"returncode": 0 if process_name == "steam" else 1, "stdout": ""})()
+
+    monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam.subprocess.run", fake_run)
+
+    running = is_steam_running()
+
+    assert running is True
+    assert commands[0][:2] == ["pgrep", "-x"]
+    assert commands[0][2] in LINUX_STEAM_PROCESS_NAMES
+
+
+def test_close_steam_best_effort_linux_uses_exact_process_names(monkeypatch) -> None:
+    commands: list[list[str]] = []
+    monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam._run_process_best_effort", lambda cmd, timeout_seconds=10: commands.append(cmd))
+
+    close_steam_best_effort()
+
+    graceful = commands[: len(LINUX_STEAM_PROCESS_NAMES)]
+    forced = commands[len(LINUX_STEAM_PROCESS_NAMES) :]
+    assert graceful == [["pkill", "-x", name] for name in LINUX_STEAM_PROCESS_NAMES]
+    assert forced == [["pkill", "-9", "-x", name] for name in LINUX_STEAM_PROCESS_NAMES]
 
 
 def test_copy_grid_art_copies_existing_and_skips_missing() -> None:

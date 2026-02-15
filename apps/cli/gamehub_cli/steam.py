@@ -60,6 +60,7 @@ DEFAULT_USER_COLLECTIONS_PATH = [
     "WebStorage",
     USER_COLLECTIONS_KEY,
 ]
+LINUX_STEAM_PROCESS_NAMES = ("steam", "steam.sh", "steamwebhelper")
 
 
 def _run_process_best_effort(command: list[str], timeout_seconds: int = 10) -> None:
@@ -198,8 +199,11 @@ def is_steam_running() -> bool:
             text=True,
         )
         return "steam.exe" in completed.stdout.lower()
-    completed = subprocess.run(["pgrep", "-f", "steam"], check=False, capture_output=True, text=True)
-    return completed.returncode == 0
+    for process_name in LINUX_STEAM_PROCESS_NAMES:
+        completed = subprocess.run(["pgrep", "-x", process_name], check=False, capture_output=True, text=True)
+        if completed.returncode == 0:
+            return True
+    return False
 
 
 def close_steam_best_effort() -> None:
@@ -208,8 +212,10 @@ def close_steam_best_effort() -> None:
         _run_process_best_effort(["taskkill", "/IM", "steam.exe", "/T"])
         _run_process_best_effort(["taskkill", "/F", "/IM", "steam.exe", "/T"])
         return
-    _run_process_best_effort(["pkill", "-f", "steam"])
-    _run_process_best_effort(["pkill", "-9", "-f", "steam"])
+    for process_name in LINUX_STEAM_PROCESS_NAMES:
+        _run_process_best_effort(["pkill", "-x", process_name])
+    for process_name in LINUX_STEAM_PROCESS_NAMES:
+        _run_process_best_effort(["pkill", "-9", "-x", process_name])
 
 
 def wait_for_steam_exit(timeout_seconds: int = 20) -> bool:
