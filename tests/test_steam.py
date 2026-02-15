@@ -322,6 +322,48 @@ def test_upsert_shortcuts_migrates_legacy_entry_when_launch_options_changed() ->
         assert "GAMEHUB_TITLE:title_psx_ctr" in tag_values
 
 
+def test_upsert_shortcuts_migrates_legacy_entry_when_emulator_family_changes() -> None:
+    with _workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+        legacy = {
+            "AppName": "Torino 2006",
+            "Exe": '"retroarch"',
+            "LaunchOptions": '-L cores/swanstation_libretro.dll "D:\\GameHub\\roms\\PS2\\Torino 2006.chd"',
+            "tags": {},
+        }
+        context.shortcuts_path.write_bytes(vdf.binary_dumps({"shortcuts": {"0": legacy}}))
+        desired = [
+            SteamShortcutSpec(
+                title_id="title_ps2_torino_2006",
+                system="PS2",
+                title_name="Torino 2006",
+                exe="flatpak",
+                launch_options='run --file-forwarding net.pcsx2.PCSX2 -fullscreen -- @@ "/var/home/epurn/GameHub/roms/PS2/Torino 2006.chd" @@',
+                start_dir="",
+                icon_path="",
+            )
+        ]
+
+        result = upsert_shortcuts(context, desired)
+
+        assert result.total_shortcuts == 1
+        payload = vdf.binary_loads(context.shortcuts_path.read_bytes())
+        entry = next(iter(payload["shortcuts"].values()))
+        assert entry.get("Exe") == "flatpak"
+        assert entry.get("LaunchOptions") == desired[0].launch_options
+        tags = entry.get("tags", {})
+        tag_values = [tags[key] for key in sorted(tags, key=lambda k: int(str(k)) if str(k).isdigit() else str(k))]
+        assert "GAMEHUB_TITLE:title_ps2_torino_2006" in tag_values
+
+
 def test_update_collections_preserves_unmanaged_and_is_idempotent() -> None:
     with _workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"

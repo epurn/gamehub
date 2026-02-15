@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -321,9 +322,41 @@ def _legacy_shortcut_matches(entry: dict, spec: SteamShortcutSpec) -> bool:
         return False
     existing_family = _emulator_family(entry.get("Exe"))
     desired_family = _emulator_family(spec.exe)
-    if not existing_family or not desired_family:
-        return False
-    return existing_family == desired_family
+    if existing_family and desired_family and existing_family == desired_family:
+        return True
+
+    existing_basenames = _extract_path_basenames(entry.get("LaunchOptions"))
+    desired_basenames = _extract_path_basenames(spec.launch_options)
+    if existing_basenames and desired_basenames and existing_basenames.intersection(desired_basenames):
+        return True
+    return False
+
+
+def _extract_path_basenames(value: object) -> set[str]:
+    if not isinstance(value, str):
+        return set()
+
+    def _basename_candidate(token: str) -> str | None:
+        normalized = token.strip().strip('"').strip("'").replace("\\", "/")
+        if not normalized or normalized == "@@":
+            return None
+        basename = normalized.rsplit("/", 1)[-1]
+        if "." not in basename:
+            return None
+        return basename.casefold()
+
+    basenames: set[str] = set()
+    for token in re.findall(r'"([^"]+)"', value):
+        candidate = _basename_candidate(token)
+        if candidate:
+            basenames.add(candidate)
+    if basenames:
+        return basenames
+    for token in value.split():
+        candidate = _basename_candidate(token)
+        if candidate:
+            basenames.add(candidate)
+    return basenames
 
 
 def _pop_legacy_match(entries: list[dict], spec: SteamShortcutSpec) -> dict | None:
