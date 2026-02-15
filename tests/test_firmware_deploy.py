@@ -203,3 +203,52 @@ def test_default_pcsx2_ini_path_prefers_flatpak_when_detected(monkeypatch) -> No
         ini_path = _default_pcsx2_ini_path()
 
         assert ini_path == home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
+
+
+def test_default_pcsx2_ini_path_prefers_flatpak_over_existing_native_ini(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        home = temp_root / "home"
+        export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "net.pcsx2.PCSX2"
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_bytes(b"#!/bin/sh")
+        native_ini = home / ".config" / "PCSX2" / "inis" / "PCSX2.ini"
+        native_ini.parent.mkdir(parents=True, exist_ok=True)
+        native_ini.write_text("[UI]\nSetupWizardIncomplete = true\n", encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+
+        ini_path = _default_pcsx2_ini_path()
+
+        assert ini_path == home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
+
+
+def test_deploy_firmware_dry_run_reports_flatpak_visible_pcsx2_bios_path(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=Path("/var/home/deck/GameHub/firmware"),
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        index = _index("PS2", "scph10000.bin")
+        ini_path = temp_root / "pcsx2" / "PCSX2.ini"
+        logs: list[str] = []
+
+        monkeypatch.setattr(
+            "gamehub_cli.firmware_deploy.resolve_emulator_executable",
+            lambda _name: "/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2",
+        )
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._default_pcsx2_ini_path", lambda config=None: ini_path)
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
+
+        pcsx2_logs = [line.replace("\\", "/") for line in logs if line.startswith("pcsx2\tdry-run")]
+        assert any("/home/deck/GameHub/firmware/PS2" in line for line in pcsx2_logs)

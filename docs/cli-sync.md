@@ -74,6 +74,7 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - Linux defaults (`~/.config/retroarch/system` and Flatpak `~/.var/app/org.libretro.RetroArch/config/retroarch/system`)
   - Windows portable executable directory (`<retroarch-dir>/system`) when applicable
 - `PS2` config is auto-updated so PCSX2 reads BIOS directly from `<gamehub_dir>/firmware/PS2` (no BIOS copy mirror step), and setup wizard completion is written into `PCSX2.ini`.
+  - for Flatpak PCSX2 on Linux, GAMEHUB writes BIOS paths using sandbox-visible `/home/...` form when host paths are under `/var/home/...`
 - `Wii` firmware is mirrored to Dolphin user path `Wii/`.
 - `GC` firmware is mirrored to Dolphin user path `GC/`.
 
@@ -82,6 +83,7 @@ Linux path notes:
 - PCSX2 runtime config defaults are Linux-aware and Flatpak-aware (`~/.config/PCSX2/...` or `~/.var/app/net.pcsx2.PCSX2/...`).
 - Dolphin target selection prefers explicit overrides, then existing user data roots, then a deterministic native/Flatpak default.
 - Linux RetroArch Steam launch options rewrite `-L cores/<core>.dll` templates to Linux core paths (`.so`) and prefer absolute core paths from resolved RetroArch config/overrides.
+- Linux Flatpak PCSX2 Steam launch options normalize ROM paths from `/var/home/...` to `/home/...` and inject `--` before the ROM argument for robust file target parsing.
 
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`

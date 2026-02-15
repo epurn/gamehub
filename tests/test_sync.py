@@ -734,6 +734,56 @@ def test_build_shortcut_specs_linux_normalizes_retroarch_core_token(monkeypatch)
         assert "/var/home/deck/.var/app/org.libretro.RetroArch/config/retroarch/cores" in specs[0].launch_options
 
 
+def test_build_shortcut_specs_linux_flatpak_pcsx2_normalizes_rom_path(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-linux-ps2-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        title = TitleEntry(
+            title_id="title_ps2_gt4",
+            system="PS2",
+            title_name="Gran Turismo 4",
+            title_rel_dir="PS2/Gran Turismo 4.iso",
+            emulator="pcsx2",
+            launch_template='"{emulator}" -fullscreen "{rom}"',
+            rom=RomSpec(
+                file_id="rom_ps2",
+                rel_path="roms/PS2/Gran Turismo 4.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.resolve_emulator_executable",
+            lambda value: "/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2",
+        )
+        monkeypatch.setattr("gamehub_cli.sync.sys.platform", "linux")
+        monkeypatch.setattr(
+            "gamehub_cli.sync._from_rel_path",
+            lambda base, rel_path: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
+        )
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert specs[0].exe == '"/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2"'
+        assert "--" in specs[0].launch_options
+        assert "/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso" in specs[0].launch_options
+        assert "/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso" not in specs[0].launch_options
+
+
 def test_build_shortcut_specs_uses_title_rom_path_for_all_titles(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-sync-shortcuts-") as temp_root:
         config = GamehubConfig(

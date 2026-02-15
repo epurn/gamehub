@@ -242,6 +242,19 @@ def _normalize_linux_retroarch_launch_template(launch_template: str, config: Gam
     return f"{launch_template[:match.start()]}{replacement}{launch_template[match.end() :]}"
 
 
+def _is_flatpak_command(path_value: str, app_id: str) -> bool:
+    normalized = path_value.strip().strip('"').replace("\\", "/").lower()
+    app = app_id.casefold()
+    return normalized.endswith(f"/{app}") or f"flatpak/exports/bin/{app}" in normalized
+
+
+def _flatpak_visible_home_path(path: Path) -> str:
+    value = path.as_posix()
+    if value.startswith("/var/home/"):
+        return "/home/" + value[len("/var/home/") :]
+    return value
+
+
 def _build_shortcut_specs(
     index: LibraryIndex,
     config: GamehubConfig,
@@ -250,10 +263,20 @@ def _build_shortcut_specs(
     for title in sorted(index.titles, key=lambda item: (item.system, item.title_name.casefold(), item.title_id)):
         rom_path = _from_rel_path(config.library_dir, title.rom.rel_path)
         emulator_exe = resolve_emulator_executable(title.emulator)
+        pcsx2_flatpak = (
+            sys.platform.startswith("linux")
+            and "pcsx2" in title.emulator.casefold()
+            and _is_flatpak_command(emulator_exe, "net.pcsx2.PCSX2")
+        )
+        rom_for_launch = str(rom_path)
+        if pcsx2_flatpak:
+            rom_for_launch = _flatpak_visible_home_path(rom_path)
         launch_template = title.launch_template
         if "retroarch" in title.emulator.casefold():
             launch_template = _normalize_linux_retroarch_launch_template(launch_template, config)
-        launch_line = launch_template.format(emulator=emulator_exe, rom=str(rom_path))
+        if pcsx2_flatpak and "--" not in launch_template and '"{rom}"' in launch_template:
+            launch_template = launch_template.replace('"{rom}"', '-- "{rom}"', 1)
+        launch_line = launch_template.format(emulator=emulator_exe, rom=rom_for_launch)
         parts = shlex.split(launch_line, posix=False)
         if parts:
             exe = parts[0]

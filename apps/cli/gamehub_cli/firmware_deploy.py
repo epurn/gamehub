@@ -44,6 +44,13 @@ def _is_flatpak_command(path: Path, app_id: str) -> bool:
     return value.endswith(f"/{app}") or f"flatpak/exports/bin/{app}" in value
 
 
+def _flatpak_visible_home_path(path: Path) -> Path:
+    value = path.as_posix()
+    if value.startswith("/var/home/"):
+        return Path("/home") / value[len("/var/home/") :]
+    return path
+
+
 def _unique_paths(values: list[Path]) -> list[Path]:
     result: list[Path] = []
     seen: set[Path] = set()
@@ -267,6 +274,12 @@ def _default_pcsx2_ini_path(config: GamehubConfig | None = None) -> Path:
     if override is not None:
         return override
 
+    if sys.platform.startswith("linux"):
+        pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
+        pcsx2_exe = Path(pcsx2_raw)
+        if _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold()):
+            return _linux_flatpak_pcsx2_root() / "inis" / "PCSX2.ini"
+
     candidates = _pcsx2_ini_candidates(config=config)
     for candidate in candidates:
         if candidate.exists():
@@ -363,20 +376,24 @@ def _configure_pcsx2_runtime(
         "GAMEHUB_PCSX2_BIOS_DIR",
         config_value=config.linux.pcsx2_bios_dir,
     ) or (config.firmware_dir / "PS2")
+    pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
+    pcsx2_exe = Path(pcsx2_raw)
+    prefer_flatpak = _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold())
+    bios_dir_for_config = _flatpak_visible_home_path(bios_dir) if prefer_flatpak else bios_dir
     ini_path = _default_pcsx2_ini_path(config=config)
     if dry_run:
         if verbose:
-            writer(f"pcsx2\tdry-run\tconfigure\t{ini_path}\tbios={bios_dir}")
+            writer(f"pcsx2\tdry-run\tconfigure\t{ini_path}\tbios={bios_dir_for_config}")
         return
 
     lines = _read_ini_lines(ini_path)
     lines, changed_ui = _upsert_ini_key(lines, "UI", "SetupWizardIncomplete", "false")
-    lines, changed_bios = _upsert_ini_key(lines, "Folders", "Bios", str(bios_dir))
+    lines, changed_bios = _upsert_ini_key(lines, "Folders", "Bios", str(bios_dir_for_config))
     if changed_ui or changed_bios or not ini_path.exists():
         _write_ini_atomic(ini_path, lines)
     bios_dir.mkdir(parents=True, exist_ok=True)
     if verbose:
-        writer(f"pcsx2\tconfigured\t{ini_path}\tbios={bios_dir}")
+        writer(f"pcsx2\tconfigured\t{ini_path}\tbios={bios_dir_for_config}")
 
 
 def deploy_firmware_to_emulators(
