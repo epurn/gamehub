@@ -119,14 +119,10 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
             values.extend((Path("/usr/bin/pcsx2-qt"), Path("/usr/bin/pcsx2"), Path("/usr/local/bin/pcsx2-qt")))
         elif canonical == "dolphin":
             values.extend((Path("/usr/bin/dolphin-emu"), Path("/usr/bin/dolphin"), Path("/usr/local/bin/dolphin-emu")))
-        # Flatpak exports, if present.
-        values.extend(
-            (
-                home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.libretro.RetroArch",
-                home / ".local" / "share" / "flatpak" / "exports" / "bin" / "net.pcsx2.PCSX2",
-                home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.DolphinEmu.dolphin-emu",
-            )
-        )
+        # Flatpak export path for the specific emulator family, when available.
+        flatpak_app_id = _FLATPAK_APP_IDS.get(canonical)
+        if flatpak_app_id:
+            values.append(home / ".local" / "share" / "flatpak" / "exports" / "bin" / flatpak_app_id)
     return tuple(values)
 
 

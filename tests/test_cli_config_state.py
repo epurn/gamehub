@@ -36,6 +36,9 @@ def test_load_config_uses_defaults_when_file_is_missing(monkeypatch) -> None:
         assert loaded.library_dir == expected_state_root
         assert loaded.firmware_dir == expected_state_root / "firmware"
         assert loaded.state_path == expected_state_root / "state.json"
+        assert loaded.index_timeout_seconds is None
+        assert loaded.index_fetch_attempts == 3
+        assert loaded.index_retry_backoff_seconds == 1.5
         assert loaded.steam_userdata_dir is None
         assert loaded.steam_id is None
         assert loaded.steam_exe is None
@@ -87,6 +90,9 @@ def test_load_config_toml_overrides_defaults(monkeypatch) -> None:
                 [
                     '[server]',
                     'url = "http://example.invalid:9000"',
+                    "index_timeout_seconds = 45",
+                    "index_fetch_attempts = 4",
+                    "index_retry_backoff_seconds = 0.75",
                     "",
                     "[paths]",
                     'gamehub_dir = "C:/gamehub"',
@@ -108,6 +114,9 @@ def test_load_config_toml_overrides_defaults(monkeypatch) -> None:
         loaded = load_config(config_path)
 
         assert loaded.server_url == "http://example.invalid:9000"
+        assert loaded.index_timeout_seconds == 45.0
+        assert loaded.index_fetch_attempts == 4
+        assert loaded.index_retry_backoff_seconds == 0.75
         assert loaded.library_dir == Path("C:/gamehub")
         assert loaded.firmware_dir == Path("C:/gamehub/firmware")
         assert loaded.state_path == Path("C:/gamehub/state.json")
@@ -159,6 +168,32 @@ def test_load_config_prefers_sgdb_api_key_from_env(monkeypatch) -> None:
         loaded = load_config(config_path)
 
         assert loaded.sgdb_api_key == "from-env-key"
+
+
+def test_load_config_supports_server_index_fetch_env_overrides(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[server]",
+                    'url = "http://example.invalid:9000"',
+                    "index_timeout_seconds = 40",
+                    "index_fetch_attempts = 2",
+                    "index_retry_backoff_seconds = 1.0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("GAMEHUB_INDEX_TIMEOUT_SECONDS", "55")
+        monkeypatch.setenv("GAMEHUB_INDEX_FETCH_ATTEMPTS", "6")
+        monkeypatch.setenv("GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS", "2.5")
+
+        loaded = load_config(config_path)
+
+        assert loaded.index_timeout_seconds == 55.0
+        assert loaded.index_fetch_attempts == 6
+        assert loaded.index_retry_backoff_seconds == 2.5
 
 
 def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:

@@ -22,6 +22,8 @@ Steam close behavior:
 ## Pipeline order
 1. Load config and local state
 2. Fetch and validate `/v1/index`
+   - transient index fetch failures are retried with exponential backoff (`[server].index_fetch_attempts`, `[server].index_retry_backoff_seconds`)
+   - per-attempt index timeout can be set via `[server].index_timeout_seconds` (defaults to current transport timeout behavior)
 3. Ensure required emulators are available:
    - detects missing emulator binaries from index metadata
    - Windows detection checks executable PATH, common install locations, and uninstall registry locations (not only winget package metadata)

@@ -10,6 +10,13 @@ Example:
 ```toml
 [server]
 url = "http://127.0.0.1:8000"
+# Optional index fetch hardening for slower/unreliable links:
+# timeout for each /v1/index request attempt (seconds)
+index_timeout_seconds = 45
+# total attempts (initial request + retries)
+index_fetch_attempts = 3
+# exponential backoff base delay between retries (seconds)
+index_retry_backoff_seconds = 1.5
 
 [paths]
 gamehub_dir = "C:/gamehub"
@@ -82,6 +89,9 @@ Firmware deployment env overrides:
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_BACKEND`: overrides `[linux].emulator_install_backend`.
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND`: overrides `[linux].emulator_install_command`.
 - `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
+- `GAMEHUB_INDEX_TIMEOUT_SECONDS`: overrides `[server].index_timeout_seconds`.
+- `GAMEHUB_INDEX_FETCH_ATTEMPTS`: overrides `[server].index_fetch_attempts`.
+- `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
 

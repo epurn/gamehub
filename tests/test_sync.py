@@ -269,6 +269,100 @@ def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
     assert "Skipping Steam lifecycle and config updates (--skip-steam)" in capsys.readouterr().out
 
 
+def test_run_sync_retries_index_fetch_after_timeout(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": []}
+
+    attempts: list[float] = []
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            attempts.append(timeout)
+            if len(attempts) < 3:
+                raise TimeoutError("timed out")
+            return FakeResponse()
+
+    sleeps: list[float] = []
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-index-retry.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        index_fetch_attempts=3,
+        index_retry_backoff_seconds=0.25,
+    )
+    monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.time.sleep", lambda seconds: sleeps.append(seconds))
+
+    exit_code = run_sync(
+        config=config,
+        dry_run=True,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=True,
+    )
+
+    assert exit_code == 0
+    assert len(attempts) == 3
+    assert sleeps == [0.25, 0.5]
+
+
+def test_run_sync_fails_fast_on_non_retryable_index_error(monkeypatch) -> None:
+    class FakeHttpx:
+        calls = 0
+
+        @staticmethod
+        def get(_url: str, timeout: float):
+            del timeout
+            FakeHttpx.calls += 1
+            raise ValueError("bad payload")
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-index-fail-fast.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        index_fetch_attempts=5,
+        index_retry_backoff_seconds=0.1,
+    )
+    monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.time.sleep", lambda seconds: (_ for _ in ()).throw(AssertionError(seconds)))
+
+    try:
+        run_sync(
+            config=config,
+            dry_run=True,
+            verbose=False,
+            verify=False,
+            require_steam_closed=False,
+            skip_steam=True,
+        )
+    except ValueError as exc:
+        assert "bad payload" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for non-retryable index fetch error")
+
+    assert FakeHttpx.calls == 1
+
+
 def test_run_sync_invokes_retroarch_core_provisioner(monkeypatch) -> None:
     class FakeResponse:
         def raise_for_status(self) -> None:

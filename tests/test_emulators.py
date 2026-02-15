@@ -354,3 +354,22 @@ def test_resolve_emulator_executable_prefers_known_path_over_windowsapps_alias(m
         resolved = resolve_emulator_executable("retroarch")
 
         assert resolved == str(candidate)
+
+
+def test_resolve_emulator_executable_linux_uses_matching_flatpak_export(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-emulator-linux-flatpak-") as temp_root:
+        export_dir = temp_root / ".local" / "share" / "flatpak" / "exports" / "bin"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        retroarch_export = export_dir / "org.libretro.RetroArch"
+        pcsx2_export = export_dir / "net.pcsx2.PCSX2"
+        retroarch_export.write_bytes(b"exe")
+        pcsx2_export.write_bytes(b"exe")
+
+        monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.emulators.Path.home", lambda: temp_root)
+        monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda cmd: None)
+
+        resolved = resolve_emulator_executable("pcsx2")
+
+        assert resolved == str(pcsx2_export)

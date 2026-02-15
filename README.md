@@ -22,6 +22,7 @@ Docker-first home server and CLI sync tool for emulator libraries and Steam inje
 - Set `steam.userdata_dir` explicitly (or `GAMEHUB_STEAM_USERDATA_DIR`) for deterministic profile selection.
 - Run Steam mutation syncs from an active desktop session (not SSH-only) so Steam can relaunch.
 - Linux RetroArch shortcuts are normalized to `.so` core paths automatically; set `[linux].retroarch_cores_dir`/`retroarch_cfg_path` when using custom RetroArch layouts.
+- If `/v1/index` is occasionally slow, tune `[server].index_timeout_seconds`, `index_fetch_attempts`, and `index_retry_backoff_seconds`.
 - Start with:
   - `gamehub sync --dry-run --skip-steam --verbose`
 

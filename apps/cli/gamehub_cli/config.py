@@ -42,6 +42,9 @@ class GamehubConfig:
     sgdb_api_key: str | None
     sgdb_cache_dir: Path
     sgdb_enabled_kinds: tuple[str, ...]
+    index_timeout_seconds: float | None = None
+    index_fetch_attempts: int = 3
+    index_retry_backoff_seconds: float = 1.5
     linux: LinuxConfig = field(default_factory=LinuxConfig)
 
 
@@ -108,6 +111,34 @@ def _normalize_optional_text(raw: object) -> str | None:
     return value or None
 
 
+def _normalize_optional_float(raw: object, *, minimum: float = 0.0) -> float | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if value < minimum:
+        return None
+    return value
+
+
+def _normalize_optional_int(raw: object, *, minimum: int = 0) -> int | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return None
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if value < minimum:
+        return None
+    return value
+
+
 def _resolve_paths(paths: dict[str, object]) -> tuple[Path, Path, Path]:
     """
     Resolve client storage locations.
@@ -130,6 +161,9 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
         sgdb_api_key = _normalize_secret(os.environ.get("GAMEHUB_SGDB_API_KEY"))
         return GamehubConfig(
             server_url="http://127.0.0.1:8000",
+            index_timeout_seconds=None,
+            index_fetch_attempts=3,
+            index_retry_backoff_seconds=1.5,
             library_dir=default_root,
             firmware_dir=default_root / "firmware",
             state_path=default_root / "state.json",
@@ -151,9 +185,20 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     env_api_key = _normalize_secret(os.environ.get("GAMEHUB_SGDB_API_KEY"))
     config_api_key = _normalize_secret(sgdb.get("api_key"))
     sgdb_api_key = env_api_key or config_api_key
+    config_index_timeout = _normalize_optional_float(server.get("index_timeout_seconds"), minimum=1.0)
+    env_index_timeout = _normalize_optional_float(os.environ.get("GAMEHUB_INDEX_TIMEOUT_SECONDS"), minimum=1.0)
+    config_index_attempts = _normalize_optional_int(server.get("index_fetch_attempts"), minimum=1)
+    env_index_attempts = _normalize_optional_int(os.environ.get("GAMEHUB_INDEX_FETCH_ATTEMPTS"), minimum=1)
+    config_index_backoff = _normalize_optional_float(server.get("index_retry_backoff_seconds"), minimum=0.0)
+    env_index_backoff = _normalize_optional_float(os.environ.get("GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS"), minimum=0.0)
     library_dir, firmware_dir, state_path = _resolve_paths(paths)
     return GamehubConfig(
         server_url=str(server.get("url", "http://127.0.0.1:8000")),
+        index_timeout_seconds=env_index_timeout if env_index_timeout is not None else config_index_timeout,
+        index_fetch_attempts=env_index_attempts if env_index_attempts is not None else (config_index_attempts or 3),
+        index_retry_backoff_seconds=(
+            env_index_backoff if env_index_backoff is not None else (config_index_backoff if config_index_backoff is not None else 1.5)
+        ),
         library_dir=library_dir,
         firmware_dir=firmware_dir,
         state_path=state_path,
