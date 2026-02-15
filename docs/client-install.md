@@ -27,8 +27,9 @@ gamehub sync --help
 1. Set `steam.userdata_dir` in `config.toml` for deterministic profile targeting (or export `GAMEHUB_STEAM_USERDATA_DIR`).
 2. Choose Linux emulator install strategy in `[linux]`:
    - `emulator_install_backend = "auto"` (default)
+     - auto order: Fedora `dnf` -> Debian/Ubuntu `apt-get` -> `flatpak` -> configured command backend
    - `emulator_install_backend = "flatpak"` (good default for immutable Linux hosts)
-   - `emulator_install_backend = "dnf"` or `"command"` as needed
+   - `emulator_install_backend = "dnf"`, `"apt"`, or `"command"` as needed
 3. Optional: set `[linux]` path overrides (`retroarch_*`, `pcsx2_*`, `dolphin_user_path`) when your emulator profile paths are non-standard.
 4. Run:
 ```bash

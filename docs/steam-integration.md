@@ -34,6 +34,7 @@
   - local `localconfig.vdf` collections payload
   - cloud `user-collections.gamehub-*` entries
 - Stale GAMEHUB cloud collection entries are marked `is_deleted: true` instead of deleting unrelated keys.
+- No-op local collection updates skip `localconfig.vdf` writes to reduce backup/file churn.
 
 ## Artwork filenames
 - GAMEHUB writes Steam grid assets for both portrait and landscape grid variants:

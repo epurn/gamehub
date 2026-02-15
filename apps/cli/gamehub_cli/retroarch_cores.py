@@ -15,6 +15,13 @@ from gamehub_common.models import LibraryIndex
 
 from .emulators import resolve_emulator_executable
 from .fsops import replace_file
+from .platform_paths import (
+    RETROARCH_FLATPAK_APP_ID,
+    is_flatpak_command,
+    linux_flatpak_retroarch_root,
+    parse_simple_kv_config,
+    retroarch_cfg_candidates,
+)
 
 try:
     import httpx  # type: ignore
@@ -53,11 +60,8 @@ def _core_suffix() -> str:
 
 
 def _core_base_url(explicit_override: str | None = None) -> str | None:
-    override = os.environ.get("GAMEHUB_RETROARCH_CORES_BASE_URL")
-    if not override and explicit_override:
-        override = explicit_override
-    if override:
-        return override.rstrip("/") + "/"
+    if explicit_override:
+        return explicit_override.rstrip("/") + "/"
     if os.name == "nt":
         return "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
     if sys.platform.startswith("linux"):
@@ -115,63 +119,13 @@ def required_retroarch_cores(index: LibraryIndex) -> dict[str, str]:
     return required
 
 
-def _linux_flatpak_retroarch_root() -> Path:
-    return Path.home() / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch"
-
-
-def _is_flatpak_retroarch_command(path: Path) -> bool:
-    value = path.as_posix().lower()
-    return value.endswith("/org.libretro.retroarch") or "flatpak/exports/bin/org.libretro.retroarch" in value
-
-
-def _retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path]:
-    values: list[Path] = []
-    env_override = os.environ.get("GAMEHUB_RETROARCH_CFG_PATH")
-    if env_override:
-        values.append(Path(env_override).expanduser())
-    if explicit_cfg_path is not None:
-        values.append(explicit_cfg_path.expanduser())
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "RetroArch" / "retroarch.cfg")
-    home = Path.home()
-    values.append(home / ".config" / "retroarch" / "retroarch.cfg")
-    values.append(_linux_flatpak_retroarch_root() / "retroarch.cfg")
-    deduped: list[Path] = []
-    seen: set[Path] = set()
-    for value in values:
-        candidate = value.expanduser()
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        deduped.append(candidate)
-    return deduped
-
-
-def _parse_cfg(path: Path) -> dict[str, str]:
-    if not path.exists():
-        return {}
-    values: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        raw = line.strip()
-        if not raw or raw.startswith("#") or raw.startswith(";") or "=" not in raw:
-            continue
-        key, value = raw.split("=", 1)
-        values[key.strip().lower()] = value.strip().strip('"').strip("'")
-    return values
-
-
 def resolve_retroarch_paths(
     explicit_cores_dir: Path | None = None,
     explicit_info_dir: Path | None = None,
     explicit_cfg_path: Path | None = None,
 ) -> RetroArchPaths | None:
-    explicit_cores = os.environ.get("GAMEHUB_RETROARCH_CORES_DIR")
-    explicit_info = os.environ.get("GAMEHUB_RETROARCH_INFO_DIR")
-    if not explicit_cores and explicit_cores_dir is not None:
-        explicit_cores = str(explicit_cores_dir)
-    if not explicit_info and explicit_info_dir is not None:
-        explicit_info = str(explicit_info_dir)
+    explicit_cores = str(explicit_cores_dir) if explicit_cores_dir is not None else None
+    explicit_info = str(explicit_info_dir) if explicit_info_dir is not None else None
     if explicit_cores:
         cores_dir = Path(explicit_cores).expanduser()
         info_dir = Path(explicit_info).expanduser() if explicit_info else cores_dir.parent / "info"
@@ -179,8 +133,8 @@ def resolve_retroarch_paths(
 
     config_cores: Path | None = None
     config_info: Path | None = None
-    for cfg_path in _retroarch_cfg_candidates(explicit_cfg_path=explicit_cfg_path):
-        parsed = _parse_cfg(cfg_path)
+    for cfg_path in retroarch_cfg_candidates(explicit_cfg_path=explicit_cfg_path):
+        parsed = parse_simple_kv_config(cfg_path)
         raw_core = parsed.get("libretro_directory")
         raw_info = parsed.get("libretro_info_path")
         if raw_core:
@@ -201,11 +155,11 @@ def resolve_retroarch_paths(
 
     exe_raw = resolve_emulator_executable("retroarch").strip('"')
     exe = Path(exe_raw)
-    flatpak_hint = _is_flatpak_retroarch_command(exe) or "org.libretro.retroarch" in exe_raw.casefold()
+    flatpak_hint = is_flatpak_command(exe, RETROARCH_FLATPAK_APP_ID) or RETROARCH_FLATPAK_APP_ID.casefold() in exe_raw.casefold()
     if exe.exists() and os.name == "nt":
         return RetroArchPaths(cores_dir=exe.parent / "cores", info_dir=exe.parent / "info")
     if sys.platform.startswith("linux") and flatpak_hint:
-        root = _linux_flatpak_retroarch_root()
+        root = linux_flatpak_retroarch_root()
         return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
 
     # Best-effort platform defaults.
@@ -216,7 +170,7 @@ def resolve_retroarch_paths(
             return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
     if sys.platform.startswith("linux"):
         native_root = Path.home() / ".config" / "retroarch"
-        flatpak_root = _linux_flatpak_retroarch_root()
+        flatpak_root = linux_flatpak_retroarch_root()
         prefer_flatpak = flatpak_hint
         roots = [flatpak_root, native_root] if prefer_flatpak else [native_root, flatpak_root]
         for root in roots:

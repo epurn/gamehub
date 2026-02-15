@@ -13,16 +13,6 @@ import pytest
 from gamehub_cli.downloads import download_with_atomic_write
 
 
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    root = Path(__file__).resolve().parents[1] / ".pytest_tmp_local"
-    root.mkdir(parents=True, exist_ok=True)
-    temp_dir = root / f"{prefix}{uuid4().hex}"
-    temp_dir.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_dir
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @contextmanager

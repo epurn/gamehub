@@ -1,10 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 from pathlib import Path
 import shutil
 import sys
-import tempfile
 from typing import Callable
 from uuid import uuid4
 
@@ -13,237 +12,79 @@ from gamehub_common.models import LibraryIndex
 
 from .config import GamehubConfig
 from .emulators import resolve_emulator_executable
+import gamehub_cli.firmware_targets as firmware_targets
+import gamehub_cli.pcsx2_ini as pcsx2_ini
 from .fsops import replace_file
+from .platform_paths import PCSX2_FLATPAK_APP_ID, is_flatpak_command, linux_flatpak_pcsx2_root
 
 
-def _override_path(*env_names: str, config_value: Path | None = None) -> Path | None:
-    for env_name in env_names:
-        raw = os.environ.get(env_name)
-        if raw and raw.strip():
-            return Path(raw.strip()).expanduser()
-    if config_value is not None:
-        return config_value.expanduser()
-    return None
-
-
-def _linux_flatpak_retroarch_root() -> Path:
-    return Path.home() / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch"
-
-
-def _linux_flatpak_pcsx2_root() -> Path:
-    return Path.home() / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2"
-
-
-def _linux_flatpak_dolphin_root() -> Path:
-    return Path.home() / ".var" / "app" / "org.DolphinEmu.dolphin-emu" / "data" / "dolphin-emu"
-
-
-def _is_flatpak_command(path: Path, app_id: str) -> bool:
-    value = path.as_posix().lower()
-    app = app_id.casefold()
-    return value.endswith(f"/{app}") or f"flatpak/exports/bin/{app}" in value
-
-
-def _unique_paths(values: list[Path]) -> list[Path]:
-    result: list[Path] = []
-    seen: set[Path] = set()
-    for value in values:
-        resolved = value.expanduser()
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        result.append(resolved)
-    return result
-
-
-def _parse_simple_kv_config(path: Path) -> dict[str, str]:
-    if not path.exists():
-        return {}
-    values: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        raw = line.strip()
-        if not raw or raw.startswith("#") or raw.startswith(";"):
-            continue
-        if "=" not in raw:
-            continue
-        key, value = raw.split("=", 1)
-        values[key.strip().lower()] = value.strip().strip('"').strip("'")
-    return values
+def _sync_targets_module() -> None:
+    firmware_targets.resolve_emulator_executable = resolve_emulator_executable
+    firmware_targets.os = os
+    firmware_targets.sys = sys
+    firmware_targets.Path = Path
 
 
 def _retroarch_cfg_candidates(config: GamehubConfig | None = None) -> list[Path]:
-    values: list[Path] = []
-    cfg_override = _override_path("GAMEHUB_RETROARCH_CFG_PATH", config_value=config.linux.retroarch_cfg_path if config else None)
-    if cfg_override:
-        values.append(cfg_override)
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "RetroArch" / "retroarch.cfg")
-    home = Path.home()
-    values.append(home / ".config" / "retroarch" / "retroarch.cfg")
-    values.append(_linux_flatpak_retroarch_root() / "retroarch.cfg")
-    return _unique_paths(values)
+    _sync_targets_module()
+    return firmware_targets.retroarch_cfg_candidates_for_config(config)
 
 
 def _resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[Path]:
-    values: list[Path] = []
-    system_override = _override_path(
-        "RETROARCH_SYSTEM_DIR",
-        "GAMEHUB_RETROARCH_SYSTEM_DIR",
-        config_value=config.linux.retroarch_system_dir if config else None,
-    )
-    if system_override:
-        values.append(system_override)
-
-    for cfg_path in _retroarch_cfg_candidates(config=config):
-        parsed = _parse_simple_kv_config(cfg_path)
-        raw = parsed.get("system_directory")
-        if not raw:
-            continue
-        if raw.lower() == "default":
-            values.append(cfg_path.parent / "system")
-            continue
-        candidate = Path(raw)
-        if not candidate.is_absolute():
-            candidate = cfg_path.parent / candidate
-        values.append(candidate)
-
-    retroarch_raw = resolve_emulator_executable("retroarch").strip('"')
-    retroarch_exe = Path(retroarch_raw)
-    prefer_flatpak = _is_flatpak_command(retroarch_exe, "org.libretro.RetroArch") or (
-        "org.libretro.retroarch" in retroarch_raw.casefold()
-    )
-    if os.name == "nt" and retroarch_exe.exists():
-        values.append(retroarch_exe.parent / "system")
-    elif sys.platform.startswith("linux") and prefer_flatpak:
-        values.append(_linux_flatpak_retroarch_root() / "system")
-
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "RetroArch" / "system")
-    home = Path.home()
-    native = home / ".config" / "retroarch" / "system"
-    flatpak = _linux_flatpak_retroarch_root() / "system"
-    if sys.platform.startswith("linux") and prefer_flatpak:
-        values.append(flatpak)
-        values.append(native)
-    else:
-        values.append(native)
-        values.append(flatpak)
-    return _unique_paths(values)
+    _sync_targets_module()
+    return firmware_targets.resolve_retroarch_system_dirs(config)
 
 
 def _pcsx2_ini_candidates(config: GamehubConfig | None = None) -> list[Path]:
-    values: list[Path] = []
-    ini_override = _override_path("GAMEHUB_PCSX2_INI_PATH", config_value=config.linux.pcsx2_ini_path if config else None)
-    if ini_override:
-        values.append(ini_override)
-    user_profile = os.environ.get("USERPROFILE")
-    if os.name == "nt" and user_profile:
-        values.append(Path(user_profile) / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
-        values.append(Path(user_profile) / "Documents" / "PCSX2" / "PCSX2.ini")
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "PCSX2" / "inis" / "PCSX2.ini")
-        values.append(Path(appdata) / "PCSX2" / "PCSX2.ini")
-    home = Path.home()
-    values.append(home / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
-    values.append(home / "Documents" / "PCSX2" / "PCSX2.ini")
-    values.append(home / ".config" / "PCSX2" / "inis" / "PCSX2.ini")
-    values.append(home / ".config" / "PCSX2" / "PCSX2.ini")
-    values.append(_linux_flatpak_pcsx2_root() / "inis" / "PCSX2.ini")
-    return _unique_paths(values)
+    _sync_targets_module()
+    return firmware_targets.pcsx2_ini_candidates(config)
 
 
 def _resolve_pcsx2_bios_dirs(config: GamehubConfig | None = None) -> list[Path]:
-    values: list[Path] = []
-    bios_override = _override_path(
-        "PCSX2_BIOS_DIR",
-        "GAMEHUB_PCSX2_BIOS_DIR",
-        config_value=config.linux.pcsx2_bios_dir if config else None,
-    )
-    if bios_override:
-        values.append(bios_override)
-
-    for ini_path in _pcsx2_ini_candidates(config=config):
-        parsed = _parse_simple_kv_config(ini_path)
-        bios_value = parsed.get("bios") or parsed.get("folders.bios")
-        if not bios_value:
-            continue
-        candidate = Path(bios_value)
-        if not candidate.is_absolute():
-            # Resolve relative to config root (parent of `inis/` when present).
-            root = ini_path.parent.parent if ini_path.parent.name.lower() == "inis" else ini_path.parent
-            candidate = root / candidate
-        values.append(candidate)
-
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "PCSX2" / "bios")
-    user_profile = os.environ.get("USERPROFILE")
-    if os.name == "nt" and user_profile:
-        values.append(Path(user_profile) / "Documents" / "PCSX2" / "bios")
-    home = Path.home()
-    native = home / ".config" / "PCSX2" / "bios"
-    flatpak = _linux_flatpak_pcsx2_root() / "bios"
-    docs = home / "Documents" / "PCSX2" / "bios"
-    pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
-    pcsx2_exe = Path(pcsx2_raw)
-    prefer_flatpak = _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold())
-    if sys.platform.startswith("linux") and prefer_flatpak:
-        values.extend((flatpak, native, docs))
-    else:
-        values.extend((docs, native, flatpak))
-    return _unique_paths(values)
+    _sync_targets_module()
+    return firmware_targets.resolve_pcsx2_bios_dirs(config)
 
 
 def _resolve_dolphin_user_dirs(config: GamehubConfig | None = None) -> list[Path]:
-    values: list[Path] = []
-    user_override = _override_path(
-        "DOLPHIN_EMU_USERPATH",
-        "GAMEHUB_DOLPHIN_EMU_USERPATH",
-        config_value=config.linux.dolphin_user_path if config else None,
-    )
-    if user_override:
-        values.append(user_override)
-        return _unique_paths(values)
-
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "Dolphin Emulator")
-
-    home = Path.home()
-    legacy = home / ".dolphin-emu"
-    if legacy.exists():
-        values.append(legacy)
-    native = home / ".local" / "share" / "dolphin-emu"
-    flatpak = _linux_flatpak_dolphin_root()
-    existing_linux = [path for path in (flatpak, native, legacy) if path.exists()]
-    if existing_linux:
-        values.extend(existing_linux)
-        return _unique_paths(values)
-
-    dolphin_raw = resolve_emulator_executable("dolphin").strip('"')
-    dolphin_exe = Path(dolphin_raw)
-    if _is_flatpak_command(dolphin_exe, "org.DolphinEmu.dolphin-emu") or (
-        "org.dolphinemu.dolphin-emu" in dolphin_raw.casefold()
-    ):
-        values.append(flatpak)
-    else:
-        values.append(native)
-    return _unique_paths(values)
+    _sync_targets_module()
+    return firmware_targets.resolve_dolphin_user_dirs(config)
 
 
 def _target_dirs_for_system(system_name: str, config: GamehubConfig | None = None) -> list[Path]:
-    if system_name == "PSX":
-        return _resolve_retroarch_system_dirs(config=config)
-    if system_name == "PS2":
-        return _resolve_pcsx2_bios_dirs(config=config)
-    if system_name == "Wii":
-        return [path / "Wii" for path in _resolve_dolphin_user_dirs(config=config)]
-    if system_name == "GC":
-        return [path / "GC" for path in _resolve_dolphin_user_dirs(config=config)]
-    return []
+    _sync_targets_module()
+    return firmware_targets.target_dirs_for_system(system_name, config)
+
+
+def _default_pcsx2_ini_path(config: GamehubConfig | None = None) -> Path:
+    override = None
+    if config is not None:
+        override = config.linux.pcsx2_ini_path
+    if override is not None:
+        return override.expanduser()
+
+    prefer_flatpak = False
+    if sys.platform.startswith("linux"):
+        pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
+        pcsx2_exe = Path(pcsx2_raw)
+        prefer_flatpak = is_flatpak_command(pcsx2_exe, PCSX2_FLATPAK_APP_ID) or (
+            PCSX2_FLATPAK_APP_ID.casefold() in pcsx2_raw.casefold()
+        )
+        if prefer_flatpak:
+            return linux_flatpak_pcsx2_root() / "inis" / "PCSX2.ini"
+
+    for candidate in _pcsx2_ini_candidates(config=config):
+        if candidate.exists():
+            return candidate
+
+    if sys.platform.startswith("linux"):
+        if prefer_flatpak:
+            return linux_flatpak_pcsx2_root() / "inis" / "PCSX2.ini"
+        return Path.home() / ".config" / "PCSX2" / "inis" / "PCSX2.ini"
+
+    candidates = _pcsx2_ini_candidates(config=config)
+    if candidates:
+        return candidates[0]
+    return Path.home() / "Documents" / "PCSX2" / "inis" / "PCSX2.ini"
 
 
 def _sha256(path: Path) -> str:
@@ -262,185 +103,30 @@ def _copy_or_link(source: Path, destination: Path) -> str:
     return mode
 
 
-def _default_pcsx2_ini_path(config: GamehubConfig | None = None) -> Path:
-    override = _override_path("GAMEHUB_PCSX2_INI_PATH", config_value=config.linux.pcsx2_ini_path if config else None)
-    if override is not None:
-        return override
-
-    if sys.platform.startswith("linux"):
-        pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
-        pcsx2_exe = Path(pcsx2_raw)
-        if _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold()):
-            return _linux_flatpak_pcsx2_root() / "inis" / "PCSX2.ini"
-
-    candidates = _pcsx2_ini_candidates(config=config)
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    if sys.platform.startswith("linux"):
-        pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
-        pcsx2_exe = Path(pcsx2_raw)
-        if _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold()):
-            return _linux_flatpak_pcsx2_root() / "inis" / "PCSX2.ini"
-        return Path.home() / ".config" / "PCSX2" / "inis" / "PCSX2.ini"
-    if candidates:
-        return candidates[0]
-    return Path.home() / "Documents" / "PCSX2" / "inis" / "PCSX2.ini"
+def _sync_pcsx2_ini_module() -> None:
+    pcsx2_ini.os = os
+    pcsx2_ini.Path = Path
+    pcsx2_ini.replace_file = replace_file
 
 
 def _read_ini_lines(path: Path) -> list[str]:
-    if not path.exists():
-        return []
-    return path.read_text(encoding="utf-8", errors="ignore").splitlines()
-
-
-def _read_ini_key(lines: list[str], section: str, key: str) -> str | None:
-    section_name = section.lower()
-    key_name = key.lower()
-    in_section = False
-    for line in lines:
-        stripped = line.strip()
-        is_section = stripped.startswith("[") and stripped.endswith("]")
-        if is_section:
-            current = stripped[1:-1].strip().lower()
-            in_section = current == section_name
-            continue
-        if not in_section or "=" not in line:
-            continue
-        current_key, value = line.split("=", 1)
-        if current_key.strip().lower() != key_name:
-            continue
-        return value.strip()
-    return None
-
-
-def _is_missing_pad_binding(value: str | None) -> bool:
-    if value is None:
-        return True
-    normalized = value.strip().strip('"').strip("'").casefold()
-    return normalized in {"", "none", "nul", "null", "unbound"}
-
-
-def _is_keyboard_or_mouse_binding(value: str | None) -> bool:
-    if value is None:
-        return False
-    normalized = value.strip().strip('"').strip("'").casefold()
-    return "keyboard/" in normalized or "mouse/" in normalized
-
-
-def _pcsx2_pad_bindings(pad_index: int) -> tuple[tuple[str, str], ...]:
-    prefix = f"SDL-{pad_index}/"
-    return (
-        ("Up", f"{prefix}DPadUp"),
-        ("Right", f"{prefix}DPadRight"),
-        ("Down", f"{prefix}DPadDown"),
-        ("Left", f"{prefix}DPadLeft"),
-        ("Triangle", f"{prefix}Y"),
-        ("Circle", f"{prefix}B"),
-        ("Cross", f"{prefix}A"),
-        ("Square", f"{prefix}X"),
-        ("Select", f"{prefix}Back"),
-        ("Start", f"{prefix}Start"),
-        ("L1", f"{prefix}LeftShoulder"),
-        ("L2", f"{prefix}+LeftTrigger"),
-        ("R1", f"{prefix}RightShoulder"),
-        ("R2", f"{prefix}+RightTrigger"),
-        ("L3", f"{prefix}LeftStick"),
-        ("R3", f"{prefix}RightStick"),
-        ("LUp", f"{prefix}-LeftY"),
-        ("LRight", f"{prefix}+LeftX"),
-        ("LDown", f"{prefix}+LeftY"),
-        ("LLeft", f"{prefix}-LeftX"),
-        ("RUp", f"{prefix}-RightY"),
-        ("RRight", f"{prefix}+RightX"),
-        ("RDown", f"{prefix}+RightY"),
-        ("RLeft", f"{prefix}-RightX"),
-        ("LargeMotor", f"{prefix}LargeMotor"),
-        ("SmallMotor", f"{prefix}SmallMotor"),
-    )
-
-
-def _bootstrap_pcsx2_controllers(lines: list[str]) -> tuple[list[str], bool]:
-    changed = False
-    lines, changed_sdl = _upsert_ini_key(lines, "InputSources", "SDL", "true")
-    changed |= changed_sdl
-    for pad_index in (1, 2):
-        section = f"Pad{pad_index}"
-        pad_type = _read_ini_key(lines, section, "Type")
-        if _is_missing_pad_binding(pad_type):
-            lines, changed_type = _upsert_ini_key(lines, section, "Type", "DualShock2")
-            changed |= changed_type
-        for key, value in _pcsx2_pad_bindings(pad_index - 1):
-            existing = _read_ini_key(lines, section, key)
-            if not _is_missing_pad_binding(existing) and not _is_keyboard_or_mouse_binding(existing):
-                continue
-            lines, changed_binding = _upsert_ini_key(lines, section, key, value)
-            changed |= changed_binding
-    return lines, changed
+    _sync_pcsx2_ini_module()
+    return pcsx2_ini.read_ini_lines(path)
 
 
 def _upsert_ini_key(lines: list[str], section: str, key: str, value: str) -> tuple[list[str], bool]:
-    section_name = section.lower()
-    key_name = key.lower()
-    output: list[str] = []
-    in_section = False
-    section_found = False
-    key_found = False
-    changed = False
+    _sync_pcsx2_ini_module()
+    return pcsx2_ini.upsert_ini_key(lines, section, key, value)
 
-    for line in lines:
-        stripped = line.strip()
-        is_section = stripped.startswith("[") and stripped.endswith("]")
-        if is_section:
-            if in_section and not key_found:
-                output.append(f"{key} = {value}")
-                key_found = True
-                changed = True
-            current = stripped[1:-1].strip().lower()
-            in_section = current == section_name
-            if in_section:
-                section_found = True
-            output.append(line)
-            continue
 
-        if in_section and "=" in line:
-            current_key = line.split("=", 1)[0].strip().lower()
-            if current_key == key_name:
-                desired = f"{key} = {value}"
-                if stripped != desired:
-                    output.append(desired)
-                    changed = True
-                else:
-                    output.append(line)
-                key_found = True
-                continue
-
-        output.append(line)
-
-    if in_section and not key_found:
-        output.append(f"{key} = {value}")
-        changed = True
-        key_found = True
-
-    if not section_found:
-        if output and output[-1].strip():
-            output.append("")
-        output.append(f"[{section}]")
-        output.append(f"{key} = {value}")
-        changed = True
-
-    return output, changed
+def _bootstrap_pcsx2_controllers(lines: list[str]) -> tuple[list[str], bool]:
+    _sync_pcsx2_ini_module()
+    return pcsx2_ini.bootstrap_pcsx2_controllers(lines)
 
 
 def _write_ini_atomic(path: Path, lines: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = "\n".join(lines).rstrip() + "\n"
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent, suffix=".tmp") as tmp:
-        tmp.write(payload)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        tmp_path = Path(tmp.name)
-    replace_file(tmp_path, path)
+    _sync_pcsx2_ini_module()
+    pcsx2_ini.write_ini_atomic(path, lines)
 
 
 def _configure_pcsx2_runtime(
@@ -449,19 +135,16 @@ def _configure_pcsx2_runtime(
     verbose: bool,
     writer: Callable[[str], None],
 ) -> Path:
-    override_bios_dir = _override_path(
-        "PCSX2_BIOS_DIR",
-        "GAMEHUB_PCSX2_BIOS_DIR",
-        config_value=config.linux.pcsx2_bios_dir,
-    )
+    override_bios_dir = config.linux.pcsx2_bios_dir.expanduser() if config.linux.pcsx2_bios_dir is not None else None
     pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
     pcsx2_exe = Path(pcsx2_raw)
-    prefer_flatpak = _is_flatpak_command(pcsx2_exe, "net.pcsx2.PCSX2") or ("net.pcsx2.pcsx2" in pcsx2_raw.casefold())
+    prefer_flatpak = is_flatpak_command(pcsx2_exe, PCSX2_FLATPAK_APP_ID) or (
+        PCSX2_FLATPAK_APP_ID.casefold() in pcsx2_raw.casefold()
+    )
     if override_bios_dir is not None:
         bios_dir = override_bios_dir
     elif prefer_flatpak:
-        # Flatpak sandbox cannot reliably access arbitrary host paths.
-        bios_dir = _linux_flatpak_pcsx2_root() / "bios"
+        bios_dir = linux_flatpak_pcsx2_root() / "bios"
     else:
         bios_dir = config.firmware_dir / "PS2"
 

@@ -9,16 +9,6 @@ from gamehub_cli.emulators import ensure_emulators, resolve_emulator_executable
 from gamehub_common.models import LibraryIndex, SystemSpec
 
 
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    root = Path(__file__).resolve().parents[1] / ".pytest_tmp_local"
-    root.mkdir(parents=True, exist_ok=True)
-    temp_dir = root / f"{prefix}{uuid4().hex}"
-    temp_dir.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_dir
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def _index_with_emulators(*names: str) -> LibraryIndex:
@@ -122,6 +112,58 @@ def test_ensure_emulators_uses_fedora_dnf_for_missing(monkeypatch, capsys) -> No
     assert commands
     assert commands[0][:5] == ["sudo", "dnf", "install", "-y", "dolphin-emu"]
     assert "Installed emulator: dolphin" in capsys.readouterr().out
+
+
+def test_ensure_emulators_linux_auto_uses_apt_on_ubuntu(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("retroarch")
+    state = {"installed": False}
+
+    def fake_which(name: str) -> str | None:
+        if name == "apt-get":
+            return "/usr/bin/apt-get"
+        if name == "sudo":
+            return "/usr/bin/sudo"
+        if name == "retroarch":
+            return "/usr/bin/retroarch" if state["installed"] else None
+        return None
+
+    class FakeCompleted:
+        returncode = 0
+
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        commands.append(cmd)
+        state["installed"] = True
+        return FakeCompleted()
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "ubuntu debian")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.os.geteuid", lambda: 1000, raising=False)
+    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+
+    ensure_emulators(index=index, dry_run=False, verbose=False)
+
+    assert commands
+    assert commands[0][:5] == ["sudo", "apt-get", "install", "-y", "retroarch"]
+    assert "Installed emulator: retroarch" in capsys.readouterr().out
+
+
+def test_ensure_emulators_linux_apt_backend_requires_apt(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("retroarch")
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "ubuntu")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda name: None)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+
+    ensure_emulators(index=index, dry_run=False, verbose=False, linux_install_backend="apt")
+
+    out = capsys.readouterr().out
+    assert "apt-get not found" in out
 
 
 def test_ensure_emulators_linux_non_fedora_reports_unsupported(monkeypatch, capsys) -> None:

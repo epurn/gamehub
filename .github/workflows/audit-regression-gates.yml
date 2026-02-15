@@ -1,0 +1,93 @@
+name: Audit Regression Gates
+
+on:
+  pull_request:
+    paths:
+      - "apps/cli/**"
+      - "shared/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/audit-regression-gates.yml"
+      - "docs/development.md"
+      - "docs/release-process.md"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/cli/**"
+      - "shared/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/audit-regression-gates.yml"
+      - "docs/development.md"
+      - "docs/release-process.md"
+  workflow_dispatch:
+
+jobs:
+  audit-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+          python -m pip install pip-audit
+
+      - name: Guard runtime bazzite literals
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          hits: list[str] = []
+          for root in (Path("apps"), Path("shared")):
+              for path in root.rglob("*.py"):
+                  text = path.read_text(encoding="utf-8", errors="ignore")
+                  if "bazzite" in text.casefold():
+                      hits.append(str(path))
+          if hits:
+              print("Disallowed runtime 'bazzite' literal found:")
+              for hit in sorted(hits):
+                  print(f"- {hit}")
+              raise SystemExit(1)
+          PY
+
+      - name: Config precedence slice
+        run: |
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_cli_config_state.py
+
+      - name: Server refresh cache slice
+        run: |
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_server_api.py
+
+      - name: Linux portability slice
+        run: |
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_paths.py \
+            tests/test_emulators.py \
+            tests/test_firmware_deploy.py \
+            tests/test_retroarch_cores.py
+
+      - name: Steam integration slice
+        run: |
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_steam.py \
+            tests/test_steam_integration.py \
+            tests/test_sync.py
+
+      - name: Dependency vulnerability audit
+        run: |
+          pip-audit --progress-spinner off
+
+      - name: Dependency update report
+        run: |
+          python -m pip list --outdated --format=columns

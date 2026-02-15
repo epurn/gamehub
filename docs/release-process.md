@@ -1,5 +1,8 @@
 # Release Process
 
+Detailed end-to-end validation and publishing steps are in:
+- `docs/release-final-validation-playbook.md`
+
 ## Versioning
 - Use semantic versioning (`MAJOR.MINOR.PATCH`).
 - Tag format: `vX.Y.Z`.
@@ -9,24 +12,47 @@
 ```powershell
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
 ```
-2. Bump version in `pyproject.toml`.
-3. Update release notes/changelog.
-4. Create and push tag:
+2. Run audit regression slices:
+```powershell
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py tests/test_sync.py
+git grep -n -i "bazzite" -- apps shared
+```
+3. Run dependency audit/update checks:
+```powershell
+.\venv\Scripts\python.exe -m pip install pip-audit
+.\venv\Scripts\python.exe -m pip_audit --progress-spinner off
+.\venv\Scripts\python.exe -m pip list --outdated --format=columns
+```
+4. Run tracked-files secret scan (placeholders only, no real secrets):
+```powershell
+git grep -nEI "sgdb\.api_key|GAMEHUB_SGDB_API_KEY|ghp_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----" -- . ":(exclude)tests/**"
+```
+5. Bump version in `pyproject.toml`.
+6. Update release notes/changelog.
+7. Create and push tag:
 ```powershell
 git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
-5. Verify GitHub Actions:
+8. Verify GitHub Actions:
+   - audit regression gates workflow
    - server image release workflow
    - client artifact release workflow
-6. Validate artifacts:
+9. Validate artifacts:
    - server image on GHCR
    - Linux wheel on GitHub Release
    - Windows EXE on GitHub Release
    - checksums file
-7. Run post-release smoke checks:
+10. Run post-release smoke checks:
    - deploy server and run `scripts/verify_server_deploy.ps1`
    - run client `--help` and `sync --dry-run`
+
+## Secret Rotation
+- If a token is exposed in any tracked history, rotate it immediately at the provider and replace local config with a new value.
+- For SGDB specifically, generate a new key and reconfigure `GAMEHUB_SGDB_API_KEY` in runtime environment.
 
 ## Artifact Naming
 - Server image: `ghcr.io/<org>/gamehub-server:vX.Y.Z`

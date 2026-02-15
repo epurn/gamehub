@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from gamehub_common.ids import sha256_file
 from gamehub_common.models import LibraryIndex
 
 from .config import GamehubConfig
+from .paths import from_rel_path
 from .state import SyncState
 
 
@@ -32,11 +33,6 @@ class SyncPlan:
     @property
     def total_actions(self) -> int:
         return len(self.firmware_actions) + len(self.content_actions)
-
-
-def _from_rel_path(base: Path, rel_path: str) -> Path:
-    rel = PurePosixPath(rel_path)
-    return base.joinpath(*rel.parts)
 
 
 def _is_file_valid(path: Path, expected_sha256: str, verify: bool, expected_size_bytes: int | None = None) -> bool:
@@ -81,7 +77,7 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
             plan.skipped_titles += 1
             continue
 
-        rom_path = _from_rel_path(config.library_dir, title.rom.rel_path)
+        rom_path = from_rel_path(config.library_dir, title.rom.rel_path, preferred_root="roms")
         known_sha = state.downloaded_checksums.get(title.rom.file_id)
         rom_ok = _is_file_valid(rom_path, title.rom.sha256, verify, expected_size_bytes=title.rom.size_bytes) and (
             known_sha is None or known_sha == title.rom.sha256
@@ -101,7 +97,7 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
             )
 
         for asset in title.assets:
-            asset_path = _from_rel_path(config.library_dir, asset.rel_path)
+            asset_path = from_rel_path(config.library_dir, asset.rel_path)
             known_asset_sha = state.downloaded_checksums.get(asset.asset_id)
             asset_ok = _is_file_valid(asset_path, asset.sha256, verify, expected_size_bytes=asset.size_bytes) and (
                 known_asset_sha is None or known_asset_sha == asset.sha256

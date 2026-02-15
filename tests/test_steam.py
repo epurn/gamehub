@@ -31,16 +31,6 @@ from gamehub_cli.steam import (
 )
 
 
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    root = Path(__file__).resolve().parents[1] / ".pytest_tmp_local"
-    root.mkdir(parents=True, exist_ok=True)
-    temp_dir = root / f"{prefix}{uuid4().hex}"
-    temp_dir.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_dir
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def test_discover_steam_id_uses_lowest_numeric_dir() -> None:
@@ -66,7 +56,7 @@ def test_discover_userdata_dir_does_not_fallback_when_explicit_missing(monkeypat
         assert resolved is None
 
 
-def test_discover_userdata_dir_prefers_env_override(monkeypatch) -> None:
+def test_discover_userdata_dir_uses_explicit_path(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-steam-") as temp_root:
         env_path = temp_root / "env" / "userdata"
         env_path.mkdir(parents=True, exist_ok=True)
@@ -76,7 +66,7 @@ def test_discover_userdata_dir_prefers_env_override(monkeypatch) -> None:
 
         resolved = discover_userdata_dir(explicit)
 
-        assert resolved == env_path
+        assert resolved == explicit
 
 
 def test_discover_steam_id_prefers_most_recent_profile() -> None:
@@ -160,8 +150,8 @@ def test_backup_steam_configs_creates_timestamped_files() -> None:
 
 def test_wait_for_steam_exit_returns_true_when_process_stops(monkeypatch) -> None:
     states = iter([True, True, False])
-    monkeypatch.setattr("gamehub_cli.steam.is_steam_running", lambda: next(states))
-    monkeypatch.setattr("gamehub_cli.steam.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle.is_steam_running", lambda: next(states))
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle.time.sleep", lambda _seconds: None)
 
     assert wait_for_steam_exit(timeout_seconds=2) is True
 
@@ -175,8 +165,8 @@ def test_is_steam_running_linux_checks_exact_process_names(monkeypatch) -> None:
         process_name = cmd[-1]
         return type("Completed", (), {"returncode": 0 if process_name == "steam" else 1, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle.subprocess.run", fake_run)
 
     running = is_steam_running()
 
@@ -187,8 +177,11 @@ def test_is_steam_running_linux_checks_exact_process_names(monkeypatch) -> None:
 
 def test_close_steam_best_effort_linux_uses_exact_process_names(monkeypatch) -> None:
     commands: list[list[str]] = []
-    monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam._run_process_best_effort", lambda cmd, timeout_seconds=10: commands.append(cmd))
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle.os.name", "posix")
+    monkeypatch.setattr(
+        "gamehub_cli.steam_lifecycle._run_process_best_effort",
+        lambda cmd, timeout_seconds=10: commands.append(cmd),
+    )
 
     close_steam_best_effort()
 
@@ -430,6 +423,32 @@ def test_update_collections_preserves_unmanaged_and_is_idempotent() -> None:
         assert sorted(item["name"] for item in managed) == ["NES", "PSX"]
 
 
+def test_update_collections_skips_noop_write(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+        initial_collections = {"collections": [{"name": "NES", "added": [100], "removed": [], "gamehub_managed": True}]}
+        context.localconfig_path.write_text(
+            vdf.dumps({"UserLocalConfigStore": {"WebStorage": {"user-collections": json.dumps(initial_collections)}}}),
+            encoding="utf-8",
+        )
+
+        writes: list[str] = []
+        monkeypatch.setattr("gamehub_cli.steam_collections._atomic_write_text", lambda path, payload: writes.append(payload))
+
+        changed = update_collections(context, {"NES": ["100"]})
+
+        assert changed == 0
+        assert writes == []
+
+
 def test_upsert_shortcuts_uses_persisted_appid_for_mapping() -> None:
     with _workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
@@ -642,13 +661,16 @@ def test_prune_grid_noncanonical_variants_removes_signed_when_unsigned_exists() 
 
 def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
     launched: list[tuple[list[str], dict]] = []
-    monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam._wait_for_steam_start", lambda timeout_seconds=12.0: True)
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: True)
     monkeypatch.setattr(
-        "gamehub_cli.steam.shutil.which",
+        "gamehub_cli.steam_lifecycle.shutil.which",
         lambda command: "/usr/bin/steam" if command == "steam" else None,
     )
-    monkeypatch.setattr("gamehub_cli.steam.subprocess.Popen", lambda command, **kwargs: launched.append((command, kwargs)))
+    monkeypatch.setattr(
+        "gamehub_cli.steam_lifecycle.subprocess.Popen",
+        lambda command, **kwargs: launched.append((command, kwargs)),
+    )
     context = SteamContext(
         userdata_dir=Path("userdata"),
         steam_id="76561198000000001",
@@ -666,9 +688,9 @@ def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
 
 
 def test_reopen_steam_linux_returns_false_when_no_launcher_available(monkeypatch) -> None:
-    monkeypatch.setattr("gamehub_cli.steam.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam._wait_for_steam_start", lambda timeout_seconds=12.0: False)
-    monkeypatch.setattr("gamehub_cli.steam.shutil.which", lambda command: None)
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: False)
+    monkeypatch.setattr("gamehub_cli.steam_lifecycle.shutil.which", lambda command: None)
     context = SteamContext(
         userdata_dir=Path("userdata"),
         steam_id="76561198000000001",

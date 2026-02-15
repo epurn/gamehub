@@ -1,20 +1,11 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-import gc
-import os
 from pathlib import Path
-import shutil
-import time
-import uuid
 
 import pytest
 
 from gamehub_common.ids import make_file_id, make_title_id, sha256_file
 from gamehub_server.indexer import SYSTEM_CATALOG, build_index
-
-TMP_ROOT = Path(__file__).resolve().parents[1] / ".pytest_tmp_local"
-TMP_ROOT.mkdir(parents=True, exist_ok=True)
 
 INITIAL_SYSTEM_SET = {
     "GB",
@@ -35,39 +26,6 @@ INITIAL_SYSTEM_SET = {
 def _write_file(path: Path, payload: bytes = b"x") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
-
-
-def _remove_readonly_and_retry(func, path, _exc_info) -> None:
-    try:
-        os.chmod(path, 0o700)
-    except OSError:
-        pass
-    try:
-        func(path)
-    except OSError:
-        pass
-
-
-def _cleanup_tree(path: Path) -> None:
-    for _ in range(10):
-        try:
-            shutil.rmtree(path, onexc=_remove_readonly_and_retry)
-            return
-        except FileNotFoundError:
-            return
-        except OSError:
-            gc.collect()
-            time.sleep(0.05)
-
-
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    path = TMP_ROOT / f"{prefix}{uuid.uuid4().hex}"
-    path.mkdir(parents=True, exist_ok=False)
-    try:
-        yield path
-    finally:
-        _cleanup_tree(path)
 
 
 def test_build_index_scans_single_title() -> None:

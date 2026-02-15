@@ -30,8 +30,9 @@ Steam close behavior:
    - Windows detection checks executable PATH, common install locations, and uninstall registry locations (not only winget package metadata)
    - on Windows non-dry-run, attempts auto-install via `winget` for known emulators (`retroarch`, `pcsx2`, `dolphin`)
    - on Linux non-dry-run, uses config-first install backend (`[linux].emulator_install_backend`):
-     - `auto` (default): Fedora `dnf` when available, else `flatpak` when available, else configured command backend
+     - `auto` (default): Fedora + `dnf`, then Debian/Ubuntu + `apt-get`, then `flatpak`, then configured command backend
      - `dnf`: force Fedora package install behavior
+     - `apt`: force Debian/Ubuntu package install behavior (`apt-get install -y`)
      - `flatpak`: install `org.libretro.RetroArch`, `net.pcsx2.PCSX2`, `org.DolphinEmu.dolphin-emu` (remote optional via `[linux].flatpak_remote` / `GAMEHUB_LINUX_FLATPAK_REMOTE`)
      - `command`: run `[linux].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
      - `none`: disable Linux auto-install (sync prints actionable missing emulator output)
@@ -54,6 +55,7 @@ Steam close behavior:
 7. If not `--dry-run`:
    - download firmware then ROM/assets
    - write to `*.part`, verify SHA-256, atomic rename
+   - download execution uses a shared HTTP connection pool and configurable parallel workers (`[server].max_parallel_downloads` / `GAMEHUB_MAX_PARALLEL_DOWNLOADS`, default `4`)
 8. Deploy firmware files into emulator-native BIOS locations (copy/link from `<gamehub_dir>/firmware/...`)
 9. Discover Steam userdata + SteamID
 10. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
@@ -84,6 +86,7 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
 - `GC` firmware is mirrored to Dolphin user path `GC/`.
 
 Linux path notes:
+- Linux/Flatpak command matching and path-candidate discovery is shared across sync/firmware/core modules to keep behavior consistent.
 - RetroArch core provisioning no longer uses Linux executable-parent directories like `/usr/bin/cores`.
 - PCSX2 runtime config defaults are Linux-aware and Flatpak-aware (`~/.config/PCSX2/...` or `~/.var/app/net.pcsx2.PCSX2/...`).
 - Dolphin target selection prefers explicit overrides, then existing user data roots, then a deterministic native/Flatpak default.

@@ -17,8 +17,11 @@ Copy-Item .env.production.template .env.production
 
 Required values in `.env.production`:
 - `GAMEHUB_DATA_HOST_PATH`: host path containing `roms/` and `firmware/`
+  - Windows example: `D:/GameHubData`
+  - Linux example: `/srv/gamehub/data`
 - `GAMEHUB_SERVER_PORT`: exposed host port
 - `GAMEHUB_IMAGE_TAG`: image tag to run
+- Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`, meaning startup/manual refresh only)
 
 ## 2) Deploy
 ```powershell
@@ -39,4 +42,10 @@ docker compose -f docker/compose.yaml --env-file .env.production config
 - Data volume is mounted read-only in container.
 - Container restart policy is `unless-stopped`.
 - Healthcheck targets `GET /health`.
+- Server performs index/hash warmup during startup; large libraries can increase startup time.
+- Startup logs include explicit warmup start/completion lines with elapsed time and indexed system/title counts.
 - Scope is LAN-only in this phase (no TLS/auth in-container).
+- Compose defaults are architecture-portable for local deploys (no hard pin in `docker/compose.yaml`).
+- If you need to pin image platform explicitly, use Docker runtime controls:
+  - PowerShell: `$env:DOCKER_DEFAULT_PLATFORM = "linux/amd64"`
+  - Bash: `export DOCKER_DEFAULT_PLATFORM=linux/amd64`

@@ -1,10 +1,21 @@
 # Use with: pyinstaller --noconfirm packaging/windows/gamehub.spec
 
+from pathlib import Path
+
 block_cipher = None
+# PyInstaller executes spec files via `exec(...)`, so `__file__` is not guaranteed.
+# `SPECPATH` and `SPEC` are injected by PyInstaller in spec globals.
+SPEC_DIR = Path(SPECPATH).resolve()
+REPO_ROOT = SPEC_DIR.parents[1]
 
 a = Analysis(
-    ["packaging/windows/entrypoint.py"],
-    pathex=[],
+    [str(SPEC_DIR / "entrypoint.py")],
+    pathex=[
+        str(REPO_ROOT),
+        str(REPO_ROOT / "apps" / "cli"),
+        str(REPO_ROOT / "apps" / "server"),
+        str(REPO_ROOT / "shared" / "gamehub_common"),
+    ],
     binaries=[],
     datas=[],
     hiddenimports=[],

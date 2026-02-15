@@ -16,16 +16,6 @@ from gamehub_cli.retroarch_cores import (
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
 
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    root = Path(__file__).resolve().parents[1] / ".pytest_tmp_local"
-    root.mkdir(parents=True, exist_ok=True)
-    temp_dir = root / f"{prefix}{uuid4().hex}"
-    temp_dir.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_dir
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def _zip_blob(member_name: str, payload: bytes) -> bytes:
@@ -174,7 +164,7 @@ def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch) -> No
         monkeypatch.setattr("gamehub_cli.retroarch_cores.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "posix")
         monkeypatch.setattr("gamehub_cli.retroarch_cores.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.retroarch_cores._retroarch_cfg_candidates", lambda explicit_cfg_path=None: [])
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [])
         monkeypatch.setattr("gamehub_cli.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch")
 
         paths = resolve_retroarch_paths()
@@ -193,7 +183,7 @@ def test_resolve_retroarch_paths_linux_prefers_flatpak_when_export_detected(monk
         monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "posix")
         monkeypatch.setattr("gamehub_cli.retroarch_cores.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.retroarch_cores.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.retroarch_cores._retroarch_cfg_candidates", lambda explicit_cfg_path=None: [])
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [])
         monkeypatch.setattr("gamehub_cli.retroarch_cores.resolve_emulator_executable", lambda _name: str(export))
 
         paths = resolve_retroarch_paths()

@@ -9,16 +9,6 @@ from gamehub_cli.config import LinuxConfig, load_config
 from gamehub_cli.state import SyncState, load_state, save_state_atomic
 
 
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    root = Path(__file__).resolve().parents[1] / ".pytest_tmp_local"
-    root.mkdir(parents=True, exist_ok=True)
-    temp_dir = root / f"{prefix}{uuid4().hex}"
-    temp_dir.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_dir
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def test_load_config_uses_defaults_when_file_is_missing(monkeypatch) -> None:
@@ -234,6 +224,60 @@ def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
         assert loaded.linux.pcsx2_bios_dir == Path("~/.config/PCSX2/bios").expanduser()
         assert loaded.linux.pcsx2_controller_autoconfig is False
         assert loaded.linux.dolphin_user_path == Path("~/.local/share/dolphin-emu").expanduser()
+
+
+def test_load_config_supports_centralized_env_precedence(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[steam]",
+                    'userdata_dir = "C:/Steam/config-value"',
+                    "",
+                    "[linux]",
+                    'emulator_install_backend = "flatpak"',
+                    'emulator_install_command = "echo config {package}"',
+                    'flatpak_remote = "config-remote"',
+                    'retroarch_cfg_path = "C:/RetroArch/config.cfg"',
+                    'retroarch_system_dir = "C:/RetroArch/system"',
+                    'retroarch_cores_dir = "C:/RetroArch/cores"',
+                    'retroarch_info_dir = "C:/RetroArch/info"',
+                    'retroarch_cores_base_url = "https://config.example/cores/"',
+                    'pcsx2_ini_path = "C:/PCSX2/PCSX2.ini"',
+                    'pcsx2_bios_dir = "C:/PCSX2/bios"',
+                    'dolphin_user_path = "C:/Dolphin/User"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("GAMEHUB_STEAM_USERDATA_DIR", "D:/Steam/env-value")
+        monkeypatch.setenv("GAMEHUB_LINUX_EMULATOR_INSTALL_BACKEND", "command")
+        monkeypatch.setenv("GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND", "sudo apt-get install -y {package}")
+        monkeypatch.setenv("GAMEHUB_LINUX_FLATPAK_REMOTE", "env-remote")
+        monkeypatch.setenv("GAMEHUB_RETROARCH_CFG_PATH", "D:/RetroArch/env.cfg")
+        monkeypatch.setenv("RETROARCH_SYSTEM_DIR", "D:/RetroArch/system")
+        monkeypatch.setenv("GAMEHUB_RETROARCH_CORES_DIR", "D:/RetroArch/cores")
+        monkeypatch.setenv("GAMEHUB_RETROARCH_INFO_DIR", "D:/RetroArch/info")
+        monkeypatch.setenv("GAMEHUB_RETROARCH_CORES_BASE_URL", "https://env.example/cores/")
+        monkeypatch.setenv("GAMEHUB_PCSX2_INI_PATH", "D:/PCSX2/PCSX2.ini")
+        monkeypatch.setenv("PCSX2_BIOS_DIR", "D:/PCSX2/bios")
+        monkeypatch.setenv("DOLPHIN_EMU_USERPATH", "D:/Dolphin/User")
+
+        loaded = load_config(config_path)
+
+        assert loaded.steam_userdata_dir == Path("D:/Steam/env-value")
+        assert loaded.linux.emulator_install_backend == "command"
+        assert loaded.linux.emulator_install_command == "sudo apt-get install -y {package}"
+        assert loaded.linux.flatpak_remote == "env-remote"
+        assert loaded.linux.retroarch_cfg_path == Path("D:/RetroArch/env.cfg")
+        assert loaded.linux.retroarch_system_dir == Path("D:/RetroArch/system")
+        assert loaded.linux.retroarch_cores_dir == Path("D:/RetroArch/cores")
+        assert loaded.linux.retroarch_info_dir == Path("D:/RetroArch/info")
+        assert loaded.linux.retroarch_cores_base_url == "https://env.example/cores/"
+        assert loaded.linux.pcsx2_ini_path == Path("D:/PCSX2/PCSX2.ini")
+        assert loaded.linux.pcsx2_bios_dir == Path("D:/PCSX2/bios")
+        assert loaded.linux.dolphin_user_path == Path("D:/Dolphin/User")
 
 
 def test_load_config_supports_pcsx2_controller_autoconfig_env_override(monkeypatch) -> None:

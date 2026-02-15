@@ -59,3 +59,4 @@ Docker-first home server and CLI sync tool for emulator libraries and Steam inje
 - `docs/runbook.md`
 - `docs/client-install.md`
 - `docs/release-process.md`
+- `docs/audit/README.md`

@@ -46,6 +46,7 @@ class GamehubConfig:
     index_timeout_seconds: float | None = None
     index_fetch_attempts: int = 3
     index_retry_backoff_seconds: float = 1.5
+    max_parallel_downloads: int = 4
     linux: LinuxConfig = field(default_factory=LinuxConfig)
 
 
@@ -156,6 +157,19 @@ def _normalize_optional_bool(raw: object) -> bool | None:
     return None
 
 
+def _first_env_value(*names: str) -> str | None:
+    for name in names:
+        raw = os.environ.get(name)
+        if raw is None:
+            continue
+        if not isinstance(raw, str):
+            continue
+        if not raw.strip():
+            continue
+        return raw
+    return None
+
+
 def _resolve_paths(paths: dict[str, object]) -> tuple[Path, Path, Path]:
     """
     Resolve client storage locations.
@@ -173,43 +187,68 @@ def _resolve_paths(paths: dict[str, object]) -> tuple[Path, Path, Path]:
 
 def load_config(config_path: Path | None = None) -> GamehubConfig:
     path = config_path or default_config_path()
-    default_root = default_gamehub_dir()
-    if not path.exists():
-        sgdb_api_key = _normalize_secret(os.environ.get("GAMEHUB_SGDB_API_KEY"))
-        return GamehubConfig(
-            server_url="http://127.0.0.1:8000",
-            index_timeout_seconds=None,
-            index_fetch_attempts=3,
-            index_retry_backoff_seconds=1.5,
-            library_dir=default_root,
-            firmware_dir=default_root / "firmware",
-            state_path=default_root / "state.json",
-            steam_userdata_dir=None,
-            steam_id=None,
-            steam_exe=None,
-            sgdb_api_key=sgdb_api_key,
-            sgdb_cache_dir=default_sgdb_cache_dir(),
-            sgdb_enabled_kinds=_VALID_SGDB_KINDS,
-            linux=LinuxConfig(),
-        )
+    data: dict[str, object] = {}
+    if path.exists():
+        loaded = tomllib.loads(path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            data = loaded
 
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
-    server = data.get("server", {})
-    paths = data.get("paths", {})
-    steam = data.get("steam", {})
-    sgdb = data.get("sgdb", {})
-    linux = data.get("linux", {})
-    env_api_key = _normalize_secret(os.environ.get("GAMEHUB_SGDB_API_KEY"))
+    default_root = default_gamehub_dir()
+    server = data.get("server", {}) if isinstance(data.get("server", {}), dict) else {}
+    paths = data.get("paths", {}) if isinstance(data.get("paths", {}), dict) else {}
+    steam = data.get("steam", {}) if isinstance(data.get("steam", {}), dict) else {}
+    sgdb = data.get("sgdb", {}) if isinstance(data.get("sgdb", {}), dict) else {}
+    linux = data.get("linux", {}) if isinstance(data.get("linux", {}), dict) else {}
+
+    env_api_key = _normalize_secret(_first_env_value("GAMEHUB_SGDB_API_KEY"))
     config_api_key = _normalize_secret(sgdb.get("api_key"))
     sgdb_api_key = env_api_key or config_api_key
     config_index_timeout = _normalize_optional_float(server.get("index_timeout_seconds"), minimum=1.0)
-    env_index_timeout = _normalize_optional_float(os.environ.get("GAMEHUB_INDEX_TIMEOUT_SECONDS"), minimum=1.0)
+    env_index_timeout = _normalize_optional_float(_first_env_value("GAMEHUB_INDEX_TIMEOUT_SECONDS"), minimum=1.0)
     config_index_attempts = _normalize_optional_int(server.get("index_fetch_attempts"), minimum=1)
-    env_index_attempts = _normalize_optional_int(os.environ.get("GAMEHUB_INDEX_FETCH_ATTEMPTS"), minimum=1)
+    env_index_attempts = _normalize_optional_int(_first_env_value("GAMEHUB_INDEX_FETCH_ATTEMPTS"), minimum=1)
     config_index_backoff = _normalize_optional_float(server.get("index_retry_backoff_seconds"), minimum=0.0)
-    env_index_backoff = _normalize_optional_float(os.environ.get("GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS"), minimum=0.0)
+    env_index_backoff = _normalize_optional_float(
+        _first_env_value("GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS"),
+        minimum=0.0,
+    )
+    config_parallel_downloads = _normalize_optional_int(server.get("max_parallel_downloads"), minimum=1)
+    env_parallel_downloads = _normalize_optional_int(_first_env_value("GAMEHUB_MAX_PARALLEL_DOWNLOADS"), minimum=1)
+
+    config_steam_userdata_dir = _normalize_optional_path(steam.get("userdata_dir"))
+    env_steam_userdata_dir = _normalize_optional_path(_first_env_value("GAMEHUB_STEAM_USERDATA_DIR"))
+    steam_userdata_dir = env_steam_userdata_dir if env_steam_userdata_dir is not None else config_steam_userdata_dir
+
+    config_emulator_install_backend = _normalize_optional_text(linux.get("emulator_install_backend"))
+    env_emulator_install_backend = _normalize_optional_text(_first_env_value("GAMEHUB_LINUX_EMULATOR_INSTALL_BACKEND"))
+    config_emulator_install_command = _normalize_optional_text(linux.get("emulator_install_command"))
+    env_emulator_install_command = _normalize_optional_text(_first_env_value("GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND"))
+    config_flatpak_remote = _normalize_optional_text(linux.get("flatpak_remote"))
+    env_flatpak_remote = _normalize_optional_text(_first_env_value("GAMEHUB_LINUX_FLATPAK_REMOTE"))
+
+    config_retroarch_cfg_path = _normalize_optional_path(linux.get("retroarch_cfg_path"))
+    env_retroarch_cfg_path = _normalize_optional_path(_first_env_value("GAMEHUB_RETROARCH_CFG_PATH"))
+    config_retroarch_system_dir = _normalize_optional_path(linux.get("retroarch_system_dir"))
+    env_retroarch_system_dir = _normalize_optional_path(
+        _first_env_value("RETROARCH_SYSTEM_DIR", "GAMEHUB_RETROARCH_SYSTEM_DIR")
+    )
+    config_retroarch_cores_dir = _normalize_optional_path(linux.get("retroarch_cores_dir"))
+    env_retroarch_cores_dir = _normalize_optional_path(_first_env_value("GAMEHUB_RETROARCH_CORES_DIR"))
+    config_retroarch_info_dir = _normalize_optional_path(linux.get("retroarch_info_dir"))
+    env_retroarch_info_dir = _normalize_optional_path(_first_env_value("GAMEHUB_RETROARCH_INFO_DIR"))
+    config_retroarch_cores_base_url = _normalize_optional_text(linux.get("retroarch_cores_base_url"))
+    env_retroarch_cores_base_url = _normalize_optional_text(_first_env_value("GAMEHUB_RETROARCH_CORES_BASE_URL"))
+
+    config_pcsx2_ini_path = _normalize_optional_path(linux.get("pcsx2_ini_path"))
+    env_pcsx2_ini_path = _normalize_optional_path(_first_env_value("GAMEHUB_PCSX2_INI_PATH"))
+    config_pcsx2_bios_dir = _normalize_optional_path(linux.get("pcsx2_bios_dir"))
+    env_pcsx2_bios_dir = _normalize_optional_path(_first_env_value("PCSX2_BIOS_DIR", "GAMEHUB_PCSX2_BIOS_DIR"))
+
+    config_dolphin_user_path = _normalize_optional_path(linux.get("dolphin_user_path"))
+    env_dolphin_user_path = _normalize_optional_path(_first_env_value("DOLPHIN_EMU_USERPATH", "GAMEHUB_DOLPHIN_EMU_USERPATH"))
+
     config_pcsx2_controller_autoconfig = _normalize_optional_bool(linux.get("pcsx2_controller_autoconfig"))
-    env_pcsx2_controller_autoconfig = _normalize_optional_bool(os.environ.get("GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG"))
+    env_pcsx2_controller_autoconfig = _normalize_optional_bool(_first_env_value("GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG"))
     library_dir, firmware_dir, state_path = _resolve_paths(paths)
     return GamehubConfig(
         server_url=str(server.get("url", "http://127.0.0.1:8000")),
@@ -218,31 +257,53 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
         index_retry_backoff_seconds=(
             env_index_backoff if env_index_backoff is not None else (config_index_backoff if config_index_backoff is not None else 1.5)
         ),
+        max_parallel_downloads=min(
+            16,
+            env_parallel_downloads if env_parallel_downloads is not None else (config_parallel_downloads or 4),
+        ),
         library_dir=library_dir,
         firmware_dir=firmware_dir,
         state_path=state_path,
-        steam_userdata_dir=Path(steam["userdata_dir"]).expanduser() if steam.get("userdata_dir") else None,
+        steam_userdata_dir=steam_userdata_dir,
         steam_id=str(steam["steam_id"]) if steam.get("steam_id") else None,
         steam_exe=Path(steam["steam_exe"]).expanduser() if steam.get("steam_exe") else None,
         sgdb_api_key=sgdb_api_key,
-        sgdb_cache_dir=Path(sgdb.get("cache_dir", default_sgdb_cache_dir())).expanduser(),
+        sgdb_cache_dir=Path(sgdb.get("cache_dir", default_root / "artwork_cache" / "sgdb")).expanduser(),
         sgdb_enabled_kinds=_normalize_sgdb_kinds(sgdb.get("enabled_kinds")),
         linux=LinuxConfig(
-            emulator_install_backend=_normalize_optional_text(linux.get("emulator_install_backend")),
-            emulator_install_command=_normalize_optional_text(linux.get("emulator_install_command")),
-            flatpak_remote=_normalize_optional_text(linux.get("flatpak_remote")),
-            retroarch_cfg_path=_normalize_optional_path(linux.get("retroarch_cfg_path")),
-            retroarch_system_dir=_normalize_optional_path(linux.get("retroarch_system_dir")),
-            retroarch_cores_dir=_normalize_optional_path(linux.get("retroarch_cores_dir")),
-            retroarch_info_dir=_normalize_optional_path(linux.get("retroarch_info_dir")),
-            retroarch_cores_base_url=_normalize_optional_text(linux.get("retroarch_cores_base_url")),
-            pcsx2_ini_path=_normalize_optional_path(linux.get("pcsx2_ini_path")),
-            pcsx2_bios_dir=_normalize_optional_path(linux.get("pcsx2_bios_dir")),
+            emulator_install_backend=(
+                env_emulator_install_backend
+                if env_emulator_install_backend is not None
+                else config_emulator_install_backend
+            ),
+            emulator_install_command=(
+                env_emulator_install_command
+                if env_emulator_install_command is not None
+                else config_emulator_install_command
+            ),
+            flatpak_remote=env_flatpak_remote if env_flatpak_remote is not None else config_flatpak_remote,
+            retroarch_cfg_path=env_retroarch_cfg_path if env_retroarch_cfg_path is not None else config_retroarch_cfg_path,
+            retroarch_system_dir=(
+                env_retroarch_system_dir
+                if env_retroarch_system_dir is not None
+                else config_retroarch_system_dir
+            ),
+            retroarch_cores_dir=(
+                env_retroarch_cores_dir if env_retroarch_cores_dir is not None else config_retroarch_cores_dir
+            ),
+            retroarch_info_dir=env_retroarch_info_dir if env_retroarch_info_dir is not None else config_retroarch_info_dir,
+            retroarch_cores_base_url=(
+                env_retroarch_cores_base_url
+                if env_retroarch_cores_base_url is not None
+                else config_retroarch_cores_base_url
+            ),
+            pcsx2_ini_path=env_pcsx2_ini_path if env_pcsx2_ini_path is not None else config_pcsx2_ini_path,
+            pcsx2_bios_dir=env_pcsx2_bios_dir if env_pcsx2_bios_dir is not None else config_pcsx2_bios_dir,
             pcsx2_controller_autoconfig=(
                 env_pcsx2_controller_autoconfig
                 if env_pcsx2_controller_autoconfig is not None
                 else (config_pcsx2_controller_autoconfig if config_pcsx2_controller_autoconfig is not None else True)
             ),
-            dolphin_user_path=_normalize_optional_path(linux.get("dolphin_user_path")),
+            dolphin_user_path=env_dolphin_user_path if env_dolphin_user_path is not None else config_dolphin_user_path,
         ),
     )

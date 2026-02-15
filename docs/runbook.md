@@ -32,6 +32,10 @@ docker compose -f docker/compose.yaml --env-file .env.production up -d
 .\scripts\verify_server_deploy.ps1
 ```
 
+Optional platform pin (only when needed for cross-arch hosts):
+- PowerShell: `$env:DOCKER_DEFAULT_PLATFORM = "linux/amd64"`
+- Bash: `export DOCKER_DEFAULT_PLATFORM=linux/amd64`
+
 ## Rollback
 1. Set `GAMEHUB_IMAGE_TAG` in `.env.production` to previous known-good image tag.
 2. Re-run:
@@ -55,4 +59,5 @@ docker compose -f docker/compose.yaml --env-file .env.production logs gamehub-se
 4. API checks:
    - `GET /health`
    - `GET /v1/index`
+   - `GET /v1/index?refresh=1` (manual cache refresh check)
    - `GET /v1/files/{file_id}` for a known title

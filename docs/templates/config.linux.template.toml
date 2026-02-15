@@ -1,0 +1,49 @@
+[server]
+url = "http://<SERVER_IP>:8000"
+
+# Optional index fetch hardening for slower/unreliable links.
+# index_timeout_seconds = 45
+# index_fetch_attempts = 3
+# index_retry_backoff_seconds = 1.5
+# Parallel download workers for firmware/ROM/assets (1-16, default 4).
+# max_parallel_downloads = 4
+
+[paths]
+# Native Linux example:
+gamehub_dir = "/home/<user>/GameHub"
+# SteamOS/Bazzite example:
+# gamehub_dir = "/var/home/<user>/GameHub"
+
+[steam]
+# Native Steam example:
+# userdata_dir = "/home/<user>/.local/share/Steam/userdata"
+# Flatpak Steam example (SteamOS/Bazzite):
+userdata_dir = "/var/home/<user>/.var/app/com.valvesoftware.Steam/.local/share/Steam/userdata"
+# Optional but recommended for deterministic profile targeting.
+# steam_id = "76561198000000001"
+
+[linux]
+# auto | dnf | apt | flatpak | none | command
+emulator_install_backend = "auto"
+# Only used when emulator_install_backend = "command".
+# emulator_install_command = "sudo apt-get install -y {package}"
+# Optional when emulator_install_backend = "flatpak".
+flatpak_remote = "flathub"
+
+# Optional Linux path hints (uncomment as needed):
+# retroarch_cfg_path = "~/.config/retroarch/retroarch.cfg"
+# retroarch_system_dir = "~/.config/retroarch/system"
+# retroarch_cores_dir = "~/.config/retroarch/cores"
+# retroarch_info_dir = "~/.config/retroarch/info"
+# pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"
+# pcsx2_bios_dir = "~/.config/PCSX2/bios"
+# pcsx2_controller_autoconfig = true
+# dolphin_user_path = "~/.local/share/dolphin-emu"
+
+[sgdb]
+# Fallback only; prefer GAMEHUB_SGDB_API_KEY in environment.
+# api_key = "<OPTIONAL_SGDB_KEY>"
+cache_dir = "/home/<user>/GameHub/artwork-cache/sgdb"
+# SteamOS/Bazzite alternative:
+# cache_dir = "/var/home/<user>/GameHub/artwork-cache/sgdb"
+enabled_kinds = ["grid", "hero", "logo", "icon"]

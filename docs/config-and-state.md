@@ -6,6 +6,10 @@ Config resolution order:
 2. `./config.toml` in current working directory (if present)
 3. platform-specific config dir `gamehub/config.toml`
 
+Sample templates:
+- Windows: `docs/templates/config.windows.template.toml`
+- Linux (Fedora/Ubuntu/SteamOS-like): `docs/templates/config.linux.template.toml`
+
 Example:
 ```toml
 [server]
@@ -17,6 +21,8 @@ index_timeout_seconds = 45
 index_fetch_attempts = 3
 # exponential backoff base delay between retries (seconds)
 index_retry_backoff_seconds = 1.5
+# download worker count for firmware/ROM/assets (1-16)
+max_parallel_downloads = 4
 
 [paths]
 gamehub_dir = "C:/gamehub"
@@ -27,13 +33,14 @@ steam_id = "76561198000000001"
 steam_exe = "C:/Program Files (x86)/Steam/steam.exe"
 
 [sgdb]
+# Fallback only; prefer GAMEHUB_SGDB_API_KEY in environment.
 api_key = "optional-sgdb-api-key"
 cache_dir = "C:/gamehub/artwork-cache/sgdb"
 enabled_kinds = ["grid", "hero", "logo", "icon"]
 
 [linux]
 # Optional Linux emulator auto-install strategy:
-# auto | dnf | flatpak | none | command
+# auto | dnf | apt | flatpak | none | command
 emulator_install_backend = "auto"
 # Used when emulator_install_backend = "command"
 emulator_install_command = "sudo apt install -y {package}"
@@ -53,7 +60,10 @@ pcsx2_controller_autoconfig = true
 dolphin_user_path = "~/.local/share/dolphin-emu"
 ```
 
-`sgdb.api_key` can also be supplied via environment variable `GAMEHUB_SGDB_API_KEY` (takes precedence over config file value).
+Secret policy:
+- Preferred: set `GAMEHUB_SGDB_API_KEY` in the environment.
+- Fallback only: `sgdb.api_key` in config file.
+- Never commit real API keys in tracked files.
 
 `steam.steam_id` is optional. When set, sync targets that exact Steam profile and fails if it does not exist under the configured userdata directory.
 It accepts either:
@@ -65,7 +75,7 @@ When omitted, sync auto-detects a profile under `steam.userdata_dir` and prefers
 
 `steam.userdata_dir` is strict when set: if the configured path is missing, GAMEHUB does not fall back to auto-detection.
 
-`GAMEHUB_STEAM_USERDATA_DIR` can override `steam.userdata_dir` from config (when set and existing).
+`GAMEHUB_STEAM_USERDATA_DIR` can override `steam.userdata_dir` from config.
 
 Steam mutation behavior notes:
 - GAMEHUB writes managed shortcuts with stable `appid` values so artwork and category membership can be bound on first sync pass.
@@ -79,7 +89,9 @@ Steam mutation behavior notes:
 
 On non-dry sync, firmware system subdirectories are auto-created under `<gamehub_dir>/firmware` based on indexed systems.
 
-Firmware deployment env overrides:
+Environment overrides are resolved centrally in `load_config` (precedence: CLI flag > env > config file > default).
+
+Firmware deployment and Linux runtime env overrides:
 - `RETROARCH_SYSTEM_DIR` or `GAMEHUB_RETROARCH_SYSTEM_DIR`: explicit RetroArch `system` directory target.
 - `PCSX2_BIOS_DIR` or `GAMEHUB_PCSX2_BIOS_DIR`: explicit BIOS directory written into PCSX2 config (`PCSX2.ini`).
 - `DOLPHIN_EMU_USERPATH` or `GAMEHUB_DOLPHIN_EMU_USERPATH`: explicit Dolphin user directory target (Wii firmware deploys into `<userpath>/Wii`).
@@ -95,6 +107,7 @@ Firmware deployment env overrides:
 - `GAMEHUB_INDEX_TIMEOUT_SECONDS`: overrides `[server].index_timeout_seconds`.
 - `GAMEHUB_INDEX_FETCH_ATTEMPTS`: overrides `[server].index_fetch_attempts`.
 - `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
+- `GAMEHUB_MAX_PARALLEL_DOWNLOADS`: overrides `[server].max_parallel_downloads` (clamped to `1..16`).
 
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.

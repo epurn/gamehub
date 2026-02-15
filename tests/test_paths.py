@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+from pathlib import Path
+import shutil
+from uuid import uuid4
+
+from gamehub_cli.paths import from_rel_path
+from gamehub_cli.platform_paths import (
+    RETROARCH_FLATPAK_APP_ID,
+    is_flatpak_command,
+    parse_simple_kv_config,
+    retroarch_cfg_candidates,
+    unique_paths,
+)
+
+
+
+
+def test_from_rel_path_uses_posix_relative_segments() -> None:
+    base = Path("D:/GameHub")
+    resolved = from_rel_path(base, "roms/NES/Super Mario Bros.nes")
+    assert resolved == Path("D:/GameHub/roms/NES/Super Mario Bros.nes")
+
+
+def test_from_rel_path_prefers_legacy_existing_path_when_canonical_missing() -> None:
+    with _workspace_tempdir("gamehub-paths-") as temp_root:
+        legacy = temp_root / "NES" / "SuperMarioBros.nes"
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_bytes(b"legacy")
+
+        resolved = from_rel_path(temp_root, "roms/NES/SuperMarioBros.nes", preferred_root="roms")
+        assert resolved == legacy
+
+
+def test_from_rel_path_prefers_canonical_when_present() -> None:
+    with _workspace_tempdir("gamehub-paths-") as temp_root:
+        canonical = temp_root / "roms" / "NES" / "SuperMarioBros.nes"
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_bytes(b"canonical")
+
+        resolved = from_rel_path(temp_root, "NES/SuperMarioBros.nes", preferred_root="roms")
+        assert resolved == canonical
+
+
+def test_is_flatpak_command_matches_flatpak_export_path() -> None:
+    value = "/home/deck/.local/share/flatpak/exports/bin/org.libretro.RetroArch"
+    assert is_flatpak_command(value, RETROARCH_FLATPAK_APP_ID) is True
+
+
+def test_unique_paths_dedupes_expanduser_results(monkeypatch) -> None:
+    values = unique_paths([Path("C:/RetroArch"), Path("C:/RetroArch"), Path("D:/RetroArch")])
+    assert values == [Path("C:/RetroArch"), Path("D:/RetroArch")]
+
+
+def test_parse_simple_kv_config_reads_key_value_pairs() -> None:
+    with _workspace_tempdir("gamehub-paths-") as temp_root:
+        cfg = temp_root / "retroarch.cfg"
+        cfg.write_text(
+            "\n".join(
+                [
+                    "# comment",
+                    "libretro_directory = /opt/retroarch/cores",
+                    "system_directory = \"default\"",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        parsed = parse_simple_kv_config(cfg)
+        assert parsed["libretro_directory"] == "/opt/retroarch/cores"
+        assert parsed["system_directory"] == "default"
+
+
+def test_retroarch_cfg_candidates_dedupes_explicit_path(monkeypatch) -> None:
+    home = Path("/var/home/deck")
+    explicit = home / ".config" / "retroarch" / "retroarch.cfg"
+    monkeypatch.setattr("gamehub_cli.platform_paths.Path.home", classmethod(lambda cls: home))
+    monkeypatch.setattr("gamehub_cli.platform_paths.os.name", "posix")
+    candidates = retroarch_cfg_candidates(explicit_cfg_path=explicit)
+    assert candidates.count(explicit) == 1

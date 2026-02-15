@@ -16,16 +16,6 @@ from gamehub_cli.firmware_deploy import (
 from gamehub_common.models import FirmwareSpec, LibraryIndex, SystemSpec
 
 
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    root = Path(__file__).resolve().parents[1] / ".pytest_tmp_local"
-    root.mkdir(parents=True, exist_ok=True)
-    temp_dir = root / f"{prefix}{uuid4().hex}"
-    temp_dir.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_dir
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def _config(root: Path) -> GamehubConfig:
@@ -113,17 +103,25 @@ def test_deploy_firmware_dry_run_does_not_mutate(monkeypatch) -> None:
 
 
 def test_target_dirs_support_env_overrides(monkeypatch) -> None:
-    monkeypatch.setenv("RETROARCH_SYSTEM_DIR", "D:/RetroArch/system")
-    monkeypatch.setenv("PCSX2_BIOS_DIR", "D:/PCSX2/bios")
-    monkeypatch.setenv("DOLPHIN_EMU_USERPATH", "D:/Dolphin/User")
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        base = _config(temp_root)
+        config = replace(
+            base,
+            linux=replace(
+                base.linux,
+                retroarch_system_dir=Path("D:/RetroArch/system"),
+                pcsx2_bios_dir=Path("D:/PCSX2/bios"),
+                dolphin_user_path=Path("D:/Dolphin/User"),
+            ),
+        )
 
-    psx_dirs = _target_dirs_for_system("PSX")
-    ps2_dirs = _target_dirs_for_system("PS2")
-    wii_dirs = _target_dirs_for_system("Wii")
+        psx_dirs = _target_dirs_for_system("PSX", config=config)
+        ps2_dirs = _target_dirs_for_system("PS2", config=config)
+        wii_dirs = _target_dirs_for_system("Wii", config=config)
 
-    assert Path("D:/RetroArch/system") in psx_dirs
-    assert Path("D:/PCSX2/bios") in ps2_dirs
-    assert Path("D:/Dolphin/User/Wii") in wii_dirs
+        assert Path("D:/RetroArch/system") in psx_dirs
+        assert Path("D:/PCSX2/bios") in ps2_dirs
+        assert Path("D:/Dolphin/User/Wii") in wii_dirs
 
 
 def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch) -> None:

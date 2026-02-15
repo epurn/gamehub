@@ -1,0 +1,25 @@
+[server]
+url = "http://<SERVER_IP>:8000"
+
+# Optional index fetch hardening for slower/unreliable links.
+# index_timeout_seconds = 45
+# index_fetch_attempts = 3
+# index_retry_backoff_seconds = 1.5
+# Parallel download workers for firmware/ROM/assets (1-16, default 4).
+# max_parallel_downloads = 4
+
+[paths]
+gamehub_dir = "D:/GameHub"
+
+[steam]
+userdata_dir = "C:/Program Files (x86)/Steam/userdata"
+# Optional but recommended for deterministic profile targeting.
+# Accepts userdata account id or SteamID64.
+# steam_id = "76561198000000001"
+steam_exe = "C:/Program Files (x86)/Steam/steam.exe"
+
+[sgdb]
+# Fallback only; prefer GAMEHUB_SGDB_API_KEY in environment.
+# api_key = "<OPTIONAL_SGDB_KEY>"
+cache_dir = "D:/GameHub/artwork-cache/sgdb"
+enabled_kinds = ["grid", "hero", "logo", "icon"]

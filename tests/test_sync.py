@@ -19,16 +19,6 @@ from gamehub_cli.sync import (
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
 
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    root = Path(__file__).resolve().parents[1] / ".pytest_tmp_local"
-    root.mkdir(parents=True, exist_ok=True)
-    temp_dir = root / f"{prefix}{uuid4().hex}"
-    temp_dir.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_dir
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def test_apply_downloads_runs_firmware_before_content(monkeypatch) -> None:
@@ -873,7 +863,7 @@ def test_build_shortcut_specs_linux_flatpak_pcsx2_uses_file_forwarding(monkeypat
         )
         monkeypatch.setattr("gamehub_cli.sync.sys.platform", "linux")
         monkeypatch.setattr(
-            "gamehub_cli.sync._from_rel_path",
+            "gamehub_cli.sync.from_rel_path",
             lambda base, rel_path: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
         )
 
