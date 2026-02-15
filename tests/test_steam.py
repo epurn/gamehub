@@ -233,6 +233,8 @@ def test_upsert_shortcuts_round_trip_and_idempotent() -> None:
         table = persisted["shortcuts"]
         names = sorted(str(entry.get("AppName", "")) for entry in table.values())
         assert names == ["Manual Shortcut", "Super Mario Bros"]
+        managed_entry = next(entry for entry in table.values() if entry.get("AppName") == "Super Mario Bros")
+        assert str(managed_entry.get("appid", "")).lstrip("-").isdigit()
 
 
 def test_upsert_shortcuts_migrates_legacy_matching_entry() -> None:
@@ -437,7 +439,7 @@ def test_update_collections_normalizes_added_appids_to_unsigned() -> None:
         parsed = json.loads(encoded)
         collections = parsed["collections"]
         psx = next(item for item in collections if isinstance(item, dict) and item.get("name") == "PSX")
-        assert psx["added"] == ["3692015043"]
+        assert psx["added"] == [3692015043]
 
 
 def test_update_collections_preserves_list_json_shape() -> None:

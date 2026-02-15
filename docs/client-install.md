@@ -34,6 +34,8 @@ gamehub sync --help
 ```bash
 gamehub sync --dry-run --skip-steam --verbose
 ```
+5. Run first non-`--skip-steam` sync from a desktop session so Steam can relaunch after config mutation.
+6. If RetroArch games do not launch, set `[linux].retroarch_cfg_path` or `[linux].retroarch_cores_dir` explicitly and re-run sync.
 
 ## Steam Deck notes
 - Steam Deck installs may use `~/.steam/steam/userdata` or `~/.local/share/Steam/userdata`.

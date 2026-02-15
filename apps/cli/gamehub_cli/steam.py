@@ -399,6 +399,10 @@ def _extract_persisted_app_id(entry: dict) -> str | None:
 
 def _build_shortcut_entry(spec: SteamShortcutSpec, existing: dict | None = None) -> dict:
     entry = dict(existing) if existing is not None else {}
+    persisted_app_id = _extract_persisted_app_id(entry)
+    if persisted_app_id is None:
+        unsigned = _compute_shortcut_app_id(spec.exe, spec.title_name)
+        persisted_app_id = _canonical_signed_app_id_from_unsigned(unsigned) or unsigned
     tags = [GAMEHUB_TAG, f"{GAMEHUB_TITLE_PREFIX}{spec.title_id}", f"{GAMEHUB_SYSTEM_PREFIX}{spec.system}", spec.system]
     entry.update(
         {
@@ -415,6 +419,7 @@ def _build_shortcut_entry(spec: SteamShortcutSpec, existing: dict | None = None)
             "Devkit": "0",
             "DevkitGameID": "",
             "LastPlayTime": "0",
+            "appid": persisted_app_id,
             "tags": _tags_to_vdf_map(tags),
         }
     )
@@ -724,7 +729,10 @@ def update_collections(context: SteamContext, app_ids_by_system: dict[str, list[
             continue
         managed_seen.add(name)
         updated = dict(entry)
-        desired = sorted({_canonical_unsigned_app_id(str(app_id)) for app_id in app_ids_by_system[name]}, key=int)
+        desired = sorted(
+            {_to_int_if_numeric(_canonical_unsigned_app_id(str(app_id))) for app_id in app_ids_by_system[name]},
+            key=lambda item: int(item) if isinstance(item, (int, str)) and str(item).isdigit() else str(item),
+        )
         if updated.get("added") != desired:
             updated["added"] = desired
             updates += 1
@@ -737,8 +745,11 @@ def update_collections(context: SteamContext, app_ids_by_system: dict[str, list[
         if system_name in managed_seen:
             continue
         desired = sorted(
-            {_canonical_unsigned_app_id(str(app_id)) for app_id in app_ids_by_system[system_name]},
-            key=int,
+            {
+                _to_int_if_numeric(_canonical_unsigned_app_id(str(app_id)))
+                for app_id in app_ids_by_system[system_name]
+            },
+            key=lambda item: int(item) if isinstance(item, (int, str)) and str(item).isdigit() else str(item),
         )
         next_collections.append(
             {

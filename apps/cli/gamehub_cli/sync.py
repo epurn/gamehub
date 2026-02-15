@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections import Counter
 import json
+import re
 from pathlib import Path, PurePosixPath
 import shlex
+import sys
 from urllib.parse import urljoin
 from urllib.request import urlopen
 
@@ -26,7 +28,7 @@ from .downloads import download_with_atomic_write
 from .emulators import ensure_emulators, resolve_emulator_executable
 from .firmware_deploy import deploy_firmware_to_emulators
 from .planner import SyncPlan, create_sync_plan
-from .retroarch_cores import ensure_retroarch_cores
+from .retroarch_cores import ensure_retroarch_cores, resolve_retroarch_paths
 from .state import SyncState, load_state, mark_synced, save_state_atomic
 from .steam import (
     SteamContext,
@@ -47,6 +49,8 @@ from .steam import (
     upsert_shortcuts,
     wait_for_steam_exit,
 )
+
+_RETROARCH_CORE_TOKEN_RE = re.compile(r"(?P<prefix>-L\s+)(?P<token>[^\s]+)")
 
 
 def _print_plan(plan: SyncPlan) -> None:
@@ -206,6 +210,36 @@ def _bootstrap_firmware_dirs(config: GamehubConfig, index: LibraryIndex, dry_run
         print(f"Bootstrapped firmware directories: {created}")
 
 
+def _normalize_linux_retroarch_launch_template(launch_template: str, config: GamehubConfig) -> str:
+    if not sys.platform.startswith("linux"):
+        return launch_template
+    match = _RETROARCH_CORE_TOKEN_RE.search(launch_template)
+    if not match:
+        return launch_template
+
+    raw_token = match.group("token").strip().strip('"').replace("\\", "/")
+    core_name = raw_token.rsplit("/", 1)[-1]
+    if core_name.endswith(".dll"):
+        core_name = core_name[:-4]
+    elif core_name.endswith(".so"):
+        core_name = core_name[:-3]
+    if not core_name.endswith("_libretro"):
+        return launch_template
+
+    core_filename = f"{core_name}.so"
+    core_token = f"cores/{core_filename}"
+    paths = resolve_retroarch_paths(
+        explicit_cores_dir=config.linux.retroarch_cores_dir,
+        explicit_info_dir=config.linux.retroarch_info_dir,
+        explicit_cfg_path=config.linux.retroarch_cfg_path,
+    )
+    if paths is not None:
+        core_token = (paths.cores_dir / core_filename).as_posix()
+
+    replacement = f'{match.group("prefix")}"{core_token}"'
+    return f"{launch_template[:match.start()]}{replacement}{launch_template[match.end() :]}"
+
+
 def _build_shortcut_specs(
     index: LibraryIndex,
     config: GamehubConfig,
@@ -214,7 +248,10 @@ def _build_shortcut_specs(
     for title in sorted(index.titles, key=lambda item: (item.system, item.title_name.casefold(), item.title_id)):
         rom_path = _from_rel_path(config.library_dir, title.rom.rel_path)
         emulator_exe = resolve_emulator_executable(title.emulator)
-        launch_line = title.launch_template.format(emulator=emulator_exe, rom=str(rom_path))
+        launch_template = title.launch_template
+        if "retroarch" in title.emulator.casefold():
+            launch_template = _normalize_linux_retroarch_launch_template(launch_template, config)
+        launch_line = launch_template.format(emulator=emulator_exe, rom=str(rom_path))
         parts = shlex.split(launch_line, posix=False)
         if parts:
             exe = parts[0]

@@ -58,6 +58,11 @@ When omitted, sync auto-detects a profile under `steam.userdata_dir` and prefers
 
 `GAMEHUB_STEAM_USERDATA_DIR` can override `steam.userdata_dir` from config (when set and existing).
 
+Steam mutation behavior notes:
+- GAMEHUB writes managed shortcuts with stable `appid` values so artwork and category membership can be bound on first sync pass.
+- GAMEHUB canonicalizes collection membership appids to unsigned numeric values in both `localconfig.vdf` (`user-collections`) and cloud storage collection entries.
+- Steam reopen requires an active desktop/GUI session; SSH-only sessions may apply file updates successfully but fail to relaunch Steam.
+
 `paths.gamehub_dir` is the local sync root. Derived paths:
 - ROMs/assets root: `<gamehub_dir>/roms/...` (from server index relative paths)
 - Firmware root: `<gamehub_dir>/firmware/...`
