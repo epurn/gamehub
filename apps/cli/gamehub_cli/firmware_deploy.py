@@ -321,6 +321,13 @@ def _is_missing_pad_binding(value: str | None) -> bool:
     return normalized in {"", "none", "nul", "null", "unbound"}
 
 
+def _is_keyboard_or_mouse_binding(value: str | None) -> bool:
+    if value is None:
+        return False
+    normalized = value.strip().strip('"').strip("'").casefold()
+    return "keyboard/" in normalized or "mouse/" in normalized
+
+
 def _pcsx2_pad_bindings(pad_index: int) -> tuple[tuple[str, str], ...]:
     prefix = f"SDL-{pad_index}/"
     return (
@@ -365,7 +372,7 @@ def _bootstrap_pcsx2_controllers(lines: list[str]) -> tuple[list[str], bool]:
             changed |= changed_type
         for key, value in _pcsx2_pad_bindings(pad_index - 1):
             existing = _read_ini_key(lines, section, key)
-            if not _is_missing_pad_binding(existing):
+            if not _is_missing_pad_binding(existing) and not _is_keyboard_or_mouse_binding(existing):
                 continue
             lines, changed_binding = _upsert_ini_key(lines, section, key, value)
             changed |= changed_binding

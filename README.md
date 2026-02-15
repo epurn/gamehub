@@ -23,7 +23,7 @@ Docker-first home server and CLI sync tool for emulator libraries and Steam inje
 - Run Steam mutation syncs from an active desktop session (not SSH-only) so Steam can relaunch.
 - Linux RetroArch shortcuts are normalized to `.so` core paths automatically; set `[linux].retroarch_cores_dir`/`retroarch_cfg_path` when using custom RetroArch layouts.
 - Flatpak PCSX2 defaults to sandbox-local BIOS path `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios`; GAMEHUB updates `PCSX2.ini` and mirrors BIOS files there automatically.
-- Linux PCSX2 controller bootstrap uses generic SDL mappings for two controller slots by default (`[linux].pcsx2_controller_autoconfig = true`), so Xbox/DS4/DS5-class controllers work without per-device hardcoding.
+- Linux PCSX2 controller bootstrap uses generic SDL mappings for two controller slots by default (`[linux].pcsx2_controller_autoconfig = true`), so Xbox/DS4/DS5-class controllers work without per-device hardcoding; keyboard/mouse pad defaults are rewritten to controller mappings.
 - If `/v1/index` is occasionally slow, tune `[server].index_timeout_seconds`, `index_fetch_attempts`, and `index_retry_backoff_seconds`.
 - Use `--skip-steam-relaunch` when you want Steam files updated but do not want Steam relaunched automatically.
 - Start with:

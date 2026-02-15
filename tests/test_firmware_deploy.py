@@ -361,3 +361,49 @@ def test_deploy_firmware_flatpak_pcsx2_can_disable_controller_autoconfig(monkeyp
         text = ini_path.read_text(encoding="utf-8")
         assert "SDL = true" not in text
         assert "Cross = SDL-0/A" not in text
+
+
+def test_deploy_firmware_flatpak_pcsx2_replaces_keyboard_pad_defaults(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        home = temp_root / "home"
+        config = _config(temp_root)
+        index = _index("PS2", "scph10000.bin")
+        source = config.firmware_dir / "PS2" / "scph10000.bin"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"bios")
+        export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "net.pcsx2.PCSX2"
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_bytes(b"#!/bin/sh")
+        ini_path = home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text(
+            "\n".join(
+                [
+                    "[Pad1]",
+                    "Type = DualShock2",
+                    "Cross = Keyboard/K",
+                    "Start = Keyboard/Return",
+                    "",
+                    "[Pad2]",
+                    "Type = DualShock2",
+                    "Cross = SDL-1/A",
+                    "Start = SDL-1/Start",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        text = ini_path.read_text(encoding="utf-8")
+        assert "Cross = SDL-0/A" in text
+        assert "Start = SDL-0/Start" in text
+        assert "Cross = Keyboard/K" not in text
+        assert "Start = Keyboard/Return" not in text
+        assert "Cross = SDL-1/A" in text

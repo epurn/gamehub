@@ -99,6 +99,7 @@ Firmware deployment env overrides:
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
 - On Linux, GAMEHUB can also bootstrap generic SDL controller mappings for `Pad1` and `Pad2` so first-run PCSX2 controller setup works for Xbox/DS4/DS5/other SDL controllers without per-device hardcoding.
+- During this bootstrap, keyboard/mouse default pad bindings are replaced with SDL bindings; set `[linux].pcsx2_controller_autoconfig = false` (or `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG=false`) to opt out.
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
 

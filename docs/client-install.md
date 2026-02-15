@@ -45,6 +45,7 @@ ls ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios
 ```bash
 grep -nE "^\[Pad1\]|^\[Pad2\]|^Type =|^Cross =|^Start =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ```
+   - If Pad1 was still keyboard-defaulted, re-run sync once on the updated client build; bootstrap now rewrites keyboard/mouse defaults to SDL controller bindings.
 
 ## Steam Deck notes
 - Steam Deck installs may use `~/.steam/steam/userdata` or `~/.local/share/Steam/userdata`.
