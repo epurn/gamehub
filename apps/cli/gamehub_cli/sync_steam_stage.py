@@ -125,6 +125,10 @@ def _supports_dolphin_inline_config(emulator_exe: str) -> bool:
     token = emulator_exe.strip().strip('"')
     if not token:
         return True
+    # Avoid probing on Windows-style executables; some Dolphin builds print help text
+    # directly to the active console even when subprocess output is captured.
+    if sys.platform.startswith("win") or _is_windows_style_runtime_path(token):
+        return True
 
     executable = token
     candidate_path = Path(token)

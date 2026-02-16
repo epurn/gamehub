@@ -1155,6 +1155,54 @@ def test_build_shortcut_specs_linux_flatpak_dolphin_uses_file_forwarding_and_dev
         assert '-e @@ "/var/home/deck/GameHub/roms/Wii/Super Mario Galaxy.rvz" @@' in specs[0].launch_options
 
 
+def test_build_shortcut_specs_windows_dolphin_does_not_probe_help_output(monkeypatch) -> None:
+    import gamehub_cli.sync_steam_stage as sync_steam_stage
+
+    with _workspace_tempdir("gamehub-sync-shortcuts-dolphin-win-probe-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        title = TitleEntry(
+            title_id="title_wii_mg",
+            system="Wii",
+            title_name="Super Mario Galaxy",
+            title_rel_dir="Wii/Super Mario Galaxy.rvz",
+            emulator="dolphin",
+            launch_template='"{emulator}" -b -e "{rom}"',
+            rom=RomSpec(
+                file_id="rom_wii_mg",
+                rel_path="roms/Wii/Super Mario Galaxy.rvz",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".rvz",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\Dolphin\\Dolphin.exe")
+        monkeypatch.setattr("gamehub_cli.sync.sys.platform", "win32")
+
+        sync_steam_stage._supports_dolphin_inline_config.cache_clear()
+        monkeypatch.setattr(
+            "gamehub_cli.sync_steam_stage.subprocess.run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Unexpected Dolphin help probe")),
+        )
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert "Dolphin.Display.Fullscreen=True" in specs[0].launch_options
+
+
 def test_build_shortcut_specs_dolphin_skips_config_arg_when_parser_is_legacy(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-sync-shortcuts-dolphin-legacy-") as temp_root:
         config = GamehubConfig(

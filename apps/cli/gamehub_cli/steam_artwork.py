@@ -47,18 +47,24 @@ def copy_grid_art(context: SteamContext, assignments: list[SteamArtworkAssignmen
 
     grid_dir = context.userdata_dir / context.steam_id / "config" / "grid"
     grid_dir.mkdir(parents=True, exist_ok=True)
-    suffixes_by_kind = {
-        # Write both portrait and landscape variants for grid artwork.
-        "grid": ("p", ""),
-        "hero": "_hero",
-        "logo": "_logo",
-        "icon": "_icon",
-    }
+    suffixes_by_kind = {"hero": "_hero", "logo": "_logo", "icon": "_icon"}
 
     for assignment in assignments:
         app_id = _canonical_unsigned_app_id(assignment.steam_app_id)
         if not app_id:
             continue
+        # Prefer a dedicated landscape asset when available; otherwise reuse portrait grid.
+        grid_portrait = assignment.assets_by_kind.get("grid")
+        grid_landscape = assignment.assets_by_kind.get("grid_landscape")
+        if grid_portrait is not None and grid_portrait.exists():
+            portrait_destination = grid_dir / f"{app_id}p{grid_portrait.suffix.lower() or '.png'}"
+            shutil.copy2(grid_portrait, portrait_destination)
+            copied_files.append(portrait_destination)
+        landscape_source = grid_landscape if grid_landscape is not None and grid_landscape.exists() else grid_portrait
+        if landscape_source is not None and landscape_source.exists():
+            landscape_destination = grid_dir / f"{app_id}{landscape_source.suffix.lower() or '.png'}"
+            shutil.copy2(landscape_source, landscape_destination)
+            copied_files.append(landscape_destination)
         for kind, source in assignment.assets_by_kind.items():
             if kind not in suffixes_by_kind:
                 continue

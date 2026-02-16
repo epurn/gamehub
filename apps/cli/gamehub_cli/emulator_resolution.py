@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path, PosixPath
+from pathlib import Path
 import shutil
 import sys
 from typing import Iterable
@@ -25,17 +25,15 @@ _EMULATOR_COMMAND_ALIASES = {
     "dolphin": ("dolphin", "dolphin-emu"),
 }
 
+_HOST_PATH_TYPE = type(Path.cwd())
+
 
 def _safe_path(value: str) -> Path:
-    # In tests we sometimes monkeypatch os.name='nt' on non-Windows hosts.
-    # pathlib.Path then tries WindowsPath and can fail during joins.
-    if not sys.platform.startswith("win"):
-        return PosixPath(value)
-    try:
-        return Path(value)
-    except (NotImplementedError, RuntimeError):
-        # Last-resort fallback for mixed-runtime test environments.
-        return PosixPath(value)
+    # Always construct paths using the host's concrete path class so tests that
+    # monkeypatch os.name/sys.platform (for branch simulation) do not force
+    # unsupported WindowsPath/PosixPath instantiation on the current runtime.
+    normalized = value.replace("\\", "/")
+    return _HOST_PATH_TYPE(normalized)
 
 
 def _command_candidates(emulator_value: str) -> tuple[str, ...]:
@@ -111,7 +109,7 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
         return tuple(values)
 
     if sys.platform.startswith("linux"):
-        home = Path.home()
+        home = _HOST_PATH_TYPE.home()
         if canonical == "retroarch":
             values.extend((Path("/usr/bin/retroarch"), Path("/usr/local/bin/retroarch")))
         elif canonical == "pcsx2":
@@ -168,7 +166,7 @@ def _windows_registry_install_candidates(canonical: str) -> tuple[Path, ...]:
                     install_location = _registry_value(item_key, "InstallLocation")
                     display_icon = _registry_value(item_key, "DisplayIcon")
                     if install_location:
-                        values.extend(_paths_from_install_dir(canonical, Path(install_location)))
+                        values.extend(_paths_from_install_dir(canonical, _safe_path(install_location)))
                     if display_icon:
                         icon_path = _normalize_display_icon_path(display_icon)
                         if icon_path:
@@ -245,7 +243,7 @@ def _is_emulator_available(emulator_value: str) -> bool:
     raw = emulator_value.strip().strip('"')
     if not raw:
         return False
-    path = Path(raw)
+    path = _safe_path(raw)
     if path.is_absolute() or path.suffix:
         return path.exists()
     if any(shutil.which(command) is not None for command in _command_candidates(raw)):
@@ -255,7 +253,7 @@ def _is_emulator_available(emulator_value: str) -> bool:
     resolved = resolve_emulator_executable(raw)
     if resolved == raw:
         return False
-    resolved_path = Path(resolved.strip('"'))
+    resolved_path = _safe_path(resolved.strip('"'))
     if resolved_path.is_absolute() or resolved_path.suffix:
         return resolved_path.exists()
     return any(shutil.which(command) is not None for command in _command_candidates(resolved))
@@ -309,7 +307,7 @@ def _required_emulators(index: LibraryIndex) -> set[str]:
 
 
 def _linux_dist_id() -> str:
-    os_release = Path("/etc/os-release")
+    os_release = _safe_path("/etc/os-release")
     if not os_release.exists():
         return ""
     fields: dict[str, str] = {}

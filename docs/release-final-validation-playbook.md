@@ -191,8 +191,6 @@ git push origin <branch>
 2. Open PR to `main`.
 3. Wait for required checks:
 - `Audit Regression Gates`
-- `Client Artifact Release` (PR jobs)
-- `Server Image Release` (verify job)
 4. Merge PR.
 5. Ensure version in `pyproject.toml` is final; commit if needed and push `main`.
 6. Create and push release tag:

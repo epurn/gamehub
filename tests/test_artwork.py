@@ -15,6 +15,13 @@ from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
 
 
+def _query_text(request: httpx.Request) -> str:
+    query = request.url.query
+    if isinstance(query, bytes):
+        return query.decode("utf-8")
+    return str(query)
+
+
 def _index_with_titles(*titles: TitleEntry) -> LibraryIndex:
     system = SystemSpec(
         name="NES",
@@ -135,6 +142,8 @@ def test_sgdb_pipeline_continues_on_lookup_failure() -> None:
             return httpx.Response(status_code=200, json={"success": True, "data": [{"id": 111}]})
         if path.endswith("/search/autocomplete/Bad Game"):
             return httpx.Response(status_code=500, json={"success": False})
+        if path.endswith("/grids/game/111") and _query_text(request) == "dimensions=920x430":
+            return httpx.Response(status_code=200, json={"success": True, "data": []})
         if path.endswith("/grids/game/111"):
             return httpx.Response(
                 status_code=200,
@@ -172,6 +181,8 @@ def test_sgdb_pipeline_tries_next_candidate_url_after_download_401() -> None:
         path = request.url.path
         if path.endswith("/search/autocomplete/Retry Game"):
             return httpx.Response(status_code=200, json={"success": True, "data": [{"id": 987}]})
+        if path.endswith("/grids/game/987") and _query_text(request) == "dimensions=920x430":
+            return httpx.Response(status_code=200, json={"success": True, "data": []})
         if path.endswith("/grids/game/987"):
             return httpx.Response(
                 status_code=200,
@@ -232,6 +243,63 @@ def test_sgdb_client_prefers_steam_compatible_artwork_formats() -> None:
     )
 
 
+def test_sgdb_client_resolve_grid_urls_supports_dimension_filter() -> None:
+    queries: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/grids/game/99"):
+            queries.append(_query_text(request))
+            return httpx.Response(
+                status_code=200,
+                json={"success": True, "data": [{"url": "https://cdn.example/assets/grid.png"}]},
+            )
+        return httpx.Response(status_code=404, json={"success": False})
+
+    client = SgdbClient("test-key", transport=httpx.MockTransport(handler))
+    try:
+        urls = client.resolve_asset_urls(99, "grid", dimensions="600x900")
+    finally:
+        client.close()
+
+    assert urls == ("https://cdn.example/assets/grid.png",)
+    assert queries == ["dimensions=600x900"]
+
+
+def test_sgdb_pipeline_skips_api_calls_when_required_kinds_already_cached() -> None:
+    request_count = {"api": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        request_count["api"] += 1
+        return httpx.Response(status_code=500, json={"success": False})
+
+    title = _title("title_cached", "Cached Game", "file_cached")
+    with _workspace_tempdir("gamehub-artwork-") as temp_root:
+        title_cache = temp_root / "cache" / title.title_id
+        cached_grid = title_cache / "grid-old.png"
+        cached_grid_landscape = title_cache / "grid_landscape-old.png"
+        cached_hero = title_cache / "hero-old.png"
+        title_cache.mkdir(parents=True, exist_ok=True)
+        cached_grid.write_bytes(b"grid")
+        cached_grid_landscape.write_bytes(b"grid-landscape")
+        cached_hero.write_bytes(b"hero")
+
+        client = SgdbClient("test-key", transport=httpx.MockTransport(handler))
+        try:
+            pipeline = SgdbArtworkPipeline(client, cache_dir=temp_root / "cache", kinds=("grid", "hero"))
+            result = pipeline.sync((title,))
+        finally:
+            client.close()
+
+    assert request_count["api"] == 0
+    assert result.lookups == 0
+    assert result.downloaded == 0
+    assert result.cached == 3
+    assert len(result.bundles) == 1
+    assert result.bundles[0].files["grid"] == cached_grid
+    assert result.bundles[0].files["grid_landscape"] == cached_grid_landscape
+    assert result.bundles[0].files["hero"] == cached_hero
+
+
 def test_build_artwork_assignments_dry_run_reports_plan(capsys) -> None:
     index = _index_with_titles(_title("title_mario", "Super Mario Bros", "file_mario"))
     config = GamehubConfig(
@@ -260,3 +328,43 @@ def test_build_artwork_assignments_dry_run_reports_plan(capsys) -> None:
     assert "SGDB dry-run" in output
     assert "Super Mario Bros" in output
     assert "sgd...key" in output
+
+
+def test_build_artwork_assignments_dry_run_skips_fully_cached_titles(capsys) -> None:
+    with _workspace_tempdir("gamehub-artwork-") as temp_root:
+        cache_dir = temp_root / "sgdb-cache"
+        title_id = "title_mario"
+        title_cache = cache_dir / title_id
+        title_cache.mkdir(parents=True, exist_ok=True)
+        (title_cache / "grid-cache.png").write_bytes(b"grid")
+        (title_cache / "grid_landscape-cache.png").write_bytes(b"grid-landscape")
+        (title_cache / "icon-cache.png").write_bytes(b"icon")
+
+        index = _index_with_titles(_title(title_id, "Super Mario Bros", "file_mario"))
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=Path("library"),
+            firmware_dir=Path("firmware"),
+            state_path=Path("state.json"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key="sgdb-secret-key",
+            sgdb_cache_dir=cache_dir,
+            sgdb_enabled_kinds=("grid", "icon"),
+        )
+
+        assignments = _build_artwork_assignments(
+            config=config,
+            index=index,
+            dry_run=True,
+            timeout_seconds=10.0,
+            verbose=False,
+        )
+
+    assert assignments == {}
+    output = capsys.readouterr().out
+    assert "SGDB dry-run" in output
+    assert "titles=0" in output
+    assert "cached_skip=1" in output
+    assert "sgdb\tlookup\tSuper Mario Bros" not in output
