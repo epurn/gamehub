@@ -10,6 +10,7 @@ Config resolution order:
 Sample templates:
 - Windows (verified): [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
 - Bazzite (tested): [docs/templates/config.bazzite.template.toml](templates/config.bazzite.template.toml)
+- Steam Deck (untested): [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 - General Linux: [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
 
 Platform validation status is tracked in [platform-support.md](platform-support.md).

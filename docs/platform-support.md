@@ -12,6 +12,8 @@
   - [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
 - Bazzite:
   - [docs/templates/config.bazzite.template.toml](templates/config.bazzite.template.toml)
+- SteamOS (Deck, untested):
+  - [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 
 Legacy/general templates are still available:
 - [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
@@ -34,7 +36,9 @@ Legacy/general templates are still available:
 
 ### SteamOS (Deck), Fedora, Ubuntu (untested)
 - These are not validated release targets for v1.
-- If you run them, start from:
+- SteamOS (Deck): start from:
+  - [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
+- Fedora/Ubuntu: start from:
   - [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
 - Then review:
   - [config-and-state.md](config-and-state.md)

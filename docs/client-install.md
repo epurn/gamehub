@@ -73,6 +73,7 @@ grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/c
 ```
 
 ## Steam Deck notes
+- Start from template [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml).
 - Steam Deck installs may use `~/.steam/steam/userdata` or `~/.local/share/Steam/userdata`.
 - Keep config explicit with `steam.userdata_dir` and optional `steam.steam_id` to avoid profile ambiguity on shared devices.
 - If emulators are Flatpak-based, prefer:

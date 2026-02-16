@@ -34,6 +34,7 @@ Supported systems in v1:
 3. Create `config.toml` from a template:
    - Windows: [`docs/templates/config.windows.template.toml`](docs/templates/config.windows.template.toml)
    - Bazzite: [`docs/templates/config.bazzite.template.toml`](docs/templates/config.bazzite.template.toml)
+   - Steam Deck (untested): [`docs/templates/config.steamdeck.template.toml`](docs/templates/config.steamdeck.template.toml)
 4. Run dry-run:
 ```powershell
 gamehub sync --config .\config.toml --dry-run --verbose --require-steam-closed
