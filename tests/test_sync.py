@@ -1003,7 +1003,7 @@ def test_build_shortcut_specs_linux_flatpak_azahar_uses_file_forwarding(monkeypa
 
         assert len(specs) == 1
         assert specs[0].exe == "flatpak"
-        assert "run --file-forwarding org.azahar_emu.Azahar -- @@" in specs[0].launch_options
+        assert "run --device=all --file-forwarding org.azahar_emu.Azahar -f -- @@" in specs[0].launch_options
         assert '/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds' in specs[0].launch_options
 
 

@@ -262,8 +262,8 @@ def build_shortcut_specs(
                     title_name=title.title_name,
                     exe="flatpak",
                     launch_options=(
-                        f'run --file-forwarding {AZAHAR_FLATPAK_APP_ID} '
-                        f'-- @@ "{rom_for_flatpak}" @@'
+                        f'run --device=all --file-forwarding {AZAHAR_FLATPAK_APP_ID} '
+                        f'-f -- @@ "{rom_for_flatpak}" @@'
                     ),
                     start_dir="",
                     icon_path="",
