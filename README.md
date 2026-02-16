@@ -1,9 +1,9 @@
 # GAMEHUB 🎮
 
-[![Latest Release](https://img.shields.io/github/v/release/epurn/gamehub?display_name=tag)](https://github.com/epurn/gamehub/releases)
+[![Latest Tag](https://img.shields.io/github/v/tag/epurn/gamehub?sort=semver&label=latest%20tag)](https://github.com/epurn/gamehub/tags)
 [![Audit Regression Gates](https://github.com/epurn/gamehub/actions/workflows/audit-regression-gates.yml/badge.svg)](https://github.com/epurn/gamehub/actions/workflows/audit-regression-gates.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![License](https://img.shields.io/github/license/epurn/gamehub)](LICENSE)
+[![License](https://img.shields.io/github/license/epurn/gamehub?branch=main&label=license)](LICENSE)
 
 Docker-first home server + client CLI that syncs emulator libraries into Steam non-Steam shortcuts, system collections, and artwork.
 
