@@ -75,6 +75,22 @@ grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/c
 ```bash
 grep -nE "^(fullscreen|confirmClose)=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
 ```
+12. N3DS Linux native controller mode uses an Azahar wrapper hook by default:
+```bash
+gamehub sync --config ./config.bazzite.toml --verbose --skip-steam
+```
+   - The wrapper closes Azahar on `Select+Start` by monitoring `/dev/input/js*`.
+   - Optional overrides:
+```bash
+export GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=true
+export GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT=4
+export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
+# Optional explicit joystick device:
+# export GAMEHUB_AZAHAR_EXIT_JS_DEVICE=/dev/input/js0
+```
+13. N3DS Steam Input template limitation (current):
+   - GAMEHUB does not auto-copy Steam Input layouts for N3DS shortcuts.
+   - Configure one shortcut in Steam (`Controller Layout`), export it, then apply the same layout to each N3DS shortcut manually.
 
 ## Steam Deck notes
 - Start from template [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml).

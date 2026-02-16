@@ -122,7 +122,13 @@ Linux path notes:
 - Linux RetroArch Steam launch options rewrite `-L cores/<core>.dll` templates to Linux core paths (`.so`) and prefer absolute core paths from resolved RetroArch config/overrides.
 - Linux Flatpak PCSX2 Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so host ROM paths are forwarded reliably to the sandbox.
 - Linux Flatpak Dolphin Steam launch options use `flatpak run --device=all --file-forwarding ... -e @@ <rom> @@` so controller devices and host ROM paths are consistently available in the sandbox.
-- Linux Flatpak Azahar Steam launch options use `flatpak run --device=all --file-forwarding ... -f -- @@ <rom> @@` so fullscreen starts enabled and controller devices are visible in the sandbox.
+- Linux Flatpak Azahar Steam launch options default to a Linux-only wrapper (`python -m gamehub_cli.azahar_exit_hook`) that:
+  - launches `flatpak run --device=all --file-forwarding org.azahar_emu.Azahar -f -- @@ <rom> @@`
+  - listens for `Select+Start` on `/dev/input/js*` and terminates Azahar when pressed
+  - can be disabled by setting `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false` (falls back to direct flatpak launch)
+- N3DS Steam Input limitation (current):
+  - GAMEHUB does not auto-apply Steam Input templates for N3DS.
+  - If you use Steam Input template mode, configure one shortcut manually and copy that layout to other N3DS shortcuts in Steam UI.
 
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`
@@ -130,6 +136,10 @@ Environment overrides:
 - `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG`
 - `DOLPHIN_EMU_USERPATH`
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`
+- `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`
+- `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`
+- `GAMEHUB_AZAHAR_EXIT_BUTTON_START`
+- `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`
 
 ## RetroArch Core Defaults
 For systems that launch via RetroArch, GAMEHUB uses these general-purpose core defaults when a core cannot be parsed from the index launch template:
@@ -146,7 +156,7 @@ For systems that launch via RetroArch, GAMEHUB uses these general-purpose core d
 Steam shortcut build normalizes emulator launch options for fullscreen:
 - RetroArch shortcuts include `-f` (injected if missing).
 - PCSX2 shortcuts include `-fullscreen` (injected if missing; Flatpak path already includes it).
-- Azahar native shortcuts include `-f` (injected if missing). Linux Flatpak Azahar continues to use `flatpak run --file-forwarding`.
+- Azahar native shortcuts include `-f` (injected if missing). Linux Flatpak Azahar uses a GAMEHUB wrapper hook by default (or direct `flatpak run` when `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false`).
 - Dolphin shortcuts include `-u "<dolphin-user-dir>"` so launch always uses the same user profile path GAMEHUB configured.
 - Dolphin shortcuts include `-C Dolphin.Display.Fullscreen=True` for non-Flatpak installs when supported by the installed Dolphin CLI parser (injected before `-e/--exec` when missing).
 

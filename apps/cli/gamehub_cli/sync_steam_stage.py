@@ -45,6 +45,19 @@ _DOLPHIN_FULLSCREEN_CONFIG_TOKEN = "Dolphin.Display.Fullscreen=True"
 _DOLPHIN_FULLSCREEN_CONFIG_ARG_RE = re.compile(r"\s-C\s+Dolphin\.Display\.Fullscreen=True")
 _DOLPHIN_EXEC_TOKEN_RE = re.compile(r"\s(-e|--exec)(\s|=)")
 _DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
+_AZAHAR_LINUX_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_LINUX_EXIT_HOOK"
+
+
+def _env_enabled(name: str, *, default: bool = True) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().casefold()
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    return default
 
 
 def _is_windows_style_runtime_path(value: str) -> bool:
@@ -255,6 +268,24 @@ def build_shortcut_specs(
             continue
         if azahar_flatpak:
             rom_for_flatpak = rom_path.as_posix()
+            use_exit_hook = _env_enabled(_AZAHAR_LINUX_EXIT_HOOK_ENV, default=True)
+            if use_exit_hook:
+                python_exe = str(sys.executable).replace("\\", "/")
+                specs.append(
+                    SteamShortcutSpec(
+                        title_id=title.title_id,
+                        system=title.system,
+                        title_name=title.title_name,
+                        exe=f'"{python_exe}"',
+                        launch_options=(
+                            f'-m gamehub_cli.azahar_exit_hook '
+                            f'--app-id {AZAHAR_FLATPAK_APP_ID} --rom "{rom_for_flatpak}"'
+                        ),
+                        start_dir="",
+                        icon_path="",
+                    )
+                )
+                continue
             specs.append(
                 SteamShortcutSpec(
                     title_id=title.title_id,

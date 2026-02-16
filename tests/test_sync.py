@@ -998,13 +998,64 @@ def test_build_shortcut_specs_linux_flatpak_azahar_uses_file_forwarding(monkeypa
             "gamehub_cli.sync.from_rel_path",
             lambda base, rel_path: Path("/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds"),
         )
+        monkeypatch.setattr("gamehub_cli.sync.sys.executable", "/usr/bin/python3")
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert specs[0].exe == '"/usr/bin/python3"'
+        assert "-m gamehub_cli.azahar_exit_hook" in specs[0].launch_options
+        assert "--app-id org.azahar_emu.Azahar" in specs[0].launch_options
+        assert '/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds' in specs[0].launch_options
+
+
+def test_build_shortcut_specs_linux_flatpak_azahar_can_disable_exit_hook(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-n3ds-linux-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        title = TitleEntry(
+            title_id="title_n3ds_pilotwings",
+            system="N3DS",
+            title_name="Pilotwings Resort",
+            title_rel_dir="N3DS/Pilotwings Resort.3ds",
+            emulator="azahar",
+            launch_template='"{emulator}" "{rom}"',
+            rom=RomSpec(
+                file_id="rom_n3ds_pilotwings",
+                rel_path="roms/N3DS/Pilotwings Resort.3ds",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".3ds",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.resolve_emulator_executable",
+            lambda value: "/home/deck/.local/share/flatpak/exports/bin/org.azahar_emu.Azahar",
+        )
+        monkeypatch.setattr("gamehub_cli.sync.sys.platform", "linux")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.from_rel_path",
+            lambda base, rel_path: Path("/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds"),
+        )
+        monkeypatch.setenv("GAMEHUB_AZAHAR_LINUX_EXIT_HOOK", "false")
 
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
         assert specs[0].exe == "flatpak"
         assert "run --device=all --file-forwarding org.azahar_emu.Azahar -f -- @@" in specs[0].launch_options
-        assert '/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds' in specs[0].launch_options
 
 
 def test_build_shortcut_specs_pcsx2_injects_fullscreen_when_missing(monkeypatch) -> None:
