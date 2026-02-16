@@ -1,7 +1,7 @@
 # Release Process
 
 Detailed end-to-end validation and publishing steps are in:
-- `docs/release-final-validation-playbook.md`
+- [release-final-validation-playbook.md](release-final-validation-playbook.md)
 
 ## Versioning
 - Use semantic versioning (`MAJOR.MINOR.PATCH`).

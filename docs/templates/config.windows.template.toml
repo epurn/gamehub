@@ -1,3 +1,5 @@
+# General Windows template.
+# Validated v1 Windows defaults.
 [server]
 url = "http://<SERVER_IP>:8000"
 

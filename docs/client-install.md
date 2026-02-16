@@ -1,5 +1,8 @@
 # Client Install and Upgrade
 
+Platform status and recommended templates:
+- [Platform Support (v1)](platform-support.md)
+
 ## Linux (distro-agnostic) via pip
 
 ### Install from GitHub Release wheel

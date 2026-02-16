@@ -8,8 +8,11 @@ Config resolution order:
 4. legacy fallback: platform-specific config dir `gamehub/config.toml`
 
 Sample templates:
-- Windows: `docs/templates/config.windows.template.toml`
-- Linux (Fedora/Ubuntu/SteamOS-like): `docs/templates/config.linux.template.toml`
+- Windows (verified): [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
+- Bazzite (tested): [docs/templates/config.bazzite.template.toml](templates/config.bazzite.template.toml)
+- General Linux: [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
+
+Platform validation status is tracked in [platform-support.md](platform-support.md).
 
 Example:
 ```toml

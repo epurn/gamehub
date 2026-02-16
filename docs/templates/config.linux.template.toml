@@ -1,3 +1,5 @@
+# General Linux template.
+# For v1 validated defaults on Bazzite, prefer: docs/templates/config.bazzite.template.toml
 [server]
 url = "http://<SERVER_IP>:8000"
 
