@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import os
 import re
 from pathlib import Path
 import shlex
@@ -45,6 +46,19 @@ _DOLPHIN_EXEC_TOKEN_RE = re.compile(r"\s(-e|--exec)(\s|=)")
 _DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
 
 
+def _is_windows_style_runtime_path(value: str) -> bool:
+    token = value.strip().strip('"')
+    if not token:
+        return False
+    normalized = token.replace("/", "\\")
+    # Drive-letter absolute path (C:\...), UNC path, or explicit .exe path.
+    if re.match(r"^[A-Za-z]:\\", normalized):
+        return True
+    if normalized.startswith("\\\\"):
+        return True
+    return normalized.casefold().endswith(".exe")
+
+
 def _resolve_rom_path(base: Path, rel_path: str) -> Path:
     try:
         return from_rel_path(base, rel_path, preferred_root="roms")
@@ -53,8 +67,12 @@ def _resolve_rom_path(base: Path, rel_path: str) -> Path:
         return from_rel_path(base, rel_path)
 
 
-def _normalize_linux_retroarch_launch_template(launch_template: str, config: GamehubConfig) -> str:
-    if not sys.platform.startswith("linux"):
+def _normalize_linux_retroarch_launch_template(
+    launch_template: str,
+    config: GamehubConfig,
+    emulator_exe: str,
+) -> str:
+    if not sys.platform.startswith("linux") or _is_windows_style_runtime_path(emulator_exe):
         return launch_template
     match = _RETROARCH_CORE_TOKEN_RE.search(launch_template)
     if not match:
@@ -137,8 +155,17 @@ def _supports_dolphin_inline_config(emulator_exe: str) -> bool:
     return True
 
 
+def _resolve_dolphin_user_dir_for_launch(emulator_exe: str, config: GamehubConfig) -> Path:
+    if _is_windows_style_runtime_path(emulator_exe):
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "Dolphin Emulator"
+        return Path.home() / "AppData" / "Roaming" / "Dolphin Emulator"
+    return resolve_dolphin_runtime_user_dir(config=config)
+
+
 def _normalize_dolphin_launch_template(launch_template: str, emulator_exe: str, config: GamehubConfig) -> str:
-    user_dir = str(resolve_dolphin_runtime_user_dir(config=config))
+    user_dir = str(_resolve_dolphin_user_dir_for_launch(emulator_exe, config))
     if not _DOLPHIN_USER_ARG_RE.search(launch_template):
         user_token = f' -u "{user_dir}"'
         match = _DOLPHIN_EXEC_TOKEN_RE.search(launch_template)
@@ -213,7 +240,7 @@ def build_shortcut_specs(
         launch_template = title.launch_template
         if "retroarch" in title.emulator.casefold():
             launch_template = _normalize_retroarch_fullscreen_launch_template(launch_template)
-            launch_template = _normalize_linux_retroarch_launch_template(launch_template, config)
+            launch_template = _normalize_linux_retroarch_launch_template(launch_template, config, emulator_exe)
         if "pcsx2" in title.emulator.casefold():
             launch_template = _normalize_pcsx2_launch_template(launch_template)
         if "dolphin" in title.emulator.casefold():
