@@ -18,7 +18,6 @@ Detailed end-to-end validation and publishing steps are in:
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py tests/test_sync.py
-git grep -n -i "bazzite" -- apps shared
 ```
 3. Run dependency audit/update checks:
 ```powershell
@@ -26,9 +25,9 @@ git grep -n -i "bazzite" -- apps shared
 .\venv\Scripts\python.exe -m pip_audit --progress-spinner off
 .\venv\Scripts\python.exe -m pip list --outdated --format=columns
 ```
-4. Run tracked-files secret scan (placeholders only, no real secrets):
+4. Run local readiness audit (docs cohesion + secret leak scan + runtime literal guard):
 ```powershell
-git grep -nEI "sgdb\.api_key|GAMEHUB_SGDB_API_KEY|ghp_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----" -- . ":(exclude)tests/**"
+.\venv\Scripts\python.exe scripts/audit_repo_readiness.py
 ```
 5. Bump version in `pyproject.toml`.
 6. Update release notes/changelog.

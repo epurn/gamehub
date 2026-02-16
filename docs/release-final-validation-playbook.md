@@ -38,8 +38,7 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 ```
 5. Runtime literal and secret scan:
 ```powershell
-git grep -n -i "bazzite" -- apps shared
-git grep -nEI "sgdb\.api_key|GAMEHUB_SGDB_API_KEY|ghp_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----" -- . ":(exclude)tests/**"
+.\venv\Scripts\python.exe scripts/audit_repo_readiness.py
 ```
 6. Dependency checks:
 ```powershell
@@ -58,7 +57,7 @@ pyinstaller --noconfirm --clean packaging/windows/gamehub.spec
 .\dist\gamehub-windows-amd64/gamehub-windows-amd64.exe sync --dry-run --skip-steam
 ```
 9. Create `config.windows.toml` for real sync:
-Start from template `docs/templates/config.windows.template.toml`, then fill in your values.
+Start from template [docs/templates/config.windows.template.toml](templates/config.windows.template.toml), then fill in your values.
 
 ```toml
 [server]
@@ -137,7 +136,7 @@ Run on Bazzite in an interactive desktop session.
 python3 -m pip install --user --force-reinstall dist/*.whl
 ```
 2. Create `config.bazzite.toml`:
-Start from template `docs/templates/config.linux.template.toml`, then adjust `paths.gamehub_dir`, `steam.userdata_dir`, and `[linux]` backend if needed.
+Start from template [docs/templates/config.bazzite.template.toml](templates/config.bazzite.template.toml), then adjust `paths.gamehub_dir`, `steam.userdata_dir`, and `[linux]` backend if needed.
 
 ```toml
 [server]

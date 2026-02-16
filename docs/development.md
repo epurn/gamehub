@@ -51,10 +51,10 @@ Use this before opening a PR that touches CLI portability, Steam integration, or
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py tests/test_sync.py
 ```
 
-Runtime literal guard (must produce no output):
+Pre-public/local readiness audit:
 
 ```powershell
-git grep -n -i "bazzite" -- apps shared
+.\venv\Scripts\python.exe scripts/audit_repo_readiness.py
 ```
 
 Dependency checks:

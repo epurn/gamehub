@@ -63,3 +63,4 @@ gamehub sync --config .\config.toml --verbose --require-steam-closed
 - Steam behavior: [docs/steam-integration.md](docs/steam-integration.md)
 - Server API: [docs/server-api.md](docs/server-api.md)
 - Operational runbook: [docs/runbook.md](docs/runbook.md)
+- Release + pre-public audit flow: [docs/release-process.md](docs/release-process.md)
