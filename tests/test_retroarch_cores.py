@@ -190,3 +190,34 @@ def test_resolve_retroarch_paths_linux_prefers_flatpak_when_export_detected(monk
 
         assert paths is not None
         assert paths.cores_dir == home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "cores"
+
+
+def test_resolve_retroarch_paths_expands_tilde_cfg_values(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-retroarch-cfg-tilde-") as temp_root:
+        home = temp_root / "home"
+        cfg_path = home / ".config" / "retroarch" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            "\n".join(
+                [
+                    'libretro_directory = "~/.var/app/org.libretro.RetroArch/config/retroarch/cores"',
+                    'libretro_info_path = "~/.var/app/org.libretro.RetroArch/config/retroarch/info"',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.retroarch_cores.retroarch_cfg_candidates",
+            lambda explicit_cfg_path=None: [cfg_path],
+        )
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch")
+
+        paths = resolve_retroarch_paths()
+
+        assert paths is not None
+        assert paths.cores_dir == home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "cores"
+        assert paths.info_dir == home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "info"

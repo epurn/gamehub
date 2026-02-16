@@ -51,6 +51,15 @@ class RetroArchPaths:
     info_dir: Path
 
 
+def _path_with_tilde_expanded(raw: str) -> Path:
+    value = raw.strip()
+    if value == "~":
+        return Path.home()
+    if value.startswith("~/") or value.startswith("~\\"):
+        return Path.home() / value[2:]
+    return Path(value)
+
+
 def _core_suffix() -> str:
     if os.name == "nt":
         return ".dll"
@@ -138,12 +147,12 @@ def resolve_retroarch_paths(
         raw_core = parsed.get("libretro_directory")
         raw_info = parsed.get("libretro_info_path")
         if raw_core:
-            candidate = Path(raw_core)
+            candidate = _path_with_tilde_expanded(raw_core)
             if not candidate.is_absolute():
                 candidate = cfg_path.parent / candidate
             config_cores = candidate
         if raw_info:
-            candidate = Path(raw_info)
+            candidate = _path_with_tilde_expanded(raw_info)
             if not candidate.is_absolute():
                 candidate = cfg_path.parent / candidate
             config_info = candidate

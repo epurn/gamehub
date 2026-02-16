@@ -28,7 +28,9 @@ Steam close behavior:
 3. Ensure required emulators are available:
    - detects missing emulator binaries from index metadata
    - Windows detection checks executable PATH, common install locations, and uninstall registry locations (not only winget package metadata)
-   - on Windows non-dry-run, attempts auto-install via `winget` for known emulators (`retroarch`, `pcsx2`, `dolphin`)
+   - on Windows non-dry-run, attempts auto-install via `winget` for known emulators (`retroarch`, `pcsx2`)
+   - Dolphin installs on Windows skip winget entirely and use the latest official Dolphin Windows x64 release archive (`dl.dolphin-emu.org`)
+   - if required Dolphin resolves to a known legacy Windows winget path/version (`<=5.0`), sync fails fast with an actionable upgrade error instead of emitting legacy `/b` parser args
    - on Linux non-dry-run, uses config-first install backend (`[linux].emulator_install_backend`):
      - `auto` (default): Fedora + `dnf`, then Debian/Ubuntu + `apt-get`, then `flatpak`, then configured command backend
      - `dnf`: force Fedora package install behavior
@@ -36,6 +38,7 @@ Steam close behavior:
      - `flatpak`: install `org.libretro.RetroArch`, `net.pcsx2.PCSX2`, `org.DolphinEmu.dolphin-emu` (remote optional via `[linux].flatpak_remote` / `GAMEHUB_LINUX_FLATPAK_REMOTE`)
      - `command`: run `[linux].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
      - `none`: disable Linux auto-install (sync prints actionable missing emulator output)
+   - when Linux backend is flatpak-preferred (`flatpak`, or immutable-host `auto`), Dolphin is treated as Flatpak-required; native `/usr/bin/dolphin` installs are not used as a substitute for `org.DolphinEmu.dolphin-emu`, and sync fails fast if that Flatpak app is unavailable
    - Steam shortcuts resolve emulator executable paths to concrete binaries when available
 4. Ensure required RetroArch cores are available:
    - detects required cores from index launch templates (`-L cores/<core>`)
@@ -77,13 +80,28 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - `retroarch.cfg` `system_directory`
   - Linux defaults (`~/.config/retroarch/system` and Flatpak `~/.var/app/org.libretro.RetroArch/config/retroarch/system`)
   - Windows portable executable directory (`<retroarch-dir>/system`) when applicable
+  - when a RetroArch config file is found, GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) for controller quick-menu access
+  - GAMEHUB also sets `all_users_control_menu = "true"` so menu combo works from non-primary controllers
 - `PS2` config is auto-updated and setup wizard completion is written into `PCSX2.ini`.
   - default BIOS target is `<gamehub_dir>/firmware/PS2` unless overridden by `PCSX2_BIOS_DIR`/`GAMEHUB_PCSX2_BIOS_DIR`/`[linux].pcsx2_bios_dir`
   - for Flatpak PCSX2 on Linux (no explicit BIOS override), GAMEHUB targets `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there so the sandbox can read them reliably
   - on Linux, GAMEHUB bootstraps generic SDL pad bindings for `Pad1` and `Pad2` (no controller-model hardcoding) unless disabled with `[linux].pcsx2_controller_autoconfig = false`
   - keyboard/mouse default pad bindings are replaced by SDL controller bindings during bootstrap
-- `Wii` firmware is mirrored to Dolphin user path `Wii/`.
-- `GC` firmware is mirrored to Dolphin user path `GC/`.
+  - GAMEHUB bootstraps `Hotkeys/OpenPauseMenu = SDL-0/Back & SDL-0/Start` when the existing binding is missing or keyboard-only
+- `GC` firmware is mirrored to Dolphin runtime user path `GC/` (native default: `~/.local/share/dolphin-emu/GC`, Flatpak: `~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/GC`).
+- When `GC`/`Wii` systems are present, GAMEHUB writes Dolphin runtime config `Config/Dolphin.ini` with `[Display] Fullscreen = True` under the same resolved runtime user path and mirrors to additional detected config roots when present.
+- GAMEHUB also bootstraps Dolphin `Config/GCPadNew.ini` and enables GC controller ports in `Dolphin.ini` (`SIDevice0/1 = 6`).
+- For Wii input, GAMEHUB bootstraps `Config/WiimoteNew.ini` with two emulated Wii remotes (`Wiimote1` + `Wiimote2`) with right-stick pointer bindings (`IR/* = Right Stick`) and Nunchuk extension defaults.
+- Wii bootstrap is explicit Wiimote+Nunchuk emulation (`[Wiimote*] Source = 1`, `Extension = Nunchuk`) and is not treated as GameCube pad input.
+- Dolphin writes `Interface/ConfirmStop = False` in `Dolphin.ini` so stop/exit flows do not block on confirmation prompts.
+- GAMEHUB bootstraps `Config/Hotkeys.ini` with controller-friendly stop/exit bindings:
+  - pad1/pad2 `Back+Start`
+- Windows Dolphin controller bootstrap sets explicit `XInput/0` and `XInput/1` device roots for pad/wiimote slots 1 and 2.
+- Linux Dolphin controller bootstrap auto-detects evdev gamepads from `/proc/bus/input/devices` (for example `evdev/0/Xbox Wireless Controller`, `evdev/1/Xbox Wireless Controller`) and falls back to `SDL/0` + `SDL/1` when evdev devices are not detected.
+- Dolphin writes `Interface/BackgroundInput = True` to reduce focus-related controller input drops when launched through Steam.
+- Existing Dolphin input files are preserved once present; sync reconciles managed stop/exit hotkeys each run.
+- Legacy managed Linux configs written with `XInput/<n>/Gamepad` or `All Devices` are auto-migrated on sync.
+- Wii does not require indexed firmware in v1.
 
 Linux path notes:
 - Linux/Flatpak command matching and path-candidate discovery is shared across sync/firmware/core modules to keep behavior consistent.
@@ -92,6 +110,7 @@ Linux path notes:
 - Dolphin target selection prefers explicit overrides, then existing user data roots, then a deterministic native/Flatpak default.
 - Linux RetroArch Steam launch options rewrite `-L cores/<core>.dll` templates to Linux core paths (`.so`) and prefer absolute core paths from resolved RetroArch config/overrides.
 - Linux Flatpak PCSX2 Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so host ROM paths are forwarded reliably to the sandbox.
+- Linux Flatpak Dolphin Steam launch options use `flatpak run --device=all --file-forwarding ... -e @@ <rom> @@` so controller devices and host ROM paths are consistently available in the sandbox.
 
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`
@@ -111,7 +130,11 @@ For systems that launch via RetroArch, GAMEHUB uses these general-purpose core d
 - `PSX`: `swanstation_libretro`
 - `SNES`: `snes9x_libretro`
 
-RetroArch launch templates are emitted with `-f` so synced Steam shortcuts request fullscreen on launch.
+Steam shortcut build normalizes emulator launch options for fullscreen:
+- RetroArch shortcuts include `-f` (injected if missing).
+- PCSX2 shortcuts include `-fullscreen` (injected if missing; Flatpak path already includes it).
+- Dolphin shortcuts include `-u "<dolphin-user-dir>"` so launch always uses the same user profile path GAMEHUB configured.
+- Dolphin shortcuts include `-C Dolphin.Display.Fullscreen=True` for non-Flatpak installs when supported by the installed Dolphin CLI parser (injected before `-e/--exec` when missing).
 
 Core provisioning environment overrides:
 - `GAMEHUB_RETROARCH_CORES_BASE_URL`: override Libretro buildbot base URL

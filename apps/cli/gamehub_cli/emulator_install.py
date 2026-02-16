@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from gamehub_common.models import LibraryIndex
 
@@ -14,12 +18,12 @@ from .emulator_resolution import (
     _linux_dist_id,
     _required_emulators,
     _resolve_winget_command,
+    resolve_emulator_executable,
 )
 
-_WINGET_IDS = {
-    "retroarch": "Libretro.RetroArch",
-    "pcsx2": "PCSX2Team.PCSX2",
-    "dolphin": "DolphinEmu.Dolphin",
+_WINGET_ID_CANDIDATES = {
+    "retroarch": ("Libretro.RetroArch",),
+    "pcsx2": ("PCSX2Team.PCSX2",),
 }
 
 _DNF_PACKAGES = {
@@ -39,6 +43,24 @@ _FLATPAK_APP_IDS = {
     "pcsx2": "net.pcsx2.PCSX2",
     "dolphin": "org.DolphinEmu.dolphin-emu",
 }
+_FLATPAK_FORCED_EMULATORS = frozenset({"dolphin"})
+_IMMUTABLE_DISTRO_HINTS = (
+    "atomic",
+    "aurora",
+    "bazzite",
+    "bluefin",
+    "kinoite",
+    "silverblue",
+    "steamdeck",
+    "steamos",
+    "ublue",
+)
+_DOLPHIN_DOWNLOAD_PAGE_URL = "https://dolphin-emu.org/download/"
+_DOLPHIN_WINGET_PATH_VERSION_RE = re.compile(r"(?i)dolphin(?:emu|emulator)\.dolphin_(?P<value>[^\\/_]+)")
+_DOLPHIN_WINDOWS_ARCHIVE_URL_RE = re.compile(
+    r"https://dl\.dolphin-emu\.org/releases/(?P<version>\d+)/dolphin-(?P=version)-x64\.7z",
+    re.IGNORECASE,
+)
 
 
 def _run_install_command(command: list[str], *, verbose: bool) -> int:
@@ -49,6 +71,127 @@ def _run_install_command(command: list[str], *, verbose: bool) -> int:
         text=True,
     )
     return int(completed.returncode)
+
+
+def _version_key(value: str) -> tuple[int, ...]:
+    parts: list[int] = []
+    for token in re.split(r"[^0-9]+", value):
+        if token:
+            parts.append(int(token))
+    return tuple(parts) if parts else (0,)
+
+
+def _is_version_at_or_below_5_0(value: str) -> bool | None:
+    parts = _version_key(value)
+    if not parts or parts == (0,):
+        return None
+    major = parts[0]
+    minor = parts[1] if len(parts) > 1 else 0
+    if major < 5:
+        return True
+    if major > 5:
+        return False
+    if minor < 0:
+        return True
+    if minor > 0:
+        return False
+    # 5.0.x: treat non-zero patch/build as newer than plain 5.0.
+    return all(part == 0 for part in parts[2:])
+
+
+def _latest_dolphin_windows_archive_url() -> tuple[str | None, str | None]:
+    try:
+        with urlopen(_DOLPHIN_DOWNLOAD_PAGE_URL, timeout=20) as response:
+            html = response.read().decode("utf-8", errors="ignore")
+    except (URLError, TimeoutError, OSError):
+        return None, None
+    candidates = _DOLPHIN_WINDOWS_ARCHIVE_URL_RE.findall(html)
+    if not candidates:
+        return None, None
+    version = max(candidates, key=lambda item: _version_key(item))
+    url = f"https://dl.dolphin-emu.org/releases/{version}/dolphin-{version}-x64.7z"
+    return url, version
+
+
+def _required_has_dolphin(required: list[str]) -> bool:
+    for value in required:
+        normalized = value.strip().strip('"').casefold()
+        if normalized in {"dolphin", "dolphin-emu"}:
+            return True
+    return False
+
+
+def _validate_windows_dolphin_runtime(required: list[str]) -> None:
+    if os.name != "nt":
+        return
+    if not _required_has_dolphin(required):
+        return
+    if not _is_emulator_available("dolphin"):
+        return
+    resolved = resolve_emulator_executable("dolphin").strip().strip('"')
+    if not resolved:
+        return
+    normalized = resolved.replace("/", "\\")
+    match = _DOLPHIN_WINGET_PATH_VERSION_RE.search(normalized)
+    if match is None:
+        return
+    version_text = match.group("value").strip()
+    legacy = _is_version_at_or_below_5_0(version_text)
+    if legacy is not True:
+        return
+    raise RuntimeError(
+        "Unsupported legacy Dolphin build detected "
+        f"({resolved}, version={version_text}). "
+        "Install a modern Dolphin build (newer than 5.0) and re-run sync."
+    )
+
+
+def _install_dolphin_from_official_release_archive(*, verbose: bool) -> bool:
+    if os.name != "nt":
+        return False
+    archive_url, version = _latest_dolphin_windows_archive_url()
+    if not archive_url or not version:
+        return False
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        install_root = Path(local_app_data) / "Programs" / "Dolphin"
+    else:
+        install_root = Path.home() / "AppData" / "Local" / "Programs" / "Dolphin"
+
+    with tempfile.TemporaryDirectory(prefix="gamehub-dolphin-release-") as temp_dir:
+        temp_root = Path(temp_dir)
+        archive_path = temp_root / f"dolphin-{version}-x64.7z"
+        extract_root = temp_root / "extract"
+        extract_root.mkdir(parents=True, exist_ok=True)
+        try:
+            with urlopen(archive_url, timeout=60) as response:
+                archive_path.write_bytes(response.read())
+        except (URLError, TimeoutError, OSError):
+            return False
+
+        try:
+            tar_result = subprocess.run(
+                ["tar", "-xf", str(archive_path), "-C", str(extract_root)],
+                check=False,
+                capture_output=not verbose,
+                text=True,
+            )
+        except OSError:
+            return False
+        if tar_result.returncode != 0:
+            return False
+        exe_candidates = sorted(extract_root.rglob("Dolphin.exe"), key=lambda item: len(item.parts))
+        if not exe_candidates:
+            return False
+        source_root = exe_candidates[0].parent
+        try:
+            install_root.parent.mkdir(parents=True, exist_ok=True)
+            if install_root.exists():
+                shutil.rmtree(install_root)
+            shutil.copytree(source_root, install_root)
+        except OSError:
+            return False
+    return (install_root / "Dolphin.exe").exists()
 
 
 def _flatpak_remotes() -> list[str]:
@@ -71,41 +214,145 @@ def _flatpak_remotes() -> list[str]:
     return values
 
 
+def _flatpak_app_export_candidates(app_id: str) -> tuple[Path, ...]:
+    return (
+        Path.home() / ".local" / "share" / "flatpak" / "exports" / "bin" / app_id,
+        Path("/var/lib/flatpak/exports/bin") / app_id,
+    )
+
+
+def _is_flatpak_app_available(app_id: str) -> bool:
+    if any(candidate.exists() for candidate in _flatpak_app_export_candidates(app_id)):
+        return True
+    if shutil.which(app_id) is not None:
+        return True
+    if shutil.which("flatpak") is None:
+        return False
+    completed = subprocess.run(
+        ["flatpak", "info", "--show-ref", app_id],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode == 0
+
+
+def _flatpak_preferred_linux_backend(backend: str, dist_id: str) -> bool:
+    if backend == "flatpak":
+        return True
+    if backend in {"auto", ""} and _prefer_flatpak_for_auto_backend(dist_id):
+        return True
+    return False
+
+
+def _linux_missing_emulators(required: list[str], *, backend: str, dist_id: str) -> list[str]:
+    force_flatpak = _flatpak_preferred_linux_backend(backend, dist_id)
+    missing: list[str] = []
+    for name in required:
+        normalized = name.strip().strip('"').casefold()
+        if force_flatpak and normalized in _FLATPAK_FORCED_EMULATORS:
+            app_id = _FLATPAK_APP_IDS.get(normalized)
+            if app_id and not _is_flatpak_app_available(app_id):
+                missing.append(name)
+            continue
+        if not _is_emulator_available(name):
+            missing.append(name)
+    return missing
+
+
+def _validate_forced_linux_flatpak_emulators(required: list[str], *, backend: str, dist_id: str) -> None:
+    if not _flatpak_preferred_linux_backend(backend, dist_id):
+        return
+    missing_apps: list[str] = []
+    for name in required:
+        normalized = name.strip().strip('"').casefold()
+        if normalized not in _FLATPAK_FORCED_EMULATORS:
+            continue
+        app_id = _FLATPAK_APP_IDS.get(normalized)
+        if app_id and not _is_flatpak_app_available(app_id):
+            missing_apps.append(app_id)
+    if missing_apps:
+        joined = ", ".join(sorted(set(missing_apps)))
+        raise RuntimeError(
+            "Required Flatpak emulator(s) are unavailable for this Linux backend: "
+            f"{joined}. Install them via flatpak and re-run sync."
+        )
+
+
+def _prefer_flatpak_for_auto_backend(dist_id: str) -> bool:
+    normalized = dist_id.casefold()
+    if any(hint in normalized for hint in _IMMUTABLE_DISTRO_HINTS):
+        return True
+    for marker in (Path("/run/ostree-booted"), Path("/sysroot/ostree")):
+        try:
+            if marker.exists():
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _install_windows(missing: list[str], *, verbose: bool) -> None:
     winget_cmd = _resolve_winget_command()
-    if winget_cmd is None:
-        print("winget not found; cannot auto-install missing emulators")
-        return
 
     for emulator in missing:
-        winget_id = _WINGET_IDS.get(emulator.lower())
-        if not winget_id:
+        if emulator.lower() == "dolphin":
+            print("Installing emulator 'dolphin' via official Dolphin release archive...")
+            archive_ok = _install_dolphin_from_official_release_archive(verbose=verbose)
+            if archive_ok and _is_emulator_available("dolphin"):
+                print("Installed emulator: dolphin")
+                continue
+            if archive_ok:
+                print("Warning: Dolphin archive install completed but Dolphin executable was not detected.")
+            else:
+                print("Warning: official Dolphin release archive install failed.")
+            print("Warning: install the latest Dolphin manually from dolphin-emu.org and re-run sync.")
+            continue
+
+        winget_ids = _WINGET_ID_CANDIDATES.get(emulator.lower())
+        if not winget_ids:
             print(f"No installer mapping for emulator '{emulator}'; install it manually")
             continue
-        print(f"Installing emulator '{emulator}' via winget ({winget_id})...")
-        result = _run_install_command(
-            [
-                winget_cmd,
-                "install",
-                "--id",
-                winget_id,
-                "-e",
-                "--accept-source-agreements",
-                "--accept-package-agreements",
-                "--silent",
-            ],
-            verbose=verbose,
-        )
-        if result != 0:
+        if winget_cmd is None:
+            print("winget not found; cannot auto-install missing emulators")
+            continue
+        last_result = 0
+        installed = False
+        for idx, winget_id in enumerate(winget_ids, start=1):
+            print(f"Installing emulator '{emulator}' via winget ({winget_id})...")
+            result = _run_install_command(
+                [
+                    winget_cmd,
+                    "install",
+                    "--id",
+                    winget_id,
+                    "-e",
+                    "--accept-source-agreements",
+                    "--accept-package-agreements",
+                    "--silent",
+                ],
+                verbose=verbose,
+            )
+            last_result = result
+            if result == 0:
+                if not _is_emulator_available(emulator):
+                    print(f"Warning: {emulator} install command completed but executable not found yet")
+                    continue
+                print(f"Installed emulator: {emulator}")
+                installed = True
+                break
             if _is_emulator_available(emulator):
                 print(f"Detected installed emulator despite winget non-zero exit: {emulator}")
-                continue
-            print(f"Warning: winget install failed for {emulator} (exit {result}). Install manually and re-run sync.")
-            continue
-        if _is_emulator_available(emulator):
-            print(f"Installed emulator: {emulator}")
-        else:
-            print(f"Warning: {emulator} install command completed but executable not found yet")
+                installed = True
+                break
+            if idx < len(winget_ids):
+                print(f"Warning: winget install failed for {emulator} via {winget_id} (exit {result}); trying fallback id.")
+
+        if not installed:
+            print(
+                f"Warning: winget install failed for {emulator} (exit {last_result}). "
+                "Install manually and re-run sync."
+            )
 
 
 def _install_fedora(missing: list[str], *, verbose: bool) -> None:
@@ -274,27 +521,43 @@ def ensure_emulators(
     if not required:
         return
 
-    missing = [name for name in required if not _is_emulator_available(name)]
+    linux_dist_id = ""
+    linux_backend = ""
+    if sys.platform.startswith("linux"):
+        linux_backend = (linux_install_backend or "auto").strip().casefold()
+        linux_dist_id = _linux_dist_id()
+        missing = _linux_missing_emulators(required, backend=linux_backend, dist_id=linux_dist_id)
+    else:
+        missing = [name for name in required if not _is_emulator_available(name)]
+
     if not missing:
         if verbose:
             print(f"Emulators ready: {', '.join(required)}")
+        if sys.platform.startswith("linux"):
+            _validate_forced_linux_flatpak_emulators(required, backend=linux_backend, dist_id=linux_dist_id)
+        _validate_windows_dolphin_runtime(required)
         return
 
     print(f"Missing emulators: {', '.join(missing)}")
     if dry_run:
         print("Dry-run: emulator auto-install skipped")
+        _validate_windows_dolphin_runtime(required)
         return
     if os.name == "nt":
         _install_windows(missing, verbose=verbose)
+        _validate_windows_dolphin_runtime(required)
         return
 
     if sys.platform.startswith("linux"):
-        backend = (linux_install_backend or "auto").strip()
-        backend = backend.casefold()
+        backend = linux_backend
         custom_command = linux_install_command
-        dist_id = _linux_dist_id()
+        dist_id = linux_dist_id
 
         if backend in {"auto", ""}:
+            if _prefer_flatpak_for_auto_backend(dist_id) and shutil.which("flatpak") is not None:
+                _install_flatpak(missing, verbose=verbose, remote=linux_flatpak_remote)
+                _validate_forced_linux_flatpak_emulators(required, backend=backend, dist_id=dist_id)
+                return
             if "fedora" in dist_id and shutil.which("dnf") is not None:
                 _install_fedora(missing, verbose=verbose)
                 return
@@ -322,6 +585,7 @@ def ensure_emulators(
             return
         if backend == "flatpak":
             _install_flatpak(missing, verbose=verbose, remote=linux_flatpak_remote)
+            _validate_forced_linux_flatpak_emulators(required, backend=backend, dist_id=dist_id)
             return
         if backend == "none":
             print("Linux emulator auto-install disabled by configuration")

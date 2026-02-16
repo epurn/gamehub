@@ -4,7 +4,8 @@
 Config resolution order:
 1. `--config <path>` CLI option (when provided)
 2. `./config.toml` in current working directory (if present)
-3. platform-specific config dir `gamehub/config.toml`
+3. `~/.gamehub/config.toml`
+4. legacy fallback: platform-specific config dir `gamehub/config.toml`
 
 Sample templates:
 - Windows: `docs/templates/config.windows.template.toml`
@@ -94,7 +95,10 @@ Environment overrides are resolved centrally in `load_config` (precedence: CLI f
 Firmware deployment and Linux runtime env overrides:
 - `RETROARCH_SYSTEM_DIR` or `GAMEHUB_RETROARCH_SYSTEM_DIR`: explicit RetroArch `system` directory target.
 - `PCSX2_BIOS_DIR` or `GAMEHUB_PCSX2_BIOS_DIR`: explicit BIOS directory written into PCSX2 config (`PCSX2.ini`).
-- `DOLPHIN_EMU_USERPATH` or `GAMEHUB_DOLPHIN_EMU_USERPATH`: explicit Dolphin user directory target (Wii firmware deploys into `<userpath>/Wii`).
+- `DOLPHIN_EMU_USERPATH` or `GAMEHUB_DOLPHIN_EMU_USERPATH`: explicit Dolphin runtime user directory target.
+  - GC/Wii firmware deploys into `<userpath>/GC` and `<userpath>/Wii`.
+  - Steam launch templates are normalized to pass `-u "<userpath>"`.
+  - Dolphin runtime config files (`Dolphin.ini`, `GCPadNew.ini`, `WiimoteNew.ini`, `Hotkeys.ini`) are bootstrapped under `<userpath>/Config`.
 - `GAMEHUB_RETROARCH_CFG_PATH`: explicit RetroArch config file path.
 - `GAMEHUB_PCSX2_INI_PATH`: explicit PCSX2 ini path.
 - `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG`: overrides `[linux].pcsx2_controller_autoconfig` (`true`/`false`).
@@ -113,8 +117,16 @@ Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
 - On Linux, GAMEHUB can also bootstrap generic SDL controller mappings for `Pad1` and `Pad2` so first-run PCSX2 controller setup works for Xbox/DS4/DS5/other SDL controllers without per-device hardcoding.
 - During this bootstrap, keyboard/mouse default pad bindings are replaced with SDL bindings; set `[linux].pcsx2_controller_autoconfig = false` (or `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG=false`) to opt out.
+- GAMEHUB also bootstraps `Hotkeys/OpenPauseMenu = SDL-0/Back & SDL-0/Start` when the existing binding is missing or keyboard-only.
+
+RetroArch note:
+- When a RetroArch config file is discovered (`retroarch.cfg` candidates or explicit override), GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) and `all_users_control_menu = "true"` for controller quick-menu access.
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
+
+Linux Dolphin defaults:
+- Native runtime user dir: `~/.local/share/dolphin-emu`
+- Flatpak runtime user dir: `~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu`
 
 ## State file
 - Format: JSON

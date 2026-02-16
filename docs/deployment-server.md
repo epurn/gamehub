@@ -22,6 +22,7 @@ Required values in `.env.production`:
 - `GAMEHUB_SERVER_PORT`: exposed host port
 - `GAMEHUB_IMAGE_TAG`: image tag to run
 - Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`, meaning startup/manual refresh only)
+- Optional: `GAMEHUB_HASH_CACHE_PATH` (path for persistent SHA256 cache DB; default is `/app/.cache/gamehub/hash-cache.sqlite3`)
 
 ## 2) Deploy
 ```powershell
@@ -40,9 +41,11 @@ docker compose -f docker/compose.yaml --env-file .env.production config
 
 ## Notes
 - Data volume is mounted read-only in container.
+- Hash cache is stored in named Docker volume `gamehub-hash-cache-v2` and persists across container restarts/recreates.
 - Container restart policy is `unless-stopped`.
 - Healthcheck targets `GET /health`.
 - Server performs index/hash warmup during startup; large libraries can increase startup time.
+- Rebuilds reuse cached SHA256 values for unchanged files (metadata-keyed), which significantly reduces repeated hash work on large libraries.
 - Startup logs include explicit warmup start/completion lines with elapsed time and indexed system/title counts.
 - Scope is LAN-only in this phase (no TLS/auth in-container).
 - Compose defaults are architecture-portable for local deploys (no hard pin in `docker/compose.yaml`).

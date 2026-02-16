@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
+import re
 import shutil
 from uuid import uuid4
 
@@ -769,6 +770,46 @@ def test_build_shortcut_specs_resolves_emulator_path(monkeypatch) -> None:
         assert '-L cores/fceumm_libretro.dll' in specs[0].launch_options
 
 
+def test_build_shortcut_specs_retroarch_injects_fullscreen_when_missing(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-retroarch-fs-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        title = TitleEntry(
+            title_id="title_nes_mario",
+            system="NES",
+            title_name="Super Mario Bros",
+            title_rel_dir="NES/SuperMarioBros.nes",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/fceumm_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_1",
+                rel_path="roms/NES/SuperMarioBros.nes",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".nes",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe")
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert re.search(r"(^|\s)-f(\s|$)", specs[0].launch_options) is not None
+        assert len(re.findall(r"(^|\s)-f(\s|$)", specs[0].launch_options)) == 1
+
+
 def test_build_shortcut_specs_linux_normalizes_retroarch_core_token(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-sync-shortcuts-linux-") as temp_root:
         config = GamehubConfig(
@@ -875,6 +916,46 @@ def test_build_shortcut_specs_linux_flatpak_pcsx2_uses_file_forwarding(monkeypat
         assert "/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso" in specs[0].launch_options
 
 
+def test_build_shortcut_specs_pcsx2_injects_fullscreen_when_missing(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-pcsx2-fs-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        title = TitleEntry(
+            title_id="title_ps2_gt4",
+            system="PS2",
+            title_name="Gran Turismo 4",
+            title_rel_dir="PS2/Gran Turismo 4.iso",
+            emulator="pcsx2",
+            launch_template='"{emulator}" "{rom}"',
+            rom=RomSpec(
+                file_id="rom_ps2",
+                rel_path="roms/PS2/Gran Turismo 4.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\PCSX2\\pcsx2-qt.exe")
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert re.search(r"(^|\s)-fullscreen(\s|$)", specs[0].launch_options) is not None
+        assert len(re.findall(r"(^|\s)-fullscreen(\s|$)", specs[0].launch_options)) == 1
+
+
 def test_build_shortcut_specs_uses_title_rom_path_for_all_titles(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-sync-shortcuts-") as temp_root:
         config = GamehubConfig(
@@ -934,3 +1015,183 @@ def test_build_shortcut_specs_uses_title_rom_path_for_all_titles(monkeypatch) ->
         assert str(temp_root / "library" / "roms" / "PS2" / "Gran Turismo 4.bin") in by_title[
             "Gran Turismo 4"
         ].launch_options
+
+
+def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-dolphin-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        title = TitleEntry(
+            title_id="title_wii_mg",
+            system="Wii",
+            title_name="Super Mario Galaxy",
+            title_rel_dir="Wii/Super Mario Galaxy.rvz",
+            emulator="dolphin",
+            launch_template='"{emulator}" -b -e "{rom}"',
+            rom=RomSpec(
+                file_id="rom_wii_mg",
+                rel_path="roms/Wii/Super Mario Galaxy.rvz",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".rvz",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\Dolphin\\Dolphin.exe")
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert specs[0].exe == '"C:\\Dolphin\\Dolphin.exe"'
+        assert "-b -u " in specs[0].launch_options
+        assert "Dolphin.Display.Fullscreen=True" in specs[0].launch_options
+        assert "Dolphin Emulator" in specs[0].launch_options
+        assert "-e" in specs[0].launch_options
+        assert f'"{temp_root / "library" / "roms" / "Wii" / "Super Mario Galaxy.rvz"}"' in specs[0].launch_options
+
+
+def test_build_shortcut_specs_dolphin_does_not_duplicate_fullscreen_config(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-dolphin-fullscreen-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        title = TitleEntry(
+            title_id="title_gc_double_dash",
+            system="GC",
+            title_name="Mario Kart Double Dash",
+            title_rel_dir="GC/Mario Kart Double Dash.iso",
+            emulator="dolphin",
+            launch_template='"{emulator}" -b -C Dolphin.Display.Fullscreen=True -e "{rom}"',
+            rom=RomSpec(
+                file_id="rom_gc_double_dash",
+                rel_path="roms/GC/Mario Kart Double Dash.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\Dolphin\\Dolphin.exe")
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert specs[0].launch_options.count("Dolphin.Display.Fullscreen=True") == 1
+        assert " -u " in specs[0].launch_options
+
+
+def test_build_shortcut_specs_linux_flatpak_dolphin_uses_file_forwarding_and_device_access(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-dolphin-flatpak-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        title = TitleEntry(
+            title_id="title_wii_mg",
+            system="Wii",
+            title_name="Super Mario Galaxy",
+            title_rel_dir="Wii/Super Mario Galaxy.rvz",
+            emulator="dolphin",
+            launch_template='"{emulator}" -b -e "{rom}"',
+            rom=RomSpec(
+                file_id="rom_wii_mg",
+                rel_path="roms/Wii/Super Mario Galaxy.rvz",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".rvz",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.resolve_emulator_executable",
+            lambda value: "/home/deck/.local/share/flatpak/exports/bin/org.DolphinEmu.dolphin-emu",
+        )
+        monkeypatch.setattr("gamehub_cli.sync.sys.platform", "linux")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.from_rel_path",
+            lambda base, rel_path, preferred_root="roms": Path("/var/home/deck/GameHub/roms/Wii/Super Mario Galaxy.rvz"),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.sync_steam_stage.resolve_dolphin_runtime_user_dir",
+            lambda config=None: Path("/var/home/deck/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu"),
+        )
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert specs[0].exe == "flatpak"
+        assert "run --device=all --file-forwarding org.DolphinEmu.dolphin-emu -b -u " in specs[0].launch_options
+        assert '/var/home/deck/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu' in specs[0].launch_options
+        assert '-e @@ "/var/home/deck/GameHub/roms/Wii/Super Mario Galaxy.rvz" @@' in specs[0].launch_options
+
+
+def test_build_shortcut_specs_dolphin_skips_config_arg_when_parser_is_legacy(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-dolphin-legacy-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        title = TitleEntry(
+            title_id="title_gc_double_dash",
+            system="GC",
+            title_name="Mario Kart Double Dash",
+            title_rel_dir="GC/Mario Kart Double Dash.iso",
+            emulator="dolphin",
+            launch_template='"{emulator}" -b -C Dolphin.Display.Fullscreen=True -e "{rom}"',
+            rom=RomSpec(
+                file_id="rom_gc_double_dash",
+                rel_path="roms/GC/Mario Kart Double Dash.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\Dolphin\\Dolphin.exe")
+        monkeypatch.setattr("gamehub_cli.sync_steam_stage._supports_dolphin_inline_config", lambda _exe: False)
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert "Dolphin.Display.Fullscreen=True" not in specs[0].launch_options
+        assert "-b -u" in specs[0].launch_options
+        assert "-e" in specs[0].launch_options

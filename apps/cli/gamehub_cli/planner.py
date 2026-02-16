@@ -70,7 +70,8 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
                         content_id=key,
                     )
                 )
-                plan.blocked_systems[system_name] = "Missing required firmware"
+                if firmware.required:
+                    plan.blocked_systems[system_name] = "Missing required firmware"
 
     for title in index.titles:
         if title.system in plan.blocked_systems:

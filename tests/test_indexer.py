@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
 from gamehub_common.ids import make_file_id, make_title_id, sha256_file
+import gamehub_server.indexer as indexer_module
 from gamehub_server.indexer import SYSTEM_CATALOG, build_index
 
 INITIAL_SYSTEM_SET = {
@@ -97,6 +99,10 @@ def test_system_catalog_matches_initial_supported_set() -> None:
     assert set(SYSTEM_CATALOG) == INITIAL_SYSTEM_SET
     assert "PS1" not in SYSTEM_CATALOG
     assert SYSTEM_CATALOG["PSX"]["firmware"] == ("scph5501.bin",)
+    assert SYSTEM_CATALOG["Wii"]["firmware"] == ()
+    assert SYSTEM_CATALOG["Wii"]["scan_firmware"] is False
+    assert ' -b -e "{rom}"' in SYSTEM_CATALOG["GC"]["launch_template"]
+    assert ' -b -e "{rom}"' in SYSTEM_CATALOG["Wii"]["launch_template"]
     assert ' -fullscreen "{rom}"' in SYSTEM_CATALOG["PS2"]["launch_template"]
 
 
@@ -140,3 +146,76 @@ def test_build_index_ignores_psx_and_ps2_7z_archives() -> None:
 
         bundle = build_index(root)
         assert not bundle.index.titles
+
+
+def test_build_index_does_not_require_wii_keys_file() -> None:
+    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
+
+        bundle = build_index(root)
+        assert len(bundle.index.titles) == 1
+        assert bundle.index.titles[0].system == "Wii"
+
+
+def test_build_index_ignores_wii_firmware_directory_files() -> None:
+    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
+        _write_file(root / "firmware" / "Wii" / "keys.md", b"wiiu-keys")
+        _write_file(root / "firmware" / "Wii" / "keys.bin", b"legacy")
+
+        bundle = build_index(root)
+        wii = next(system for system in bundle.index.systems if system.name == "Wii")
+        assert wii.firmware == ()
+
+
+def test_build_index_supports_dolphin_ciso_for_gc_and_wii() -> None:
+    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "GC" / "FZeroGX.ciso", b"gc-ciso")
+        _write_file(root / "roms" / "Wii" / "MarioKartWii.ciso", b"wii-ciso")
+
+        bundle = build_index(root)
+        by_system = {title.system: title for title in bundle.index.titles}
+        assert by_system["GC"].rom.extension == ".ciso"
+        assert by_system["Wii"].rom.extension == ".ciso"
+
+
+def test_build_index_reuses_cached_hashes_for_unchanged_files(monkeypatch) -> None:
+    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "PS2" / "FinalFantasyX.iso", b"rom")
+        _write_file(root / "firmware" / "PS2" / "scph10000.bin", b"fw")
+        build_index(root)
+
+        calls: list[Path] = []
+        original_sha256 = indexer_module.sha256_file
+
+        def counting_sha256(path: Path) -> str:
+            calls.append(path)
+            return original_sha256(path)
+
+        monkeypatch.setattr(indexer_module, "sha256_file", counting_sha256)
+        build_index(root)
+
+        assert calls == []
+
+
+def test_build_index_rehashes_changed_files(monkeypatch) -> None:
+    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+        rom_path = root / "roms" / "NES" / "SuperMarioBros.nes"
+        _write_file(rom_path, b"rom-v1")
+        build_index(root)
+
+        calls: list[Path] = []
+        original_sha256 = indexer_module.sha256_file
+
+        def counting_sha256(path: Path) -> str:
+            calls.append(path)
+            return original_sha256(path)
+
+        monkeypatch.setattr(indexer_module, "sha256_file", counting_sha256)
+        _write_file(rom_path, b"rom-v2")
+        stat = rom_path.stat()
+        os.utime(rom_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+
+        build_index(root)
+
+        assert calls == [rom_path]

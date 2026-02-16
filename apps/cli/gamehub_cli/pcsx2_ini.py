@@ -6,6 +6,8 @@ import tempfile
 
 from .fsops import replace_file
 
+PCSX2_OPEN_PAUSE_MENU_HOTKEY = "SDL-0/Back & SDL-0/Start"
+
 
 def read_ini_lines(path: Path) -> list[str]:
     if not path.exists():
@@ -148,6 +150,26 @@ def bootstrap_pcsx2_controllers(lines: list[str]) -> tuple[list[str], bool]:
                 continue
             lines, changed_binding = upsert_ini_key(lines, section, key, value)
             changed |= changed_binding
+    return lines, changed
+
+
+def should_bootstrap_hotkey_binding(value: str | None) -> bool:
+    if is_missing_pad_binding(value):
+        return True
+    return is_keyboard_or_mouse_binding(value)
+
+
+def bootstrap_pcsx2_hotkeys(lines: list[str]) -> tuple[list[str], bool]:
+    changed = False
+    existing_open_pause_menu = read_ini_key(lines, "Hotkeys", "OpenPauseMenu")
+    if should_bootstrap_hotkey_binding(existing_open_pause_menu):
+        lines, changed_open_pause_menu = upsert_ini_key(
+            lines,
+            "Hotkeys",
+            "OpenPauseMenu",
+            PCSX2_OPEN_PAUSE_MENU_HOTKEY,
+        )
+        changed |= changed_open_pause_menu
     return lines, changed
 
 

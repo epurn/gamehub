@@ -21,7 +21,11 @@ if typer is not None:
 
     @app.command()
     def sync(
-        config: Path | None = typer.Option(None, "--config", help="Path to config TOML"),
+        config: Path | None = typer.Option(
+            None,
+            "--config",
+            help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+        ),
         dry_run: bool = typer.Option(False, "--dry-run", help="Plan only; do not download or modify Steam"),
         verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
         verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
@@ -61,7 +65,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="gamehub")
     subparsers = parser.add_subparsers(dest="command", required=True)
     sync_parser = subparsers.add_parser("sync")
-    sync_parser.add_argument("--config", type=Path, default=None)
+    sync_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    )
     sync_parser.add_argument("--dry-run", action="store_true")
     sync_parser.add_argument("--verbose", action="store_true")
     sync_parser.add_argument("--verify", action="store_true")

@@ -11,6 +11,7 @@ from .platform_paths import (
     PCSX2_FLATPAK_APP_ID,
     RETROARCH_FLATPAK_APP_ID,
     is_flatpak_command,
+    linux_flatpak_dolphin_config_root,
     linux_flatpak_dolphin_root,
     linux_flatpak_pcsx2_root,
     linux_flatpak_retroarch_root,
@@ -18,6 +19,15 @@ from .platform_paths import (
     retroarch_cfg_candidates,
     unique_paths,
 )
+
+
+def _path_with_tilde_expanded(raw: str) -> Path:
+    value = raw.strip()
+    if value == "~":
+        return Path.home()
+    if value.startswith("~/") or value.startswith("~\\"):
+        return Path.home() / value[2:]
+    return Path(value)
 
 
 def _configured_path(config: GamehubConfig | None, setting_name: str) -> Path | None:
@@ -47,7 +57,7 @@ def resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[P
         if raw.lower() == "default":
             values.append(cfg_path.parent / "system")
             continue
-        candidate = Path(raw)
+        candidate = _path_with_tilde_expanded(raw)
         if not candidate.is_absolute():
             candidate = cfg_path.parent / candidate
         values.append(candidate)
@@ -110,7 +120,7 @@ def resolve_pcsx2_bios_dirs(config: GamehubConfig | None = None) -> list[Path]:
         bios_value = parsed.get("bios") or parsed.get("folders.bios")
         if not bios_value:
             continue
-        candidate = Path(bios_value)
+        candidate = _path_with_tilde_expanded(bios_value)
         if not candidate.is_absolute():
             root = ini_path.parent.parent if ini_path.parent.name.lower() == "inis" else ini_path.parent
             candidate = root / candidate
@@ -171,15 +181,84 @@ def resolve_dolphin_user_dirs(config: GamehubConfig | None = None) -> list[Path]
     return unique_paths(values)
 
 
+def resolve_dolphin_runtime_user_dir(config: GamehubConfig | None = None) -> Path:
+    user_override = _configured_path(config, "dolphin_user_path")
+    if user_override:
+        return user_override
+
+    appdata = os.environ.get("APPDATA")
+    if os.name == "nt" and appdata:
+        return Path(appdata) / "Dolphin Emulator"
+
+    home = Path.home()
+    legacy = home / ".dolphin-emu"
+    if legacy.exists():
+        return legacy
+
+    if sys.platform.startswith("linux"):
+        flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / DOLPHIN_FLATPAK_APP_ID
+        flatpak_export_system = Path("/var/lib/flatpak/exports/bin") / DOLPHIN_FLATPAK_APP_ID
+        flatpak_data = linux_flatpak_dolphin_root()
+        flatpak_config = linux_flatpak_dolphin_config_root()
+        if (
+            flatpak_data.exists()
+            or flatpak_config.exists()
+            or flatpak_export_user.exists()
+            or flatpak_export_system.exists()
+        ):
+            return flatpak_data
+    if sys.platform.startswith("linux"):
+        return home / ".local" / "share" / "dolphin-emu"
+    return home / ".dolphin-emu"
+
+
+def resolve_dolphin_config_dirs(config: GamehubConfig | None = None) -> list[Path]:
+    values: list[Path] = []
+    user_override = _configured_path(config, "dolphin_user_path")
+    if user_override:
+        values.append(user_override)
+        return unique_paths(values)
+
+    runtime = resolve_dolphin_runtime_user_dir(config=config)
+    values.append(runtime)
+
+    appdata = os.environ.get("APPDATA")
+    if os.name == "nt" and appdata:
+        values.append(Path(appdata) / "Dolphin Emulator")
+
+    home = Path.home()
+    legacy = home / ".dolphin-emu"
+    if legacy.exists():
+        values.append(legacy)
+    native = home / ".config" / "dolphin-emu"
+    native_data = home / ".local" / "share" / "dolphin-emu"
+    flatpak = linux_flatpak_dolphin_config_root()
+    existing_linux = [path for path in (flatpak, native, native_data, legacy) if path.exists()]
+    if existing_linux:
+        values.extend(existing_linux)
+        return unique_paths(values)
+
+    dolphin_raw = resolve_emulator_executable("dolphin").strip('"')
+    dolphin_exe = Path(dolphin_raw)
+    if is_flatpak_command(dolphin_exe, DOLPHIN_FLATPAK_APP_ID) or (
+        DOLPHIN_FLATPAK_APP_ID.casefold() in dolphin_raw.casefold()
+    ):
+        values.append(flatpak)
+    else:
+        values.append(native)
+        values.append(native_data)
+    return unique_paths(values)
+
+
 def target_dirs_for_system(system_name: str, config: GamehubConfig | None = None) -> list[Path]:
     if system_name == "PSX":
         return resolve_retroarch_system_dirs(config=config)
     if system_name == "PS2":
         return resolve_pcsx2_bios_dirs(config=config)
     if system_name == "Wii":
-        return [path / "Wii" for path in resolve_dolphin_user_dirs(config=config)]
+        return [resolve_dolphin_runtime_user_dir(config=config) / "Wii"]
     if system_name == "GC":
-        return [path / "GC" for path in resolve_dolphin_user_dirs(config=config)]
+        return [resolve_dolphin_runtime_user_dir(config=config) / "GC"]
     return []
 
 

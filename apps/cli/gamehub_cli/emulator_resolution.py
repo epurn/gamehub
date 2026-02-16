@@ -94,6 +94,7 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
                 values.append(Path(program_files_x86) / "Dolphin Emulator" / "Dolphin.exe")
                 values.append(Path(program_files_x86) / "Dolphin" / "Dolphin.exe")
             if winget_packages and winget_packages.exists():
+                values.extend(sorted(winget_packages.glob("DolphinEmulator.Dolphin_*\\Dolphin.exe")))
                 values.extend(sorted(winget_packages.glob("DolphinEmu.Dolphin_*\\Dolphin.exe")))
         values.extend(_windows_registry_install_candidates(canonical))
         return tuple(values)
@@ -104,9 +105,13 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
         elif canonical == "pcsx2":
             values.extend((Path("/usr/bin/pcsx2-qt"), Path("/usr/bin/pcsx2"), Path("/usr/local/bin/pcsx2-qt")))
         elif canonical == "dolphin":
+            flatpak_app_id = _FLATPAK_APP_IDS.get(canonical)
+            if flatpak_app_id:
+                values.append(home / ".local" / "share" / "flatpak" / "exports" / "bin" / flatpak_app_id)
+                values.append(Path("/var/lib/flatpak/exports/bin") / flatpak_app_id)
             values.extend((Path("/usr/bin/dolphin-emu"), Path("/usr/bin/dolphin"), Path("/usr/local/bin/dolphin-emu")))
         flatpak_app_id = _FLATPAK_APP_IDS.get(canonical)
-        if flatpak_app_id:
+        if flatpak_app_id and canonical != "dolphin":
             values.append(home / ".local" / "share" / "flatpak" / "exports" / "bin" / flatpak_app_id)
     return tuple(values)
 
