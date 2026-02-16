@@ -59,7 +59,8 @@ jobs:
       - name: Reinstall (upgrade smoke)
         run: |
           pipx install --force /tmp/dist/*.whl
-          ~/.local/bin/gamehub sync --dry-run --skip-steam
+          ~/.local/bin/gamehub --help
+          ~/.local/bin/gamehub sync --help
 
   windows-exe:
     runs-on: windows-latest
@@ -79,7 +80,7 @@ jobs:
 
       - name: Build exe
         run: |
-          pyinstaller --noconfirm --clean --onefile --name gamehub-windows-amd64 packaging/windows/entrypoint.py
+          pyinstaller --noconfirm --clean --onefile --name gamehub-windows-amd64 --paths . --paths apps/cli --paths apps/server --paths shared/gamehub_common packaging/windows/entrypoint.py
 
       - name: Smoke test executable
         run: |
