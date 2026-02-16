@@ -4,6 +4,17 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to publish (for example: v1.0.3)"
+        required: true
+        type: string
+      push_latest:
+        description: "Also update :latest"
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   release:
@@ -18,6 +29,32 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Resolve publish variables
+        id: vars
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_REF_TAG: ${{ github.ref_name }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          INPUT_PUSH_LATEST: ${{ inputs.push_latest }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          owner="$(echo "${REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/gamehub-server"
+          if [ "${EVENT_NAME}" = "push" ]; then
+            tag="${PUSH_REF_TAG}"
+            push_latest="true"
+          else
+            tag="${INPUT_IMAGE_TAG}"
+            push_latest="${INPUT_PUSH_LATEST}"
+          fi
+          if [ -z "${tag}" ]; then
+            echo "Image tag must not be empty" >&2
+            exit 1
+          fi
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "push_latest=${push_latest}" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -25,15 +62,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image (amd64)
+      - name: Build and push tagged image (amd64)
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/gamehub-server
-          TAG: ${{ github.ref_name }}
+          IMAGE: ${{ steps.vars.outputs.image }}
+          TAG: ${{ steps.vars.outputs.tag }}
         run: |
           docker buildx build \
             --platform linux/amd64 \
             -f apps/server/Dockerfile \
             --push \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.version=${TAG}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
             -t "${IMAGE}:${TAG}" \
-            -t "${IMAGE}:latest" \
             .
+
+      - name: Optionally update latest tag
+        if: steps.vars.outputs.push_latest == 'true'
+        env:
+          IMAGE: ${{ steps.vars.outputs.image }}
+          TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          docker buildx imagetools create \
+            --tag "${IMAGE}:latest" \
+            "${IMAGE}:${TAG}"
+
+      - name: Verify package tags are published
+        env:
+          IMAGE: ${{ steps.vars.outputs.image }}
+          TAG: ${{ steps.vars.outputs.tag }}
+          PUSH_LATEST: ${{ steps.vars.outputs.push_latest }}
+        run: |
+          docker buildx imagetools inspect "${IMAGE}:${TAG}" >/dev/null
+          if [ "${PUSH_LATEST}" = "true" ]; then
+            docker buildx imagetools inspect "${IMAGE}:latest" >/dev/null
+          fi
