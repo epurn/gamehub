@@ -44,6 +44,7 @@ git push origin vX.Y.Z
    - server image on GHCR
    - Linux wheel on GitHub Release
    - Windows EXE on GitHub Release
+   - server deploy bundle zip on GitHub Release
    - checksums file
 10. Run post-release smoke checks:
    - deploy server and run `scripts/verify_server_deploy.ps1`
@@ -57,7 +58,12 @@ git push origin vX.Y.Z
 - Server image: `ghcr.io/<org>/gamehub-server:vX.Y.Z`
 - Linux wheel: `gamehub-<version>-py3-none-any.whl`
 - Windows executable: `gamehub-windows-amd64.exe`
+- Server deploy bundle: `gamehub-server-deploy-vX.Y.Z.zip`
 - Checksums: `checksums.txt`
+
+## Server Release Channel
+- Server is released via GHCR image tags (`ghcr.io/<org>/gamehub-server:<tag>`).
+- GitHub Release assets include client artifacts, checksums, and an optional deploy bundle zip (compose/env template/docs/scripts).
 
 ## Known Scope Limits (Current Phase)
 - Architecture: `amd64` only

@@ -52,6 +52,7 @@ gamehub sync --config .\config.toml --verbose --require-steam-closed
 - Server ROM layout must be flat per system: `roms/<system>/<title.ext>`.
 - Nested ROM directories under a system are rejected.
 - ROM/firmware are server-first only (no internet ROM/BIOS fetching).
+- Server releases are published as GHCR images (`ghcr.io/epurn/gamehub-server:<tag>`).
 - Prefer `GAMEHUB_SGDB_API_KEY` env var over storing SGDB keys in config files.
 
 ## 📚 Docs

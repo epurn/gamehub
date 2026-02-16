@@ -205,6 +205,7 @@ git push origin vX.Y.Z
 8. In GitHub Releases, confirm artifacts:
 - Linux wheel
 - Windows executable
+- `gamehub-server-deploy-vX.Y.Z.zip`
 - `checksums.txt`
 9. In GHCR, confirm image tags:
 - `ghcr.io/<org>/gamehub-server:vX.Y.Z`

@@ -85,6 +85,42 @@ jobs:
           name: windows-exe
           path: dist/gamehub-windows-amd64.exe
 
+  server-deploy-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build server deploy bundle
+        run: |
+          python - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          ref_name = "${{ github.ref_name }}"
+          bundle_name = f"gamehub-server-deploy-{ref_name}.zip"
+          dist = Path("dist")
+          dist.mkdir(parents=True, exist_ok=True)
+          bundle_path = dist / bundle_name
+
+          sources = [
+              Path("docker/compose.yaml"),
+              Path(".env.production.template"),
+              Path("docs/deployment-server.md"),
+              Path("scripts/verify_server_deploy.ps1"),
+          ]
+          with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+              for source in sources:
+                  archive.write(source, arcname=source.as_posix())
+          print(bundle_path.as_posix())
+          PY
+
+      - name: Upload server deploy bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-deploy-bundle
+          path: dist/gamehub-server-deploy-*.zip
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -92,6 +128,7 @@ jobs:
       - linux-wheel
       - linux-pipx-smoke
       - windows-exe
+      - server-deploy-bundle
     permissions:
       contents: write
     steps:
@@ -105,6 +142,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: windows-exe
+          path: artifacts
+
+      - name: Download server deploy bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: server-deploy-bundle
           path: artifacts
 
       - name: Generate checksums
