@@ -68,6 +68,33 @@ def _discover_event_devices() -> list[str]:
     return devices
 
 
+def _is_flatpak_app_running(app_id: str) -> bool:
+    try:
+        completed = subprocess.run(
+            ["flatpak", "ps", "--columns=application"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return False
+    if completed.returncode != 0:
+        return False
+    lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    for line in lines:
+        if line.casefold() in {"application", "app"}:
+            continue
+        if line == app_id:
+            return True
+    return False
+
+
+def _session_active(process: subprocess.Popen[bytes], app_id: str) -> bool:
+    if process.poll() is None:
+        return True
+    return _is_flatpak_app_running(app_id)
+
+
 def _extract_button_from_qt_config(text: str, *, name: str) -> int | None:
     match = re.search(_BUTTON_PATTERN_TEMPLATE.format(name=name), text, flags=re.MULTILINE)
     if not match:
@@ -156,7 +183,7 @@ def _monitor_combo_and_terminate(
             return
         pressed_buttons: set[int] = set()
         with handle:
-            while process.poll() is None and not trigger_event.is_set():
+            while _session_active(process, app_id) and not trigger_event.is_set():
                 data = handle.read(_JS_EVENT_SIZE)
                 if len(data) != _JS_EVENT_SIZE:
                     break
@@ -179,7 +206,7 @@ def _monitor_combo_and_terminate(
             return
         pressed_codes: set[int] = set()
         with handle:
-            while process.poll() is None and not trigger_event.is_set():
+            while _session_active(process, app_id) and not trigger_event.is_set():
                 data = handle.read(_INPUT_EVENT_SIZE)
                 if len(data) != _INPUT_EVENT_SIZE:
                     break
@@ -202,7 +229,7 @@ def _monitor_combo_and_terminate(
     if not threads:
         return
 
-    while process.poll() is None:
+    while _session_active(process, app_id):
         if not trigger_event.wait(0.1):
             continue
         try:
@@ -210,16 +237,25 @@ def _monitor_combo_and_terminate(
         except OSError:
             pass
         deadline = time.monotonic() + 2.0
-        while process.poll() is None and time.monotonic() < deadline:
+        while _session_active(process, app_id) and time.monotonic() < deadline:
             time.sleep(0.05)
         if process.poll() is None:
             process.terminate()
             deadline = time.monotonic() + 2.0
-            while process.poll() is None and time.monotonic() < deadline:
+            while _session_active(process, app_id) and time.monotonic() < deadline:
                 time.sleep(0.05)
         if process.poll() is None:
             process.kill()
         return
+
+
+def _wait_for_session_exit(process: subprocess.Popen[bytes], app_id: str) -> int:
+    while _session_active(process, app_id):
+        time.sleep(0.1)
+    code = process.poll()
+    if code is None:
+        return 0
+    return code
 
 
 def _launch_azahar_flatpak(*, rom: str, app_id: str) -> int:
@@ -250,7 +286,7 @@ def _launch_azahar_flatpak(*, rom: str, app_id: str) -> int:
         daemon=True,
     )
     watcher.start()
-    return process.wait()
+    return _wait_for_session_exit(process, app_id)
 
 
 def main(argv: list[str] | None = None) -> int:

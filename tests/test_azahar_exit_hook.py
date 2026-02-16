@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from gamehub_cli import azahar_exit_hook
 
 
@@ -78,3 +80,24 @@ def test_resolve_select_and_start_buttons_prefers_qt_config_when_env_unset(monke
 
     assert select_button == 7
     assert start_button == 9
+
+
+def test_is_flatpak_app_running_parses_application_column(monkeypatch) -> None:
+    monkeypatch.setattr(
+        azahar_exit_hook.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="Application\norg.azahar_emu.Azahar\n",
+        ),
+    )
+    assert azahar_exit_hook._is_flatpak_app_running("org.azahar_emu.Azahar") is True
+
+
+def test_session_active_checks_flatpak_when_process_exited(monkeypatch) -> None:
+    class _Proc:
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(azahar_exit_hook, "_is_flatpak_app_running", lambda app_id: True)
+    assert azahar_exit_hook._session_active(_Proc(), "org.azahar_emu.Azahar") is True
