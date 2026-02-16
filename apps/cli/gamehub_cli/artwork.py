@@ -18,6 +18,9 @@ from gamehub_common.models import TitleEntry
 from .fsops import replace_file
 
 SGDB_ART_KINDS = ("grid", "hero", "logo", "icon")
+SGDB_GRID_LANDSCAPE_KIND = "grid_landscape"
+SGDB_GRID_PORTRAIT_DIMENSION = "600x900"
+SGDB_GRID_LANDSCAPE_DIMENSION = "920x430"
 
 
 class SgdbError(RuntimeError):
@@ -57,6 +60,32 @@ def redact_secret(secret: str | None) -> str:
 
 def build_lookup_plan(titles: tuple[TitleEntry, ...], kinds: tuple[str, ...]) -> list[SgdbLookupPlan]:
     return [SgdbLookupPlan(title_id=title.title_id, title_name=title.title_name, kinds=kinds) for title in titles]
+
+
+def required_cache_kinds(kinds: tuple[str, ...]) -> tuple[str, ...]:
+    expanded: list[str] = []
+    for kind in kinds:
+        if kind not in expanded:
+            expanded.append(kind)
+        if kind == "grid" and SGDB_GRID_LANDSCAPE_KIND not in expanded:
+            expanded.append(SGDB_GRID_LANDSCAPE_KIND)
+    return tuple(expanded)
+
+
+def cached_artwork_files(cache_dir: Path, title_id: str, kinds: tuple[str, ...]) -> dict[str, Path]:
+    title_dir = cache_dir / title_id
+    if not title_dir.is_dir():
+        return {}
+    files: dict[str, Path] = {}
+    for kind in kinds:
+        candidates = sorted(
+            (path for path in title_dir.glob(f"{kind}-*") if path.is_file() and path.stat().st_size > 0),
+            key=lambda item: item.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            files[kind] = candidates[0]
+    return files
 
 
 def _cleanup_temp(path: Path) -> None:
@@ -174,7 +203,7 @@ class SgdbClient:
                 return game_id
         return None
 
-    def resolve_asset_urls(self, game_id: int, kind: str) -> tuple[str, ...]:
+    def resolve_asset_urls(self, game_id: int, kind: str, *, dimensions: str | None = None) -> tuple[str, ...]:
         endpoint_by_kind = {
             "grid": "grids/game",
             "hero": "heroes/game",
@@ -182,7 +211,10 @@ class SgdbClient:
             "icon": "icons/game",
         }
         endpoint = endpoint_by_kind[kind]
-        payload = self._request_json(f"{endpoint}/{game_id}")
+        path = f"{endpoint}/{game_id}"
+        if kind == "grid" and dimensions:
+            path = f"{path}?dimensions={quote(dimensions)}"
+        payload = self._request_json(path)
         entries = payload.get("data", [])
         if not isinstance(entries, list):
             return ()
@@ -266,11 +298,28 @@ class SgdbArtworkPipeline:
         self._client = client
         self._cache_dir = cache_dir
         self._kinds = kinds
+        self._required_cache_kinds = required_cache_kinds(kinds)
 
     def _cache_path(self, title_id: str, kind: str, url: str) -> Path:
         digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
         extension = _extension_from_url(url)
         return self._cache_dir / title_id / f"{kind}-{digest}{extension}"
+
+    def _lookup_specs(self) -> tuple[tuple[str, str, str | None], ...]:
+        specs: list[tuple[str, str, str | None]] = []
+        for kind in self._kinds:
+            if kind == "grid":
+                specs.append(("grid", "grid", SGDB_GRID_PORTRAIT_DIMENSION))
+                specs.append((SGDB_GRID_LANDSCAPE_KIND, "grid", SGDB_GRID_LANDSCAPE_DIMENSION))
+                continue
+            specs.append((kind, kind, None))
+        return tuple(specs)
+
+    @staticmethod
+    def _display_kind(cache_kind: str) -> str:
+        if cache_kind == SGDB_GRID_LANDSCAPE_KIND:
+            return "grid (landscape)"
+        return cache_kind
 
     def sync(
         self,
@@ -279,9 +328,17 @@ class SgdbArtworkPipeline:
     ) -> ArtworkSyncResult:
         result = ArtworkSyncResult()
         total = len(titles)
+        lookup_specs = self._lookup_specs()
         for index, title in enumerate(titles, start=1):
             if progress_cb is not None:
                 progress_cb(index, total, title.title_name)
+            preexisting = cached_artwork_files(self._cache_dir, title.title_id, self._required_cache_kinds)
+            if len(preexisting) == len(self._required_cache_kinds):
+                result.cached += len(preexisting)
+                result.bundles.append(
+                    TitleArtworkBundle(title_id=title.title_id, title_name=title.title_name, files=preexisting)
+                )
+                continue
             result.lookups += 1
             bundle = TitleArtworkBundle(title_id=title.title_id, title_name=title.title_name, files={})
             try:
@@ -296,20 +353,21 @@ class SgdbArtworkPipeline:
                 result.warnings.append(f"No SGDB game match for '{title.title_name}'.")
                 continue
 
-            for kind in self._kinds:
+            for cache_kind, api_kind, dimensions in lookup_specs:
                 try:
-                    urls = self._client.resolve_asset_urls(game_id, kind)
+                    urls = self._client.resolve_asset_urls(game_id, api_kind, dimensions=dimensions)
                 except SgdbError as exc:
-                    result.warnings.append(f"SGDB {kind} lookup failed for '{title.title_name}': {exc}.")
+                    display_kind = self._display_kind(cache_kind)
+                    result.warnings.append(f"SGDB {display_kind} lookup failed for '{title.title_name}': {exc}.")
                     continue
                 if not urls:
                     continue
                 download_error: SgdbError | None = None
                 for url in urls:
-                    cache_path = self._cache_path(title.title_id, kind, url)
+                    cache_path = self._cache_path(title.title_id, cache_kind, url)
                     if cache_path.exists() and cache_path.stat().st_size > 0:
                         result.cached += 1
-                        bundle.files[kind] = cache_path
+                        bundle.files[cache_kind] = cache_path
                         download_error = None
                         break
                     try:
@@ -321,11 +379,14 @@ class SgdbArtworkPipeline:
                         result.downloaded += 1
                     else:
                         result.cached += 1
-                    bundle.files[kind] = cache_path
+                    bundle.files[cache_kind] = cache_path
                     download_error = None
                     break
                 if download_error is not None:
-                    result.warnings.append(f"SGDB {kind} download failed for '{title.title_name}': {download_error}.")
+                    display_kind = self._display_kind(cache_kind)
+                    result.warnings.append(
+                        f"SGDB {display_kind} download failed for '{title.title_name}': {download_error}."
+                    )
             if bundle.files:
                 result.bundles.append(bundle)
         return result

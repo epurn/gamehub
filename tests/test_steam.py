@@ -221,6 +221,38 @@ def test_copy_grid_art_copies_existing_and_skips_missing() -> None:
         assert copied_names == ["123456.png", "123456_icon.png", "123456p.png"]
 
 
+def test_copy_grid_art_prefers_dedicated_landscape_grid_when_present() -> None:
+    with _workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        source_grid = temp_root / "cache" / "grid.png"
+        source_grid_landscape = temp_root / "cache" / "grid_landscape.png"
+        source_grid.parent.mkdir(parents=True, exist_ok=True)
+        source_grid.write_bytes(b"portrait")
+        source_grid_landscape.write_bytes(b"landscape")
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+        assignments = [
+            SteamArtworkAssignment(
+                steam_app_id="123456",
+                assets_by_kind={"grid": source_grid, "grid_landscape": source_grid_landscape},
+            )
+        ]
+
+        copied = copy_grid_art(context, assignments)
+
+        copied_names = sorted(path.name for path in copied)
+        assert copied_names == ["123456.png", "123456p.png"]
+        grid_dir = config_dir / "grid"
+        assert (grid_dir / "123456p.png").read_bytes() == b"portrait"
+        assert (grid_dir / "123456.png").read_bytes() == b"landscape"
+
+
 def test_upsert_shortcuts_round_trip_and_idempotent() -> None:
     with _workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"

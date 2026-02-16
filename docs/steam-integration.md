@@ -40,6 +40,7 @@
 - GAMEHUB writes Steam grid assets for both portrait and landscape grid variants:
   - `<appid>p.<ext>` (portrait)
   - `<appid>.<ext>` (landscape)
+  - When SGDB provides dedicated landscape grid artwork, GAMEHUB uses that file for `<appid>.<ext>`; otherwise it falls back to the portrait grid file.
 - Hero/logo/icon are written as:
   - `<appid>_hero.<ext>`
   - `<appid>_logo.<ext>`

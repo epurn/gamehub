@@ -9,6 +9,8 @@ from .artwork import (
     SgdbArtworkPipeline,
     SgdbClient,
     build_lookup_plan,
+    cached_artwork_files,
+    required_cache_kinds,
     redact_secret,
 )
 from .config import GamehubConfig
@@ -25,21 +27,10 @@ def build_artwork_assignments(
     timeout_seconds: float,
     verbose: bool,
 ) -> dict[str, dict[str, Path]]:
-    def _from_cache() -> dict[str, dict[str, Path]]:
+    def _from_cache(kinds: tuple[str, ...] = required_cache_kinds(SGDB_ART_KINDS)) -> dict[str, dict[str, Path]]:
         cached: dict[str, dict[str, Path]] = {}
         for title in index.titles:
-            title_dir = config.sgdb_cache_dir / title.title_id
-            if not title_dir.is_dir():
-                continue
-            files: dict[str, Path] = {}
-            for kind in SGDB_ART_KINDS:
-                candidates = sorted(
-                    (path for path in title_dir.glob(f"{kind}-*") if path.is_file() and path.stat().st_size > 0),
-                    key=lambda item: item.stat().st_mtime,
-                    reverse=True,
-                )
-                if candidates:
-                    files[kind] = candidates[0]
+            files = cached_artwork_files(config.sgdb_cache_dir, title.title_id, kinds)
             if files:
                 cached[title.title_id] = files
         return cached
@@ -59,10 +50,17 @@ def build_artwork_assignments(
         return {}
 
     if dry_run:
-        dry_run_plan = build_lookup_plan(index.titles, enabled_kinds)
+        required_kinds = required_cache_kinds(enabled_kinds)
+        titles_needing_lookup = tuple(
+            title
+            for title in index.titles
+            if len(cached_artwork_files(config.sgdb_cache_dir, title.title_id, required_kinds)) < len(required_kinds)
+        )
+        skipped_from_cache = len(index.titles) - len(titles_needing_lookup)
+        dry_run_plan = build_lookup_plan(titles_needing_lookup, enabled_kinds)
         print(
             f"SGDB dry-run: key={redact_secret(config.sgdb_api_key)} "
-            f"titles={len(dry_run_plan)} kinds={','.join(enabled_kinds)}"
+            f"titles={len(dry_run_plan)} kinds={','.join(enabled_kinds)} cached_skip={skipped_from_cache}"
         )
         for entry in dry_run_plan:
             print(f"sgdb\tlookup\t{entry.title_name}\t{kinds_to_download(entry.kinds)}")

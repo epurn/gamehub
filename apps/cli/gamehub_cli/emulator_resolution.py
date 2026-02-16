@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path, PosixPath
+from pathlib import Path
 import shutil
 import sys
 from typing import Iterable
@@ -27,15 +27,13 @@ _EMULATOR_COMMAND_ALIASES = {
 
 
 def _safe_path(value: str) -> Path:
-    # In tests we sometimes monkeypatch os.name='nt' on non-Windows hosts.
-    # pathlib.Path then tries WindowsPath and can fail during joins.
-    if not sys.platform.startswith("win"):
-        return PosixPath(value)
+    # Keep path construction tied to the host runtime path flavor.
+    # Test suites may monkeypatch os.name/sys.platform to exercise other branches.
     try:
         return Path(value)
-    except (NotImplementedError, RuntimeError):
+    except (NotImplementedError, RuntimeError, OSError):
         # Last-resort fallback for mixed-runtime test environments.
-        return PosixPath(value)
+        return Path(value.replace("\\", "/"))
 
 
 def _command_candidates(emulator_value: str) -> tuple[str, ...]:

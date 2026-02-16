@@ -50,8 +50,10 @@ Steam close behavior:
    - missing required firmware blocks title sync for that system
    - size mismatch detection for local ROM/assets runs even when `--verify` is off
 6. SGDB artwork phase (only when SGDB API key is configured):
-   - `--dry-run`: prints planned SGDB lookups/downloads only (no cache writes)
-   - real sync: look up titles, fetch configured artwork kinds, cache to local files with safe writes
+   - `--dry-run`: prints planned SGDB lookups/downloads for titles missing required cached kinds only (no cache writes)
+   - real sync: if all configured kinds already exist in local SGDB cache for a title, skip SGDB API calls for that title
+   - for titles with missing required cached kinds, look up titles, fetch configured artwork kinds, and cache to local files with safe writes
+   - when `grid` is enabled, sync fetches both SGDB portrait (`600x900`) and landscape (`920x430`) grid variants
    - SGDB lookup/download failures emit warnings and do not abort unaffected titles
    - if SGDB lookups are unavailable, cached artwork is reused when present (self-heals missing Steam artwork)
    - SGDB URL selection prefers Steam-friendly formats (`png`/`jpg`/`ico`) before `webp`
