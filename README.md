@@ -28,25 +28,56 @@ Details: [Platform Support (v1)](docs/platform-support.md)
 Supported systems in v1:
 - `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
 
-## ⚡ Quick Start
-1. Deploy server ([`docker/compose.yaml`](docker/compose.yaml)) and confirm `GET /v1/index` works.
-2. Install client (Windows EXE or Linux wheel).
-3. Create `config.toml` from a template:
-   - Windows: [`docs/templates/config.windows.template.toml`](docs/templates/config.windows.template.toml)
-   - Bazzite: [`docs/templates/config.bazzite.template.toml`](docs/templates/config.bazzite.template.toml)
-   - Steam Deck (untested): [`docs/templates/config.steamdeck.template.toml`](docs/templates/config.steamdeck.template.toml)
-4. Run dry-run:
-```powershell
-gamehub sync --config .\config.toml --dry-run --verbose --require-steam-closed
-# Windows standalone EXE:
-# .\gamehub-windows-amd64.exe sync --config .\config.toml --dry-run --verbose --require-steam-closed
+## 👤 User Install (Latest Release)
+Create `config.toml` in one of the default locations:
+1. `./config.toml` (current working directory where you run `gamehub`)
+2. `~/.gamehub/config.toml`
+   - Windows path equivalent: `%USERPROFILE%\.gamehub\config.toml`
+
+Start from a template:
+- Windows: [`docs/templates/config.windows.template.toml`](docs/templates/config.windows.template.toml)
+- Linux: [`docs/templates/config.linux.template.toml`](docs/templates/config.linux.template.toml)
+- Bazzite: [`docs/templates/config.bazzite.template.toml`](docs/templates/config.bazzite.template.toml)
+- Steam Deck (untested): [`docs/templates/config.steamdeck.template.toml`](docs/templates/config.steamdeck.template.toml)
+
+Linux install from latest release wheel:
+```bash
+LATEST_TAG="$(python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://api.github.com/repos/epurn/gamehub/releases/latest'))['tag_name'])")"
+LATEST_VER="${LATEST_TAG#v}"
+python3 -m pip install --user --upgrade "https://github.com/epurn/gamehub/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
 ```
-5. Run real sync:
-```powershell
-gamehub sync --config .\config.toml --verbose --require-steam-closed
-# Windows standalone EXE:
-# .\gamehub-windows-amd64.exe sync --config .\config.toml --verbose --require-steam-closed
+
+Linux sync:
+```bash
+gamehub sync --dry-run --require-steam-closed
+gamehub sync --require-steam-closed --skip-steam-relaunch
 ```
+
+Windows install + sync:
+```powershell
+Invoke-WebRequest https://github.com/epurn/gamehub/releases/latest/download/gamehub-windows-amd64.exe -OutFile .\gamehub-windows-amd64.exe
+.\gamehub-windows-amd64.exe sync --dry-run --require-steam-closed
+.\gamehub-windows-amd64.exe sync --require-steam-closed
+```
+
+More detail: [docs/client-install.md](docs/client-install.md), [docs/config-and-state.md](docs/config-and-state.md), [docs/cli-sync.md](docs/cli-sync.md)
+
+## 🖥️ Server Deployment (Latest Release)
+Place `.env.production` in the repo root (next to [`docker/compose.yaml`](docker/compose.yaml)).
+
+```powershell
+Copy-Item .env.production.template .env.production
+# Edit .env.production:
+# - GAMEHUB_DATA_HOST_PATH=<host path containing roms/ and firmware/>
+# - GAMEHUB_SERVER_PORT=8000
+# - GAMEHUB_IMAGE_TAG=latest
+docker compose -f docker/compose.yaml --env-file .env.production pull gamehub-server
+docker compose -f docker/compose.yaml --env-file .env.production up -d
+.\scripts\verify_server_deploy.ps1 -BaseUrl "http://127.0.0.1:8000"
+```
+If you changed `GAMEHUB_SERVER_PORT`, update the verify URL to match.
+
+More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbook.md](docs/runbook.md), [docs/server-api.md](docs/server-api.md)
 
 ## 📝 Notes
 - Server ROM layout must be flat per system: `roms/<system>/<title.ext>`.
