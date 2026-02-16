@@ -99,6 +99,10 @@ _AZAHAR_FULLSCREEN_KEY = "fullscreen"
 _AZAHAR_FULLSCREEN_DEFAULT_KEY = r"fullscreen\default"
 _AZAHAR_FULLSCREEN_VALUE = "true"
 _AZAHAR_FULLSCREEN_DEFAULT_VALUE = "false"
+_AZAHAR_CONFIRM_CLOSE_KEY = "confirmClose"
+_AZAHAR_CONFIRM_CLOSE_DEFAULT_KEY = r"confirmClose\default"
+_AZAHAR_CONFIRM_CLOSE_VALUE = "false"
+_AZAHAR_CONFIRM_CLOSE_DEFAULT_VALUE = "false"
 _AZAHAR_GUID_RE = re.compile(r"guid(?::|\$0)(?P<guid>[0-9a-fA-F]+)")
 _AZAHAR_PORT_RE = re.compile(r"port(?::|\$0)(?P<port>\d+)")
 _AZAHAR_BUTTON_BINDINGS: tuple[tuple[str, int], ...] = (
@@ -491,7 +495,6 @@ def _default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
     flatpak_qt_config = linux_flatpak_azahar_config_root() / "qt-config.ini"
     flatpak_data_root = linux_flatpak_azahar_root()
     flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / AZAHAR_FLATPAK_APP_ID
-    flatpak_export_system = Path("/var/lib/flatpak/exports/bin") / AZAHAR_FLATPAK_APP_ID
     azahar_raw = resolve_emulator_executable("azahar").strip('"')
     azahar_exe = Path(azahar_raw)
     if (
@@ -502,7 +505,6 @@ def _default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
             or flatpak_qt_config.parent.exists()
             or flatpak_data_root.exists()
             or flatpak_export_user.exists()
-            or flatpak_export_system.exists()
         )
     ):
         return flatpak_qt_config
@@ -852,7 +854,7 @@ def _configure_azahar_runtime(
     writer: Callable[[str], None] = print,
 ) -> Path:
     ini_path = _default_azahar_qt_config_path(config=config)
-    details_parts = ["fullscreen=true"]
+    details_parts = ["fullscreen=true", "confirm_exit_dialog=false"]
     if sys.platform.startswith("linux"):
         details_parts.append("controllers=linux_sdl_autoconfig")
     details = "\t".join(details_parts)
@@ -863,15 +865,26 @@ def _configure_azahar_runtime(
 
     lines = _read_ini_lines(ini_path)
     lines, changed_fullscreen = _upsert_qsettings_key(lines, _AZAHAR_FULLSCREEN_KEY, _AZAHAR_FULLSCREEN_VALUE)
-    lines, changed_default = _upsert_qsettings_key(
+    lines, changed_fullscreen_default = _upsert_qsettings_key(
         lines, _AZAHAR_FULLSCREEN_DEFAULT_KEY, _AZAHAR_FULLSCREEN_DEFAULT_VALUE
+    )
+    lines, changed_confirm_close = _upsert_qsettings_key(lines, _AZAHAR_CONFIRM_CLOSE_KEY, _AZAHAR_CONFIRM_CLOSE_VALUE)
+    lines, changed_confirm_close_default = _upsert_qsettings_key(
+        lines, _AZAHAR_CONFIRM_CLOSE_DEFAULT_KEY, _AZAHAR_CONFIRM_CLOSE_DEFAULT_VALUE
     )
     changed_controls = False
     if sys.platform.startswith("linux"):
         lines, changed_controls, controls_details = _bootstrap_azahar_controllers(lines)
         details = f"{details}\t{controls_details}"
 
-    if changed_fullscreen or changed_default or changed_controls or not ini_path.exists():
+    if (
+        changed_fullscreen
+        or changed_fullscreen_default
+        or changed_confirm_close
+        or changed_confirm_close_default
+        or changed_controls
+        or not ini_path.exists()
+    ):
         _write_ini_atomic(ini_path, lines)
 
     if verbose:

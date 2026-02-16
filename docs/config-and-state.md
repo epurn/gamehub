@@ -135,9 +135,10 @@ Linux Dolphin defaults:
 
 N3DS Azahar defaults:
 - No required firmware files are enforced for N3DS.
-- GAMEHUB bootstraps Azahar fullscreen runtime config in:
+- GAMEHUB bootstraps Azahar runtime config in:
   - Windows: `%APPDATA%/Azahar/config/qt-config.ini`
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
+- GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
 - On Linux, GAMEHUB bootstraps SDL controller bindings for Azahar profile 1 when keyboard defaults are detected.
 
 ## State file

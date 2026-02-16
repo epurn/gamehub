@@ -71,9 +71,9 @@ grep -n "^Device =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Confi
 ```bash
 grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg ~/.config/retroarch/retroarch.cfg 2>/dev/null
 ```
-11. N3DS Azahar runtime bootstrap sets fullscreen in `qt-config.ini`. Flatpak example:
+11. N3DS Azahar runtime bootstrap sets `fullscreen=true` and `confirmClose=false` in `qt-config.ini`. Flatpak example:
 ```bash
-grep -n "^fullscreen=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
+grep -nE "^(fullscreen|confirmClose)=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
 ```
 
 ## Steam Deck notes

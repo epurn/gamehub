@@ -154,6 +154,8 @@ def test_deploy_firmware_n3ds_configures_azahar_fullscreen_without_firmware(monk
         text = qt_config.read_text(encoding="utf-8")
         assert "fullscreen=true" in text
         assert r"fullscreen\default=false" in text
+        assert "confirmClose=false" in text
+        assert r"confirmClose\default=false" in text
         assert not (appdata / "Azahar" / "sysdata").exists()
 
 
@@ -195,6 +197,7 @@ def test_default_azahar_qt_config_path_prefers_flatpak_config_root(monkeypatch) 
         monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
         monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.platform_paths.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
 
         qt_config = _default_azahar_qt_config_path()
@@ -251,6 +254,7 @@ def test_deploy_firmware_n3ds_linux_bootstraps_sdl_controller_bindings(monkeypat
         monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
         monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.platform_paths.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
@@ -258,6 +262,8 @@ def test_deploy_firmware_n3ds_linux_bootstraps_sdl_controller_bindings(monkeypat
         text = qt_config.read_text(encoding="utf-8")
         assert "fullscreen=true" in text
         assert r"fullscreen\default=false" in text
+        assert "confirmClose=false" in text
+        assert r"confirmClose\default=false" in text
         assert r'profiles\1\button_a="button:0,engine:sdl,port:0"' in text
         assert r'profiles\1\button_b="button:1,engine:sdl,port:0"' in text
         assert r'profiles\1\button_start="button:6,engine:sdl,port:0"' in text

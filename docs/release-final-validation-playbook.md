@@ -96,7 +96,7 @@ $env:GAMEHUB_SGDB_API_KEY="<YOUR_KEY>"
 - Collections exist by exact system name.
 - Artwork appears.
 - A sample title launches.
-- If `N3DS` titles are in index, verify `%APPDATA%\\Azahar\\config\\qt-config.ini` contains `fullscreen=true`.
+- If `N3DS` titles are in index, verify `%APPDATA%\\Azahar\\config\\qt-config.ini` contains `fullscreen=true` and `confirmClose=false`.
 
 ## 2. Linux Final Validation (Ubuntu/Fedora host)
 
@@ -179,7 +179,7 @@ gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
 - Collections exist by exact system name.
 - Artwork appears.
 - Sample titles launch through configured emulators.
-- If `N3DS` titles are in index, verify `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini` contains `fullscreen=true`.
+- If `N3DS` titles are in index, verify `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini` contains `fullscreen=true` and `confirmClose=false`.
 
 ## 4. GitHub Release Execution
 

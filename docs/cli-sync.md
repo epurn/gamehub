@@ -93,7 +93,11 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - GAMEHUB bootstraps `Hotkeys/OpenPauseMenu = SDL-0/Back & SDL-0/Start` when the existing binding is missing or keyboard-only
 - `GC` firmware is mirrored to Dolphin runtime user path `GC/` (native default: `~/.local/share/dolphin-emu/GC`, Flatpak: `~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/GC`).
 - `N3DS` has no required firmware deployment targets in this pass.
-- When `N3DS` is present in the index, GAMEHUB bootstraps Azahar runtime config with `fullscreen=true` in `qt-config.ini` (Windows default path: `%APPDATA%/Azahar/config/qt-config.ini`, Linux Flatpak default path: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`).
+- When `N3DS` is present in the index, GAMEHUB bootstraps Azahar runtime config in `qt-config.ini` with:
+  - `fullscreen=true`
+  - `confirmClose=false` (disables quit confirmation while emulation is running)
+  - Windows default path: `%APPDATA%/Azahar/config/qt-config.ini`
+  - Linux Flatpak default path: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
 - On Linux, GAMEHUB also bootstraps Azahar SDL controller bindings for profile 1 when keyboard-default mappings are detected.
 - GAMEHUB does not decrypt ROM content; N3DS ROMs must already be in a format Azahar can load.
 - When `GC`/`Wii` systems are present, GAMEHUB writes Dolphin runtime config `Config/Dolphin.ini` with `[Display] Fullscreen = True` under the same resolved runtime user path and mirrors to additional detected config roots when present.
