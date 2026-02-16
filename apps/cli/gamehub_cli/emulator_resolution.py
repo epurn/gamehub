@@ -27,10 +27,14 @@ _EMULATOR_COMMAND_ALIASES = {
 
 
 def _safe_path(value: str) -> Path:
+    # In tests we sometimes monkeypatch os.name='nt' on non-Windows hosts.
+    # pathlib.Path then tries WindowsPath and can fail during joins.
+    if not sys.platform.startswith("win"):
+        return PosixPath(value)
     try:
         return Path(value)
     except (NotImplementedError, RuntimeError):
-        # Supports unit tests that monkeypatch Windows detection on non-Windows hosts.
+        # Last-resort fallback for mixed-runtime test environments.
         return PosixPath(value)
 
 
