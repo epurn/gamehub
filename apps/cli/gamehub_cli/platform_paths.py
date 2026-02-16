@@ -28,7 +28,11 @@ def linux_flatpak_dolphin_config_root() -> Path:
 
 
 def linux_flatpak_azahar_root() -> Path:
-    return Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "data" / "azahar"
+    return Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "data" / "azahar-emu"
+
+
+def linux_flatpak_azahar_config_root() -> Path:
+    return Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu"
 
 
 def is_flatpak_command(path_value: str | Path, app_id: str) -> bool:

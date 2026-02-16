@@ -73,7 +73,7 @@ grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/c
 ```
 11. N3DS Azahar runtime bootstrap sets fullscreen in `qt-config.ini`. Flatpak example:
 ```bash
-grep -n "^fullscreen=" ~/.var/app/org.azahar_emu.Azahar/data/azahar/config/qt-config.ini
+grep -n "^fullscreen=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
 ```
 
 ## Steam Deck notes

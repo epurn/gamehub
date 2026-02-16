@@ -137,8 +137,8 @@ N3DS Azahar defaults:
 - No required firmware files are enforced for N3DS.
 - GAMEHUB bootstraps Azahar fullscreen runtime config in:
   - Windows: `%APPDATA%/Azahar/config/qt-config.ini`
-  - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/data/azahar/config/qt-config.ini`
-- Controller configuration is not auto-managed for Azahar in this pass.
+  - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
+- On Linux, GAMEHUB bootstraps SDL controller bindings for Azahar profile 1 when keyboard defaults are detected.
 
 ## State file
 - Format: JSON
