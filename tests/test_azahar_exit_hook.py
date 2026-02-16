@@ -39,6 +39,36 @@ def test_handle_js_event_ignores_non_button_events() -> None:
     assert pressed == set()
 
 
+def test_handle_ev_key_event_detects_btn_select_start_combo() -> None:
+    pressed: set[int] = set()
+    triggered = azahar_exit_hook._handle_ev_key_event(
+        pressed,
+        event_type=0x01,
+        code=0x13A,
+        value=1,
+    )
+    assert triggered is False
+    triggered = azahar_exit_hook._handle_ev_key_event(
+        pressed,
+        event_type=0x01,
+        code=0x13B,
+        value=1,
+    )
+    assert triggered is True
+
+
+def test_handle_ev_key_event_ignores_other_keys() -> None:
+    pressed: set[int] = set()
+    triggered = azahar_exit_hook._handle_ev_key_event(
+        pressed,
+        event_type=0x01,
+        code=0x130,
+        value=1,
+    )
+    assert triggered is False
+    assert pressed == set()
+
+
 def test_resolve_select_and_start_buttons_prefers_qt_config_when_env_unset(monkeypatch) -> None:
     monkeypatch.delenv("GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT", raising=False)
     monkeypatch.delenv("GAMEHUB_AZAHAR_EXIT_BUTTON_START", raising=False)

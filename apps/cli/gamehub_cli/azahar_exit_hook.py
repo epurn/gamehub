@@ -14,6 +14,11 @@ _JS_EVENT_FORMAT = "IhBB"
 _JS_EVENT_SIZE = struct.calcsize(_JS_EVENT_FORMAT)
 _JS_EVENT_TYPE_BUTTON = 0x01
 _JS_EVENT_TYPE_INIT = 0x80
+_INPUT_EVENT_FORMAT = "llHHI"
+_INPUT_EVENT_SIZE = struct.calcsize(_INPUT_EVENT_FORMAT)
+_EV_KEY = 0x01
+_BTN_SELECT = 0x13A
+_BTN_START = 0x13B
 _BUTTON_PATTERN_TEMPLATE = r'^profiles\\\d+\\button_{name}="button:(\d+),'
 _SELECT_BUTTON_ENV = "GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT"
 _START_BUTTON_ENV = "GAMEHUB_AZAHAR_EXIT_BUTTON_START"
@@ -47,6 +52,17 @@ def _discover_js_devices() -> list[str]:
         return []
     devices: list[str] = []
     for candidate in sorted(dev_input.glob("js*")):
+        if candidate.is_char_device() or candidate.exists():
+            devices.append(str(candidate))
+    return devices
+
+
+def _discover_event_devices() -> list[str]:
+    dev_input = Path("/dev/input")
+    if not dev_input.exists():
+        return []
+    devices: list[str] = []
+    for candidate in sorted(dev_input.glob("event*")):
         if candidate.is_char_device() or candidate.exists():
             devices.append(str(candidate))
     return devices
@@ -106,6 +122,23 @@ def _handle_js_event(
     return select_button in pressed_buttons and start_button in pressed_buttons
 
 
+def _handle_ev_key_event(
+    pressed_codes: set[int],
+    event_type: int,
+    code: int,
+    value: int,
+) -> bool:
+    if event_type != _EV_KEY:
+        return False
+    if code not in {_BTN_SELECT, _BTN_START}:
+        return False
+    if value:
+        pressed_codes.add(code)
+    else:
+        pressed_codes.discard(code)
+    return {_BTN_SELECT, _BTN_START}.issubset(pressed_codes)
+
+
 def _monitor_combo_and_terminate(
     process: subprocess.Popen[bytes],
     *,
@@ -114,8 +147,6 @@ def _monitor_combo_and_terminate(
     js_devices: list[str],
     app_id: str,
 ) -> None:
-    if not js_devices:
-        return
     trigger_event = threading.Event()
 
     def _watch(device_path: str) -> None:
@@ -141,11 +172,35 @@ def _monitor_combo_and_terminate(
                     trigger_event.set()
                     break
 
+    def _watch_evdev(device_path: str) -> None:
+        try:
+            handle = open(device_path, "rb", buffering=0)
+        except OSError:
+            return
+        pressed_codes: set[int] = set()
+        with handle:
+            while process.poll() is None and not trigger_event.is_set():
+                data = handle.read(_INPUT_EVENT_SIZE)
+                if len(data) != _INPUT_EVENT_SIZE:
+                    break
+                _sec, _usec, event_type, code, value = struct.unpack(_INPUT_EVENT_FORMAT, data)
+                if _handle_ev_key_event(pressed_codes, event_type, code, value):
+                    trigger_event.set()
+                    break
+
     threads: list[threading.Thread] = []
-    for device_path in js_devices:
-        watcher = threading.Thread(target=_watch, args=(device_path,), daemon=True)
-        watcher.start()
-        threads.append(watcher)
+    if js_devices:
+        for device_path in js_devices:
+            watcher = threading.Thread(target=_watch, args=(device_path,), daemon=True)
+            watcher.start()
+            threads.append(watcher)
+    else:
+        for device_path in _discover_event_devices():
+            watcher = threading.Thread(target=_watch_evdev, args=(device_path,), daemon=True)
+            watcher.start()
+            threads.append(watcher)
+    if not threads:
+        return
 
     while process.poll() is None:
         if not trigger_event.wait(0.1):
