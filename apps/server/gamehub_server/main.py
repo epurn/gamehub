@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, Response
 
 from .indexer import FIRMWARE_ROOT_NAME, IndexBundle, build_index
 
-app = FastAPI(title="GAMEHUB Server", version="1.0.0")
+app = FastAPI(title="GAMEHUB Server", version="1.0.2")
 logger = logging.getLogger(__name__)
 
 
