@@ -67,7 +67,8 @@ def resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[P
     prefer_flatpak = is_flatpak_command(retroarch_exe, RETROARCH_FLATPAK_APP_ID) or (
         RETROARCH_FLATPAK_APP_ID.casefold() in retroarch_raw.casefold()
     )
-    if os.name == "nt" and retroarch_exe.exists():
+    # Keep portable Windows RetroArch layouts working even when tests run on non-Windows hosts.
+    if retroarch_exe.exists() and (os.name == "nt" or retroarch_exe.name.casefold() == "retroarch.exe"):
         values.append(retroarch_exe.parent / "system")
     elif sys.platform.startswith("linux") and prefer_flatpak:
         values.append(linux_flatpak_retroarch_root() / "system")

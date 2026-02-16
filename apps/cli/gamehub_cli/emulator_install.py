@@ -523,7 +523,9 @@ def ensure_emulators(
 
     linux_dist_id = ""
     linux_backend = ""
-    if sys.platform.startswith("linux"):
+    if os.name == "nt":
+        missing = [name for name in required if not _is_emulator_available(name)]
+    elif sys.platform.startswith("linux"):
         linux_backend = (linux_install_backend or "auto").strip().casefold()
         linux_dist_id = _linux_dist_id()
         missing = _linux_missing_emulators(required, backend=linux_backend, dist_id=linux_dist_id)

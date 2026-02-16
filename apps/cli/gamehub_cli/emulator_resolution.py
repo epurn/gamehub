@@ -51,7 +51,6 @@ def _canonical_emulator_name(emulator_value: str) -> str:
 
 def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
     canonical = _canonical_emulator_name(emulator_value)
-    home = Path.home()
     values: list[Path] = []
     if os.name == "nt":
         program_files = os.environ.get("ProgramFiles")
@@ -100,6 +99,7 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
         return tuple(values)
 
     if sys.platform.startswith("linux"):
+        home = Path.home()
         if canonical == "retroarch":
             values.extend((Path("/usr/bin/retroarch"), Path("/usr/local/bin/retroarch")))
         elif canonical == "pcsx2":
