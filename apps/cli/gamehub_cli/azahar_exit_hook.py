@@ -216,16 +216,14 @@ def _monitor_combo_and_terminate(
                     break
 
     threads: list[threading.Thread] = []
-    if js_devices:
-        for device_path in js_devices:
-            watcher = threading.Thread(target=_watch, args=(device_path,), daemon=True)
-            watcher.start()
-            threads.append(watcher)
-    else:
-        for device_path in _discover_event_devices():
-            watcher = threading.Thread(target=_watch_evdev, args=(device_path,), daemon=True)
-            watcher.start()
-            threads.append(watcher)
+    for device_path in js_devices:
+        watcher = threading.Thread(target=_watch, args=(device_path,), daemon=True)
+        watcher.start()
+        threads.append(watcher)
+    for device_path in _discover_event_devices():
+        watcher = threading.Thread(target=_watch_evdev, args=(device_path,), daemon=True)
+        watcher.start()
+        threads.append(watcher)
     if not threads:
         return
 
