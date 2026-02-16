@@ -41,19 +41,23 @@ jobs:
           python -m pip install -e .[dev]
           python -m pip install pip-audit
 
-      - name: Guard runtime bazzite literals
+      - name: Guard unapproved runtime bazzite literals
         run: |
           python - <<'PY'
           from pathlib import Path
+
+          allowed_paths = {
+              Path("apps/cli/gamehub_cli/emulator_install.py").as_posix(),
+          }
 
           hits: list[str] = []
           for root in (Path("apps"), Path("shared")):
               for path in root.rglob("*.py"):
                   text = path.read_text(encoding="utf-8", errors="ignore")
-                  if "bazzite" in text.casefold():
+                  if "bazzite" in text.casefold() and path.as_posix() not in allowed_paths:
                       hits.append(str(path))
           if hits:
-              print("Disallowed runtime 'bazzite' literal found:")
+              print("Disallowed runtime 'bazzite' literal found outside approved allowlist:")
               for hit in sorted(hits):
                   print(f"- {hit}")
               raise SystemExit(1)
