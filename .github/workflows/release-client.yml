@@ -1,17 +1,9 @@
 name: Client Artifact Release
 
 on:
-  pull_request:
-    paths:
-      - "apps/cli/**"
-      - "shared/**"
-      - "packaging/**"
-      - "pyproject.toml"
-      - ".github/workflows/release-client.yml"
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 jobs:
   linux-wheel:

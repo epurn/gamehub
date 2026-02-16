@@ -1,34 +1,12 @@
 name: Server Image Release
 
 on:
-  pull_request:
-    paths:
-      - "apps/server/**"
-      - "shared/**"
-      - "docker/**"
-      - "pyproject.toml"
-      - ".github/workflows/release-server.yml"
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 jobs:
-  verify:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Validate compose config
-        run: docker compose -f docker/compose.yaml --env-file .env.production.template config
-
-      - name: Build server image (amd64)
-        run: docker build --platform linux/amd64 -f apps/server/Dockerfile .
-
   release:
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
