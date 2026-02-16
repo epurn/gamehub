@@ -25,3 +25,6 @@ steam_exe = "C:/Program Files (x86)/Steam/steam.exe"
 # api_key = "<OPTIONAL_SGDB_KEY>"
 cache_dir = "D:/GameHub/artwork-cache/sgdb"
 enabled_kinds = ["grid", "hero", "logo", "icon"]
+
+# Optional Windows Azahar installer override for emulator auto-install:
+# set env var GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL to a tested GitHub release installer URL.

@@ -15,7 +15,7 @@ from .config import GamehubConfig
 from .emulators import resolve_emulator_executable
 from .firmware_targets import resolve_dolphin_runtime_user_dir
 from .paths import from_rel_path
-from .platform_paths import DOLPHIN_FLATPAK_APP_ID, PCSX2_FLATPAK_APP_ID, is_flatpak_command
+from .platform_paths import AZAHAR_FLATPAK_APP_ID, DOLPHIN_FLATPAK_APP_ID, PCSX2_FLATPAK_APP_ID, is_flatpak_command
 from .retroarch_cores import resolve_retroarch_paths
 from .steam import (
     SteamArtworkAssignment,
@@ -39,6 +39,7 @@ from .steam import (
 _RETROARCH_CORE_TOKEN_RE = re.compile(r"(?P<prefix>-L\s+)(?P<token>[^\s]+)")
 _RETROARCH_FULLSCREEN_TOKEN_RE = re.compile(r"(^|\s)-f(\s|$)")
 _PCSX2_FULLSCREEN_TOKEN_RE = re.compile(r"(^|\s)-fullscreen(\s|$)")
+_AZAHAR_FULLSCREEN_TOKEN_RE = re.compile(r"(^|\s)(-f|--fullscreen)(\s|$)")
 _EMULATOR_TEMPLATE_TOKEN_RE = re.compile(r'^\s*"\{emulator\}"')
 _DOLPHIN_FULLSCREEN_CONFIG_TOKEN = "Dolphin.Display.Fullscreen=True"
 _DOLPHIN_FULLSCREEN_CONFIG_ARG_RE = re.compile(r"\s-C\s+Dolphin\.Display\.Fullscreen=True")
@@ -118,6 +119,12 @@ def _normalize_pcsx2_launch_template(launch_template: str) -> str:
     if _PCSX2_FULLSCREEN_TOKEN_RE.search(launch_template):
         return launch_template
     return _inject_after_emulator_token(launch_template, " -fullscreen")
+
+
+def _normalize_azahar_launch_template(launch_template: str) -> str:
+    if _AZAHAR_FULLSCREEN_TOKEN_RE.search(launch_template):
+        return launch_template
+    return _inject_after_emulator_token(launch_template, " -f")
 
 
 @lru_cache(maxsize=8)
@@ -206,6 +213,11 @@ def build_shortcut_specs(
             and "pcsx2" in title.emulator.casefold()
             and is_flatpak_command(emulator_exe, PCSX2_FLATPAK_APP_ID)
         )
+        azahar_flatpak = (
+            sys.platform.startswith("linux")
+            and "azahar" in title.emulator.casefold()
+            and is_flatpak_command(emulator_exe, AZAHAR_FLATPAK_APP_ID)
+        )
         if dolphin_flatpak:
             rom_for_flatpak = rom_path.as_posix()
             dolphin_user_dir = resolve_dolphin_runtime_user_dir(config=config).as_posix()
@@ -241,12 +253,31 @@ def build_shortcut_specs(
                 )
             )
             continue
+        if azahar_flatpak:
+            rom_for_flatpak = rom_path.as_posix()
+            specs.append(
+                SteamShortcutSpec(
+                    title_id=title.title_id,
+                    system=title.system,
+                    title_name=title.title_name,
+                    exe="flatpak",
+                    launch_options=(
+                        f'run --file-forwarding {AZAHAR_FLATPAK_APP_ID} '
+                        f'-- @@ "{rom_for_flatpak}" @@'
+                    ),
+                    start_dir="",
+                    icon_path="",
+                )
+            )
+            continue
         launch_template = title.launch_template
         if "retroarch" in title.emulator.casefold():
             launch_template = _normalize_retroarch_fullscreen_launch_template(launch_template)
             launch_template = _normalize_linux_retroarch_launch_template(launch_template, config, emulator_exe)
         if "pcsx2" in title.emulator.casefold():
             launch_template = _normalize_pcsx2_launch_template(launch_template)
+        if "azahar" in title.emulator.casefold():
+            launch_template = _normalize_azahar_launch_template(launch_template)
         if "dolphin" in title.emulator.casefold():
             launch_template = _normalize_dolphin_launch_template(launch_template, emulator_exe, config)
         launch_line = launch_template.format(emulator=emulator_exe, rom=str(rom_path))

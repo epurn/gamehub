@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 from urllib.error import URLError
+from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from gamehub_common.models import LibraryIndex
@@ -30,20 +31,23 @@ _DNF_PACKAGES = {
     "retroarch": "retroarch",
     "pcsx2": "pcsx2",
     "dolphin": "dolphin-emu",
+    "azahar": "azahar",
 }
 
 _APT_PACKAGES = {
     "retroarch": "retroarch",
     "pcsx2": "pcsx2",
     "dolphin": "dolphin-emu",
+    "azahar": "azahar",
 }
 
 _FLATPAK_APP_IDS = {
     "retroarch": "org.libretro.RetroArch",
     "pcsx2": "net.pcsx2.PCSX2",
     "dolphin": "org.DolphinEmu.dolphin-emu",
+    "azahar": "org.azahar_emu.Azahar",
 }
-_FLATPAK_FORCED_EMULATORS = frozenset({"dolphin"})
+_FLATPAK_FORCED_EMULATORS = frozenset({"dolphin", "azahar"})
 _IMMUTABLE_DISTRO_HINTS = (
     "atomic",
     "aurora",
@@ -61,11 +65,59 @@ _DOLPHIN_WINDOWS_ARCHIVE_URL_RE = re.compile(
     r"https://dl\.dolphin-emu\.org/releases/(?P<version>\d+)/dolphin-(?P=version)-x64\.7z",
     re.IGNORECASE,
 )
+_AZAHAR_WINDOWS_DEFAULT_INSTALLER_URL = (
+    "https://github.com/azahar-emu/azahar/releases/download/2124.3/"
+    "azahar-2124.3-windows-msys2-installer.exe"
+)
+_AZAHAR_WINDOWS_INSTALLER_URL_ENV = "GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL"
+_AZAHAR_WINDOWS_SILENT_INSTALL_FLAGS: tuple[tuple[str, ...], ...] = (
+    ("/S",),
+    ("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"),
+    ("/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"),
+)
+_HOST_PATH_TYPE = type(Path.cwd())
+_WINERROR_ELEVATION_REQUIRED = 740
+
+
+def _safe_path(value: str) -> Path:
+    normalized = value.replace("\\", "/")
+    return _HOST_PATH_TYPE(normalized)
 
 
 def _run_install_command(command: list[str], *, verbose: bool) -> int:
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=not verbose,
+            text=True,
+        )
+    except OSError as exc:
+        if os.name == "nt" and getattr(exc, "winerror", None) == _WINERROR_ELEVATION_REQUIRED:
+            return _WINERROR_ELEVATION_REQUIRED
+        raise
+    return int(completed.returncode)
+
+
+def _run_windows_elevated_command(executable: Path, args: tuple[str, ...], *, verbose: bool) -> int:
+    if os.name != "nt":
+        return 1
+    powershell_cmd = shutil.which("powershell") or shutil.which("pwsh")
+    if not powershell_cmd:
+        return 1
+    def _ps_single_quoted(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    exe_literal = _ps_single_quoted(str(executable))
+    arg_tokens = [_ps_single_quoted(value) for value in args]
+    arg_list_literal = ", ".join(arg_tokens)
+    script = (
+        f"$argList = @({arg_list_literal}); "
+        f"$proc = Start-Process -FilePath {exe_literal} -ArgumentList $argList -Verb RunAs -Wait -PassThru; "
+        "exit [int]$proc.ExitCode"
+    )
     completed = subprocess.run(
-        command,
+        [powershell_cmd, "-NoProfile", "-NonInteractive", "-Command", script],
         check=False,
         capture_output=not verbose,
         text=True,
@@ -154,12 +206,12 @@ def _install_dolphin_from_official_release_archive(*, verbose: bool) -> bool:
         return False
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        install_root = Path(local_app_data) / "Programs" / "Dolphin"
+        install_root = _safe_path(local_app_data) / "Programs" / "Dolphin"
     else:
-        install_root = Path.home() / "AppData" / "Local" / "Programs" / "Dolphin"
+        install_root = _HOST_PATH_TYPE.home() / "AppData" / "Local" / "Programs" / "Dolphin"
 
     with tempfile.TemporaryDirectory(prefix="gamehub-dolphin-release-") as temp_dir:
-        temp_root = Path(temp_dir)
+        temp_root = _safe_path(temp_dir)
         archive_path = temp_root / f"dolphin-{version}-x64.7z"
         extract_root = temp_root / "extract"
         extract_root.mkdir(parents=True, exist_ok=True)
@@ -194,6 +246,51 @@ def _install_dolphin_from_official_release_archive(*, verbose: bool) -> bool:
     return (install_root / "Dolphin.exe").exists()
 
 
+def _azahar_windows_installer_url() -> str:
+    override = os.environ.get(_AZAHAR_WINDOWS_INSTALLER_URL_ENV, "").strip()
+    return override or _AZAHAR_WINDOWS_DEFAULT_INSTALLER_URL
+
+
+def _download_azahar_windows_installer(url: str) -> Path | None:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    filename = parsed.path.rsplit("/", 1)[-1].strip() or "azahar-windows-installer.exe"
+    if not filename.casefold().endswith(".exe"):
+        filename = f"{filename}.exe"
+    cache_dir = _safe_path(tempfile.gettempdir()) / "gamehub-azahar-installer-cache"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        installer_path = cache_dir / filename
+        with urlopen(url, timeout=120) as response:
+            installer_path.write_bytes(response.read())
+    except (URLError, TimeoutError, OSError):
+        return None
+    return installer_path
+
+
+def _install_azahar_from_windows_installer(*, verbose: bool) -> tuple[bool, Path | None, str]:
+    if os.name != "nt":
+        return False, None, ""
+    installer_url = _azahar_windows_installer_url()
+    installer_path = _download_azahar_windows_installer(installer_url)
+    if installer_path is None:
+        return False, None, installer_url
+    if _is_emulator_available("azahar"):
+        return True, installer_path, installer_url
+    for flags in _AZAHAR_WINDOWS_SILENT_INSTALL_FLAGS:
+        result = _run_install_command([str(installer_path), *flags], verbose=verbose)
+        if result == _WINERROR_ELEVATION_REQUIRED:
+            print("Azahar installer requires administrator elevation. Accept the UAC prompt to continue.")
+            result = _run_windows_elevated_command(installer_path, flags, verbose=verbose)
+        if result == 0 and _is_emulator_available("azahar"):
+            return True, installer_path, installer_url
+        if _is_emulator_available("azahar"):
+            return True, installer_path, installer_url
+    return False, installer_path, installer_url
+
+
 def _flatpak_remotes() -> list[str]:
     completed = subprocess.run(
         ["flatpak", "remotes", "--columns=name"],
@@ -216,8 +313,8 @@ def _flatpak_remotes() -> list[str]:
 
 def _flatpak_app_export_candidates(app_id: str) -> tuple[Path, ...]:
     return (
-        Path.home() / ".local" / "share" / "flatpak" / "exports" / "bin" / app_id,
-        Path("/var/lib/flatpak/exports/bin") / app_id,
+        _HOST_PATH_TYPE.home() / ".local" / "share" / "flatpak" / "exports" / "bin" / app_id,
+        _safe_path("/var/lib/flatpak/exports/bin") / app_id,
     )
 
 
@@ -283,7 +380,7 @@ def _prefer_flatpak_for_auto_backend(dist_id: str) -> bool:
     normalized = dist_id.casefold()
     if any(hint in normalized for hint in _IMMUTABLE_DISTRO_HINTS):
         return True
-    for marker in (Path("/run/ostree-booted"), Path("/sysroot/ostree")):
+    for marker in (_safe_path("/run/ostree-booted"), _safe_path("/sysroot/ostree")):
         try:
             if marker.exists():
                 return True
@@ -307,6 +404,20 @@ def _install_windows(missing: list[str], *, verbose: bool) -> None:
             else:
                 print("Warning: official Dolphin release archive install failed.")
             print("Warning: install the latest Dolphin manually from dolphin-emu.org and re-run sync.")
+            continue
+        if emulator.lower() == "azahar":
+            print("Installing emulator 'azahar' via GitHub release installer...")
+            installed, installer_path, installer_url = _install_azahar_from_windows_installer(verbose=verbose)
+            if installed and _is_emulator_available("azahar"):
+                print("Installed emulator: azahar")
+                continue
+            if installer_path is not None:
+                print("Warning: automatic silent Azahar install failed.")
+                installer_path_display = str(installer_path).replace("\\", "/")
+                print(f"Warning: run installer manually: {installer_path_display}")
+            else:
+                print("Warning: Azahar installer download failed.")
+            print(f"Warning: install Azahar manually from {installer_url} and re-run sync.")
             continue
 
         winget_ids = _WINGET_ID_CANDIDATES.get(emulator.lower())
@@ -396,7 +507,7 @@ def _install_apt(missing: list[str], *, verbose: bool) -> None:
             return
         prefix = ["sudo"]
 
-    apt_binary = Path(apt_cmd).name
+    apt_binary = _safe_path(apt_cmd).name
     for emulator in missing:
         package_name = _APT_PACKAGES.get(emulator.lower())
         if not package_name:

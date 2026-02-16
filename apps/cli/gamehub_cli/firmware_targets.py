@@ -7,10 +7,12 @@ import sys
 from .config import GamehubConfig
 from .emulators import resolve_emulator_executable
 from .platform_paths import (
+    AZAHAR_FLATPAK_APP_ID,
     DOLPHIN_FLATPAK_APP_ID,
     PCSX2_FLATPAK_APP_ID,
     RETROARCH_FLATPAK_APP_ID,
     is_flatpak_command,
+    linux_flatpak_azahar_root,
     linux_flatpak_dolphin_config_root,
     linux_flatpak_dolphin_root,
     linux_flatpak_pcsx2_root,
@@ -249,6 +251,51 @@ def resolve_dolphin_config_dirs(config: GamehubConfig | None = None) -> list[Pat
         values.append(native)
         values.append(native_data)
     return unique_paths(values)
+
+
+def resolve_azahar_user_dirs(config: GamehubConfig | None = None) -> list[Path]:
+    values: list[Path] = []
+    appdata = os.environ.get("APPDATA")
+    if os.name == "nt" and appdata:
+        values.append(Path(appdata) / "Azahar")
+        return unique_paths(values)
+
+    home = Path.home()
+    native = home / ".local" / "share" / "azahar"
+    flatpak = linux_flatpak_azahar_root()
+    existing_linux = [path for path in (flatpak, native) if path.exists()]
+    if existing_linux:
+        values.extend(existing_linux)
+        return unique_paths(values)
+
+    azahar_raw = resolve_emulator_executable("azahar").strip('"')
+    azahar_exe = Path(azahar_raw)
+    if is_flatpak_command(azahar_exe, AZAHAR_FLATPAK_APP_ID) or (
+        AZAHAR_FLATPAK_APP_ID.casefold() in azahar_raw.casefold()
+    ):
+        values.append(flatpak)
+    else:
+        values.append(native)
+        values.append(flatpak)
+    return unique_paths(values)
+
+
+def resolve_azahar_runtime_user_dir(config: GamehubConfig | None = None) -> Path:
+    appdata = os.environ.get("APPDATA")
+    if os.name == "nt" and appdata:
+        return Path(appdata) / "Azahar"
+
+    home = Path.home()
+    flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / AZAHAR_FLATPAK_APP_ID
+    flatpak_export_system = Path("/var/lib/flatpak/exports/bin") / AZAHAR_FLATPAK_APP_ID
+    flatpak_data = linux_flatpak_azahar_root()
+    if (
+        flatpak_data.exists()
+        or flatpak_export_user.exists()
+        or flatpak_export_system.exists()
+    ):
+        return flatpak_data
+    return home / ".local" / "share" / "azahar"
 
 
 def target_dirs_for_system(system_name: str, config: GamehubConfig | None = None) -> list[Path]:

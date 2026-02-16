@@ -88,6 +88,10 @@ _RETROARCH_ALL_USERS_MENU_KEY = "all_users_control_menu"
 _RETROARCH_ALL_USERS_MENU_VALUE = "true"
 _PCSX2_MENU_COMBO_LABEL = "Back+Start"
 _DOLPHIN_GENERAL_STOP_MACRO = "@(SELECT+START)"
+_AZAHAR_FULLSCREEN_KEY = "fullscreen"
+_AZAHAR_FULLSCREEN_DEFAULT_KEY = r"fullscreen\default"
+_AZAHAR_FULLSCREEN_VALUE = "true"
+_AZAHAR_FULLSCREEN_DEFAULT_VALUE = "false"
 
 
 def _linux_detect_evdev_gamepads(*, max_devices: int = 2) -> tuple[str, ...]:
@@ -198,6 +202,35 @@ def _upsert_simple_cfg_key(lines: list[str], key: str, value: str) -> tuple[list
     return output, changed
 
 
+def _upsert_qsettings_key(lines: list[str], key: str, value: str) -> tuple[list[str], bool]:
+    key_name = key.casefold()
+    desired = f"{key}={value}"
+    changed = False
+    found = False
+    output: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith(";") or "=" not in stripped:
+            output.append(line)
+            continue
+        current_key = stripped.split("=", 1)[0].strip().casefold()
+        if current_key != key_name:
+            output.append(line)
+            continue
+        found = True
+        if stripped != desired:
+            output.append(desired)
+            changed = True
+        else:
+            output.append(line)
+    if not found:
+        if output and output[-1].strip():
+            output.append("")
+        output.append(desired)
+        changed = True
+    return output, changed
+
+
 def _retroarch_menu_combo_requires_migration(binding: str | None) -> bool:
     if not binding:
         return True
@@ -247,6 +280,11 @@ def _resolve_dolphin_runtime_user_dir(config: GamehubConfig | None = None) -> Pa
     return firmware_targets.resolve_dolphin_runtime_user_dir(config)
 
 
+def _resolve_azahar_runtime_user_dir(config: GamehubConfig | None = None) -> Path:
+    _sync_targets_module()
+    return firmware_targets.resolve_azahar_runtime_user_dir(config)
+
+
 def _resolve_dolphin_config_dirs(config: GamehubConfig | None = None) -> list[Path]:
     _sync_targets_module()
     return firmware_targets.resolve_dolphin_config_dirs(config)
@@ -291,6 +329,10 @@ def _default_pcsx2_ini_path(config: GamehubConfig | None = None) -> Path:
 
 def _default_dolphin_ini_path(config: GamehubConfig | None = None) -> Path:
     return _resolve_dolphin_runtime_user_dir(config=config) / "Config" / "Dolphin.ini"
+
+
+def _default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
+    return _resolve_azahar_runtime_user_dir(config=config) / "config" / "qt-config.ini"
 
 
 def _sha256(path: Path) -> str:
@@ -629,6 +671,32 @@ def _configure_dolphin_runtime(
     return runtime_user_dir / "Config" / "Dolphin.ini"
 
 
+def _configure_azahar_runtime(
+    config: GamehubConfig,
+    dry_run: bool,
+    verbose: bool,
+    writer: Callable[[str], None] = print,
+) -> Path:
+    ini_path = _default_azahar_qt_config_path(config=config)
+    details = "fullscreen=true"
+    if dry_run:
+        if verbose:
+            writer(f"azahar\tdry-run\tconfigure\t{ini_path}\t{details}")
+        return ini_path
+
+    lines = _read_ini_lines(ini_path)
+    lines, changed_fullscreen = _upsert_qsettings_key(lines, _AZAHAR_FULLSCREEN_KEY, _AZAHAR_FULLSCREEN_VALUE)
+    lines, changed_default = _upsert_qsettings_key(
+        lines, _AZAHAR_FULLSCREEN_DEFAULT_KEY, _AZAHAR_FULLSCREEN_DEFAULT_VALUE
+    )
+    if changed_fullscreen or changed_default or not ini_path.exists():
+        _write_ini_atomic(ini_path, lines)
+
+    if verbose:
+        writer(f"azahar\tconfigured\t{ini_path}\t{details}")
+    return ini_path
+
+
 def deploy_firmware_to_emulators(
     config: GamehubConfig,
     index: LibraryIndex,
@@ -654,6 +722,9 @@ def deploy_firmware_to_emulators(
     has_dolphin = any(system.name in {"GC", "Wii"} for system in index.systems)
     if has_dolphin:
         _configure_dolphin_runtime(config=config, dry_run=dry_run, verbose=verbose, writer=writer)
+    has_n3ds = any(system.name == "N3DS" for system in index.systems)
+    if has_n3ds:
+        _configure_azahar_runtime(config=config, dry_run=dry_run, verbose=verbose, writer=writer)
 
     for system in index.systems:
         if system.name == "PS2":

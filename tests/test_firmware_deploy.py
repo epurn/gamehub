@@ -126,6 +126,64 @@ def test_target_dirs_support_env_overrides(monkeypatch) -> None:
         assert Path("D:/Dolphin/User/Wii") in wii_dirs
 
 
+def test_deploy_firmware_n3ds_configures_azahar_fullscreen_without_firmware(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = _config(temp_root)
+        appdata = temp_root / "AppData" / "Roaming"
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
+        monkeypatch.setenv("APPDATA", str(appdata))
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="N3DS",
+                    rom_extensions=(".3ds", ".cci", ".cxi"),
+                    default_emulator="azahar",
+                    launch_template='"{emulator}" "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        qt_config = appdata / "Azahar" / "config" / "qt-config.ini"
+        assert qt_config.exists()
+        text = qt_config.read_text(encoding="utf-8")
+        assert "fullscreen=true" in text
+        assert r"fullscreen\default=false" in text
+        assert not (appdata / "Azahar" / "sysdata").exists()
+
+
+def test_deploy_firmware_n3ds_dry_run_does_not_mutate_fullscreen_config(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = _config(temp_root)
+        appdata = temp_root / "AppData" / "Roaming"
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
+        monkeypatch.setenv("APPDATA", str(appdata))
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="N3DS",
+                    rom_extensions=(".3ds", ".cci", ".cxi"),
+                    default_emulator="azahar",
+                    launch_template='"{emulator}" "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+        logs: list[str] = []
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
+
+        assert not (appdata / "Azahar" / "sysdata").exists()
+        assert not (appdata / "Azahar" / "config" / "qt-config.ini").exists()
+        assert any("azahar\tdry-run\tconfigure" in line for line in logs)
+
+
 def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)

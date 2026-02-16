@@ -73,6 +73,54 @@ def test_planner_blocks_titles_when_firmware_missing() -> None:
     assert plan.blocked_systems["PS2"] == "Missing required firmware"
 
 
+def test_planner_n3ds_without_firmware_metadata_does_not_block_titles() -> None:
+    with _workspace_plan_dir("gamehub-plan-") as temp_root:
+        system = SystemSpec(
+            name="N3DS",
+            rom_extensions=(".3ds", ".cci", ".cxi"),
+            default_emulator="azahar",
+            launch_template='"{emulator}" "{rom}"',
+            firmware=(),
+        )
+        title = TitleEntry(
+            title_id="title_n3ds_pilotwings",
+            system="N3DS",
+            title_name="Pilotwings Resort",
+            title_rel_dir="N3DS/Pilotwings Resort.3ds",
+            emulator="azahar",
+            launch_template='"{emulator}" "{rom}"',
+            rom=RomSpec(
+                file_id="file_pilotwings",
+                rel_path="roms/N3DS/Pilotwings Resort.3ds",
+                sha256="b" * 64,
+                size_bytes=4096,
+                extension=".3ds",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(system,), titles=(title,))
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+
+        plan = create_sync_plan(index=index, config=config, state=SyncState(), verify=False)
+
+        assert len(plan.firmware_actions) == 0
+        assert len(plan.content_actions) == 1
+        assert plan.content_actions[0].content_id == "file_pilotwings"
+        assert plan.skipped_titles == 0
+        assert not plan.blocked_systems
+
+
 def test_planner_includes_rom_when_required_firmware_present() -> None:
     with _workspace_plan_dir("gamehub-plan-") as temp_root:
         system = SystemSpec(

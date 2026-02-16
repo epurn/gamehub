@@ -50,6 +50,8 @@ def _emulator_family(command: object) -> str:
         return "pcsx2"
     if "dolphin" in normalized:
         return "dolphin"
+    if "azahar" in normalized:
+        return "azahar"
     return ""
 
 

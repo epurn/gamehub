@@ -40,6 +40,7 @@ ALLOWED_RUNTIME_URL_HOSTS = {
     "buildbot.libretro.com",
     "dolphin-emu.org",
     "dl.dolphin-emu.org",
+    "github.com",
     "flathub.org",
 }
 

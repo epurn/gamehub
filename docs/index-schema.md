@@ -13,12 +13,12 @@
 - `rom_extensions`: normalized lowercase extensions with `.` prefix
 - `default_emulator`
 - `launch_template`
-- `firmware`: list of `FirmwareSpec` scanned from `firmware/<system>/`
+- `firmware`: list of `FirmwareSpec` scanned from `firmware/<system>/` when firmware scanning is enabled for that system
   - `required=true` for known required firmware filenames (per system catalog)
   - `required=false` for additional optional firmware files present on disk
 
 ## Initial canonical systems (v1)
-- `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
+- `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
 
 ## `TitleEntry`
 - `title_id`: deterministic from `system + title_rel_dir`
@@ -36,7 +36,7 @@
 - ROM extensions are normalized and deduplicated
 - Nested title directories under `roms/<system>/` are rejected (layout is flat files only)
 - Duplicate title stems within a system (for example `Title.iso` + `Title.chd`) are rejected
-- If a system has indexed titles and required firmware is missing on the server, index generation fails
+- If a system has indexed titles and required firmware is missing on the server, index generation fails (for example: `PS2` `scph10000.bin`)
 
 ## Deterministic IDs
 - `title_id`: `make_title_id(system, title_rel_dir)`

@@ -112,6 +112,7 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_BACKEND`: overrides `[linux].emulator_install_backend`.
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND`: overrides `[linux].emulator_install_command`.
 - `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
+- `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`: overrides the default pinned Windows Azahar installer URL used by emulator auto-install.
 - `GAMEHUB_INDEX_TIMEOUT_SECONDS`: overrides `[server].index_timeout_seconds`.
 - `GAMEHUB_INDEX_FETCH_ATTEMPTS`: overrides `[server].index_fetch_attempts`.
 - `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
@@ -131,6 +132,13 @@ Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` ar
 Linux Dolphin defaults:
 - Native runtime user dir: `~/.local/share/dolphin-emu`
 - Flatpak runtime user dir: `~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu`
+
+N3DS Azahar defaults:
+- No required firmware files are enforced for N3DS.
+- GAMEHUB bootstraps Azahar fullscreen runtime config in:
+  - Windows: `%APPDATA%/Azahar/config/qt-config.ini`
+  - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/data/azahar/config/qt-config.ini`
+- Controller configuration is not auto-managed for Azahar in this pass.
 
 ## State file
 - Format: JSON

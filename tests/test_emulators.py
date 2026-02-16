@@ -384,6 +384,52 @@ def test_ensure_emulators_linux_flatpak_remote_override(monkeypatch, capsys) -> 
     assert "Installed emulator: pcsx2" in capsys.readouterr().out
 
 
+def test_ensure_emulators_linux_flatpak_installs_azahar(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("azahar")
+    state = {"installed": False}
+
+    def fake_which(name: str) -> str | None:
+        if name == "flatpak":
+            return "/usr/bin/flatpak"
+        if name in {"azahar", "azahar-qt"}:
+            return "/usr/bin/azahar" if state["installed"] else None
+        if name == "org.azahar_emu.Azahar":
+            return "/home/deck/.local/share/flatpak/exports/bin/org.azahar_emu.Azahar" if state["installed"] else None
+        return None
+
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        commands.append(cmd)
+        if cmd[:3] == ["flatpak", "info", "--show-ref"]:
+            code = 0 if state["installed"] else 1
+            return type("Completed", (), {"returncode": code, "stdout": ""})()
+        if cmd[:3] == ["flatpak", "remotes", "--columns=name"]:
+            return type("Completed", (), {"returncode": 0, "stdout": "flathub\n"})()
+        if cmd[:4] == ["flatpak", "install", "--user", "-y"]:
+            state["installed"] = True
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+        return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+
+    ensure_emulators(
+        index=index,
+        dry_run=False,
+        verbose=False,
+        linux_install_backend="flatpak",
+        linux_flatpak_remote="flathub",
+    )
+
+    assert ["flatpak", "install", "--user", "-y", "flathub", "org.azahar_emu.Azahar"] in commands
+    assert "Installing emulator 'azahar' via flatpak (org.azahar_emu.Azahar)..." in capsys.readouterr().out
+
+
 def test_ensure_emulators_linux_flatpak_remote_fallbacks_to_unpinned(monkeypatch, capsys) -> None:
     index = _index_with_emulators("retroarch")
     state = {"installed": False}
@@ -524,6 +570,106 @@ def test_ensure_emulators_windows_dolphin_uses_official_release_without_winget(m
     assert not commands
 
 
+def test_ensure_emulators_windows_azahar_uses_github_release_installer(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("azahar")
+    state = {"installed": False}
+
+    def fake_which(name: str) -> str | None:
+        if name in {"azahar", "azahar-qt"}:
+            return "C:\\Emulators\\Azahar\\azahar.exe" if state["installed"] else None
+        return None
+
+    def fake_azahar_install(*, verbose: bool):
+        state["installed"] = True
+        return True, Path("C:/Temp/azahar-installer.exe"), "https://github.com/azahar-emu/azahar/releases/download/2124.3/example.exe"
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "win32")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr(
+        "gamehub_cli.emulators.emulator_install._install_azahar_from_windows_installer",
+        fake_azahar_install,
+    )
+
+    ensure_emulators(index=index, dry_run=False, verbose=False)
+
+    out = capsys.readouterr().out
+    assert "Installing emulator 'azahar' via GitHub release installer..." in out
+    assert "Installed emulator: azahar" in out
+
+
+def test_ensure_emulators_windows_azahar_installer_failure_warns_manual_fallback(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("azahar")
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "win32")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda name: None)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr(
+        "gamehub_cli.emulators.emulator_install._install_azahar_from_windows_installer",
+        lambda *args, **kwargs: (
+            False,
+            Path("C:/Temp/azahar-2124.3-windows-msys2-installer.exe"),
+            "https://github.com/azahar-emu/azahar/releases/download/2124.3/azahar-2124.3-windows-msys2-installer.exe",
+        ),
+    )
+
+    ensure_emulators(index=index, dry_run=False, verbose=False)
+
+    out = capsys.readouterr().out
+    assert "automatic silent Azahar install failed" in out
+    assert "run installer manually: C:/Temp/azahar-2124.3-windows-msys2-installer.exe" in out
+    assert "install Azahar manually from https://github.com/azahar-emu/azahar/releases/download/2124.3/azahar-2124.3-windows-msys2-installer.exe and re-run sync" in out
+
+
+def test_ensure_emulators_windows_azahar_installer_retries_with_uac_elevation(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("azahar")
+    state = {"installed": False}
+    commands: list[list[str]] = []
+
+    class FakeCompleted:
+        def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_which(name: str) -> str | None:
+        if name in {"azahar", "azahar-qt"}:
+            return "C:\\Emulators\\Azahar\\azahar.exe" if state["installed"] else None
+        if name == "powershell":
+            return "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        return None
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        commands.append(cmd)
+        if cmd and cmd[0].lower().endswith("installer.exe"):
+            err = OSError("elevation required")
+            setattr(err, "winerror", 740)
+            raise err
+        if cmd and "powershell" in cmd[0].lower():
+            state["installed"] = True
+            return FakeCompleted(0)
+        return FakeCompleted(0)
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "win32")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr(
+        "gamehub_cli.emulators.emulator_install._download_azahar_windows_installer",
+        lambda url: Path("C:/Temp/azahar-2124.3-windows-msys2-installer.exe"),
+    )
+    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+
+    ensure_emulators(index=index, dry_run=False, verbose=False)
+
+    out = capsys.readouterr().out
+    assert "Azahar installer requires administrator elevation" in out
+    assert "Installed emulator: azahar" in out
+    assert any(command and "powershell" in command[0].lower() for command in commands)
+
+
 def test_ensure_emulators_windows_dolphin_archive_failure_warns(monkeypatch, capsys) -> None:
     index = _index_with_emulators("dolphin")
 
@@ -627,6 +773,22 @@ def test_resolve_emulator_executable_falls_back_to_known_paths(monkeypatch) -> N
         assert resolved == str(candidate)
 
 
+def test_resolve_emulator_executable_falls_back_to_known_azahar_paths(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-emulator-resolve-") as temp_root:
+        candidate = temp_root / "Programs" / "Azahar" / "azahar.exe"
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        candidate.write_bytes(b"exe")
+        monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
+        monkeypatch.setenv("LOCALAPPDATA", str(temp_root))
+        monkeypatch.delenv("ProgramFiles", raising=False)
+        monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+        monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda cmd: None)
+
+        resolved = resolve_emulator_executable("azahar")
+
+        assert resolved == str(candidate)
+
+
 def test_resolve_emulator_executable_prefers_known_path_over_windowsapps_alias(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-emulator-resolve-") as temp_root:
         candidate = temp_root / "Programs" / "RetroArch" / "retroarch.exe"
@@ -663,3 +825,20 @@ def test_resolve_emulator_executable_linux_uses_matching_flatpak_export(monkeypa
         resolved = resolve_emulator_executable("pcsx2")
 
         assert resolved == str(pcsx2_export)
+
+
+def test_resolve_emulator_executable_linux_uses_azahar_flatpak_export(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-emulator-linux-flatpak-") as temp_root:
+        export_dir = temp_root / ".local" / "share" / "flatpak" / "exports" / "bin"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        azahar_export = export_dir / "org.azahar_emu.Azahar"
+        azahar_export.write_bytes(b"exe")
+
+        monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.emulators.Path.home", lambda: temp_root)
+        monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda cmd: None)
+
+        resolved = resolve_emulator_executable("azahar")
+
+        assert resolved == str(azahar_export)

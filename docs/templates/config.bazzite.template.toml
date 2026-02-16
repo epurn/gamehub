@@ -21,6 +21,7 @@ userdata_dir = "/var/home/<user>/.var/app/com.valvesoftware.Steam/.local/share/S
 # Bazzite default: Flatpak-first install/runtime model.
 emulator_install_backend = "flatpak"
 flatpak_remote = "flathub"
+# Includes Azahar via org.azahar_emu.Azahar for N3DS support.
 
 # Optional explicit Dolphin runtime user dir.
 # Keep in Flatpak app data so launch/config/bootstrap all target the same runtime.
