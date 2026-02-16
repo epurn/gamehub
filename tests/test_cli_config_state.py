@@ -86,6 +86,35 @@ def test_default_config_path_prefers_home_dot_gamehub(monkeypatch) -> None:
         assert resolved == home_config
 
 
+def test_load_config_uses_home_dot_gamehub_default_when_workspace_missing(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-cli-config-home-load-") as temp_root:
+        home = temp_root / "home"
+        home_config = home / ".gamehub" / "config.toml"
+        home_config.parent.mkdir(parents=True, exist_ok=True)
+        home_config.write_text(
+            "\n".join(
+                [
+                    "[server]",
+                    'url = "http://home-default.invalid:8123"',
+                    "",
+                    "[paths]",
+                    'gamehub_dir = "D:/HomeDefaultGamehub"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(temp_root)
+        monkeypatch.setattr("gamehub_cli.config.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname))
+
+        loaded = load_config()
+
+        assert loaded.server_url == "http://home-default.invalid:8123"
+        assert loaded.library_dir == Path("D:/HomeDefaultGamehub")
+        assert loaded.firmware_dir == Path("D:/HomeDefaultGamehub/firmware")
+        assert loaded.state_path == Path("D:/HomeDefaultGamehub/state.json")
+
+
 def test_default_config_path_uses_legacy_when_present(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-cli-config-legacy-") as temp_root:
         home = temp_root / "home"
