@@ -38,7 +38,7 @@ python -m venv venv
 
 ## Run tests
 ```powershell
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+.\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
 
 ## Run audit regression slices (local)

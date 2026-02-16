@@ -18,6 +18,7 @@ Use this in order:
 ## 1. Windows Final Validation
 
 Run from repo root in PowerShell.
+Use direct commands in the active shell (avoid nested `powershell -Command "..."` wrappers with complex quoting).
 
 1. Optional cleanup for stale interrupted runs:
 ```powershell
@@ -29,7 +30,7 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 ```
 3. Full test suite:
 ```powershell
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+.\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
 4. Audit-critical slices:
 ```powershell
@@ -106,20 +107,20 @@ python3 -m venv venv
 ```
 2. Full test suite:
 ```bash
-./venv/bin/python -m pytest -q -p no:cacheprovider
+./venv/bin/python -m pytest . -p no:cacheprovider
 ```
 3. Audit-critical slices:
 ```bash
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py tests/test_server_api.py tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py tests/test_steam.py tests/test_steam_integration.py tests/test_sync.py
 ```
-4. Build Linux wheel and smoke with pipx:
+4. Build Linux wheel and smoke with pip:
 ```bash
-./venv/bin/python -m pip install build pipx
+./venv/bin/python -m pip install build
 ./venv/bin/python -m build --wheel
-pipx install dist/*.whl --force
-~/.local/bin/gamehub --help
-~/.local/bin/gamehub sync --help
-~/.local/bin/gamehub sync --dry-run --skip-steam
+python3 -m pip install --user --force-reinstall dist/*.whl
+gamehub --help
+gamehub sync --help
+gamehub sync --dry-run --skip-steam
 ```
 5. Server deploy checks:
 ```bash
@@ -133,7 +134,7 @@ Run on Bazzite in an interactive desktop session.
 
 1. Install wheel candidate:
 ```bash
-pipx install dist/*.whl --force
+python3 -m pip install --user --force-reinstall dist/*.whl
 ```
 2. Create `config.bazzite.toml`:
 Start from template `docs/templates/config.linux.template.toml`, then adjust `paths.gamehub_dir`, `steam.userdata_dir`, and `[linux]` backend if needed.
@@ -163,15 +164,15 @@ python3 -c "import httpx;print(httpx.get('http://<SERVER_IP>:8000/v1/index',time
 ```
 5. Dry-run:
 ```bash
-~/.local/bin/gamehub sync --config ./config.bazzite.toml --dry-run --verbose --require-steam-closed
+gamehub sync --config ./config.bazzite.toml --dry-run --verbose --require-steam-closed
 ```
 6. Real sync:
 ```bash
-~/.local/bin/gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
+gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
 ```
 7. Real sync second pass:
 ```bash
-~/.local/bin/gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
+gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
 ```
 8. Manual Steam verification:
 - Shortcuts exist.

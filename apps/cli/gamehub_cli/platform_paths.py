@@ -22,6 +22,10 @@ def linux_flatpak_dolphin_root() -> Path:
     return Path.home() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "data" / "dolphin-emu"
 
 
+def linux_flatpak_dolphin_config_root() -> Path:
+    return Path.home() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "config" / "dolphin-emu"
+
+
 def is_flatpak_command(path_value: str | Path, app_id: str) -> bool:
     if isinstance(path_value, Path):
         raw = path_value.as_posix()

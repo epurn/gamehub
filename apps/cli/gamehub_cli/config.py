@@ -57,7 +57,13 @@ def default_config_path() -> Path:
     local_config = Path.cwd() / "config.toml"
     if local_config.exists():
         return local_config
-    return Path(user_config_dir("gamehub")) / "config.toml"
+    home_config = Path.home() / ".gamehub" / "config.toml"
+    if home_config.exists():
+        return home_config
+    legacy_config = Path(user_config_dir("gamehub")) / "config.toml"
+    if legacy_config.exists():
+        return legacy_config
+    return home_config
 
 
 def default_gamehub_dir() -> Path:

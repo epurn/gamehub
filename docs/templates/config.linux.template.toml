@@ -24,6 +24,7 @@ userdata_dir = "/var/home/<user>/.var/app/com.valvesoftware.Steam/.local/share/S
 
 [linux]
 # auto | dnf | apt | flatpak | none | command
+# auto prefers flatpak first on immutable/Bazzite/SteamOS-style hosts.
 emulator_install_backend = "auto"
 # Only used when emulator_install_backend = "command".
 # emulator_install_command = "sudo apt-get install -y {package}"
@@ -38,7 +39,13 @@ flatpak_remote = "flathub"
 # pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"
 # pcsx2_bios_dir = "~/.config/PCSX2/bios"
 # pcsx2_controller_autoconfig = true
+# Dolphin runtime user dir used for:
+# - Steam launch `-u` target
+# - firmware deploy to `GC/` and `Wii/`
+# - runtime config bootstrap under `Config/`
 # dolphin_user_path = "~/.local/share/dolphin-emu"
+# Flatpak Dolphin example:
+# dolphin_user_path = "~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu"
 
 [sgdb]
 # Fallback only; prefer GAMEHUB_SGDB_API_KEY in environment.

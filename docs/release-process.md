@@ -10,7 +10,7 @@ Detailed end-to-end validation and publishing steps are in:
 ## Release Checklist
 1. Ensure tests pass:
 ```powershell
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+.\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
 2. Run audit regression slices:
 ```powershell

@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 from uuid import uuid4
 
-from gamehub_cli.config import LinuxConfig, load_config
+from gamehub_cli.config import LinuxConfig, default_config_path, load_config
 from gamehub_cli.state import SyncState, load_state, save_state_atomic
 
 
@@ -69,6 +69,36 @@ def test_load_config_prefers_workspace_config_when_present(monkeypatch) -> None:
         assert loaded.firmware_dir == Path("D:/GamehubOutput/firmware")
         assert loaded.state_path == Path("D:/GamehubOutput/state.json")
         assert loaded.steam_id == "76561198000000001"
+
+
+def test_default_config_path_prefers_home_dot_gamehub(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-cli-config-home-") as temp_root:
+        home = temp_root / "home"
+        home_config = home / ".gamehub" / "config.toml"
+        home_config.parent.mkdir(parents=True, exist_ok=True)
+        home_config.write_text("[server]\nurl='http://example.invalid:8123'\n", encoding="utf-8")
+        monkeypatch.chdir(temp_root)
+        monkeypatch.setattr("gamehub_cli.config.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname))
+
+        resolved = default_config_path()
+
+        assert resolved == home_config
+
+
+def test_default_config_path_uses_legacy_when_present(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-cli-config-legacy-") as temp_root:
+        home = temp_root / "home"
+        legacy_config = temp_root / "legacy-config" / "gamehub" / "config.toml"
+        legacy_config.parent.mkdir(parents=True, exist_ok=True)
+        legacy_config.write_text("[server]\nurl='http://legacy.invalid:8123'\n", encoding="utf-8")
+        monkeypatch.chdir(temp_root)
+        monkeypatch.setattr("gamehub_cli.config.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname))
+
+        resolved = default_config_path()
+
+        assert resolved == legacy_config
 
 
 def test_load_config_toml_overrides_defaults(monkeypatch) -> None:

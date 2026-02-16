@@ -7,6 +7,7 @@ ENV GAMEHUB_DATA_DIR=/data
 WORKDIR /app
 
 RUN addgroup --system gamehub && adduser --system --ingroup gamehub --home /app gamehub
+RUN mkdir -p /app/.cache/gamehub
 
 COPY pyproject.toml README.md /app/
 COPY apps /app/apps

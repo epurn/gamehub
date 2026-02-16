@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 from pathlib import Path
 import shlex
+import shutil
+import subprocess
 import sys
 
 from gamehub_common.models import LibraryIndex
 
 from .config import GamehubConfig
 from .emulators import resolve_emulator_executable
+from .firmware_targets import resolve_dolphin_runtime_user_dir
 from .paths import from_rel_path
-from .platform_paths import PCSX2_FLATPAK_APP_ID, is_flatpak_command
+from .platform_paths import DOLPHIN_FLATPAK_APP_ID, PCSX2_FLATPAK_APP_ID, is_flatpak_command
 from .retroarch_cores import resolve_retroarch_paths
 from .steam import (
     SteamArtworkAssignment,
@@ -32,6 +36,13 @@ from .steam import (
 )
 
 _RETROARCH_CORE_TOKEN_RE = re.compile(r"(?P<prefix>-L\s+)(?P<token>[^\s]+)")
+_RETROARCH_FULLSCREEN_TOKEN_RE = re.compile(r"(^|\s)-f(\s|$)")
+_PCSX2_FULLSCREEN_TOKEN_RE = re.compile(r"(^|\s)-fullscreen(\s|$)")
+_EMULATOR_TEMPLATE_TOKEN_RE = re.compile(r'^\s*"\{emulator\}"')
+_DOLPHIN_FULLSCREEN_CONFIG_TOKEN = "Dolphin.Display.Fullscreen=True"
+_DOLPHIN_FULLSCREEN_CONFIG_ARG_RE = re.compile(r"\s-C\s+Dolphin\.Display\.Fullscreen=True")
+_DOLPHIN_EXEC_TOKEN_RE = re.compile(r"\s(-e|--exec)(\s|=)")
+_DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
 
 
 def _resolve_rom_path(base: Path, rel_path: str) -> Path:
@@ -72,6 +83,80 @@ def _normalize_linux_retroarch_launch_template(launch_template: str, config: Gam
     return f"{launch_template[:match.start()]}{replacement}{launch_template[match.end() :]}"
 
 
+def _inject_after_emulator_token(launch_template: str, token: str) -> str:
+    match = _EMULATOR_TEMPLATE_TOKEN_RE.search(launch_template)
+    if not match:
+        return f"{launch_template}{token}"
+    return f"{launch_template[:match.end()]}{token}{launch_template[match.end() :]}"
+
+
+def _normalize_retroarch_fullscreen_launch_template(launch_template: str) -> str:
+    if _RETROARCH_FULLSCREEN_TOKEN_RE.search(launch_template):
+        return launch_template
+    return _inject_after_emulator_token(launch_template, " -f")
+
+
+def _normalize_pcsx2_launch_template(launch_template: str) -> str:
+    if _PCSX2_FULLSCREEN_TOKEN_RE.search(launch_template):
+        return launch_template
+    return _inject_after_emulator_token(launch_template, " -fullscreen")
+
+
+@lru_cache(maxsize=8)
+def _supports_dolphin_inline_config(emulator_exe: str) -> bool:
+    token = emulator_exe.strip().strip('"')
+    if not token:
+        return True
+
+    executable = token
+    candidate_path = Path(token)
+    if not candidate_path.exists():
+        resolved = shutil.which(token)
+        if resolved:
+            executable = resolved
+
+    try:
+        completed = subprocess.run(
+            [executable, "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        # Best effort only; keep fullscreen injection when probing is unavailable.
+        return True
+
+    help_text = f"{completed.stdout}\n{completed.stderr}"
+    lowered = help_text.casefold()
+    if "--config" in lowered or " -c <config>" in lowered:
+        return True
+    if "usage: dolphin [/" in lowered:
+        return False
+    if re.search(r"(?m)^\s*/[a-z]", help_text):
+        return False
+    return True
+
+
+def _normalize_dolphin_launch_template(launch_template: str, emulator_exe: str, config: GamehubConfig) -> str:
+    user_dir = str(resolve_dolphin_runtime_user_dir(config=config))
+    if not _DOLPHIN_USER_ARG_RE.search(launch_template):
+        user_token = f' -u "{user_dir}"'
+        match = _DOLPHIN_EXEC_TOKEN_RE.search(launch_template)
+        if match:
+            launch_template = f"{launch_template[:match.start()]}{user_token}{launch_template[match.start():]}"
+        else:
+            launch_template = f"{launch_template}{user_token}"
+    if not _supports_dolphin_inline_config(emulator_exe):
+        return _DOLPHIN_FULLSCREEN_CONFIG_ARG_RE.sub("", launch_template)
+    if _DOLPHIN_FULLSCREEN_CONFIG_TOKEN in launch_template:
+        return launch_template
+    match = _DOLPHIN_EXEC_TOKEN_RE.search(launch_template)
+    inject = f" -C {_DOLPHIN_FULLSCREEN_CONFIG_TOKEN}"
+    if match:
+        return f"{launch_template[:match.start()]}{inject}{launch_template[match.start():]}"
+    return f"{launch_template}{inject}"
+
+
 def build_shortcut_specs(
     index: LibraryIndex,
     config: GamehubConfig,
@@ -80,11 +165,34 @@ def build_shortcut_specs(
     for title in sorted(index.titles, key=lambda item: (item.system, item.title_name.casefold(), item.title_id)):
         rom_path = _resolve_rom_path(config.library_dir, title.rom.rel_path)
         emulator_exe = resolve_emulator_executable(title.emulator)
+        dolphin_flatpak = (
+            sys.platform.startswith("linux")
+            and "dolphin" in title.emulator.casefold()
+            and is_flatpak_command(emulator_exe, DOLPHIN_FLATPAK_APP_ID)
+        )
         pcsx2_flatpak = (
             sys.platform.startswith("linux")
             and "pcsx2" in title.emulator.casefold()
             and is_flatpak_command(emulator_exe, PCSX2_FLATPAK_APP_ID)
         )
+        if dolphin_flatpak:
+            rom_for_flatpak = rom_path.as_posix()
+            dolphin_user_dir = resolve_dolphin_runtime_user_dir(config=config).as_posix()
+            specs.append(
+                SteamShortcutSpec(
+                    title_id=title.title_id,
+                    system=title.system,
+                    title_name=title.title_name,
+                    exe="flatpak",
+                    launch_options=(
+                        f'run --device=all --file-forwarding {DOLPHIN_FLATPAK_APP_ID} '
+                        f'-b -u "{dolphin_user_dir}" -e @@ "{rom_for_flatpak}" @@'
+                    ),
+                    start_dir="",
+                    icon_path="",
+                )
+            )
+            continue
         if pcsx2_flatpak:
             rom_for_flatpak = rom_path.as_posix()
             specs.append(
@@ -104,7 +212,12 @@ def build_shortcut_specs(
             continue
         launch_template = title.launch_template
         if "retroarch" in title.emulator.casefold():
+            launch_template = _normalize_retroarch_fullscreen_launch_template(launch_template)
             launch_template = _normalize_linux_retroarch_launch_template(launch_template, config)
+        if "pcsx2" in title.emulator.casefold():
+            launch_template = _normalize_pcsx2_launch_template(launch_template)
+        if "dolphin" in title.emulator.casefold():
+            launch_template = _normalize_dolphin_launch_template(launch_template, emulator_exe, config)
         launch_line = launch_template.format(emulator=emulator_exe, rom=str(rom_path))
         parts = shlex.split(launch_line, posix=False)
         if parts:

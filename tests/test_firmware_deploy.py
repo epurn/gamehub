@@ -8,7 +8,9 @@ from uuid import uuid4
 
 from gamehub_cli.config import GamehubConfig
 from gamehub_cli.firmware_deploy import (
+    _default_dolphin_ini_path,
     _default_pcsx2_ini_path,
+    _linux_detect_evdev_gamepads,
     _resolve_retroarch_system_dirs,
     _target_dirs_for_system,
     deploy_firmware_to_emulators,
@@ -141,6 +143,7 @@ def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch) -
         text = ini_path.read_text(encoding="utf-8")
         assert "SetupWizardIncomplete = false" in text
         assert f"Bios = {config.firmware_dir / 'PS2'}" in text
+        assert "OpenPauseMenu = SDL-0/Back & SDL-0/Start" in text
 
 
 def test_deploy_firmware_dry_run_reports_pcsx2_config(monkeypatch) -> None:
@@ -154,6 +157,255 @@ def test_deploy_firmware_dry_run_reports_pcsx2_config(monkeypatch) -> None:
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
 
         assert any("pcsx2\tdry-run\tconfigure" in line for line in logs)
+
+
+def test_deploy_firmware_configures_retroarch_menu_combo(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = _config(temp_root)
+        index = _index("PSX", "scph5501.bin")
+        source = config.firmware_dir / "PSX" / "scph5501.bin"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"bios")
+        target_dir = temp_root / "retroarch" / "system"
+        cfg_path = temp_root / "retroarch" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text('input_menu_toggle_gamepad_combo = "0"\n', encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        text = cfg_path.read_text(encoding="utf-8")
+        assert 'input_menu_toggle_gamepad_combo = "4"' in text
+        assert 'all_users_control_menu = "true"' in text
+
+
+def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = _config(temp_root)
+        index = _index("PSX", "scph5501.bin")
+        cfg_path = temp_root / "retroarch" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text('input_menu_toggle_gamepad_combo = "0"\n', encoding="utf-8")
+        logs: list[str] = []
+
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
+        monkeypatch.setattr(
+            "gamehub_cli.firmware_deploy._target_dirs_for_system",
+            lambda _name, config=None: [temp_root / "retroarch" / "system"],
+        )
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
+
+        assert any("retroarch\tdry-run\tconfigure" in line for line in logs)
+        assert any("menu_combo=Start+Select" in line for line in logs)
+        assert any("all_users_menu=true" in line for line in logs)
+
+
+def test_default_dolphin_ini_path_prefers_existing_flatpak_ini(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
+        flatpak_root = temp_root / ".var" / "app" / "org.DolphinEmu.dolphin-emu" / "data" / "dolphin-emu"
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._resolve_dolphin_runtime_user_dir", lambda config=None: flatpak_root)
+
+        ini_path = _default_dolphin_ini_path()
+
+        assert ini_path == flatpak_root / "Config" / "Dolphin.ini"
+
+
+def test_deploy_firmware_configures_dolphin_fullscreen_ini(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "win32")
+        config = _config(temp_root)
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="GC",
+                    rom_extensions=(".iso",),
+                    default_emulator="dolphin",
+                    launch_template='"{emulator}" -b -e "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+        dolphin_root = temp_root / "dolphin-user"
+        monkeypatch.setattr(
+            "gamehub_cli.firmware_deploy._resolve_dolphin_config_dirs",
+            lambda config=None: [dolphin_root],
+        )
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        ini_path = dolphin_root / "Config" / "Dolphin.ini"
+        text = ini_path.read_text(encoding="utf-8")
+        assert "[Display]" in text
+        assert "Fullscreen = True" in text
+        assert "[Interface]" in text
+        assert "ConfirmStop = False" in text
+        assert "BackgroundInput = True" in text
+        assert "[Core]" in text
+        assert "SIDevice0 = 6" in text
+        assert "SIDevice1 = 6" in text
+        assert "[Controls]" in text
+        assert "WiimoteSource0 = 1" in text
+        assert "WiimoteSource1 = 1" in text
+
+        gcpad_path = dolphin_root / "Config" / "GCPadNew.ini"
+        gcpad_text = gcpad_path.read_text(encoding="utf-8")
+        assert "[GCPad1]" in gcpad_text
+        assert "Device = XInput/0/Gamepad" in gcpad_text
+        assert "[GCPad2]" in gcpad_text
+        assert "Device = XInput/1/Gamepad" in gcpad_text
+
+        wiimote_path = dolphin_root / "Config" / "WiimoteNew.ini"
+        wiimote_text = wiimote_path.read_text(encoding="utf-8")
+        assert "[Wiimote1]" in wiimote_text
+        assert "Device = XInput/0/Gamepad" in wiimote_text
+        assert "Source = 1" in wiimote_text
+        assert "Extension = Nunchuk" in wiimote_text
+        assert "Buttons/1 = WEST | `Button X`" in wiimote_text
+        assert "Buttons/2 = NORTH | `Button Y`" in wiimote_text
+        assert "IR/Up = `Axis 3-` | `Right Y-`" in wiimote_text
+        assert "IR/Right = `Axis 2+` | `Right X+`" in wiimote_text
+        assert "Nunchuk/Stick/Up = `Axis 1-` | `Left Y+`" in wiimote_text
+        assert "Nunchuk/Buttons/C = `Shoulder L`" in wiimote_text
+        assert "[Wiimote2]" in wiimote_text
+        assert "Device = XInput/1/Gamepad" in wiimote_text
+
+        hotkeys_path = dolphin_root / "Config" / "Hotkeys.ini"
+        hotkeys_text = hotkeys_path.read_text(encoding="utf-8")
+        assert "[Hotkeys1]" in hotkeys_text
+        assert "Device = XInput/0/Gamepad" in hotkeys_text
+        assert "[Hotkeys2]" in hotkeys_text
+        assert "Device = XInput/1/Gamepad" in hotkeys_text
+        assert "Keys/Stop =" in hotkeys_text
+        assert "Keys/Exit =" in hotkeys_text
+        assert "[Hotkeys]" in hotkeys_text
+        assert "General/Stop = @(SELECT+START)" in hotkeys_text
+        assert "General/Exit =" not in hotkeys_text
+        assert "`BACK` | `Back` | `SELECT` | `Select` | `Button 6`" in hotkeys_text
+        assert "`START` | `Start` | `Button 7`" in hotkeys_text
+
+
+def test_linux_detect_evdev_gamepads_uses_js_order(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-linux-input-") as temp_root:
+        proc_input = temp_root / "input-devices.txt"
+        proc_input.write_text(
+            "\n".join(
+                [
+                    'N: Name="Xbox Wireless Controller"',
+                    "H: Handlers=kbd event22 js1",
+                    "",
+                    'N: Name="Xbox Wireless Controller"',
+                    "H: Handlers=kbd event18 js0",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._PROC_INPUT_DEVICES_PATH", proc_input)
+
+        devices = _linux_detect_evdev_gamepads(max_devices=2)
+
+        assert devices == (
+            "evdev/0/Xbox Wireless Controller",
+            "evdev/1/Xbox Wireless Controller",
+        )
+
+
+def test_deploy_firmware_configures_dolphin_linux_evdev_devices(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-dolphin-linux-") as temp_root:
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        proc_input = temp_root / "input-devices.txt"
+        proc_input.write_text(
+            "\n".join(
+                [
+                    'N: Name="Xbox Wireless Controller"',
+                    "H: Handlers=kbd event18 js0",
+                    "",
+                    'N: Name="Xbox Wireless Controller"',
+                    "H: Handlers=kbd event22 js1",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._PROC_INPUT_DEVICES_PATH", proc_input)
+
+        config = _config(temp_root)
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="GC",
+                    rom_extensions=(".iso",),
+                    default_emulator="dolphin",
+                    launch_template='"{emulator}" -b -e "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+        dolphin_root = temp_root / "dolphin-user"
+        monkeypatch.setattr(
+            "gamehub_cli.firmware_deploy._resolve_dolphin_runtime_user_dir",
+            lambda config=None: dolphin_root,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.firmware_deploy._resolve_dolphin_config_dirs",
+            lambda config=None: [dolphin_root],
+        )
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        gcpad_text = (dolphin_root / "Config" / "GCPadNew.ini").read_text(encoding="utf-8")
+        wiimote_text = (dolphin_root / "Config" / "WiimoteNew.ini").read_text(encoding="utf-8")
+        hotkeys_text = (dolphin_root / "Config" / "Hotkeys.ini").read_text(encoding="utf-8")
+
+        assert "Device = evdev/0/Xbox Wireless Controller" in gcpad_text
+        assert "Device = evdev/1/Xbox Wireless Controller" in gcpad_text
+        assert "Device = evdev/0/Xbox Wireless Controller" in wiimote_text
+        assert "Device = evdev/1/Xbox Wireless Controller" in wiimote_text
+        assert "Device = evdev/0/Xbox Wireless Controller" in hotkeys_text
+        assert "Device = evdev/1/Xbox Wireless Controller" in hotkeys_text
+        assert "General/Stop = @(SELECT+START)" in hotkeys_text
+        assert "General/Exit =" not in hotkeys_text
+        assert "`BACK` | `Back` | `SELECT` | `Select` | `Button 6`" in hotkeys_text
+        assert "`START` | `Start` | `Button 7`" in hotkeys_text
+
+
+def test_deploy_firmware_dry_run_reports_dolphin_config(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
+        config = _config(temp_root)
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="Wii",
+                    rom_extensions=(".rvz",),
+                    default_emulator="dolphin",
+                    launch_template='"{emulator}" -b -e "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+        dolphin_root = temp_root / "dolphin-user"
+        logs: list[str] = []
+        monkeypatch.setattr(
+            "gamehub_cli.firmware_deploy._resolve_dolphin_config_dirs",
+            lambda config=None: [dolphin_root],
+        )
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
+
+        assert any("dolphin\tdry-run\tconfigure" in line for line in logs)
+        assert not (dolphin_root / "Config" / "Dolphin.ini").exists()
+        assert not (dolphin_root / "Config" / "GCPadNew.ini").exists()
+        assert not (dolphin_root / "Config" / "WiimoteNew.ini").exists()
+        assert not (dolphin_root / "Config" / "Hotkeys.ini").exists()
 
 
 def test_resolve_retroarch_system_dirs_includes_portable_exe_system(monkeypatch) -> None:
@@ -185,6 +437,27 @@ def test_resolve_retroarch_system_dirs_linux_ignores_usr_bin_parent(monkeypatch)
         dirs = _resolve_retroarch_system_dirs()
 
         assert Path("/usr/bin/system") not in dirs
+
+
+def test_resolve_retroarch_system_dirs_expands_tilde_cfg_values(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        home = temp_root / "home"
+        cfg_path = home / ".config" / "retroarch" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            'system_directory = "~/.var/app/org.libretro.RetroArch/config/retroarch/system"\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
+
+        dirs = _resolve_retroarch_system_dirs()
+
+        assert home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "system" in dirs
+        assert all("/~/" not in path.as_posix() for path in dirs)
 
 
 def test_default_pcsx2_ini_path_prefers_flatpak_when_detected(monkeypatch) -> None:
@@ -289,6 +562,7 @@ def test_deploy_firmware_flatpak_pcsx2_mirrors_bios_and_updates_ini(monkeypatch)
         assert "[Pad2]" in text
         assert "Type = DualShock2" in text
         assert "Cross = SDL-1/A" in text
+        assert "OpenPauseMenu = SDL-0/Back & SDL-0/Start" in text
 
 
 def test_deploy_firmware_flatpak_pcsx2_preserves_existing_pad_bindings(monkeypatch) -> None:
@@ -331,6 +605,46 @@ def test_deploy_firmware_flatpak_pcsx2_preserves_existing_pad_bindings(monkeypat
         assert "Cross = SDL-0/B" in text
         assert "Type = DualShock2" in text
         assert "Cross = SDL-1/A" in text
+        assert "OpenPauseMenu = SDL-0/Back & SDL-0/Start" in text
+
+
+def test_deploy_firmware_flatpak_pcsx2_preserves_existing_controller_hotkey(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        home = temp_root / "home"
+        config = _config(temp_root)
+        index = _index("PS2", "scph10000.bin")
+        source = config.firmware_dir / "PS2" / "scph10000.bin"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"bios")
+        export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "net.pcsx2.PCSX2"
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_bytes(b"#!/bin/sh")
+        ini_path = home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text(
+            "\n".join(
+                [
+                    "[Hotkeys]",
+                    "OpenPauseMenu = SDL-1/Back & SDL-1/Start",
+                    "",
+                    "[Pad1]",
+                    "Type = DualShock2",
+                    "Cross = SDL-0/A",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        text = ini_path.read_text(encoding="utf-8")
+        assert "OpenPauseMenu = SDL-1/Back & SDL-1/Start" in text
 
 
 def test_deploy_firmware_flatpak_pcsx2_can_disable_controller_autoconfig(monkeypatch) -> None:
@@ -359,6 +673,7 @@ def test_deploy_firmware_flatpak_pcsx2_can_disable_controller_autoconfig(monkeyp
         text = ini_path.read_text(encoding="utf-8")
         assert "SDL = true" not in text
         assert "Cross = SDL-0/A" not in text
+        assert "OpenPauseMenu = SDL-0/Back & SDL-0/Start" in text
 
 
 def test_deploy_firmware_flatpak_pcsx2_replaces_keyboard_pad_defaults(monkeypatch) -> None:
@@ -405,3 +720,4 @@ def test_deploy_firmware_flatpak_pcsx2_replaces_keyboard_pad_defaults(monkeypatc
         assert "Cross = Keyboard/K" not in text
         assert "Start = Keyboard/Return" not in text
         assert "Cross = SDL-1/A" in text
+        assert "OpenPauseMenu = SDL-0/Back & SDL-0/Start" in text

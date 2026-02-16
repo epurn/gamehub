@@ -224,3 +224,54 @@ def test_planner_without_verify_still_redownloads_on_size_mismatch() -> None:
 
         assert len(plan.content_actions) == 1
         assert plan.content_actions[0].content_id == "file_size_mismatch"
+
+
+def test_planner_missing_optional_firmware_does_not_block_titles() -> None:
+    with _workspace_plan_dir("gamehub-plan-") as temp_root:
+        system = SystemSpec(
+            name="Wii",
+            rom_extensions=(".iso",),
+            default_emulator="dolphin",
+            launch_template='"{emulator}" -b -e "{rom}"',
+            firmware=(FirmwareSpec(filename="keys.md", sha256="a" * 64, required=False),),
+        )
+        title = TitleEntry(
+            title_id="title_wii_mg",
+            system="Wii",
+            title_name="Mario Galaxy",
+            title_rel_dir="Wii/Mario Galaxy",
+            emulator="dolphin",
+            launch_template='"{emulator}" -b -e "{rom}"',
+            rom=RomSpec(
+                file_id="file_mg",
+                rel_path="roms/Wii/MarioGalaxy.iso",
+                sha256="b" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(system,), titles=(title,))
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+        rom_path = config.library_dir / "roms" / "Wii" / "MarioGalaxy.iso"
+        rom_path.parent.mkdir(parents=True, exist_ok=True)
+        rom_path.write_bytes(b"rom")
+
+        plan = create_sync_plan(index=index, config=config, state=SyncState(), verify=False)
+
+        assert not plan.blocked_systems
+        assert plan.skipped_titles == 0
+        assert len(plan.firmware_actions) == 1
+        assert plan.firmware_actions[0].content_id == "Wii/keys.md"
+        assert len(plan.content_actions) == 0
