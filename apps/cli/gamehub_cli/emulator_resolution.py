@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PosixPath
 import shutil
 import sys
 from typing import Iterable
@@ -24,6 +24,14 @@ _EMULATOR_COMMAND_ALIASES = {
     "pcsx2": ("pcsx2", "pcsx2-qt"),
     "dolphin": ("dolphin", "dolphin-emu"),
 }
+
+
+def _safe_path(value: str) -> Path:
+    try:
+        return Path(value)
+    except (NotImplementedError, RuntimeError):
+        # Supports unit tests that monkeypatch Windows detection on non-Windows hosts.
+        return PosixPath(value)
 
 
 def _command_candidates(emulator_value: str) -> tuple[str, ...]:
@@ -56,42 +64,42 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
         program_files = os.environ.get("ProgramFiles")
         program_files_x86 = os.environ.get("ProgramFiles(x86)")
         local_app_data = os.environ.get("LOCALAPPDATA")
-        winget_packages = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages" if local_app_data else None
+        winget_packages = _safe_path(local_app_data) / "Microsoft" / "WinGet" / "Packages" if local_app_data else None
         if canonical == "retroarch":
             if local_app_data:
-                values.append(Path(local_app_data) / "Programs" / "RetroArch" / "retroarch.exe")
-                values.append(Path(local_app_data) / "Programs" / "RetroArch-Win64" / "retroarch.exe")
+                values.append(_safe_path(local_app_data) / "Programs" / "RetroArch" / "retroarch.exe")
+                values.append(_safe_path(local_app_data) / "Programs" / "RetroArch-Win64" / "retroarch.exe")
             if program_files:
-                values.append(Path(program_files) / "RetroArch" / "retroarch.exe")
-                values.append(Path(program_files) / "RetroArch-Win64" / "retroarch.exe")
+                values.append(_safe_path(program_files) / "RetroArch" / "retroarch.exe")
+                values.append(_safe_path(program_files) / "RetroArch-Win64" / "retroarch.exe")
             if program_files_x86:
-                values.append(Path(program_files_x86) / "RetroArch" / "retroarch.exe")
-                values.append(Path(program_files_x86) / "RetroArch-Win64" / "retroarch.exe")
+                values.append(_safe_path(program_files_x86) / "RetroArch" / "retroarch.exe")
+                values.append(_safe_path(program_files_x86) / "RetroArch-Win64" / "retroarch.exe")
             if winget_packages and winget_packages.exists():
                 values.extend(sorted(winget_packages.glob("Libretro.RetroArch_*\\retroarch.exe")))
         elif canonical == "pcsx2":
             if local_app_data:
-                values.append(Path(local_app_data) / "Programs" / "PCSX2" / "pcsx2-qt.exe")
-                values.append(Path(local_app_data) / "Programs" / "PCSX2" / "pcsx2.exe")
+                values.append(_safe_path(local_app_data) / "Programs" / "PCSX2" / "pcsx2-qt.exe")
+                values.append(_safe_path(local_app_data) / "Programs" / "PCSX2" / "pcsx2.exe")
             if program_files:
-                values.append(Path(program_files) / "PCSX2" / "pcsx2-qt.exe")
-                values.append(Path(program_files) / "PCSX2" / "pcsx2.exe")
+                values.append(_safe_path(program_files) / "PCSX2" / "pcsx2-qt.exe")
+                values.append(_safe_path(program_files) / "PCSX2" / "pcsx2.exe")
             if program_files_x86:
-                values.append(Path(program_files_x86) / "PCSX2" / "pcsx2-qt.exe")
-                values.append(Path(program_files_x86) / "PCSX2" / "pcsx2.exe")
+                values.append(_safe_path(program_files_x86) / "PCSX2" / "pcsx2-qt.exe")
+                values.append(_safe_path(program_files_x86) / "PCSX2" / "pcsx2.exe")
             if winget_packages and winget_packages.exists():
                 values.extend(sorted(winget_packages.glob("PCSX2Team.PCSX2_*\\pcsx2-qt.exe")))
                 values.extend(sorted(winget_packages.glob("PCSX2Team.PCSX2_*\\pcsx2.exe")))
         elif canonical == "dolphin":
             if local_app_data:
-                values.append(Path(local_app_data) / "Programs" / "Dolphin" / "Dolphin.exe")
-                values.append(Path(local_app_data) / "Programs" / "Dolphin Emulator" / "Dolphin.exe")
+                values.append(_safe_path(local_app_data) / "Programs" / "Dolphin" / "Dolphin.exe")
+                values.append(_safe_path(local_app_data) / "Programs" / "Dolphin Emulator" / "Dolphin.exe")
             if program_files:
-                values.append(Path(program_files) / "Dolphin Emulator" / "Dolphin.exe")
-                values.append(Path(program_files) / "Dolphin" / "Dolphin.exe")
+                values.append(_safe_path(program_files) / "Dolphin Emulator" / "Dolphin.exe")
+                values.append(_safe_path(program_files) / "Dolphin" / "Dolphin.exe")
             if program_files_x86:
-                values.append(Path(program_files_x86) / "Dolphin Emulator" / "Dolphin.exe")
-                values.append(Path(program_files_x86) / "Dolphin" / "Dolphin.exe")
+                values.append(_safe_path(program_files_x86) / "Dolphin Emulator" / "Dolphin.exe")
+                values.append(_safe_path(program_files_x86) / "Dolphin" / "Dolphin.exe")
             if winget_packages and winget_packages.exists():
                 values.extend(sorted(winget_packages.glob("DolphinEmulator.Dolphin_*\\Dolphin.exe")))
                 values.extend(sorted(winget_packages.glob("DolphinEmu.Dolphin_*\\Dolphin.exe")))
@@ -190,7 +198,7 @@ def _normalize_display_icon_path(value: str) -> Path | None:
         return None
     if "," in raw:
         raw = raw.split(",", 1)[0]
-    return Path(raw)
+    return _safe_path(raw)
 
 
 def _paths_from_install_dir(canonical: str, install_dir: Path) -> list[Path]:
@@ -258,7 +266,7 @@ def _resolve_winget_command() -> str | None:
     local_app_data = os.environ.get("LOCALAPPDATA")
     if not local_app_data:
         return None
-    candidate = Path(local_app_data) / "Microsoft" / "WindowsApps" / "winget.exe"
+    candidate = _safe_path(local_app_data) / "Microsoft" / "WindowsApps" / "winget.exe"
     if candidate.exists():
         return str(candidate)
     return None
@@ -268,7 +276,7 @@ def resolve_emulator_executable(emulator_value: str) -> str:
     raw = emulator_value.strip().strip('"')
     if not raw:
         return emulator_value
-    path = Path(raw)
+    path = _safe_path(raw)
     if path.exists():
         return str(path.resolve())
     if path.is_absolute() and path.exists():

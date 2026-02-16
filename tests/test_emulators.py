@@ -60,6 +60,8 @@ def test_ensure_emulators_uses_winget_for_missing(monkeypatch, capsys) -> None:
         state["retroarch_installed"] = True
         return FakeCompleted()
 
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "win32")
     monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
     monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
     monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
