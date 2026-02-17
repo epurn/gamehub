@@ -7,11 +7,25 @@
 
 Docker-first home server + client CLI that syncs emulator libraries into Steam non-Steam shortcuts, system collections, and artwork.
 
-## ✅ v1 Platform Status
-- Windows: verified
-- Bazzite: tested
-- SteamOS (Deck): untested
-- Fedora/Ubuntu: untested
+## ✅ v1 Compatibility Matrix
+
+### Platform support
+| Platform | Status |
+| --- | --- |
+| Windows | ✅ |
+| Bazzite | ✅ |
+| SteamOS (Deck) | ⚠️ |
+| Other Linux distros (Fedora/Ubuntu/etc.) | ⚠️ |
+| macOS | ❌ |
+
+### Controller support
+| Platform | Xbox controllers |
+| --- | --- |
+| Bazzite | ✅ |
+| Windows | ❌ |
+| SteamOS (Deck) | ❌ |
+| Other Linux distros (Fedora/Ubuntu/etc.) | ❌ |
+| macOS | ❌ |
 
 Details: [Platform Support (v1)](docs/platform-support.md)
 

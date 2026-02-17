@@ -124,7 +124,9 @@ Linux path notes:
 - Linux Flatpak Dolphin Steam launch options use `flatpak run --device=all --file-forwarding ... -e @@ <rom> @@` so controller devices and host ROM paths are consistently available in the sandbox.
 - Linux Flatpak Azahar Steam launch options default to a Linux-only wrapper (`python -m gamehub_cli.azahar_exit_hook`) that:
   - launches `flatpak run --device=all --file-forwarding org.azahar_emu.Azahar -f -- @@ <rom> @@`
-  - listens for `Select+Start` on `/dev/input/js*` and terminates Azahar when pressed
+  - listens for strict `Select+Start` and terminates Azahar when pressed:
+    - joystick path (`/dev/input/js*`) using configured Azahar button indices
+    - evdev fallback (`/dev/input/event*`) using `BTN_SELECT` + `BTN_START`
   - can be disabled by setting `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false` (falls back to direct flatpak launch)
 - N3DS Steam Input limitation (current):
   - GAMEHUB does not auto-apply Steam Input templates for N3DS.

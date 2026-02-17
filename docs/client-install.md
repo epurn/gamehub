@@ -79,7 +79,9 @@ grep -nE "^(fullscreen|confirmClose)=" ~/.var/app/org.azahar_emu.Azahar/config/a
 ```bash
 gamehub sync --config ./config.bazzite.toml --verbose --skip-steam
 ```
-   - The wrapper closes Azahar on `Select+Start` by monitoring `/dev/input/js*`.
+   - The wrapper closes Azahar on strict `Select+Start` using:
+     - `/dev/input/js*` joystick events, and
+     - `/dev/input/event*` fallback (`BTN_SELECT` + `BTN_START`) when needed.
    - Optional overrides:
 ```bash
 export GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=true
