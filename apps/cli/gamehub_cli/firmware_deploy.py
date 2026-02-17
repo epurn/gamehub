@@ -111,7 +111,7 @@ _AZAHAR_BUTTON_BINDINGS: tuple[tuple[str, int], ...] = (
     ("button_x", 2),
     ("button_y", 3),
     ("button_select", 4),
-    ("button_home", 5),
+    ("button_home", 15),
     ("button_start", 6),
     ("button_l", 9),
     ("button_r", 10),
@@ -349,7 +349,12 @@ def _azahar_sdl_axis_term(axis: int, direction: str, threshold: str, guid: str |
 
 
 def _azahar_sdl_axis_button_value(axis: int, direction: str, threshold: str, guid: str | None, port: int) -> str:
-    return f'"{_azahar_sdl_axis_term(axis, direction, threshold, guid, port)}"'
+    parts = [f"axis:{axis}", f"direction:{direction}", "engine:sdl"]
+    if guid:
+        parts.append(f"guid:{guid}")
+    parts.append(f"port:{port}")
+    parts.append(f"threshold:{threshold}")
+    return f'"{",".join(parts)}"'
 
 
 def _azahar_sdl_stick_value(x_axis: int, y_axis: int, guid: str | None, port: int) -> str:

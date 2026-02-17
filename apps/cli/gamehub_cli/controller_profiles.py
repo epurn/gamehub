@@ -343,11 +343,11 @@ def _azahar_sdl_qt_config(*, port: int) -> str:
         r"profiles\1\button_l\default=false" "\n"
         rf'profiles\1\button_r="button:10,engine:sdl,port:{port}"' "\n"
         r"profiles\1\button_r\default=false" "\n"
-        rf'profiles\1\button_zl="axis$04$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5"' "\n"
+        rf'profiles\1\button_zl="axis:4,direction:+,engine:sdl,port:{port},threshold:0.5"' "\n"
         r"profiles\1\button_zl\default=false" "\n"
-        rf'profiles\1\button_zr="axis$05$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5"' "\n"
+        rf'profiles\1\button_zr="axis:5,direction:+,engine:sdl,port:{port},threshold:0.5"' "\n"
         r"profiles\1\button_zr\default=false" "\n"
-        rf'profiles\1\button_home="button:5,engine:sdl,port:{port}"' "\n"
+        rf'profiles\1\button_home="button:15,engine:sdl,port:{port}"' "\n"
         r"profiles\1\button_home\default=false" "\n"
         rf'profiles\1\button_up="button:11,engine:sdl,port:{port}"' "\n"
         r"profiles\1\button_up\default=false" "\n"
@@ -387,14 +387,20 @@ def seed_default_profiles(
     *,
     verbose: bool = False,
     writer: Callable[[str], None] = print,
+    force: bool = False,
+    allow_custom: bool = False,
 ) -> list[Path]:
+    if config.controllers.profiles_dir is not None and not allow_custom:
+        if verbose:
+            writer("controller-profile\tseeded\tskip\tcustom_profiles_dir=true")
+        return []
     root = resolve_profiles_root(config)
     created: list[Path] = []
     for emulator_name, profiles in DEFAULT_PROFILE_TEXTS.items():
         for profile_name, files in profiles.items():
             for filename, payload in files.items():
                 target = root / emulator_name / profile_name / filename
-                if target.exists():
+                if target.exists() and not force:
                     continue
                 _atomic_write_text(target, payload)
                 created.append(target)

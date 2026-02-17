@@ -143,7 +143,8 @@ Linux path notes:
 
 Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
-- Non-dry sync seeds missing profile files; launch wrapper also self-heals missing files.
+- Non-dry sync re-seeds default profiles on every sync when using the default profile root.
+- To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`) so GAMEHUB will not overwrite them; missing files still fall back to bundled defaults.
 - Profile selection:
   - `0` Xbox controllers -> `kbm`
   - `1` Xbox controller -> `xbox_1p`

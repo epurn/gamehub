@@ -25,7 +25,7 @@ def _config(root: Path) -> GamehubConfig:
         sgdb_api_key=None,
         sgdb_cache_dir=root / "cache",
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(profiles_dir=root / "profiles"),
+        controllers=ControllersConfig(),
     )
 
 
@@ -290,10 +290,10 @@ def test_apply_controller_profile_azahar_linux_injects_runtime_guid(monkeypatch)
         zr_line = _line_for_key(text, "button_zr")
         assert zl_line is not None
         assert zr_line is not None
-        assert "axis$04" in zl_line
-        assert "axis$05" in zr_line
-        assert "guid$0030018dc5e040000130b000000006800" in zl_line
-        assert "guid$0030018dc5e040000130b000000006800" in zr_line
+        assert "axis:4" in zl_line
+        assert "axis:5" in zr_line
+        assert "guid:030018dc5e040000130b000000006800" in zl_line
+        assert "guid:030018dc5e040000130b000000006800" in zr_line
 
 
 def test_apply_controller_profile_azahar_linux_upgrades_existing_sdl_without_guid(monkeypatch) -> None:

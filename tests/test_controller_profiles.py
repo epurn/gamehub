@@ -29,7 +29,7 @@ def _config(root: Path) -> GamehubConfig:
         sgdb_api_key=None,
         sgdb_cache_dir=root / "cache",
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(profiles_dir=root / "profiles"),
+        controllers=ControllersConfig(),
     )
 
 
@@ -54,6 +54,29 @@ def test_seed_default_profiles_creates_profile_tree() -> None:
         assert (root / "dolphin" / "kbm" / "GCPadNew.ini").exists()
         assert (root / "dolphin" / "xbox_1p" / "WiimoteNew.ini").exists()
         assert (root / "azahar" / "xbox_2p" / "qt-config.ini").exists()
+
+
+def test_seed_default_profiles_skips_custom_profiles_dir() -> None:
+    with _workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(profiles_dir=temp_root / "custom-profiles"),
+        )
+
+        created = seed_default_profiles(config)
+        root = resolve_profiles_root(config)
+
+        assert created == []
+        assert not (root / "pcsx2" / "kbm" / "PCSX2.ini").exists()
 
 
 def test_load_profile_file_prefers_user_override() -> None:

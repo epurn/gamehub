@@ -228,10 +228,9 @@ def run_sync(
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=verbose)
         return 0
 
-    if config.controllers.launch_autoconfig:
-        seeded_profiles = seed_default_profiles(config=config, verbose=verbose)
-        if verbose and seeded_profiles:
-            print(f"Seeded controller profile defaults: {len(seeded_profiles)}")
+    seeded_profiles = seed_default_profiles(config=config, verbose=verbose, force=True)
+    if verbose and seeded_profiles:
+        print(f"Seeded controller profile defaults: {len(seeded_profiles)}")
 
     _apply_downloads(
         config.server_url,

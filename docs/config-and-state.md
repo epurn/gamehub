@@ -160,7 +160,8 @@ Controller launch autoconfig:
   - `<root>/dolphin/<profile>/WiimoteNew.ini`
   - `<root>/dolphin/<profile>/Hotkeys.ini`
   - `<root>/azahar/<profile>/qt-config.ini`
-- Override any seeded file to customize mappings; GAMEHUB loads user file first and falls back to bundled defaults when missing.
+- Non-dry sync re-seeds default profiles on every sync when using the default profile root.
+- To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`) so GAMEHUB will not overwrite them; missing files still fall back to bundled defaults.
 - If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
