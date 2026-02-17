@@ -157,6 +157,50 @@ def test_ensure_retroarch_cores_dry_run_reports_missing(monkeypatch, capsys) -> 
         assert "retroarch-info\tmissing\tN64\tmupen64plus_next_libretro.info" in out
 
 
+def test_ensure_retroarch_cores_read_only_info_dir_warns_without_download_label(monkeypatch, capsys) -> None:
+    with _workspace_tempdir("gamehub-retroarch-cores-ro-") as temp_root:
+        cores_dir = temp_root / "cores"
+        info_dir = temp_root / "info"
+        cores_dir.mkdir(parents=True, exist_ok=True)
+        (cores_dir / "fceumm_libretro.dll").write_bytes(b"core")
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="NES",
+                    rom_extensions=(".nes",),
+                    default_emulator="retroarch",
+                    launch_template='"{emulator}" -L cores/fceumm_libretro.dll "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+        monkeypatch.setattr("gamehub_cli.retroarch_cores._core_suffix", lambda: ".dll")
+        monkeypatch.setattr(
+            "gamehub_cli.retroarch_cores._core_base_url",
+            lambda: "https://buildbot.libretro.com/nightly/windows/x86_64/latest/",
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.retroarch_cores.resolve_retroarch_paths",
+            lambda: RetroArchPaths(cores_dir=cores_dir, info_dir=info_dir),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.retroarch_cores._ensure_dir_writable",
+            lambda path: (False, "[Errno 30] Read-only file system"),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.retroarch_cores._download_bytes",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected download")),
+        )
+
+        ensure_retroarch_cores(index=index, dry_run=False, verbose=False)
+
+        out = capsys.readouterr().out
+        assert "skipping RetroArch info metadata install because info_dir is not writable" in out
+        assert "failed to download RetroArch info.zip" not in out
+
+
 def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-retroarch-linux-") as temp_root:
         home = temp_root / "home"

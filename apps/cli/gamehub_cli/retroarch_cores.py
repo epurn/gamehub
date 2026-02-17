@@ -218,6 +218,16 @@ def _install_from_zip_blob(zip_blob: bytes, member_name: str, destination: Path)
     return True
 
 
+def _ensure_dir_writable(path: Path) -> tuple[bool, str | None]:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return False, str(exc)
+    if os.access(path, os.W_OK):
+        return True, None
+    return False, f"directory is not writable: {path}"
+
+
 def ensure_retroarch_cores(
     index: LibraryIndex,
     dry_run: bool,
@@ -305,18 +315,30 @@ def ensure_retroarch_cores(
             print(f"retroarch-core\tinstalled\t{core_base}\t{target_path}")
 
     if infos_to_download:
-        try:
-            info_blob = _download_bytes(_assets_url())
-            for core_base in infos_to_download:
-                info_path = paths.info_dir / f"{core_base}.info"
-                ok = _install_from_zip_blob(info_blob, info_path.name, info_path)
-                if not ok:
-                    print(f"Warning: info.zip missing {info_path.name}")
-                    continue
-                if verbose:
-                    print(f"retroarch-info\tinstalled\t{core_base}\t{info_path}")
-        except Exception as exc:
-            print(f"Warning: failed to download RetroArch info.zip: {exc}")
+        writable, writable_error = _ensure_dir_writable(paths.info_dir)
+        if not writable:
+            print(
+                "Warning: skipping RetroArch info metadata install because info_dir is not writable "
+                f"({paths.info_dir}): {writable_error}"
+            )
+        else:
+            try:
+                info_blob = _download_bytes(_assets_url())
+            except Exception as exc:
+                print(f"Warning: failed to download RetroArch info.zip: {exc}")
+            else:
+                for core_base in infos_to_download:
+                    info_path = paths.info_dir / f"{core_base}.info"
+                    try:
+                        ok = _install_from_zip_blob(info_blob, info_path.name, info_path)
+                    except OSError as exc:
+                        print(f"Warning: failed to write RetroArch info file {info_path}: {exc}")
+                        continue
+                    if not ok:
+                        print(f"Warning: info.zip missing {info_path.name}")
+                        continue
+                    if verbose:
+                        print(f"retroarch-info\tinstalled\t{core_base}\t{info_path}")
 
     requested = len(cores_to_download)
     print(

@@ -15,6 +15,7 @@ from urllib.request import urlopen
 from gamehub_common.models import LibraryIndex
 
 from .emulator_resolution import (
+    _canonical_emulator_name,
     _is_emulator_available,
     _linux_dist_id,
     _required_emulators,
@@ -346,7 +347,7 @@ def _linux_missing_emulators(required: list[str], *, backend: str, dist_id: str)
     force_flatpak = _flatpak_preferred_linux_backend(backend, dist_id)
     missing: list[str] = []
     for name in required:
-        normalized = name.strip().strip('"').casefold()
+        normalized = _canonical_emulator_key(name)
         if force_flatpak and normalized in _FLATPAK_FORCED_EMULATORS:
             app_id = _FLATPAK_APP_IDS.get(normalized)
             if app_id and not _is_flatpak_app_available(app_id):
@@ -362,7 +363,7 @@ def _validate_forced_linux_flatpak_emulators(required: list[str], *, backend: st
         return
     missing_apps: list[str] = []
     for name in required:
-        normalized = name.strip().strip('"').casefold()
+        normalized = _canonical_emulator_key(name)
         if normalized not in _FLATPAK_FORCED_EMULATORS:
             continue
         app_id = _FLATPAK_APP_IDS.get(normalized)
@@ -542,7 +543,7 @@ def _install_flatpak(missing: list[str], *, verbose: bool, remote: str | None = 
         return
 
     for emulator in missing:
-        app_id = _FLATPAK_APP_IDS.get(emulator.lower())
+        app_id = _FLATPAK_APP_IDS.get(_canonical_emulator_key(emulator))
         if not app_id:
             print(f"No flatpak mapping for emulator '{emulator}'; install it manually")
             continue
@@ -592,7 +593,20 @@ def _install_flatpak(missing: list[str], *, verbose: bool, remote: str | None = 
 
 
 def _linux_package_name(emulator: str) -> str:
-    return _DNF_PACKAGES.get(emulator.lower(), emulator)
+    return _DNF_PACKAGES.get(_canonical_emulator_key(emulator), emulator)
+
+
+def _canonical_emulator_key(value: str) -> str:
+    normalized = _canonical_emulator_name(value)
+    if normalized in _FLATPAK_APP_IDS:
+        return normalized
+    compact = value.strip().strip('"').casefold()
+    for key in _FLATPAK_APP_IDS:
+        if compact == key:
+            return key
+        if compact.startswith(f"{key}-") or compact.startswith(f"{key}_"):
+            return key
+    return normalized
 
 
 def _install_linux_command(missing: list[str], command_template: str, *, verbose: bool) -> None:
