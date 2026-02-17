@@ -121,15 +121,6 @@ _AZAHAR_BUTTON_BINDINGS: tuple[tuple[str, int], ...] = (
 )
 
 
-def _path_from_env_value(raw: str) -> Path:
-    try:
-        return Path(raw)
-    except NotImplementedError:
-        # Test harnesses may monkeypatch os.name="nt" on non-Windows hosts.
-        # Fall back to a host-native path class so mocked Windows branches remain testable.
-        return PosixPath(raw)
-
-
 def _linux_detect_evdev_gamepads(*, max_devices: int = 2) -> tuple[str, ...]:
     if not sys.platform.startswith("linux"):
         return ()
@@ -498,7 +489,11 @@ def _default_dolphin_ini_path(config: GamehubConfig | None = None) -> Path:
 def _default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
-        return _path_from_env_value(appdata) / "Azahar" / "config" / "qt-config.ini"
+        # Test suites can monkeypatch os.name="nt" on non-Windows hosts.
+        # Keep mocked Windows branches host-safe by selecting a native path class.
+        if sys.platform.startswith("win"):
+            return Path(appdata) / "Azahar" / "config" / "qt-config.ini"
+        return PosixPath(appdata) / "Azahar" / "config" / "qt-config.ini"
 
     home = Path.home()
     flatpak_qt_config = linux_flatpak_azahar_config_root() / "qt-config.ini"
