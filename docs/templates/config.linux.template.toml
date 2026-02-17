@@ -57,3 +57,10 @@ cache_dir = "/home/<user>/GameHub/artwork-cache/sgdb"
 # SteamOS/Bazzite alternative:
 # cache_dir = "/var/home/<user>/GameHub/artwork-cache/sgdb"
 enabled_kinds = ["grid", "hero", "logo", "icon"]
+
+[controllers]
+# Launch-time controller profile wrapper for PCSX2/Dolphin/Azahar.
+launch_autoconfig = true
+# Optional explicit profile directory.
+# Default when omitted: <paths.gamehub_dir>/controller_profiles
+# profiles_dir = "/home/<user>/GameHub/controller_profiles"

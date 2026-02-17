@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sys
 import time
@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 from gamehub_common.models import LibraryIndex
 
 from .config import GamehubConfig
+from .controller_profiles import seed_default_profiles
 from .downloads import download_with_atomic_write
 from .emulators import ensure_emulators, resolve_emulator_executable
 from .firmware_deploy import deploy_firmware_to_emulators
@@ -226,6 +227,11 @@ def run_sync(
     if dry_run:
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=verbose)
         return 0
+
+    if config.controllers.launch_autoconfig:
+        seeded_profiles = seed_default_profiles(config=config, verbose=verbose)
+        if verbose and seeded_profiles:
+            print(f"Seeded controller profile defaults: {len(seeded_profiles)}")
 
     _apply_downloads(
         config.server_url,

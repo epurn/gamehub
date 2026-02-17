@@ -119,3 +119,39 @@ emulator_install_backend = "flatpak"
 - `--skip-steam` is recommended for first validation runs.
 - `--skip-steam-relaunch` keeps Steam updates enabled but leaves Steam closed after sync.
 - For strict Steam update safety, include `--require-steam-closed`.
+
+## Controller profile overrides
+- Non-RetroArch launches (`PCSX2`, `Dolphin`, `Azahar`) can apply controller profiles at launch time.
+- Default profile root:
+  - `<paths.gamehub_dir>/controller_profiles`
+- Optional config/env overrides:
+  - `[controllers].launch_autoconfig`
+  - `[controllers].profiles_dir`
+  - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`
+  - `GAMEHUB_CONTROLLER_PROFILES_DIR`
+- Profile layout:
+  - `pcsx2/<profile>/PCSX2.ini`
+  - `dolphin/<profile>/GCPadNew.ini`
+  - `dolphin/<profile>/WiimoteNew.ini`
+  - `dolphin/<profile>/Hotkeys.ini`
+  - `azahar/<profile>/qt-config.ini`
+- Profiles:
+  - `kbm`
+  - `xbox_1p`
+  - `xbox_2p`
+
+### Windows value-capture checkpoint
+Before customizing Windows mappings, inspect your current emulator config values and keep them for rollback/diff:
+
+```powershell
+# PCSX2
+Get-Content "$env:USERPROFILE\\Documents\\PCSX2\\inis\\PCSX2.ini"
+
+# Dolphin
+Get-Content "$env:APPDATA\\Dolphin Emulator\\Config\\GCPadNew.ini"
+Get-Content "$env:APPDATA\\Dolphin Emulator\\Config\\WiimoteNew.ini"
+Get-Content "$env:APPDATA\\Dolphin Emulator\\Config\\Hotkeys.ini"
+
+# Azahar
+Get-Content "$env:APPDATA\\Azahar\\config\\qt-config.ini"
+```

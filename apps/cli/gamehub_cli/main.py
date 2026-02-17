@@ -9,6 +9,7 @@ except ModuleNotFoundError:
     typer = None
 
 from .config import load_config
+from .controller_launch import run_controller_launch
 from .sync import run_sync
 
 if typer is not None:
@@ -53,6 +54,17 @@ if typer is not None:
                 skip_steam_relaunch=skip_steam_relaunch,
             )
         )
+
+    @app.command("controller-launch", hidden=True)
+    def controller_launch(
+        payload: str = typer.Option(..., "--payload", help="Encoded controller-launch payload."),
+        config: Path | None = typer.Option(
+            None,
+            "--config",
+            help="Optional config TOML path override for controller launch.",
+        ),
+    ) -> None:
+        raise typer.Exit(code=run_controller_launch(payload_token=payload, config_path=config))
 else:
     app = None
 
@@ -77,6 +89,9 @@ def main() -> None:
     sync_parser.add_argument("--skip-steam", action="store_true")
     sync_parser.add_argument("--skip-steam-relaunch", action="store_true")
     sync_parser.add_argument("--require-steam-closed", action="store_true")
+    controller_launch_parser = subparsers.add_parser("controller-launch", help=argparse.SUPPRESS)
+    controller_launch_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
+    controller_launch_parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.command == "sync":
         loaded = load_config(args.config)
@@ -91,6 +106,8 @@ def main() -> None:
                 skip_steam_relaunch=args.skip_steam_relaunch,
             )
         )
+    if args.command == "controller-launch":
+        raise SystemExit(run_controller_launch(payload_token=args.payload, config_path=args.config))
 
 
 if __name__ == "__main__":

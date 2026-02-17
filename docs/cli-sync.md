@@ -67,6 +67,11 @@ Steam close behavior:
 10. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
    - managed shortcuts persist stable `appid` values on write, so first-run artwork/category mapping does not depend on a later Steam rewrite pass
    - collection membership appids are canonicalized to unsigned numeric values in both localconfig and cloud payloads
+   - when `[controllers].launch_autoconfig = true`, GAMEHUB wraps `PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `controller-launch` command that:
+     - decodes target emulator command payload
+     - detects attached Xbox controllers
+     - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
+     - launches the original emulator command
    - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 11. Save `state.json`
 
@@ -132,6 +137,15 @@ Linux path notes:
   - GAMEHUB does not auto-apply Steam Input templates for N3DS.
   - If you use Steam Input template mode, configure one shortcut manually and copy that layout to other N3DS shortcuts in Steam UI.
 
+Controller launch profile defaults:
+- Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
+- Non-dry sync seeds missing profile files; launch wrapper also self-heals missing files.
+- Profile selection:
+  - `0` Xbox controllers -> `kbm`
+  - `1` Xbox controller -> `xbox_1p`
+  - `2+` Xbox controllers -> `xbox_2p`
+- `RetroArch` shortcuts remain direct (not wrapped).
+
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`
 - `PCSX2_BIOS_DIR`
@@ -142,6 +156,8 @@ Environment overrides:
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`
+- `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`
+- `GAMEHUB_CONTROLLER_PROFILES_DIR`
 
 ## RetroArch Core Defaults
 For systems that launch via RetroArch, GAMEHUB uses these general-purpose core defaults when a core cannot be parsed from the index launch template:

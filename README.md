@@ -22,7 +22,7 @@ Docker-first home server + client CLI that syncs emulator libraries into Steam n
 | Platform | Xbox controllers |
 | --- | --- |
 | Bazzite | ✅ |
-| Windows | ❌ |
+| Windows | ✅ |
 | SteamOS (Deck) | ❌ |
 | Other Linux distros (Fedora/Ubuntu/etc.) | ❌ |
 | macOS | ❌ |
@@ -38,6 +38,7 @@ Details: [Platform Support (v1)](docs/platform-support.md)
   - grid/hero/logo/icon artwork
 - SGDB artwork cache with cache-first lookups and portrait+landscape grid support.
 - Steam lifecycle safety: close -> backup -> write -> reopen.
+- Launch-time controller autoconfig for `PCSX2`, `Dolphin`, and `Azahar` (Xbox-first) with user-overridable profile files.
 
 Supported systems in v1.1:
 - `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`

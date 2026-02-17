@@ -63,6 +63,13 @@ pcsx2_bios_dir = "~/.config/PCSX2/bios"
 # Linux PCSX2 controller bootstrap (generic SDL mapping for Pad1 + Pad2)
 pcsx2_controller_autoconfig = true
 dolphin_user_path = "~/.local/share/dolphin-emu"
+
+[controllers]
+# Launch-time controller profile application for non-RetroArch emulators.
+launch_autoconfig = true
+# Optional explicit profile root.
+# Default when omitted: <paths.gamehub_dir>/controller_profiles
+profiles_dir = "~/.gamehub/controller_profiles"
 ```
 
 Secret policy:
@@ -120,6 +127,8 @@ Firmware deployment and Linux runtime env overrides:
 - Linux Azahar exit hook input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
+- `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`: overrides `[controllers].launch_autoconfig` (`true`/`false`).
+- `GAMEHUB_CONTROLLER_PROFILES_DIR`: overrides `[controllers].profiles_dir`.
 - `GAMEHUB_INDEX_TIMEOUT_SECONDS`: overrides `[server].index_timeout_seconds`.
 - `GAMEHUB_INDEX_FETCH_ATTEMPTS`: overrides `[server].index_fetch_attempts`.
 - `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
@@ -133,6 +142,19 @@ Linux PS2 note:
 
 RetroArch note:
 - When a RetroArch config file is discovered (`retroarch.cfg` candidates or explicit override), GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) and `all_users_control_menu = "true"` for controller quick-menu access.
+
+Controller launch autoconfig:
+- Applies to Steam shortcut launches for `PCSX2`, `Dolphin`, and `Azahar`.
+- Does not wrap `RetroArch` launches.
+- Runtime flow: detect Xbox controller count (`0`, `1`, `2+`) -> choose profile (`kbm`, `xbox_1p`, `xbox_2p`) -> apply managed keys -> launch emulator.
+- Default profile root is `<gamehub_dir>/controller_profiles` and includes seeded defaults:
+  - `<root>/pcsx2/<profile>/PCSX2.ini`
+  - `<root>/dolphin/<profile>/GCPadNew.ini`
+  - `<root>/dolphin/<profile>/WiimoteNew.ini`
+  - `<root>/dolphin/<profile>/Hotkeys.ini`
+  - `<root>/azahar/<profile>/qt-config.ini`
+- Override any seeded file to customize mappings; GAMEHUB loads user file first and falls back to bundled defaults when missing.
+- If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
 
