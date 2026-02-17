@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import sys
 import tempfile
 from typing import Callable
 
@@ -118,7 +119,8 @@ def _pcsx2_profile_text(profile_name: str) -> str:
     if profile_name == PROFILE_KBM:
         pad1 = _pcsx2_keyboard_pad_bindings(1)
         pad2 = _pcsx2_keyboard_pad_bindings(2)
-        open_pause_menu = "Keyboard/Escape"
+        # Escape can be consumed by launch environments; keep pause menu on a safer key.
+        open_pause_menu = "Keyboard/F10"
     elif profile_name == PROFILE_XBOX_1P:
         pad1 = _pcsx2_pad_mapping_dict(0)
         pad2 = _pcsx2_keyboard_pad_bindings(2)
@@ -224,6 +226,11 @@ _DOLPHIN_KBM_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
 def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
     if profile_name == PROFILE_KBM:
         return "DInput/0/Keyboard Mouse", "DInput/0/Keyboard Mouse"
+    if sys.platform.startswith("linux"):
+        # Linux Dolphin controller device roots are SDL/evdev-style, not XInput.
+        if profile_name == PROFILE_XBOX_1P:
+            return "SDL/0/Gamepad", "DInput/0/Keyboard Mouse"
+        return "SDL/0/Gamepad", "SDL/1/Gamepad"
     if profile_name == PROFILE_XBOX_1P:
         return "XInput/0/Gamepad", "DInput/0/Keyboard Mouse"
     return "XInput/0/Gamepad", "XInput/1/Gamepad"
@@ -396,4 +403,3 @@ def load_profile_file(
     if default_payload is None:
         return []
     return default_payload.splitlines()
-

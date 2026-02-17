@@ -4,9 +4,11 @@ from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 import shutil
+import sys
 from uuid import uuid4
 
 from gamehub_cli.config import ControllersConfig, GamehubConfig
+from gamehub_cli.controller_detection import XboxController
 from gamehub_cli.controller_apply import apply_controller_profile, apply_named_controller_profile
 from gamehub_cli.controller_profiles import seed_default_profiles
 
@@ -42,7 +44,7 @@ def test_apply_controller_profile_pcsx2_kbm_preserves_unmanaged_sections() -> No
         assert profile == "kbm"
         assert "[Audio]" in text
         assert "Latency = 42" in text
-        assert "OpenPauseMenu = Keyboard/Escape" in text
+        assert "OpenPauseMenu = Keyboard/F10" in text
         assert "Cross = Keyboard/K" in text
 
 
@@ -100,9 +102,35 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
         assert profile == "xbox_2p"
         assert "[User]" in gcpad_text
         assert "Foo = Bar" in gcpad_text
-        assert "Device = XInput/0/Gamepad" in gcpad_text
-        assert "Device = XInput/1/Gamepad" in gcpad_text
+        if sys.platform.startswith("linux"):
+            assert "Device = SDL/0/Gamepad" in gcpad_text
+            assert "Device = SDL/1/Gamepad" in gcpad_text
+        else:
+            assert "Device = XInput/0/Gamepad" in gcpad_text
+            assert "Device = XInput/1/Gamepad" in gcpad_text
         assert "General/Stop = @(SELECT+START)" in hotkeys_text
+
+
+def test_apply_controller_profile_dolphin_linux_prefers_evdev_from_detected_xbox(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
+        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
+        monkeypatch.setattr(
+            "gamehub_cli.controller_apply.detect_xbox_controllers",
+            lambda max_devices=2: [XboxController(slot=0, name="Xbox Wireless Controller", subtype=None)],
+        )
+
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+
+        assert "Device = evdev/0/Xbox Wireless Controller" in gcpad_text
 
 
 def test_apply_controller_profile_azahar_kbm(monkeypatch) -> None:
@@ -112,7 +140,7 @@ def test_apply_controller_profile_azahar_kbm(monkeypatch) -> None:
         qt_config = temp_root / "azahar" / "qt-config.ini"
         qt_config.parent.mkdir(parents=True, exist_ok=True)
         qt_config.write_text("custom_key=keep\n", encoding="utf-8")
-        monkeypatch.setattr("gamehub_cli.controller_apply._default_azahar_qt_config_path", lambda: qt_config)
+        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
 
         profile = apply_named_controller_profile(config, emulator_name="azahar", profile_name="kbm")
         text = qt_config.read_text(encoding="utf-8")
@@ -120,6 +148,26 @@ def test_apply_controller_profile_azahar_kbm(monkeypatch) -> None:
         assert profile == "kbm"
         assert "custom_key=keep" in text
         assert r'profiles\1\button_a="code:65,engine:keyboard"' in text
+
+
+def test_apply_controller_profile_azahar_updates_all_known_target_paths(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        qt_a = temp_root / "azahar-a" / "qt-config.ini"
+        qt_b = temp_root / "azahar-b" / "qt-config.ini"
+        qt_a.parent.mkdir(parents=True, exist_ok=True)
+        qt_b.parent.mkdir(parents=True, exist_ok=True)
+        qt_a.write_text("custom_key=keep_a\n", encoding="utf-8")
+        qt_b.write_text("custom_key=keep_b\n", encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_a, qt_b])
+
+        apply_named_controller_profile(config, emulator_name="azahar", profile_name="kbm")
+
+        assert "custom_key=keep_a" in qt_a.read_text(encoding="utf-8")
+        assert "custom_key=keep_b" in qt_b.read_text(encoding="utf-8")
+        assert r'profiles\1\button_a="code:65,engine:keyboard"' in qt_a.read_text(encoding="utf-8")
+        assert r'profiles\1\button_a="code:65,engine:keyboard"' in qt_b.read_text(encoding="utf-8")
 
 
 @contextmanager

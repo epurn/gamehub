@@ -12,10 +12,13 @@ from .controller_profiles import (
     load_profile_file,
     profile_name_for_controller_count,
 )
+from .controller_detection import detect_xbox_controllers
 from .firmware_targets import default_pcsx2_ini_path, resolve_dolphin_config_dirs, resolve_dolphin_runtime_user_dir
+from .platform_paths import AZAHAR_FLATPAK_APP_ID
 from .pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
 
 _MANAGED_PCSX2_SECTIONS = ("InputSources", "Pad1", "Pad2", "Hotkeys")
+_AZAHAR_QT_CONFIG_FILENAME = "qt-config.ini"
 
 
 def _parse_ini_sections(lines: list[str]) -> dict[str, dict[str, str]]:
@@ -114,10 +117,35 @@ def _default_azahar_qt_config_path() -> Path:
     if os.name == "nt" and appdata:
         return Path(appdata) / "Azahar" / "config" / "qt-config.ini"
     home = Path.home()
-    flatpak_qt = home / ".var" / "app" / "org.azahar_emu.Azahar" / "config" / "azahar-emu" / "qt-config.ini"
-    if sys.platform.startswith("linux") and flatpak_qt.parent.exists():
-        return flatpak_qt
+    flatpak_qt_candidates = (
+        home / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu" / _AZAHAR_QT_CONFIG_FILENAME,
+        home / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar" / _AZAHAR_QT_CONFIG_FILENAME,
+    )
+    if sys.platform.startswith("linux"):
+        for candidate in flatpak_qt_candidates:
+            if candidate.exists():
+                return candidate
+        for candidate in flatpak_qt_candidates:
+            if candidate.parent.exists():
+                return candidate
     return home / ".config" / "azahar-emu" / "qt-config.ini"
+
+
+def _azahar_target_config_paths() -> list[Path]:
+    appdata = os.environ.get("APPDATA")
+    if os.name == "nt" and appdata:
+        return [Path(appdata) / "Azahar" / "config" / _AZAHAR_QT_CONFIG_FILENAME]
+
+    home = Path.home()
+    candidates = [
+        home / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu" / _AZAHAR_QT_CONFIG_FILENAME,
+        home / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar" / _AZAHAR_QT_CONFIG_FILENAME,
+        home / ".config" / "azahar-emu" / _AZAHAR_QT_CONFIG_FILENAME,
+    ]
+    existing = [candidate for candidate in candidates if candidate.exists()]
+    if existing:
+        return existing
+    return [_default_azahar_qt_config_path()]
 
 
 def _apply_pcsx2_profile(config: GamehubConfig, profile_name: str) -> list[Path]:
@@ -149,6 +177,41 @@ def _dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
     return paths
 
 
+def _dolphin_linux_device_pair() -> tuple[str, str]:
+    controllers = detect_xbox_controllers(max_devices=2)
+    if len(controllers) >= 2:
+        return f"evdev/0/{controllers[0].name}", f"evdev/1/{controllers[1].name}"
+    if len(controllers) == 1:
+        return f"evdev/0/{controllers[0].name}", "SDL/1/Gamepad"
+    return "SDL/0/Gamepad", "SDL/1/Gamepad"
+
+
+def _override_dolphin_device_sections(
+    sections: dict[str, dict[str, str]],
+    *,
+    profile_name: str,
+) -> dict[str, dict[str, str]]:
+    if profile_name == PROFILE_KBM:
+        return sections
+    if not sys.platform.startswith("linux"):
+        return sections
+    device0, device1 = _dolphin_linux_device_pair()
+    updated: dict[str, dict[str, str]] = {section: dict(values) for section, values in sections.items()}
+    for section_name, device in (
+        ("GCPad1", device0),
+        ("GCPad2", device1),
+        ("Wiimote1", device0),
+        ("Wiimote2", device1),
+        ("Hotkeys1", device0),
+        ("Hotkeys2", device1),
+        ("Hotkeys", device0),
+    ):
+        if section_name not in updated:
+            continue
+        updated[section_name]["Device"] = device
+    return updated
+
+
 def _apply_dolphin_profile(config: GamehubConfig, profile_name: str) -> list[Path]:
     touched: list[Path] = []
     for target_dir in _dolphin_target_config_dirs(config):
@@ -160,6 +223,7 @@ def _apply_dolphin_profile(config: GamehubConfig, profile_name: str) -> list[Pat
                 filename=filename,
             )
             sections = _parse_ini_sections(profile_lines)
+            sections = _override_dolphin_device_sections(sections, profile_name=profile_name)
             target_path = target_dir / filename
             _apply_managed_ini_sections(target_path=target_path, sections=sections)
             touched.append(target_path)
@@ -174,17 +238,19 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
         filename="qt-config.ini",
     )
     pairs = _parse_qsettings_pairs(profile_lines)
-    target_path = _default_azahar_qt_config_path()
-    lines = read_ini_lines(target_path)
-    changed = False
-    for key, value in pairs.items():
-        if _read_qsettings_key(lines, key) == value:
-            continue
-        lines, key_changed = _upsert_qsettings_key(lines, key, value)
-        changed |= key_changed
-    if changed or not target_path.exists():
-        write_ini_atomic(target_path, lines)
-    return [target_path]
+    touched: list[Path] = []
+    for target_path in _azahar_target_config_paths():
+        lines = read_ini_lines(target_path)
+        changed = False
+        for key, value in pairs.items():
+            if _read_qsettings_key(lines, key) == value:
+                continue
+            lines, key_changed = _upsert_qsettings_key(lines, key, value)
+            changed |= key_changed
+        if changed or not target_path.exists():
+            write_ini_atomic(target_path, lines)
+        touched.append(target_path)
+    return touched
 
 
 def apply_controller_profile(
