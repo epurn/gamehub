@@ -111,6 +111,7 @@ _AZAHAR_BUTTON_BINDINGS: tuple[tuple[str, int], ...] = (
     ("button_x", 2),
     ("button_y", 3),
     ("button_select", 4),
+    ("button_home", 5),
     ("button_start", 6),
     ("button_l", 9),
     ("button_r", 10),
@@ -118,6 +119,10 @@ _AZAHAR_BUTTON_BINDINGS: tuple[tuple[str, int], ...] = (
     ("button_down", 12),
     ("button_left", 13),
     ("button_right", 14),
+)
+_AZAHAR_AXIS_BUTTON_BINDINGS: tuple[tuple[str, int], ...] = (
+    ("button_zl", 4),
+    ("button_zr", 5),
 )
 
 
@@ -343,6 +348,10 @@ def _azahar_sdl_axis_term(axis: int, direction: str, threshold: str, guid: str |
     return f"{base}$1port$0{port}$1threshold$0{threshold}"
 
 
+def _azahar_sdl_axis_button_value(axis: int, direction: str, threshold: str, guid: str | None, port: int) -> str:
+    return f'"{_azahar_sdl_axis_term(axis, direction, threshold, guid, port)}"'
+
+
 def _azahar_sdl_stick_value(x_axis: int, y_axis: int, guid: str | None, port: int) -> str:
     down = _azahar_sdl_axis_term(y_axis, "+", "0.5", guid, port)
     left = _azahar_sdl_axis_term(x_axis, "-", "0-0.5", guid, port)
@@ -369,6 +378,19 @@ def _bootstrap_azahar_controllers(lines: list[str]) -> tuple[list[str], bool, st
             lines,
             key_name,
             _azahar_sdl_button_value(button_idx, guid, port),
+        )
+        lines, changed_default = _upsert_qsettings_key(lines, fr"{key_name}\default", "false")
+        changed |= changed_binding or changed_default
+
+    for key_suffix, axis_idx in _AZAHAR_AXIS_BUTTON_BINDINGS:
+        key_name = fr"profiles\{profile_slot}\{key_suffix}"
+        current = _read_qsettings_key(lines, key_name)
+        if not _azahar_should_migrate_digital_binding(current):
+            continue
+        lines, changed_binding = _upsert_qsettings_key(
+            lines,
+            key_name,
+            _azahar_sdl_axis_button_value(axis_idx, "+", "0.5", guid, port),
         )
         lines, changed_default = _upsert_qsettings_key(lines, fr"{key_name}\default", "false")
         changed |= changed_binding or changed_default

@@ -286,6 +286,14 @@ def test_apply_controller_profile_azahar_linux_injects_runtime_guid(monkeypatch)
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:030018dc5e040000130b000000006800,port:0"' in text
         assert r"profiles\1\circle_pad=" in text
         assert "guid$0030018dc5e040000130b000000006800" in text
+        zl_line = _line_for_key(text, "button_zl")
+        zr_line = _line_for_key(text, "button_zr")
+        assert zl_line is not None
+        assert zr_line is not None
+        assert "axis$04" in zl_line
+        assert "axis$05" in zr_line
+        assert "guid$0030018dc5e040000130b000000006800" in zl_line
+        assert "guid$0030018dc5e040000130b000000006800" in zr_line
 
 
 def test_apply_controller_profile_azahar_linux_upgrades_existing_sdl_without_guid(monkeypatch) -> None:
@@ -441,3 +449,11 @@ def _workspace_tempdir(prefix: str):
         yield temp_root
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def _line_for_key(text: str, key: str) -> str | None:
+    prefix = f"profiles\\1\\{key}="
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line
+    return None
