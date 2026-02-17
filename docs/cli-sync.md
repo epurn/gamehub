@@ -148,6 +148,14 @@ Controller launch profile defaults:
   - `0` Xbox controllers -> `kbm`
   - `1` Xbox controller -> `xbox_1p`
   - `2+` Xbox controllers -> `xbox_2p`
+- Linux Azahar GUID policy is configurable:
+  - `preserve` (default): keep existing GUID if present, otherwise use discovered GUID
+  - `detect`: always prefer discovered GUID when available
+  - `fixed`: force `GAMEHUB_AZAHAR_FIXED_GUID`
+  - `off`: strip/avoid GUID tokens and rely on SDL `port` only
+  - legacy `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID=true` behaves like `detect`
+- GUID discovery order (Linux): probe Azahar Flatpak runtime first (if available), then fall back to host SDL.
+- If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID for Steam/Flatpak launches.
 - `RetroArch` shortcuts remain direct (not wrapped).
 
 Environment overrides:
@@ -160,6 +168,9 @@ Environment overrides:
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`
+- `GAMEHUB_AZAHAR_GUID_MODE`
+- `GAMEHUB_AZAHAR_FIXED_GUID`
+- `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID`
 - `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`

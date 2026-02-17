@@ -5,6 +5,8 @@ import ctypes
 import ctypes.util
 import os
 import re
+import shutil
+import subprocess
 import sys
 from typing import Callable
 
@@ -27,10 +29,50 @@ _AZAHAR_PORT_RE = re.compile(r"port(?::|\$0)(?P<port>\d+)")
 _AZAHAR_ANALOG_GUID_RE = re.compile(r"\$1guid\$0[0-9a-fA-F]+", flags=re.IGNORECASE)
 _AZAHAR_ANALOG_PORT_RE = re.compile(r"\$1port\$0\d+")
 _AZAHAR_ANALOG_ENGINE_RE = re.compile(r"engine\$0sdl", flags=re.IGNORECASE)
+_AZAHAR_FORCE_DISCOVERED_GUID_ENV = "GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID"
+_AZAHAR_GUID_MODE_ENV = "GAMEHUB_AZAHAR_GUID_MODE"
+_AZAHAR_FIXED_GUID_ENV = "GAMEHUB_AZAHAR_FIXED_GUID"
+_AZAHAR_GUID_VALUE_RE = re.compile(r"[0-9a-fA-F]{32}")
+_AZAHAR_FLATPAK_GUID_TIMEOUT_SEC = 1.5
 
 
 class _SDLJoystickGUID(ctypes.Structure):
     _fields_ = [("data", ctypes.c_uint8 * 16)]
+
+
+def _env_enabled(name: str, *, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().casefold()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _azahar_guid_mode() -> str:
+    # Backward-compat: keep legacy force flag behavior.
+    if _env_enabled(_AZAHAR_FORCE_DISCOVERED_GUID_ENV, default=False):
+        return "detect"
+    raw = os.environ.get(_AZAHAR_GUID_MODE_ENV)
+    if raw is None:
+        return "preserve"
+    mode = raw.strip().casefold()
+    if mode in {"preserve", "detect", "fixed", "off"}:
+        return mode
+    return "preserve"
+
+
+def _azahar_fixed_guid() -> str | None:
+    raw = os.environ.get(_AZAHAR_FIXED_GUID_ENV)
+    if raw is None:
+        return None
+    value = raw.strip()
+    if re.fullmatch(r"[0-9a-fA-F]{32}", value) is None:
+        return None
+    return value
 
 
 def _parse_ini_sections(lines: list[str]) -> dict[str, dict[str, str]]:
@@ -202,6 +244,108 @@ def _discover_linux_sdl_guid(*, port: int) -> str | None:
         sdl.SDL_Quit()
 
 
+def _azahar_flatpak_guid_probe_script(port: int) -> str:
+    return "\n".join(
+        [
+            "import ctypes,ctypes.util,sys",
+            "class SDLJoystickGUID(ctypes.Structure):",
+            "    _fields_ = [('data', ctypes.c_uint8 * 16)]",
+            "def _load_sdl():",
+            "    candidates = []",
+            "    detected = ctypes.util.find_library('SDL2')",
+            "    if detected:",
+            "        candidates.append(detected)",
+            "    candidates += ['libSDL2-2.0.so.0', 'libSDL2.so']",
+            "    for candidate in candidates:",
+            "        try:",
+            "            return ctypes.CDLL(candidate)",
+            "        except OSError:",
+            "            continue",
+            "    return None",
+            "sdl = _load_sdl()",
+            "if sdl is None:",
+            "    sys.exit(2)",
+            "try:",
+            "    sdl.SDL_Init.argtypes = [ctypes.c_uint32]",
+            "    sdl.SDL_Init.restype = ctypes.c_int",
+            "    sdl.SDL_Quit.argtypes = []",
+            "    sdl.SDL_Quit.restype = None",
+            "    sdl.SDL_NumJoysticks.argtypes = []",
+            "    sdl.SDL_NumJoysticks.restype = ctypes.c_int",
+            "    sdl.SDL_JoystickGetDeviceGUID.argtypes = [ctypes.c_int]",
+            "    sdl.SDL_JoystickGetDeviceGUID.restype = SDLJoystickGUID",
+            "    sdl.SDL_JoystickGetGUIDString.argtypes = [SDLJoystickGUID, ctypes.c_char_p, ctypes.c_int]",
+            "    sdl.SDL_JoystickGetGUIDString.restype = None",
+            "except AttributeError:",
+            "    sys.exit(3)",
+            "if sdl.SDL_Init(0x00000200) != 0:",
+            "    sys.exit(4)",
+            "try:",
+            "    count = int(sdl.SDL_NumJoysticks())",
+            f"    port = int({port})",
+            "    if count <= 0 or port < 0 or port >= count:",
+            "        sys.exit(5)",
+            "    guid_value = sdl.SDL_JoystickGetDeviceGUID(port)",
+            "    text = ctypes.create_string_buffer(33)",
+            "    sdl.SDL_JoystickGetGUIDString(guid_value, text, len(text))",
+            "    guid = text.value.decode('ascii', errors='ignore').strip().lower()",
+            "    if len(guid) != 32 or set(guid) == {'0'}:",
+            "        sys.exit(6)",
+            "    print(guid)",
+            "finally:",
+            "    sdl.SDL_Quit()",
+        ]
+    )
+
+
+def _parse_guid_output(text: str) -> str | None:
+    for line in text.splitlines():
+        match = _AZAHAR_GUID_VALUE_RE.search(line)
+        if not match:
+            continue
+        value = match.group(0).lower()
+        if set(value) == {"0"}:
+            continue
+        return value
+    return None
+
+
+def _probe_azahar_flatpak_guid(*, port: int, timeout_sec: float = _AZAHAR_FLATPAK_GUID_TIMEOUT_SEC) -> str | None:
+    if not sys.platform.startswith("linux"):
+        return None
+    if shutil.which("flatpak") is None:
+        return None
+
+    normalized_port = _azahar_normalize_sdl_port(port)
+    script = _azahar_flatpak_guid_probe_script(normalized_port)
+    for interpreter in ("python3", "python"):
+        try:
+            completed = subprocess.run(
+                [
+                    "flatpak",
+                    "run",
+                    "--device=all",
+                    "--command",
+                    interpreter,
+                    AZAHAR_FLATPAK_APP_ID,
+                    "-c",
+                    script,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout_sec,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if completed.returncode != 0:
+            continue
+        guid = _parse_guid_output(completed.stdout)
+        if guid:
+            return guid
+    return None
+
+
 def _azahar_normalize_sdl_port(value: int) -> int:
     if value < 0:
         return 0
@@ -210,18 +354,53 @@ def _azahar_normalize_sdl_port(value: int) -> int:
     return value
 
 
-def _inject_azahar_sdl_identity(value: str, *, guid: str | None, port: int) -> str:
+def _select_azahar_guid(
+    *,
+    mode: str,
+    existing_guid: str | None,
+    runtime_guid: str | None,
+    host_guid: str | None,
+    fixed_guid: str | None,
+) -> tuple[str | None, bool]:
+    if mode == "off":
+        return None, True
+    if mode == "fixed":
+        if fixed_guid is not None:
+            return fixed_guid, False
+        if existing_guid is not None:
+            return existing_guid, False
+        return runtime_guid if runtime_guid is not None else host_guid, False
+    if mode == "detect":
+        return runtime_guid or host_guid or existing_guid, False
+
+    if existing_guid is None:
+        return runtime_guid or host_guid, False
+    if runtime_guid is not None and existing_guid != runtime_guid:
+        if host_guid is not None and existing_guid == host_guid:
+            return runtime_guid, False
+    return existing_guid, False
+
+
+def _inject_azahar_sdl_identity(
+    value: str,
+    *,
+    guid: str | None,
+    port: int,
+    strip_guid: bool = False,
+) -> str:
     normalized_port = _azahar_normalize_sdl_port(port)
     raw = value.strip()
     lowered = raw.casefold()
 
     if "engine$0sdl" in lowered:
         updated = _AZAHAR_ANALOG_PORT_RE.sub(f"$1port$0{normalized_port}", raw)
-        if guid:
+        if strip_guid:
+            updated = _AZAHAR_ANALOG_GUID_RE.sub("", updated)
+        elif guid:
             if _AZAHAR_ANALOG_GUID_RE.search(updated):
                 updated = _AZAHAR_ANALOG_GUID_RE.sub(f"$1guid$0{guid}", updated)
             else:
-                updated = _AZAHAR_ANALOG_ENGINE_RE.sub(f"engine$0sdl$1guid$0{guid}", updated, count=1)
+                updated = _AZAHAR_ANALOG_ENGINE_RE.sub(f"engine$0sdl$1guid$0{guid}", updated)
         return updated
 
     if "engine:sdl" not in lowered:
@@ -241,16 +420,16 @@ def _inject_azahar_sdl_identity(value: str, *, guid: str | None, port: int) -> s
             has_port = True
             continue
         if token.startswith("guid:"):
-            if guid:
+            if guid and not strip_guid:
                 updated_parts.append(f"guid:{guid}")
                 has_guid = True
             continue
         updated_parts.append(part)
-        if token == "engine:sdl" and guid:
+        if token == "engine:sdl" and guid and not strip_guid:
             updated_parts.append(f"guid:{guid}")
             has_guid = True
             inserted_guid_after_engine = True
-    if guid and not has_guid and not inserted_guid_after_engine:
+    if guid and not strip_guid and not has_guid and not inserted_guid_after_engine:
         updated_parts.append(f"guid:{guid}")
     if not has_port:
         updated_parts.append(f"port:{normalized_port}")
@@ -292,6 +471,11 @@ def _azahar_target_config_paths() -> list[Path]:
     if existing:
         return existing
     return [_default_azahar_qt_config_path()]
+
+
+def _is_azahar_flatpak_config_path(path: Path) -> bool:
+    flatpak_root = Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID
+    return flatpak_root in path.parents
 
 
 def _apply_pcsx2_profile(config: GamehubConfig, profile_name: str) -> list[Path]:
@@ -414,32 +598,64 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
     pairs = _parse_qsettings_pairs(profile_lines)
     touched: list[Path] = []
     linux_controller_mode = sys.platform.startswith("linux") and profile_name != PROFILE_KBM
+    guid_mode = _azahar_guid_mode()
+    fixed_guid = _azahar_fixed_guid() if guid_mode == "fixed" else None
+    runtime_guid_cache: dict[int, str | None] = {}
+    host_guid_cache: dict[int, str | None] = {}
     for target_path in _azahar_target_config_paths():
         lines = read_ini_lines(target_path)
-        detected_guid: str | None = None
+        existing_guid: str | None = None
         detected_port = 0
+        selected_guid: str | None = None
+        strip_guid_tokens = False
         if linux_controller_mode:
-            detected_guid, detected_port = _azahar_detect_sdl_identity(lines)
-            if detected_guid is None:
-                detected_guid = _discover_linux_sdl_guid(port=detected_port)
+            existing_guid, detected_port = _azahar_detect_sdl_identity(lines)
+            normalized_port = _azahar_normalize_sdl_port(detected_port)
+            runtime_guid: str | None = None
+            host_guid: str | None = None
+            need_discovery = guid_mode in {"detect", "preserve"} or (guid_mode == "fixed" and fixed_guid is None)
+            if need_discovery:
+                if _is_azahar_flatpak_config_path(target_path):
+                    if normalized_port in runtime_guid_cache:
+                        runtime_guid = runtime_guid_cache[normalized_port]
+                    else:
+                        runtime_guid = _probe_azahar_flatpak_guid(port=normalized_port)
+                        runtime_guid_cache[normalized_port] = runtime_guid
+                if normalized_port in host_guid_cache:
+                    host_guid = host_guid_cache[normalized_port]
+                else:
+                    host_guid = _discover_linux_sdl_guid(port=normalized_port)
+                    host_guid_cache[normalized_port] = host_guid
+            selected_guid, strip_guid_tokens = _select_azahar_guid(
+                mode=guid_mode,
+                existing_guid=existing_guid,
+                runtime_guid=runtime_guid,
+                host_guid=host_guid,
+                fixed_guid=fixed_guid,
+            )
         changed = False
         for key, value in pairs.items():
             existing = _read_qsettings_key(lines, key)
             desired = value
             if linux_controller_mode and key.startswith("profiles\\1\\"):
-                desired = _inject_azahar_sdl_identity(value, guid=detected_guid, port=detected_port)
+                desired = _inject_azahar_sdl_identity(
+                    value,
+                    guid=selected_guid,
+                    port=detected_port,
+                    strip_guid=strip_guid_tokens,
+                )
                 if existing is not None and ("engine:sdl" in existing.casefold() or "engine$0sdl" in existing.casefold()):
-                    # Preserve existing SDL mappings, but upgrade legacy entries lacking GUID when
-                    # we have a discovered controller identity.
-                    if (
-                        detected_guid is not None
-                        and "guid:" not in existing.casefold()
-                        and "guid$0" not in existing.casefold()
-                    ):
-                        upgraded = _inject_azahar_sdl_identity(existing, guid=detected_guid, port=detected_port)
-                        if upgraded != existing:
-                            lines, key_changed = _upsert_qsettings_key(lines, key, upgraded)
-                            changed |= key_changed
+                    # Preserve existing SDL mappings, but always normalize identity tokens
+                    # (GUID/port) to the currently preferred controller.
+                    upgraded = _inject_azahar_sdl_identity(
+                        existing,
+                        guid=selected_guid,
+                        port=detected_port,
+                        strip_guid=strip_guid_tokens,
+                    )
+                    if upgraded != existing:
+                        lines, key_changed = _upsert_qsettings_key(lines, key, upgraded)
+                        changed |= key_changed
                     continue
             if existing == desired:
                 continue

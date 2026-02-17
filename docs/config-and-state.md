@@ -128,6 +128,9 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
+- `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID`: when `true`, Linux Azahar controller apply replaces existing GUID-bound SDL mappings with discovered GUIDs (Flatpak runtime first, host SDL fallback) (default `false`).
+- `GAMEHUB_AZAHAR_GUID_MODE`: Linux Azahar GUID policy for controller apply (`preserve` default, `detect`, `fixed`, `off`).
+- `GAMEHUB_AZAHAR_FIXED_GUID`: 32-hex SDL GUID used when `GAMEHUB_AZAHAR_GUID_MODE=fixed`.
 - Linux Azahar exit hook input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
@@ -173,6 +176,14 @@ N3DS Azahar defaults:
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
 - On Linux, GAMEHUB bootstraps SDL controller bindings for Azahar profile 1 when keyboard defaults are detected.
+- On Linux controller-profile apply, Azahar GUID behavior is policy-driven:
+  - `preserve` (default): keep existing GUID if present, otherwise use discovered GUID
+  - `detect`: always prefer discovered GUID when available
+  - `fixed`: force `GAMEHUB_AZAHAR_FIXED_GUID`
+  - `off`: strip/avoid GUID tokens and rely on SDL `port` only
+  - Legacy override `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID=true` maps to `detect`
+- GUID discovery order (Linux): probe Azahar Flatpak runtime first (if available), then fall back to host SDL.
+- If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
 - On Linux, GAMEHUB uses a wrapper launch hook by default to close Azahar when `Select+Start` is pressed (native-controller mode).
 - On Linux Flatpak Dolphin launches wrapped by `controller-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
 - Steam Input layout/template copy for N3DS remains manual in this pass.
