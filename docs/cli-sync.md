@@ -133,6 +133,10 @@ Linux path notes:
     - joystick path (`/dev/input/js*`) using configured Azahar button indices
     - evdev fallback (`/dev/input/event*`) using `BTN_SELECT` + `BTN_START`
   - can be disabled by setting `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false` (falls back to direct flatpak launch)
+- Linux Flatpak Dolphin launches wrapped by `controller-launch` include a fail-open `Select+Start` exit hook by default:
+  - monitors `/dev/input/js*` (configurable button indices) and `/dev/input/event*` (`BTN_SELECT` + `BTN_START`)
+  - on combo press, issues `flatpak kill org.DolphinEmu.dolphin-emu`
+  - can be disabled by setting `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false`
 - N3DS Steam Input limitation (current):
   - GAMEHUB does not auto-apply Steam Input templates for N3DS.
   - If you use Steam Input template mode, configure one shortcut manually and copy that layout to other N3DS shortcuts in Steam UI.
@@ -156,6 +160,10 @@ Environment overrides:
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`
+- `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`
+- `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`
+- `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`
+- `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`
 - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`
 - `GAMEHUB_CONTROLLER_PROFILES_DIR`
 

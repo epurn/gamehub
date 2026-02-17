@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import ctypes
+import ctypes.util
 import os
+import re
 import sys
 from typing import Callable
 
@@ -19,6 +22,15 @@ from .pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
 
 _MANAGED_PCSX2_SECTIONS = ("InputSources", "Pad1", "Pad2", "Hotkeys")
 _AZAHAR_QT_CONFIG_FILENAME = "qt-config.ini"
+_AZAHAR_GUID_RE = re.compile(r"guid(?::|\$0)(?P<guid>[0-9a-fA-F]+)")
+_AZAHAR_PORT_RE = re.compile(r"port(?::|\$0)(?P<port>\d+)")
+_AZAHAR_ANALOG_GUID_RE = re.compile(r"\$1guid\$0[0-9a-fA-F]+", flags=re.IGNORECASE)
+_AZAHAR_ANALOG_PORT_RE = re.compile(r"\$1port\$0\d+")
+_AZAHAR_ANALOG_ENGINE_RE = re.compile(r"engine\$0sdl", flags=re.IGNORECASE)
+
+
+class _SDLJoystickGUID(ctypes.Structure):
+    _fields_ = [("data", ctypes.c_uint8 * 16)]
 
 
 def _parse_ini_sections(lines: list[str]) -> dict[str, dict[str, str]]:
@@ -110,6 +122,140 @@ def _parse_qsettings_pairs(lines: list[str]) -> dict[str, str]:
         key, value = line.split("=", 1)
         pairs[key.strip()] = value.strip()
     return pairs
+
+
+def _azahar_detect_sdl_identity(lines: list[str]) -> tuple[str | None, int]:
+    guid: str | None = None
+    port = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or "=" not in stripped:
+            continue
+        value = stripped.split("=", 1)[1]
+        lowered = value.casefold()
+        if "engine:sdl" not in lowered and "engine$0sdl" not in lowered:
+            continue
+        guid_match = _AZAHAR_GUID_RE.search(value)
+        if guid_match:
+            guid = guid_match.group("guid")
+        port_match = _AZAHAR_PORT_RE.search(value)
+        if port_match:
+            try:
+                port = int(port_match.group("port"))
+            except ValueError:
+                port = 0
+        if guid is not None:
+            break
+    return guid, port
+
+
+def _discover_linux_sdl_guid(*, port: int) -> str | None:
+    if not sys.platform.startswith("linux"):
+        return None
+
+    library_candidates: list[str] = []
+    detected = ctypes.util.find_library("SDL2")
+    if detected:
+        library_candidates.append(detected)
+    library_candidates.extend(["libSDL2-2.0.so.0", "libSDL2.so"])
+
+    sdl = None
+    for candidate in library_candidates:
+        try:
+            sdl = ctypes.CDLL(candidate)
+            break
+        except OSError:
+            continue
+    if sdl is None:
+        return None
+
+    try:
+        sdl.SDL_Init.argtypes = [ctypes.c_uint32]
+        sdl.SDL_Init.restype = ctypes.c_int
+        sdl.SDL_Quit.argtypes = []
+        sdl.SDL_Quit.restype = None
+        sdl.SDL_NumJoysticks.argtypes = []
+        sdl.SDL_NumJoysticks.restype = ctypes.c_int
+        sdl.SDL_JoystickGetDeviceGUID.argtypes = [ctypes.c_int]
+        sdl.SDL_JoystickGetDeviceGUID.restype = _SDLJoystickGUID
+        sdl.SDL_JoystickGetGUIDString.argtypes = [_SDLJoystickGUID, ctypes.c_char_p, ctypes.c_int]
+        sdl.SDL_JoystickGetGUIDString.restype = None
+    except AttributeError:
+        return None
+
+    # SDL_INIT_JOYSTICK
+    if sdl.SDL_Init(0x00000200) != 0:
+        return None
+
+    try:
+        count = int(sdl.SDL_NumJoysticks())
+        if count <= 0 or port < 0 or port >= count:
+            return None
+        guid_value = sdl.SDL_JoystickGetDeviceGUID(port)
+        text = ctypes.create_string_buffer(33)
+        sdl.SDL_JoystickGetGUIDString(guid_value, text, len(text))
+        guid = text.value.decode("ascii", errors="ignore").strip().lower()
+        if len(guid) != 32 or set(guid) == {"0"}:
+            return None
+        return guid
+    finally:
+        sdl.SDL_Quit()
+
+
+def _azahar_normalize_sdl_port(value: int) -> int:
+    if value < 0:
+        return 0
+    if value > 15:
+        return 15
+    return value
+
+
+def _inject_azahar_sdl_identity(value: str, *, guid: str | None, port: int) -> str:
+    normalized_port = _azahar_normalize_sdl_port(port)
+    raw = value.strip()
+    lowered = raw.casefold()
+
+    if "engine$0sdl" in lowered:
+        updated = _AZAHAR_ANALOG_PORT_RE.sub(f"$1port$0{normalized_port}", raw)
+        if guid:
+            if _AZAHAR_ANALOG_GUID_RE.search(updated):
+                updated = _AZAHAR_ANALOG_GUID_RE.sub(f"$1guid$0{guid}", updated)
+            else:
+                updated = _AZAHAR_ANALOG_ENGINE_RE.sub(f"engine$0sdl$1guid$0{guid}", updated, count=1)
+        return updated
+
+    if "engine:sdl" not in lowered:
+        return raw
+
+    quote = '"' if len(raw) >= 2 and raw[0] == raw[-1] == '"' else ""
+    body = raw[1:-1] if quote else raw
+    parts = [part.strip() for part in body.split(",") if part.strip()]
+    updated_parts: list[str] = []
+    has_port = False
+    has_guid = False
+    inserted_guid_after_engine = False
+    for part in parts:
+        token = part.casefold()
+        if token.startswith("port:"):
+            updated_parts.append(f"port:{normalized_port}")
+            has_port = True
+            continue
+        if token.startswith("guid:"):
+            if guid:
+                updated_parts.append(f"guid:{guid}")
+                has_guid = True
+            continue
+        updated_parts.append(part)
+        if token == "engine:sdl" and guid:
+            updated_parts.append(f"guid:{guid}")
+            has_guid = True
+            inserted_guid_after_engine = True
+    if guid and not has_guid and not inserted_guid_after_engine:
+        updated_parts.append(f"guid:{guid}")
+    if not has_port:
+        updated_parts.append(f"port:{normalized_port}")
+    payload = ",".join(updated_parts)
+    return f'"{payload}"' if quote else payload
 
 
 def _default_azahar_qt_config_path() -> Path:
@@ -267,24 +413,37 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
     )
     pairs = _parse_qsettings_pairs(profile_lines)
     touched: list[Path] = []
+    linux_controller_mode = sys.platform.startswith("linux") and profile_name != PROFILE_KBM
     for target_path in _azahar_target_config_paths():
         lines = read_ini_lines(target_path)
+        detected_guid: str | None = None
+        detected_port = 0
+        if linux_controller_mode:
+            detected_guid, detected_port = _azahar_detect_sdl_identity(lines)
+            if detected_guid is None:
+                detected_guid = _discover_linux_sdl_guid(port=detected_port)
         changed = False
         for key, value in pairs.items():
             existing = _read_qsettings_key(lines, key)
-            # On Linux controller mode, preserve any existing SDL mappings that may carry
-            # runtime-specific GUID/port values discovered by manual calibration.
-            if (
-                sys.platform.startswith("linux")
-                and profile_name != PROFILE_KBM
-                and key.startswith("profiles\\1\\")
-                and existing is not None
-                and ("engine:sdl" in existing.casefold() or "engine$0sdl" in existing.casefold())
-            ):
+            desired = value
+            if linux_controller_mode and key.startswith("profiles\\1\\"):
+                desired = _inject_azahar_sdl_identity(value, guid=detected_guid, port=detected_port)
+                if existing is not None and ("engine:sdl" in existing.casefold() or "engine$0sdl" in existing.casefold()):
+                    # Preserve existing SDL mappings, but upgrade legacy entries lacking GUID when
+                    # we have a discovered controller identity.
+                    if (
+                        detected_guid is not None
+                        and "guid:" not in existing.casefold()
+                        and "guid$0" not in existing.casefold()
+                    ):
+                        upgraded = _inject_azahar_sdl_identity(existing, guid=detected_guid, port=detected_port)
+                        if upgraded != existing:
+                            lines, key_changed = _upsert_qsettings_key(lines, key, upgraded)
+                            changed |= key_changed
+                    continue
+            if existing == desired:
                 continue
-            if existing == value:
-                continue
-            lines, key_changed = _upsert_qsettings_key(lines, key, value)
+            lines, key_changed = _upsert_qsettings_key(lines, key, desired)
             changed |= key_changed
         if changed or not target_path.exists():
             write_ini_atomic(target_path, lines)
