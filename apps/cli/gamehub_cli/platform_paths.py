@@ -8,6 +8,7 @@ from typing import Iterable
 RETROARCH_FLATPAK_APP_ID = "org.libretro.RetroArch"
 PCSX2_FLATPAK_APP_ID = "net.pcsx2.PCSX2"
 DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
+AZAHAR_FLATPAK_APP_ID = "org.azahar_emu.Azahar"
 
 
 def linux_flatpak_retroarch_root() -> Path:
@@ -24,6 +25,14 @@ def linux_flatpak_dolphin_root() -> Path:
 
 def linux_flatpak_dolphin_config_root() -> Path:
     return Path.home() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "config" / "dolphin-emu"
+
+
+def linux_flatpak_azahar_root() -> Path:
+    return Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "data" / "azahar-emu"
+
+
+def linux_flatpak_azahar_config_root() -> Path:
+    return Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu"
 
 
 def is_flatpak_command(path_value: str | Path, app_id: str) -> bool:

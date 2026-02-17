@@ -17,12 +17,14 @@ _FLATPAK_APP_IDS = {
     "retroarch": "org.libretro.RetroArch",
     "pcsx2": "net.pcsx2.PCSX2",
     "dolphin": "org.DolphinEmu.dolphin-emu",
+    "azahar": "org.azahar_emu.Azahar",
 }
 
 _EMULATOR_COMMAND_ALIASES = {
     "retroarch": ("retroarch",),
     "pcsx2": ("pcsx2", "pcsx2-qt"),
     "dolphin": ("dolphin", "dolphin-emu"),
+    "azahar": ("azahar", "azahar-qt"),
 }
 
 _HOST_PATH_TYPE = type(Path.cwd())
@@ -105,21 +107,54 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
             if winget_packages and winget_packages.exists():
                 values.extend(sorted(winget_packages.glob("DolphinEmulator.Dolphin_*\\Dolphin.exe")))
                 values.extend(sorted(winget_packages.glob("DolphinEmu.Dolphin_*\\Dolphin.exe")))
+        elif canonical == "azahar":
+            if local_app_data:
+                values.append(_safe_path(local_app_data) / "Programs" / "Azahar" / "azahar.exe")
+                values.append(_safe_path(local_app_data) / "Programs" / "Azahar" / "azahar-qt.exe")
+                values.append(_safe_path(local_app_data) / "Azahar" / "azahar.exe")
+                values.append(_safe_path(local_app_data) / "Azahar" / "azahar-qt.exe")
+                programs_dir = _safe_path(local_app_data) / "Programs"
+                if programs_dir.exists():
+                    values.extend(sorted(programs_dir.glob("Azahar*\\azahar*.exe")))
+            if program_files:
+                values.append(_safe_path(program_files) / "Azahar" / "azahar.exe")
+                values.append(_safe_path(program_files) / "Azahar" / "azahar-qt.exe")
+            if program_files_x86:
+                values.append(_safe_path(program_files_x86) / "Azahar" / "azahar.exe")
+                values.append(_safe_path(program_files_x86) / "Azahar" / "azahar-qt.exe")
         values.extend(_windows_registry_install_candidates(canonical))
         return tuple(values)
 
     if sys.platform.startswith("linux"):
         home = _HOST_PATH_TYPE.home()
         if canonical == "retroarch":
-            values.extend((Path("/usr/bin/retroarch"), Path("/usr/local/bin/retroarch")))
+            values.extend((_safe_path("/usr/bin/retroarch"), _safe_path("/usr/local/bin/retroarch")))
         elif canonical == "pcsx2":
-            values.extend((Path("/usr/bin/pcsx2-qt"), Path("/usr/bin/pcsx2"), Path("/usr/local/bin/pcsx2-qt")))
+            values.extend(
+                (
+                    _safe_path("/usr/bin/pcsx2-qt"),
+                    _safe_path("/usr/bin/pcsx2"),
+                    _safe_path("/usr/local/bin/pcsx2-qt"),
+                )
+            )
         elif canonical == "dolphin":
             flatpak_app_id = _FLATPAK_APP_IDS.get(canonical)
             if flatpak_app_id:
                 values.append(home / ".local" / "share" / "flatpak" / "exports" / "bin" / flatpak_app_id)
-                values.append(Path("/var/lib/flatpak/exports/bin") / flatpak_app_id)
-            values.extend((Path("/usr/bin/dolphin-emu"), Path("/usr/bin/dolphin"), Path("/usr/local/bin/dolphin-emu")))
+                values.append(_safe_path("/var/lib/flatpak/exports/bin") / flatpak_app_id)
+            values.extend(
+                (
+                    _safe_path("/usr/bin/dolphin-emu"),
+                    _safe_path("/usr/bin/dolphin"),
+                    _safe_path("/usr/local/bin/dolphin-emu"),
+                )
+            )
+        elif canonical == "azahar":
+            flatpak_app_id = _FLATPAK_APP_IDS.get(canonical)
+            if flatpak_app_id:
+                values.append(home / ".local" / "share" / "flatpak" / "exports" / "bin" / flatpak_app_id)
+                values.append(_safe_path("/var/lib/flatpak/exports/bin") / flatpak_app_id)
+            values.extend((_safe_path("/usr/bin/azahar"), _safe_path("/usr/local/bin/azahar")))
         flatpak_app_id = _FLATPAK_APP_IDS.get(canonical)
         if flatpak_app_id and canonical != "dolphin":
             values.append(home / ".local" / "share" / "flatpak" / "exports" / "bin" / flatpak_app_id)
@@ -133,6 +168,8 @@ def _registry_display_names(canonical: str) -> tuple[str, ...]:
         return ("pcsx2",)
     if canonical == "dolphin":
         return ("dolphin",)
+    if canonical == "azahar":
+        return ("azahar",)
     return (canonical,)
 
 
@@ -212,6 +249,9 @@ def _paths_from_install_dir(canonical: str, install_dir: Path) -> list[Path]:
         values.append(install_dir / "pcsx2.exe")
     elif canonical == "dolphin":
         values.append(install_dir / "Dolphin.exe")
+    elif canonical == "azahar":
+        values.append(install_dir / "azahar.exe")
+        values.append(install_dir / "azahar-qt.exe")
     return values
 
 

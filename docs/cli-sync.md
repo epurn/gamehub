@@ -29,16 +29,17 @@ Steam close behavior:
    - detects missing emulator binaries from index metadata
    - Windows detection checks executable PATH, common install locations, and uninstall registry locations (not only winget package metadata)
    - on Windows non-dry-run, attempts auto-install via `winget` for known emulators (`retroarch`, `pcsx2`)
+   - Azahar installs on Windows skip winget and use a pinned GitHub release installer URL (override with `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`)
    - Dolphin installs on Windows skip winget entirely and use the latest official Dolphin Windows x64 release archive (`dl.dolphin-emu.org`)
    - if required Dolphin resolves to a known legacy Windows winget path/version (`<=5.0`), sync fails fast with an actionable upgrade error instead of emitting legacy `/b` parser args
    - on Linux non-dry-run, uses config-first install backend (`[linux].emulator_install_backend`):
      - `auto` (default): Fedora + `dnf`, then Debian/Ubuntu + `apt-get`, then `flatpak`, then configured command backend
      - `dnf`: force Fedora package install behavior
      - `apt`: force Debian/Ubuntu package install behavior (`apt-get install -y`)
-     - `flatpak`: install `org.libretro.RetroArch`, `net.pcsx2.PCSX2`, `org.DolphinEmu.dolphin-emu` (remote optional via `[linux].flatpak_remote` / `GAMEHUB_LINUX_FLATPAK_REMOTE`)
+     - `flatpak`: install `org.libretro.RetroArch`, `net.pcsx2.PCSX2`, `org.DolphinEmu.dolphin-emu`, `org.azahar_emu.Azahar` (remote optional via `[linux].flatpak_remote` / `GAMEHUB_LINUX_FLATPAK_REMOTE`)
      - `command`: run `[linux].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
      - `none`: disable Linux auto-install (sync prints actionable missing emulator output)
-   - when Linux backend is flatpak-preferred (`flatpak`, or immutable-host `auto`), Dolphin is treated as Flatpak-required; native `/usr/bin/dolphin` installs are not used as a substitute for `org.DolphinEmu.dolphin-emu`, and sync fails fast if that Flatpak app is unavailable
+   - when Linux backend is flatpak-preferred (`flatpak`, or immutable-host `auto`), Dolphin and Azahar are treated as Flatpak-required; native installs are not used as substitutes for `org.DolphinEmu.dolphin-emu` / `org.azahar_emu.Azahar`, and sync fails fast if those Flatpak apps are unavailable
    - Steam shortcuts resolve emulator executable paths to concrete binaries when available
 4. Ensure required RetroArch cores are available:
    - detects required cores from index launch templates (`-L cores/<core>`)
@@ -91,6 +92,14 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - keyboard/mouse default pad bindings are replaced by SDL controller bindings during bootstrap
   - GAMEHUB bootstraps `Hotkeys/OpenPauseMenu = SDL-0/Back & SDL-0/Start` when the existing binding is missing or keyboard-only
 - `GC` firmware is mirrored to Dolphin runtime user path `GC/` (native default: `~/.local/share/dolphin-emu/GC`, Flatpak: `~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/GC`).
+- `N3DS` has no required firmware deployment targets in this pass.
+- When `N3DS` is present in the index, GAMEHUB bootstraps Azahar runtime config in `qt-config.ini` with:
+  - `fullscreen=true`
+  - `confirmClose=false` (disables quit confirmation while emulation is running)
+  - Windows default path: `%APPDATA%/Azahar/config/qt-config.ini`
+  - Linux Flatpak default path: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
+- On Linux, GAMEHUB also bootstraps Azahar SDL controller bindings for profile 1 when keyboard-default mappings are detected.
+- GAMEHUB does not decrypt ROM content; N3DS ROMs must already be in a format Azahar can load.
 - When `GC`/`Wii` systems are present, GAMEHUB writes Dolphin runtime config `Config/Dolphin.ini` with `[Display] Fullscreen = True` under the same resolved runtime user path and mirrors to additional detected config roots when present.
 - GAMEHUB also bootstraps Dolphin `Config/GCPadNew.ini` and enables GC controller ports in `Dolphin.ini` (`SIDevice0/1 = 6`).
 - For Wii input, GAMEHUB bootstraps `Config/WiimoteNew.ini` with two emulated Wii remotes (`Wiimote1` + `Wiimote2`) with right-stick pointer bindings (`IR/* = Right Stick`) and Nunchuk extension defaults.
@@ -113,12 +122,26 @@ Linux path notes:
 - Linux RetroArch Steam launch options rewrite `-L cores/<core>.dll` templates to Linux core paths (`.so`) and prefer absolute core paths from resolved RetroArch config/overrides.
 - Linux Flatpak PCSX2 Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so host ROM paths are forwarded reliably to the sandbox.
 - Linux Flatpak Dolphin Steam launch options use `flatpak run --device=all --file-forwarding ... -e @@ <rom> @@` so controller devices and host ROM paths are consistently available in the sandbox.
+- Linux Flatpak Azahar Steam launch options default to a Linux-only wrapper (`python -m gamehub_cli.azahar_exit_hook`) that:
+  - launches `flatpak run --device=all --file-forwarding org.azahar_emu.Azahar -f -- @@ <rom> @@`
+  - listens for strict `Select+Start` and terminates Azahar when pressed:
+    - joystick path (`/dev/input/js*`) using configured Azahar button indices
+    - evdev fallback (`/dev/input/event*`) using `BTN_SELECT` + `BTN_START`
+  - can be disabled by setting `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false` (falls back to direct flatpak launch)
+- N3DS Steam Input limitation (current):
+  - GAMEHUB does not auto-apply Steam Input templates for N3DS.
+  - If you use Steam Input template mode, configure one shortcut manually and copy that layout to other N3DS shortcuts in Steam UI.
 
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`
 - `PCSX2_BIOS_DIR`
 - `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG`
 - `DOLPHIN_EMU_USERPATH`
+- `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`
+- `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`
+- `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`
+- `GAMEHUB_AZAHAR_EXIT_BUTTON_START`
+- `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`
 
 ## RetroArch Core Defaults
 For systems that launch via RetroArch, GAMEHUB uses these general-purpose core defaults when a core cannot be parsed from the index launch template:
@@ -135,6 +158,7 @@ For systems that launch via RetroArch, GAMEHUB uses these general-purpose core d
 Steam shortcut build normalizes emulator launch options for fullscreen:
 - RetroArch shortcuts include `-f` (injected if missing).
 - PCSX2 shortcuts include `-fullscreen` (injected if missing; Flatpak path already includes it).
+- Azahar native shortcuts include `-f` (injected if missing). Linux Flatpak Azahar uses a GAMEHUB wrapper hook by default (or direct `flatpak run` when `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false`).
 - Dolphin shortcuts include `-u "<dolphin-user-dir>"` so launch always uses the same user profile path GAMEHUB configured.
 - Dolphin shortcuts include `-C Dolphin.Display.Fullscreen=True` for non-Flatpak installs when supported by the installed Dolphin CLI parser (injected before `-e/--exec` when missing).
 

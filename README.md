@@ -7,11 +7,25 @@
 
 Docker-first home server + client CLI that syncs emulator libraries into Steam non-Steam shortcuts, system collections, and artwork.
 
-## ✅ v1 Platform Status
-- Windows: verified
-- Bazzite: tested
-- SteamOS (Deck): untested
-- Fedora/Ubuntu: untested
+## ✅ v1 Compatibility Matrix
+
+### Platform support
+| Platform | Status |
+| --- | --- |
+| Windows | ✅ |
+| Bazzite | ✅ |
+| SteamOS (Deck) | ⚠️ |
+| Other Linux distros (Fedora/Ubuntu/etc.) | ⚠️ |
+| macOS | ❌ |
+
+### Controller support
+| Platform | Xbox controllers |
+| --- | --- |
+| Bazzite | ✅ |
+| Windows | ❌ |
+| SteamOS (Deck) | ❌ |
+| Other Linux distros (Fedora/Ubuntu/etc.) | ❌ |
+| macOS | ❌ |
 
 Details: [Platform Support (v1)](docs/platform-support.md)
 
@@ -25,8 +39,8 @@ Details: [Platform Support (v1)](docs/platform-support.md)
 - SGDB artwork cache with cache-first lookups and portrait+landscape grid support.
 - Steam lifecycle safety: close -> backup -> write -> reopen.
 
-Supported systems in v1:
-- `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
+Supported systems in v1.1:
+- `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
 
 ## 👤 User Install (Latest Release)
 Create `config.toml` in one of the default locations:
@@ -83,6 +97,8 @@ More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbo
 - Server ROM layout must be flat per system: `roms/<system>/<title.ext>`.
 - Nested ROM directories under a system are rejected.
 - ROM/firmware are server-first only (no internet ROM/BIOS fetching).
+- `N3DS` uses Azahar (`azahar`) with no required firmware files enforced by GAMEHUB.
+- GAMEHUB does not decrypt ROMs; N3DS content must already be in a compatible format.
 - Server releases are published as GHCR images (`ghcr.io/epurn/gamehub-server:<tag>`).
 - Prefer `GAMEHUB_SGDB_API_KEY` env var over storing SGDB keys in config files.
 

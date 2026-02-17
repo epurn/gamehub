@@ -58,3 +58,7 @@
   - atomic write of mutated files
   - copy artwork
   - reopen Steam if it was running at start
+
+## N3DS Limitation
+- GAMEHUB currently does not auto-copy Steam Input templates/layouts for N3DS shortcuts.
+- For template workflows, configure one N3DS shortcut in Steam and apply/export that layout manually to other N3DS shortcuts.

@@ -16,6 +16,7 @@ INITIAL_SYSTEM_SET = {
     "GEN_MD",
     "N64",
     "NDS",
+    "N3DS",
     "NES",
     "PSX",
     "SNES",
@@ -98,9 +99,13 @@ def test_build_index_requires_required_firmware_for_indexed_system() -> None:
 def test_system_catalog_matches_initial_supported_set() -> None:
     assert set(SYSTEM_CATALOG) == INITIAL_SYSTEM_SET
     assert "PS1" not in SYSTEM_CATALOG
+    assert SYSTEM_CATALOG["N3DS"]["extensions"] == (".3ds", ".cci", ".cxi")
+    assert SYSTEM_CATALOG["N3DS"]["emulator"] == "azahar"
+    assert SYSTEM_CATALOG["N3DS"]["firmware"] == ()
     assert SYSTEM_CATALOG["PSX"]["firmware"] == ("scph5501.bin",)
     assert SYSTEM_CATALOG["Wii"]["firmware"] == ()
     assert SYSTEM_CATALOG["Wii"]["scan_firmware"] is False
+    assert SYSTEM_CATALOG["N3DS"]["scan_firmware"] is False
     assert ' -b -e "{rom}"' in SYSTEM_CATALOG["GC"]["launch_template"]
     assert ' -b -e "{rom}"' in SYSTEM_CATALOG["Wii"]["launch_template"]
     assert ' -fullscreen "{rom}"' in SYSTEM_CATALOG["PS2"]["launch_template"]
@@ -114,6 +119,7 @@ def test_build_index_supports_all_initial_systems() -> None:
         "GEN_MD": "Sonic2.md",
         "N64": "Mario64.z64",
         "NDS": "MarioKartDS.nds",
+        "N3DS": "OcarinaOfTime.3ds",
         "NES": "SuperMarioBros.nes",
         "PSX": "FinalFantasyVII.chd",
         "SNES": "SuperMetroid.sfc",
@@ -177,6 +183,34 @@ def test_build_index_supports_dolphin_ciso_for_gc_and_wii() -> None:
         by_system = {title.system: title for title in bundle.index.titles}
         assert by_system["GC"].rom.extension == ".ciso"
         assert by_system["Wii"].rom.extension == ".ciso"
+
+
+def test_build_index_supports_n3ds_supported_extensions_and_ignores_unsupported() -> None:
+    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "N3DS" / "Pilotwings.3ds", b"rom-3ds")
+        _write_file(root / "roms" / "N3DS" / "MiiMaker.cci", b"rom-cci")
+        _write_file(root / "roms" / "N3DS" / "HomeMenu.cxi", b"rom-cxi")
+        _write_file(root / "roms" / "N3DS" / "InstallMe.cia", b"unsupported")
+
+        bundle = build_index(root)
+        titles = [title for title in bundle.index.titles if title.system == "N3DS"]
+        extensions = {title.rom.extension for title in titles}
+        names = {title.title_name for title in titles}
+
+        assert extensions == {".3ds", ".cci", ".cxi"}
+        assert names == {"Pilotwings", "MiiMaker", "HomeMenu"}
+        assert "InstallMe" not in names
+
+
+def test_build_index_ignores_n3ds_firmware_directory_files() -> None:
+    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "N3DS" / "Pilotwings.3ds", b"rom")
+        _write_file(root / "firmware" / "N3DS" / "legacy_keys.txt", b"keys")
+        _write_file(root / "firmware" / "N3DS" / "seeddb.bin", b"seeddb")
+
+        bundle = build_index(root)
+        n3ds = next(system for system in bundle.index.systems if system.name == "N3DS")
+        assert n3ds.firmware == ()
 
 
 def test_build_index_reuses_cached_hashes_for_unchanged_files(monkeypatch) -> None:

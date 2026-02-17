@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from gamehub_cli.config import GamehubConfig
 from gamehub_cli.firmware_deploy import (
+    _default_azahar_qt_config_path,
     _default_dolphin_ini_path,
     _default_pcsx2_ini_path,
     _linux_detect_evdev_gamepads,
@@ -124,6 +125,152 @@ def test_target_dirs_support_env_overrides(monkeypatch) -> None:
         assert Path("D:/RetroArch/system") in psx_dirs
         assert Path("D:/PCSX2/bios") in ps2_dirs
         assert Path("D:/Dolphin/User/Wii") in wii_dirs
+
+
+def test_deploy_firmware_n3ds_configures_azahar_fullscreen_without_firmware(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = _config(temp_root)
+        appdata = temp_root / "AppData" / "Roaming"
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
+        monkeypatch.setenv("APPDATA", str(appdata))
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="N3DS",
+                    rom_extensions=(".3ds", ".cci", ".cxi"),
+                    default_emulator="azahar",
+                    launch_template='"{emulator}" "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        qt_config = appdata / "Azahar" / "config" / "qt-config.ini"
+        assert qt_config.exists()
+        text = qt_config.read_text(encoding="utf-8")
+        assert "fullscreen=true" in text
+        assert r"fullscreen\default=false" in text
+        assert "confirmClose=false" in text
+        assert r"confirmClose\default=false" in text
+        assert not (appdata / "Azahar" / "sysdata").exists()
+
+
+def test_deploy_firmware_n3ds_dry_run_does_not_mutate_fullscreen_config(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = _config(temp_root)
+        appdata = temp_root / "AppData" / "Roaming"
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
+        monkeypatch.setenv("APPDATA", str(appdata))
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="N3DS",
+                    rom_extensions=(".3ds", ".cci", ".cxi"),
+                    default_emulator="azahar",
+                    launch_template='"{emulator}" "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+        logs: list[str] = []
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
+
+        assert not (appdata / "Azahar" / "sysdata").exists()
+        assert not (appdata / "Azahar" / "config" / "qt-config.ini").exists()
+        assert any("azahar\tdry-run\tconfigure" in line for line in logs)
+
+
+def test_default_azahar_qt_config_path_prefers_flatpak_config_root(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-azahar-") as temp_root:
+        home = temp_root / "home"
+        export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.azahar_emu.Azahar"
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_bytes(b"#!/bin/sh")
+
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+
+        qt_config = _default_azahar_qt_config_path()
+
+        assert qt_config == home / ".var" / "app" / "org.azahar_emu.Azahar" / "config" / "azahar-emu" / "qt-config.ini"
+
+
+def test_deploy_firmware_n3ds_linux_bootstraps_sdl_controller_bindings(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-azahar-") as temp_root:
+        home = temp_root / "home"
+        config = _config(temp_root)
+        export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.azahar_emu.Azahar"
+        export.parent.mkdir(parents=True, exist_ok=True)
+        export.write_bytes(b"#!/bin/sh")
+        qt_config = home / ".var" / "app" / "org.azahar_emu.Azahar" / "config" / "azahar-emu" / "qt-config.ini"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text(
+            "\n".join(
+                [
+                    "[Controls]",
+                    "profile=0",
+                    r"profile\default=true",
+                    r'profiles\1\button_a="code:65,engine:keyboard"',
+                    r"profiles\1\button_a\default=true",
+                    r'profiles\1\button_b="code:83,engine:keyboard"',
+                    r"profiles\1\button_b\default=true",
+                    r'profiles\1\button_start="code:77,engine:keyboard"',
+                    r"profiles\1\button_start\default=true",
+                    r'profiles\1\button_up="code:84,engine:keyboard"',
+                    r"profiles\1\button_up\default=true",
+                    r'profiles\1\circle_pad="down:code$016777237$1engine$0keyboard"',
+                    r"profiles\1\circle_pad\default=true",
+                    r'profiles\1\c_stick="down:code$075$1engine$0keyboard"',
+                    r"profiles\1\c_stick\default=true",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="N3DS",
+                    rom_extensions=(".3ds", ".cci", ".cxi"),
+                    default_emulator="azahar",
+                    launch_template='"{emulator}" "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        text = qt_config.read_text(encoding="utf-8")
+        assert "fullscreen=true" in text
+        assert r"fullscreen\default=false" in text
+        assert "confirmClose=false" in text
+        assert r"confirmClose\default=false" in text
+        assert r'profiles\1\button_a="button:0,engine:sdl,port:0"' in text
+        assert r'profiles\1\button_b="button:1,engine:sdl,port:0"' in text
+        assert r'profiles\1\button_start="button:6,engine:sdl,port:0"' in text
+        assert r'profiles\1\button_up="button:11,engine:sdl,port:0"' in text
+        assert r"profiles\1\circle_pad=" in text
+        assert r"profiles\1\c_stick=" in text
+        assert "engine$0sdl" in text
 
 
 def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch) -> None:

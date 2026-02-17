@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PosixPath
 import re
 import shutil
 import sys
@@ -16,7 +16,14 @@ from .emulators import resolve_emulator_executable
 import gamehub_cli.firmware_targets as firmware_targets
 import gamehub_cli.pcsx2_ini as pcsx2_ini
 from .fsops import replace_file
-from .platform_paths import PCSX2_FLATPAK_APP_ID, is_flatpak_command, linux_flatpak_pcsx2_root
+from .platform_paths import (
+    AZAHAR_FLATPAK_APP_ID,
+    PCSX2_FLATPAK_APP_ID,
+    is_flatpak_command,
+    linux_flatpak_azahar_root,
+    linux_flatpak_azahar_config_root,
+    linux_flatpak_pcsx2_root,
+)
 
 _DOLPHIN_GCPAD_BINDINGS = (
     ("Buttons/A", "SOUTH | `Button A`"),
@@ -88,6 +95,30 @@ _RETROARCH_ALL_USERS_MENU_KEY = "all_users_control_menu"
 _RETROARCH_ALL_USERS_MENU_VALUE = "true"
 _PCSX2_MENU_COMBO_LABEL = "Back+Start"
 _DOLPHIN_GENERAL_STOP_MACRO = "@(SELECT+START)"
+_AZAHAR_FULLSCREEN_KEY = "fullscreen"
+_AZAHAR_FULLSCREEN_DEFAULT_KEY = r"fullscreen\default"
+_AZAHAR_FULLSCREEN_VALUE = "true"
+_AZAHAR_FULLSCREEN_DEFAULT_VALUE = "false"
+_AZAHAR_CONFIRM_CLOSE_KEY = "confirmClose"
+_AZAHAR_CONFIRM_CLOSE_DEFAULT_KEY = r"confirmClose\default"
+_AZAHAR_CONFIRM_CLOSE_VALUE = "false"
+_AZAHAR_CONFIRM_CLOSE_DEFAULT_VALUE = "false"
+_AZAHAR_GUID_RE = re.compile(r"guid(?::|\$0)(?P<guid>[0-9a-fA-F]+)")
+_AZAHAR_PORT_RE = re.compile(r"port(?::|\$0)(?P<port>\d+)")
+_AZAHAR_BUTTON_BINDINGS: tuple[tuple[str, int], ...] = (
+    ("button_a", 0),
+    ("button_b", 1),
+    ("button_x", 2),
+    ("button_y", 3),
+    ("button_select", 4),
+    ("button_start", 6),
+    ("button_l", 9),
+    ("button_r", 10),
+    ("button_up", 11),
+    ("button_down", 12),
+    ("button_left", 13),
+    ("button_right", 14),
+)
 
 
 def _linux_detect_evdev_gamepads(*, max_devices: int = 2) -> tuple[str, ...]:
@@ -198,6 +229,168 @@ def _upsert_simple_cfg_key(lines: list[str], key: str, value: str) -> tuple[list
     return output, changed
 
 
+def _upsert_qsettings_key(lines: list[str], key: str, value: str) -> tuple[list[str], bool]:
+    key_name = key.casefold()
+    desired = f"{key}={value}"
+    changed = False
+    found = False
+    output: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith(";") or "=" not in stripped:
+            output.append(line)
+            continue
+        current_key = stripped.split("=", 1)[0].strip().casefold()
+        if current_key != key_name:
+            output.append(line)
+            continue
+        found = True
+        if stripped != desired:
+            output.append(desired)
+            changed = True
+        else:
+            output.append(line)
+    if not found:
+        if output and output[-1].strip():
+            output.append("")
+        output.append(desired)
+        changed = True
+    return output, changed
+
+
+def _read_qsettings_key(lines: list[str], key: str) -> str | None:
+    key_name = key.casefold()
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith(";") or "=" not in stripped:
+            continue
+        current_key, current_value = stripped.split("=", 1)
+        if current_key.strip().casefold() != key_name:
+            continue
+        return current_value.strip()
+    return None
+
+
+def _azahar_profile_slot(lines: list[str]) -> int:
+    raw_value = _read_qsettings_key(lines, "profile")
+    if raw_value is None:
+        return 1
+    try:
+        profile_idx = int(raw_value.strip())
+    except ValueError:
+        return 1
+    if profile_idx < 0:
+        return 1
+    return profile_idx + 1
+
+
+def _azahar_detect_sdl_identity(lines: list[str]) -> tuple[str | None, int]:
+    guid: str | None = None
+    port = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or "=" not in stripped:
+            continue
+        value = stripped.split("=", 1)[1]
+        lowered = value.casefold()
+        if "engine:sdl" not in lowered and "engine$0sdl" not in lowered:
+            continue
+        guid_match = _AZAHAR_GUID_RE.search(value)
+        if guid_match:
+            guid = guid_match.group("guid")
+        port_match = _AZAHAR_PORT_RE.search(value)
+        if port_match:
+            try:
+                port = int(port_match.group("port"))
+            except ValueError:
+                port = 0
+        if guid is not None:
+            break
+    return guid, port
+
+
+def _azahar_should_migrate_digital_binding(binding: str | None) -> bool:
+    if binding is None:
+        return True
+    lowered = binding.casefold()
+    if "engine:sdl" in lowered:
+        return False
+    if "engine:keyboard" in lowered:
+        return True
+    # Preserve non-keyboard custom mappings (for example UDP/motion profiles).
+    return False
+
+
+def _azahar_should_migrate_analog_binding(binding: str | None) -> bool:
+    if binding is None:
+        return True
+    lowered = binding.casefold()
+    return "engine$0sdl" not in lowered and "engine:sdl" not in lowered
+
+
+def _azahar_sdl_button_value(button_index: int, guid: str | None, port: int) -> str:
+    parts = [f"button:{button_index}", "engine:sdl"]
+    if guid:
+        parts.append(f"guid:{guid}")
+    parts.append(f"port:{port}")
+    return f'"{",".join(parts)}"'
+
+
+def _azahar_sdl_axis_term(axis: int, direction: str, threshold: str, guid: str | None, port: int) -> str:
+    base = f"axis${axis:02d}$1direction$0{direction}$1engine$0sdl"
+    if guid:
+        base = f"{base}$1guid$0{guid}"
+    return f"{base}$1port$0{port}$1threshold$0{threshold}"
+
+
+def _azahar_sdl_stick_value(x_axis: int, y_axis: int, guid: str | None, port: int) -> str:
+    down = _azahar_sdl_axis_term(y_axis, "+", "0.5", guid, port)
+    left = _azahar_sdl_axis_term(x_axis, "-", "0-0.5", guid, port)
+    right = _azahar_sdl_axis_term(x_axis, "+", "0.5", guid, port)
+    up = _azahar_sdl_axis_term(y_axis, "-", "0-0.5", guid, port)
+    payload = (
+        f"down:{down},engine:analog_from_button,left:{left},"
+        f"modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,"
+        f"right:{right},up:{up}"
+    )
+    return f'"{payload}"'
+
+
+def _bootstrap_azahar_controllers(lines: list[str]) -> tuple[list[str], bool, str]:
+    profile_slot = _azahar_profile_slot(lines)
+    guid, port = _azahar_detect_sdl_identity(lines)
+    changed = False
+    for key_suffix, button_idx in _AZAHAR_BUTTON_BINDINGS:
+        key_name = fr"profiles\{profile_slot}\{key_suffix}"
+        current = _read_qsettings_key(lines, key_name)
+        if not _azahar_should_migrate_digital_binding(current):
+            continue
+        lines, changed_binding = _upsert_qsettings_key(
+            lines,
+            key_name,
+            _azahar_sdl_button_value(button_idx, guid, port),
+        )
+        lines, changed_default = _upsert_qsettings_key(lines, fr"{key_name}\default", "false")
+        changed |= changed_binding or changed_default
+
+    circle_key = fr"profiles\{profile_slot}\circle_pad"
+    circle_binding = _read_qsettings_key(lines, circle_key)
+    if _azahar_should_migrate_analog_binding(circle_binding):
+        lines, changed_circle = _upsert_qsettings_key(lines, circle_key, _azahar_sdl_stick_value(0, 1, guid, port))
+        lines, changed_circle_default = _upsert_qsettings_key(lines, fr"{circle_key}\default", "false")
+        changed |= changed_circle or changed_circle_default
+
+    c_stick_key = fr"profiles\{profile_slot}\c_stick"
+    c_stick_binding = _read_qsettings_key(lines, c_stick_key)
+    if _azahar_should_migrate_analog_binding(c_stick_binding):
+        lines, changed_c_stick = _upsert_qsettings_key(lines, c_stick_key, _azahar_sdl_stick_value(2, 3, guid, port))
+        lines, changed_c_stick_default = _upsert_qsettings_key(lines, fr"{c_stick_key}\default", "false")
+        changed |= changed_c_stick or changed_c_stick_default
+
+    details = f"controller_port={port}\tcontroller_guid={guid or 'auto'}"
+    return lines, changed, details
+
+
 def _retroarch_menu_combo_requires_migration(binding: str | None) -> bool:
     if not binding:
         return True
@@ -291,6 +484,35 @@ def _default_pcsx2_ini_path(config: GamehubConfig | None = None) -> Path:
 
 def _default_dolphin_ini_path(config: GamehubConfig | None = None) -> Path:
     return _resolve_dolphin_runtime_user_dir(config=config) / "Config" / "Dolphin.ini"
+
+
+def _default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
+    appdata = os.environ.get("APPDATA")
+    if os.name == "nt" and appdata:
+        # Test suites can monkeypatch os.name="nt" on non-Windows hosts.
+        # Keep mocked Windows branches host-safe by selecting a native path class.
+        if sys.platform.startswith("win"):
+            return Path(appdata) / "Azahar" / "config" / "qt-config.ini"
+        return PosixPath(appdata) / "Azahar" / "config" / "qt-config.ini"
+
+    home = Path.home()
+    flatpak_qt_config = linux_flatpak_azahar_config_root() / "qt-config.ini"
+    flatpak_data_root = linux_flatpak_azahar_root()
+    flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / AZAHAR_FLATPAK_APP_ID
+    azahar_raw = resolve_emulator_executable("azahar").strip('"')
+    azahar_exe = Path(azahar_raw)
+    if (
+        sys.platform.startswith("linux")
+        and (
+            is_flatpak_command(azahar_exe, AZAHAR_FLATPAK_APP_ID)
+            or AZAHAR_FLATPAK_APP_ID.casefold() in azahar_raw.casefold()
+            or flatpak_qt_config.parent.exists()
+            or flatpak_data_root.exists()
+            or flatpak_export_user.exists()
+        )
+    ):
+        return flatpak_qt_config
+    return home / ".config" / "azahar-emu" / "qt-config.ini"
 
 
 def _sha256(path: Path) -> str:
@@ -629,6 +851,51 @@ def _configure_dolphin_runtime(
     return runtime_user_dir / "Config" / "Dolphin.ini"
 
 
+def _configure_azahar_runtime(
+    config: GamehubConfig,
+    dry_run: bool,
+    verbose: bool,
+    writer: Callable[[str], None] = print,
+) -> Path:
+    ini_path = _default_azahar_qt_config_path(config=config)
+    details_parts = ["fullscreen=true", "confirm_exit_dialog=false"]
+    if sys.platform.startswith("linux"):
+        details_parts.append("controllers=linux_sdl_autoconfig")
+    details = "\t".join(details_parts)
+    if dry_run:
+        if verbose:
+            writer(f"azahar\tdry-run\tconfigure\t{ini_path}\t{details}")
+        return ini_path
+
+    lines = _read_ini_lines(ini_path)
+    lines, changed_fullscreen = _upsert_qsettings_key(lines, _AZAHAR_FULLSCREEN_KEY, _AZAHAR_FULLSCREEN_VALUE)
+    lines, changed_fullscreen_default = _upsert_qsettings_key(
+        lines, _AZAHAR_FULLSCREEN_DEFAULT_KEY, _AZAHAR_FULLSCREEN_DEFAULT_VALUE
+    )
+    lines, changed_confirm_close = _upsert_qsettings_key(lines, _AZAHAR_CONFIRM_CLOSE_KEY, _AZAHAR_CONFIRM_CLOSE_VALUE)
+    lines, changed_confirm_close_default = _upsert_qsettings_key(
+        lines, _AZAHAR_CONFIRM_CLOSE_DEFAULT_KEY, _AZAHAR_CONFIRM_CLOSE_DEFAULT_VALUE
+    )
+    changed_controls = False
+    if sys.platform.startswith("linux"):
+        lines, changed_controls, controls_details = _bootstrap_azahar_controllers(lines)
+        details = f"{details}\t{controls_details}"
+
+    if (
+        changed_fullscreen
+        or changed_fullscreen_default
+        or changed_confirm_close
+        or changed_confirm_close_default
+        or changed_controls
+        or not ini_path.exists()
+    ):
+        _write_ini_atomic(ini_path, lines)
+
+    if verbose:
+        writer(f"azahar\tconfigured\t{ini_path}\t{details}")
+    return ini_path
+
+
 def deploy_firmware_to_emulators(
     config: GamehubConfig,
     index: LibraryIndex,
@@ -654,6 +921,9 @@ def deploy_firmware_to_emulators(
     has_dolphin = any(system.name in {"GC", "Wii"} for system in index.systems)
     if has_dolphin:
         _configure_dolphin_runtime(config=config, dry_run=dry_run, verbose=verbose, writer=writer)
+    has_n3ds = any(system.name == "N3DS" for system in index.systems)
+    if has_n3ds:
+        _configure_azahar_runtime(config=config, dry_run=dry_run, verbose=verbose, writer=writer)
 
     for system in index.systems:
         if system.name == "PS2":

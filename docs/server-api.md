@@ -28,16 +28,18 @@ Base URL: `http://<host>:8000`
 ## Index generation notes
 - ROMs are discovered from files in `roms/<system>/` matching the system's allowed extensions.
 - Dolphin systems (`GC`, `Wii`) accept `.ciso` in addition to existing disc formats.
+- `N3DS` accepts `.3ds`, `.cci`, and `.cxi` ROM extensions.
 - `.7z` archives are not indexed/supported for `PSX`/`PS2`; use supported disc formats (for example `.chd`, `.cue` + `.bin`, `.iso`, `.pbp`).
 - Nested title directories under `roms/<system>/` are rejected.
 - Duplicate title stems in one system are rejected (for example `Title.iso` and `Title.chd`).
-- Firmware metadata in `/v1/index` is scanned from `firmware/<system>/` and includes SHA256 per file.
+- Firmware metadata in `/v1/index` is scanned from `firmware/<system>/` for systems with firmware scanning enabled, and includes SHA256 per file.
 - SHA256 generation uses a persistent metadata-keyed cache (`size` + `mtime_ns`) so unchanged files skip re-hash on future rebuilds.
 - Hash cache path is configurable with `GAMEHUB_HASH_CACHE_PATH` (default: OS temp dir).
 - Wii firmware directory files are ignored for indexing in v1 (no required Wii firmware).
-- For systems with required firmware (for example PS2), index generation fails if required firmware is missing while titles are present.
+- N3DS firmware directory files are ignored for indexing in v1.1 (no required N3DS firmware).
+- For systems with required firmware (for example `PS2`), index generation fails if required firmware is missing while titles are present.
 - Asset serving endpoint exists, but flat-ROM indexing currently emits no local assets.
-- Initial canonical systems: `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`.
+- Initial canonical systems: `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`.
 
 ## Index refresh policy
 - The server keeps the latest index snapshot in memory and serves `/v1/index`, `/v1/files/{file_id}`, and `/v1/assets/{asset_id}` from that cached snapshot.

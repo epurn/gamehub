@@ -32,6 +32,7 @@ emulator_install_backend = "auto"
 # emulator_install_command = "sudo apt-get install -y {package}"
 # Optional when emulator_install_backend = "flatpak".
 flatpak_remote = "flathub"
+# N3DS uses Azahar Flatpak app id: org.azahar_emu.Azahar
 
 # Optional Linux path hints (uncomment as needed):
 # retroarch_cfg_path = "~/.config/retroarch/retroarch.cfg"

@@ -71,6 +71,13 @@ SYSTEM_CATALOG = {
         "launch_template": '"{emulator}" -f -L cores/melondsds_libretro.dll "{rom}"',
         "firmware": (),
     },
+    "N3DS": {
+        "extensions": (".3ds", ".cci", ".cxi"),
+        "emulator": "azahar",
+        "launch_template": '"{emulator}" "{rom}"',
+        "firmware": (),
+        "scan_firmware": False,
+    },
     "PSX": {
         "extensions": (".chd", ".cue", ".iso", ".pbp"),
         "emulator": "retroarch",
@@ -196,14 +203,16 @@ def _scan_firmware_specs(
         raise ValueError(f"Firmware path is not a directory: {firmware_dir}")
 
     found_required: set[str] = set()
-    required_set = set(required_filenames)
+    required_lookup = {name.casefold(): name for name in required_filenames}
+    required_set = set(required_lookup.values())
     if firmware_dir.is_dir():
         for child in sorted(firmware_dir.iterdir(), key=lambda item: item.name.lower()):
             if not child.is_file():
                 continue
-            is_required = child.name in required_set
+            required_name = required_lookup.get(child.name.casefold())
+            is_required = required_name is not None
             if is_required:
-                found_required.add(child.name)
+                found_required.add(required_name)
             child_stat = child.stat()
             child_rel = _relative_unix(child, data_root)
             firmware_specs.append(
