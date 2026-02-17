@@ -191,24 +191,51 @@ def _override_dolphin_device_sections(
     *,
     profile_name: str,
 ) -> dict[str, dict[str, str]]:
-    if profile_name == PROFILE_KBM:
-        return sections
     if not sys.platform.startswith("linux"):
         return sections
-    device0, device1 = _dolphin_linux_device_pair()
+    if profile_name == PROFILE_KBM:
+        pad_device0, pad_device1 = "All Devices", "All Devices"
+    else:
+        pad_device0, pad_device1 = _dolphin_linux_device_pair()
+    # Keep gameplay device tokens precise, but let hotkeys resolve from any backend.
+    hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
     updated: dict[str, dict[str, str]] = {section: dict(values) for section, values in sections.items()}
     for section_name, device in (
-        ("GCPad1", device0),
-        ("GCPad2", device1),
-        ("Wiimote1", device0),
-        ("Wiimote2", device1),
-        ("Hotkeys1", device0),
-        ("Hotkeys2", device1),
-        ("Hotkeys", device0),
+        ("GCPad1", pad_device0),
+        ("GCPad2", pad_device1),
+        ("Wiimote1", pad_device0),
+        ("Wiimote2", pad_device1),
+        ("Hotkeys1", hotkey_device0),
+        ("Hotkeys2", hotkey_device1),
+        ("Hotkeys", hotkey_device0),
     ):
         if section_name not in updated:
             continue
         updated[section_name]["Device"] = device
+    return updated
+
+
+def _dolphin_hotkey_expression_for_profile(profile_name: str) -> str:
+    if profile_name == PROFILE_KBM:
+        return "`Escape`"
+    return "(`Back` & `Start`) | (`BACK` & `START`) | (`SELECT` & `START`) | (`Button 6` & `Button 7`)"
+
+
+def _override_dolphin_hotkey_sections(
+    sections: dict[str, dict[str, str]],
+    *,
+    profile_name: str,
+) -> dict[str, dict[str, str]]:
+    updated: dict[str, dict[str, str]] = {section: dict(values) for section, values in sections.items()}
+    hotkey_expr = _dolphin_hotkey_expression_for_profile(profile_name)
+    for section_name in ("Hotkeys1", "Hotkeys2"):
+        if section_name not in updated:
+            continue
+        updated[section_name]["Keys/Stop"] = hotkey_expr
+        updated[section_name]["Keys/Exit"] = hotkey_expr
+    if "Hotkeys" in updated:
+        updated["Hotkeys"]["General/Stop"] = hotkey_expr
+        updated["Hotkeys"]["General/Exit"] = hotkey_expr
     return updated
 
 
@@ -224,6 +251,7 @@ def _apply_dolphin_profile(config: GamehubConfig, profile_name: str) -> list[Pat
             )
             sections = _parse_ini_sections(profile_lines)
             sections = _override_dolphin_device_sections(sections, profile_name=profile_name)
+            sections = _override_dolphin_hotkey_sections(sections, profile_name=profile_name)
             target_path = target_dir / filename
             _apply_managed_ini_sections(target_path=target_path, sections=sections)
             touched.append(target_path)
@@ -243,7 +271,18 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
         lines = read_ini_lines(target_path)
         changed = False
         for key, value in pairs.items():
-            if _read_qsettings_key(lines, key) == value:
+            existing = _read_qsettings_key(lines, key)
+            # On Linux controller mode, preserve any existing SDL mappings that may carry
+            # runtime-specific GUID/port values discovered by manual calibration.
+            if (
+                sys.platform.startswith("linux")
+                and profile_name != PROFILE_KBM
+                and key.startswith("profiles\\1\\")
+                and existing is not None
+                and ("engine:sdl" in existing.casefold() or "engine$0sdl" in existing.casefold())
+            ):
+                continue
+            if existing == value:
                 continue
             lines, key_changed = _upsert_qsettings_key(lines, key, value)
             changed |= key_changed

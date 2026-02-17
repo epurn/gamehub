@@ -225,6 +225,9 @@ _DOLPHIN_KBM_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
 
 def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
     if profile_name == PROFILE_KBM:
+        if sys.platform.startswith("linux"):
+            # "All Devices" allows keyboard mappings to resolve reliably on Linux.
+            return "All Devices", "All Devices"
         return "DInput/0/Keyboard Mouse", "DInput/0/Keyboard Mouse"
     if sys.platform.startswith("linux"):
         # Linux Dolphin controller device roots are SDL/evdev-style, not XInput.
@@ -243,11 +246,13 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
         wiimote_bindings = _DOLPHIN_KBM_WIIMOTE_BINDINGS
         hotkey_value = "`Escape`"
         general_stop = "`Escape`"
+        general_exit = "`Escape`"
     else:
         gcpad_bindings = _DOLPHIN_XBOX_GCPAD_BINDINGS
         wiimote_bindings = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
         hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         general_stop = "@(SELECT+START)"
+        general_exit = "@(SELECT+START)"
 
     gcpad_sections: dict[str, dict[str, str]] = {}
     for pad_number, device in ((1, device0), (2, device1)):
@@ -266,7 +271,7 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
     hotkey_sections = {
         "Hotkeys1": {"Device": device0, "Keys/Stop": hotkey_value, "Keys/Exit": hotkey_value},
         "Hotkeys2": {"Device": device1, "Keys/Stop": hotkey_value, "Keys/Exit": hotkey_value},
-        "Hotkeys": {"Device": device0, "General/Stop": general_stop},
+        "Hotkeys": {"Device": device0, "General/Stop": general_stop, "General/Exit": general_exit},
     }
 
     return {

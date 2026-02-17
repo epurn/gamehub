@@ -105,10 +105,12 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
         if sys.platform.startswith("linux"):
             assert "Device = SDL/0/Gamepad" in gcpad_text
             assert "Device = SDL/1/Gamepad" in gcpad_text
+            assert "Device = All Devices" in hotkeys_text
         else:
             assert "Device = XInput/0/Gamepad" in gcpad_text
             assert "Device = XInput/1/Gamepad" in gcpad_text
-        assert "General/Stop = @(SELECT+START)" in hotkeys_text
+        assert "General/Stop = (`Back` & `Start`) | (`BACK` & `START`) | (`SELECT` & `START`) | (`Button 6` & `Button 7`)" in hotkeys_text
+        assert "General/Exit = (`Back` & `Start`) | (`BACK` & `START`) | (`SELECT` & `START`) | (`Button 6` & `Button 7`)" in hotkeys_text
 
 
 def test_apply_controller_profile_dolphin_linux_prefers_evdev_from_detected_xbox(monkeypatch) -> None:
@@ -129,8 +131,28 @@ def test_apply_controller_profile_dolphin_linux_prefers_evdev_from_detected_xbox
 
         apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+        hotkeys_text = (config_dir / "Hotkeys.ini").read_text(encoding="utf-8")
 
         assert "Device = evdev/0/Xbox Wireless Controller" in gcpad_text
+        assert "Device = All Devices" in hotkeys_text
+
+
+def test_apply_controller_profile_dolphin_linux_kbm_uses_all_devices(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
+        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
+
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=0)
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+
+        assert "Device = All Devices" in gcpad_text
 
 
 def test_apply_controller_profile_azahar_kbm(monkeypatch) -> None:
@@ -168,6 +190,35 @@ def test_apply_controller_profile_azahar_updates_all_known_target_paths(monkeypa
         assert "custom_key=keep_b" in qt_b.read_text(encoding="utf-8")
         assert r'profiles\1\button_a="code:65,engine:keyboard"' in qt_a.read_text(encoding="utf-8")
         assert r'profiles\1\button_a="code:65,engine:keyboard"' in qt_b.read_text(encoding="utf-8")
+
+
+def test_apply_controller_profile_azahar_linux_preserves_existing_sdl_bindings(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text(
+            "\n".join(
+                [
+                    "profile=0",
+                    r'profiles\1\button_a="button:0,engine:sdl,guid:ABC123,port:1"',
+                    r'profiles\1\button_select="button:4,engine:sdl,guid:ABC123,port:1"',
+                    r'profiles\1\button_start="button:6,engine:sdl,guid:ABC123,port:1"',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
+
+        apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
+        text = qt_config.read_text(encoding="utf-8")
+
+        assert r'profiles\1\button_a="button:0,engine:sdl,guid:ABC123,port:1"' in text
+        assert r'profiles\1\button_select="button:4,engine:sdl,guid:ABC123,port:1"' in text
+        assert r'profiles\1\button_start="button:6,engine:sdl,guid:ABC123,port:1"' in text
 
 
 @contextmanager
