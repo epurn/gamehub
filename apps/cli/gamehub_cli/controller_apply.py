@@ -420,7 +420,7 @@ def _inject_azahar_sdl_identity(
             has_port = True
             continue
         if token.startswith("guid:"):
-            if guid and not strip_guid:
+            if guid and not strip_guid and not has_guid:
                 updated_parts.append(f"guid:{guid}")
                 has_guid = True
             continue
