@@ -524,11 +524,14 @@ def _override_dolphin_device_sections(
     if not sys.platform.startswith("linux"):
         return sections
     if profile_name == PROFILE_KBM:
-        pad_device0, pad_device1 = "All Devices", "All Devices"
+        pad_device0, pad_device1 = "Keyboard", "Keyboard"
     else:
         pad_device0, pad_device1 = _dolphin_linux_device_pair()
     # Keep gameplay device tokens precise, but let hotkeys resolve from any backend.
-    hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
+    if profile_name == PROFILE_KBM:
+        hotkey_device0, hotkey_device1 = "Keyboard", "Keyboard"
+    else:
+        hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
     updated: dict[str, dict[str, str]] = {section: dict(values) for section, values in sections.items()}
     for section_name, device in (
         ("GCPad1", pad_device0),

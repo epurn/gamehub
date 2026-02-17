@@ -229,8 +229,11 @@ def run_sync(
         return 0
 
     seeded_profiles = seed_default_profiles(config=config, verbose=verbose, force=True)
-    if verbose and seeded_profiles:
-        print(f"Seeded controller profile defaults: {len(seeded_profiles)}")
+    if verbose:
+        if seeded_profiles:
+            print(f"Seeded controller profile defaults: {len(seeded_profiles)}")
+        elif config.controllers.profiles_dir is not None:
+            print("Controller profiles: custom profiles_dir set; default seeding skipped")
 
     _apply_downloads(
         config.server_url,

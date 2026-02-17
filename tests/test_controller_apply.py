@@ -149,10 +149,10 @@ def test_apply_controller_profile_dolphin_linux_kbm_uses_all_devices(monkeypatch
         monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
         monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
 
-        apply_controller_profile(config, emulator_name="dolphin", controller_count=0)
-        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+    apply_controller_profile(config, emulator_name="dolphin", controller_count=0)
+    gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
 
-        assert "Device = All Devices" in gcpad_text
+    assert "Device = XInput2/0/Virtual core pointer" in gcpad_text
 
 
 def test_apply_controller_profile_azahar_kbm(monkeypatch) -> None:
