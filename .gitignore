@@ -50,6 +50,7 @@ Thumbs.db
 # Local runtime/config
 .env
 .env.*
-!.env.production.template
+!.env.template
 data/
 config.toml
+library/

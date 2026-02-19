@@ -48,6 +48,23 @@ def test_parse_controller_payload_round_trip() -> None:
     assert payload.config_path == "D:/GameHub/config.toml"
 
 
+def test_parse_controller_payload_strips_wrapping_quotes_from_args() -> None:
+    token = encode_controller_payload(
+        {
+            "v": 1,
+            "emulator": "dolphin",
+            "target_exe": "\"C:/Emu/Dolphin.exe\"",
+            "target_args": ['"-b"', '"C:/Games/Path With Spaces/game.iso"'],
+            "start_dir": "\"C:/Emu\"",
+        }
+    )
+
+    payload = parse_controller_payload(token)
+
+    assert payload.target_exe == "\"C:/Emu/Dolphin.exe\""
+    assert payload.target_args == ("-b", "C:/Games/Path With Spaces/game.iso")
+
+
 def test_run_controller_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
     token = encode_controller_payload(
         {

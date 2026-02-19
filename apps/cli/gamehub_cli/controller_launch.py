@@ -50,13 +50,13 @@ def _decode_payload_token(token: str) -> dict[str, object]:
 
 def _parse_target_args(raw: object) -> tuple[str, ...]:
     if isinstance(raw, list):
-        return tuple(str(item) for item in raw)
+        return tuple(_strip_wrapping_quotes(str(item)) for item in raw)
     if isinstance(raw, tuple):
-        return tuple(str(item) for item in raw)
+        return tuple(_strip_wrapping_quotes(str(item)) for item in raw)
     if isinstance(raw, str):
         if not raw.strip():
             return ()
-        return tuple(shlex.split(raw, posix=not sys.platform.startswith("win")))
+        return tuple(_strip_wrapping_quotes(token) for token in shlex.split(raw, posix=not sys.platform.startswith("win")))
     return ()
 
 
@@ -73,7 +73,7 @@ def parse_controller_payload(token: str) -> ControllerLaunchPayload:
     target_args = _parse_target_args(payload.get("target_args"))
     if not target_args and isinstance(payload.get("target_launch_options"), str):
         target_args = _parse_target_args(payload["target_launch_options"])
-    start_dir = str(payload.get("start_dir", "")).strip()
+    start_dir = _strip_wrapping_quotes(str(payload.get("start_dir", "")).strip())
     config_path = payload.get("config_path")
     config_path_str = str(config_path).strip() if isinstance(config_path, str) and config_path.strip() else None
     return ControllerLaunchPayload(
@@ -87,6 +87,13 @@ def parse_controller_payload(token: str) -> ControllerLaunchPayload:
 
 
 def _unquote_executable(value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
+        return stripped[1:-1]
+    return stripped
+
+
+def _strip_wrapping_quotes(value: str) -> str:
     stripped = value.strip()
     if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
         return stripped[1:-1]

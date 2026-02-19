@@ -238,6 +238,10 @@ def _wrapper_executable_and_args() -> tuple[str, list[str]]:
     is_frozen = bool(getattr(sys, "frozen", False))
     if is_frozen or ("python" not in executable_name and executable_name.endswith(".exe")):
         return exe_path, ["controller-launch"]
+    if sys.platform.startswith("win"):
+        candidate = Path(sys.executable).with_name("pythonw.exe")
+        if candidate.exists():
+            return str(candidate), ["-m", "gamehub_cli.main", "controller-launch"]
     return exe_path, ["-m", "gamehub_cli.main", "controller-launch"]
 
 

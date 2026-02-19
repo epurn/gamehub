@@ -119,8 +119,7 @@ def _pcsx2_profile_text(profile_name: str) -> str:
     if profile_name == PROFILE_KBM:
         pad1 = _pcsx2_keyboard_pad_bindings(1)
         pad2 = _pcsx2_keyboard_pad_bindings(2)
-        # Escape can be consumed by launch environments; keep pause menu on a safer key.
-        open_pause_menu = "Keyboard/F10"
+        open_pause_menu = "Keyboard/Escape"
     elif profile_name == PROFILE_XBOX_1P:
         pad1 = _pcsx2_pad_mapping_dict(0)
         pad2 = _pcsx2_keyboard_pad_bindings(2)
@@ -205,18 +204,18 @@ _DOLPHIN_KBM_GCPAD_BINDINGS: tuple[tuple[str, str], ...] = (
     ("Main Stick/Right", "`Right`"),
     ("Main Stick/Modifier", "`Shift`"),
     ("Main Stick/Calibration", "100.00 141.42 100.00 141.42 100.00 141.42 100.00 141.42"),
-    ("C-Stick/Up", "`I`"),
-    ("C-Stick/Down", "`K`"),
-    ("C-Stick/Left", "`J`"),
-    ("C-Stick/Right", "`L`"),
+    ("C-Stick/Up", "`T`"),
+    ("C-Stick/Down", "`G`"),
+    ("C-Stick/Left", "`F`"),
+    ("C-Stick/Right", "`H`"),
     ("C-Stick/Modifier", "`Ctrl`"),
     ("C-Stick/Calibration", "100.00 141.42 100.00 141.42 100.00 141.42 100.00 141.42"),
     ("Triggers/L", "`Q`"),
     ("Triggers/R", "`W`"),
-    ("D-Pad/Up", "`T`"),
-    ("D-Pad/Down", "`G`"),
-    ("D-Pad/Left", "`F`"),
-    ("D-Pad/Right", "`H`"),
+    ("D-Pad/Up", "`I`"),
+    ("D-Pad/Down", "`K`"),
+    ("D-Pad/Left", "`J`"),
+    ("D-Pad/Right", "`L`"),
 )
 
 _DOLPHIN_KBM_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
@@ -299,12 +298,17 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
         hotkey_value = "`Escape`"
         general_stop = "`Escape`"
         general_exit = "`Escape`"
+        if sys.platform.startswith("linux"):
+            hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
+        else:
+            hotkey_device0, hotkey_device1 = device0, device1
     else:
         gcpad_bindings = _DOLPHIN_XBOX_GCPAD_BINDINGS
         wiimote_bindings = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
         hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         general_stop = "@(SELECT+START)"
         general_exit = "@(SELECT+START)"
+        hotkey_device0, hotkey_device1 = device0, device1
 
     gcpad_sections: dict[str, dict[str, str]] = {}
     for pad_number, device in ((1, device0), (2, device1)):
@@ -321,9 +325,9 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
             wiimote_sections[section][key] = value
 
     hotkey_sections = {
-        "Hotkeys1": {"Device": device0, "Keys/Stop": hotkey_value, "Keys/Exit": hotkey_value},
-        "Hotkeys2": {"Device": device1, "Keys/Stop": hotkey_value, "Keys/Exit": hotkey_value},
-        "Hotkeys": {"Device": device0, "General/Stop": general_stop, "General/Exit": general_exit},
+        "Hotkeys1": {"Device": hotkey_device0, "Keys/Stop": hotkey_value, "Keys/Exit": hotkey_value},
+        "Hotkeys2": {"Device": hotkey_device1, "Keys/Stop": hotkey_value, "Keys/Exit": hotkey_value},
+        "Hotkeys": {"Device": hotkey_device0, "General/Stop": general_stop, "General/Exit": general_exit},
     }
 
     return {

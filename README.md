@@ -78,16 +78,16 @@ Invoke-WebRequest https://github.com/epurn/gamehub/releases/latest/download/game
 More detail: [docs/client-install.md](docs/client-install.md), [docs/config-and-state.md](docs/config-and-state.md), [docs/cli-sync.md](docs/cli-sync.md)
 
 ## 🖥️ Server Deployment (Latest Release)
-Place `.env.production` in the repo root (next to [`docker/compose.yaml`](docker/compose.yaml)).
+Place `docker/.env` next to [`docker/compose.yaml`](docker/compose.yaml).
 
 ```powershell
-Copy-Item .env.production.template .env.production
-# Edit .env.production:
+Copy-Item docker/.env.template docker/.env
+# Edit docker/.env:
 # - GAMEHUB_DATA_HOST_PATH=<host path containing roms/ and firmware/>
 # - GAMEHUB_SERVER_PORT=8000
 # - GAMEHUB_IMAGE_TAG=latest
-docker compose -f docker/compose.yaml --env-file .env.production pull gamehub-server
-docker compose -f docker/compose.yaml --env-file .env.production up -d
+docker compose -f docker/compose.yaml --env-file docker/.env pull gamehub-server
+docker compose -f docker/compose.yaml --env-file docker/.env up -d
 .\scripts\verify_server_deploy.ps1 -BaseUrl "http://127.0.0.1:8000"
 ```
 If you changed `GAMEHUB_SERVER_PORT`, update the verify URL to match.
@@ -113,3 +113,4 @@ More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbo
 - Server API: [docs/server-api.md](docs/server-api.md)
 - Operational runbook: [docs/runbook.md](docs/runbook.md)
 - Release + pre-public audit flow: [docs/release-process.md](docs/release-process.md)
+

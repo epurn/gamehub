@@ -11,7 +11,7 @@ This guide covers single-host LAN deployment for GAMEHUB server.
 Optional convenience:
 - Download `gamehub-server-deploy-vX.Y.Z.zip` from the GitHub Release to get:
   - `docker/compose.yaml`
-  - `.env.production.template`
+  - `docker/.env.template`
   - [docs/deployment-server.md](deployment-server.md)
   - `scripts/verify_server_deploy.ps1`
 
@@ -19,10 +19,10 @@ Optional convenience:
 Copy the template and adjust paths/port:
 
 ```powershell
-Copy-Item .env.production.template .env.production
+Copy-Item docker/.env.template docker/.env
 ```
 
-Required values in `.env.production`:
+Required values in `docker/.env`:
 - `GAMEHUB_DATA_HOST_PATH`: host path containing `roms/` and `firmware/`
   - Windows example: `D:/GameHubData`
   - Linux example: `/srv/gamehub/data`
@@ -37,17 +37,17 @@ Required values in `.env.production`:
 
 ## 2) Pull released server image
 ```powershell
-docker compose -f docker/compose.yaml --env-file .env.production pull gamehub-server
+docker compose -f docker/compose.yaml --env-file docker/.env pull gamehub-server
 ```
 
 ## 3) Deploy
 ```powershell
-docker compose -f docker/compose.yaml --env-file .env.production up -d
+docker compose -f docker/compose.yaml --env-file docker/.env up -d
 ```
 
 ## 4) Validate compose config
 ```powershell
-docker compose -f docker/compose.yaml --env-file .env.production config
+docker compose -f docker/compose.yaml --env-file docker/.env config
 ```
 
 ## 5) Verify runtime
@@ -70,4 +70,5 @@ docker compose -f docker/compose.yaml --env-file .env.production config
   - PowerShell: `$env:DOCKER_DEFAULT_PLATFORM = "linux/amd64"`
   - Bash: `export DOCKER_DEFAULT_PLATFORM=linux/amd64`
 - If you are developing from source and want a local image build instead of GHCR, run:
-  - `docker compose -f docker/compose.yaml --env-file .env.production up -d --build`
+  - `docker compose -f docker/compose.yaml --env-file docker/.env up -d --build`
+

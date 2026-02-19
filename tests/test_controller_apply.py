@@ -44,7 +44,7 @@ def test_apply_controller_profile_pcsx2_kbm_preserves_unmanaged_sections() -> No
         assert profile == "kbm"
         assert "[Audio]" in text
         assert "Latency = 42" in text
-        assert "OpenPauseMenu = Keyboard/F10" in text
+        assert "OpenPauseMenu = Keyboard/Escape" in text
         assert "Cross = Keyboard/K" in text
 
 
