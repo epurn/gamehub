@@ -92,6 +92,7 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "GCPadNew.ini").write_text("[User]\nFoo = Bar\n", encoding="utf-8")
 
+        monkeypatch.setattr("gamehub_cli.controller_apply.detect_xbox_controllers", lambda max_devices=2: [])
         monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
         monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
 
@@ -109,8 +110,14 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
         else:
             assert "Device = XInput/0/Gamepad" in gcpad_text
             assert "Device = XInput/1/Gamepad" in gcpad_text
-        assert "General/Stop = (`Back` & `Start`) | (`BACK` & `START`) | (`SELECT` & `START`) | (`Button 6` & `Button 7`)" in hotkeys_text
-        assert "General/Exit = (`Back` & `Start`) | (`BACK` & `START`) | (`SELECT` & `START`) | (`Button 6` & `Button 7`)" in hotkeys_text
+        assert (
+            "General/Stop = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & "
+            "(`START` | `Start` | `Button 7`))"
+        ) in hotkeys_text
+        assert (
+            "General/Exit = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & "
+            "(`START` | `Start` | `Button 7`))"
+        ) in hotkeys_text
 
 
 def test_apply_controller_profile_dolphin_linux_prefers_evdev_from_detected_xbox(monkeypatch) -> None:
@@ -149,10 +156,11 @@ def test_apply_controller_profile_dolphin_linux_kbm_uses_all_devices(monkeypatch
         monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
         monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
 
-    apply_controller_profile(config, emulator_name="dolphin", controller_count=0)
-    gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=0)
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
 
-    assert "Device = XInput2/0/Virtual core pointer" in gcpad_text
+        assert "Device = XInput2/0/Virtual core pointer" in gcpad_text
+        assert "Device = None" in gcpad_text
 
 
 def test_apply_controller_profile_azahar_kbm(monkeypatch) -> None:

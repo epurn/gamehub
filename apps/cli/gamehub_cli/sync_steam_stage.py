@@ -182,11 +182,6 @@ def _supports_dolphin_inline_config(emulator_exe: str) -> bool:
 
 
 def _resolve_dolphin_user_dir_for_launch(emulator_exe: str, config: GamehubConfig) -> Path:
-    if _is_windows_style_runtime_path(emulator_exe):
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            return Path(appdata) / "Dolphin Emulator"
-        return Path.home() / "AppData" / "Roaming" / "Dolphin Emulator"
     return resolve_dolphin_runtime_user_dir(config=config)
 
 

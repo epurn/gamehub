@@ -265,3 +265,27 @@ def test_resolve_retroarch_paths_expands_tilde_cfg_values(monkeypatch) -> None:
         assert paths is not None
         assert paths.cores_dir == home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "cores"
         assert paths.info_dir == home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "info"
+
+
+def test_resolve_retroarch_paths_windows_colon_cfg_values(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-retroarch-cfg-colon-") as temp_root:
+        cfg_path = temp_root / "retroarch.cfg"
+        cfg_path.write_text(
+            "\n".join(
+                [
+                    'libretro_directory = ":/cores"',
+                    'libretro_info_path = ":/info"',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [cfg_path])
+
+        paths = resolve_retroarch_paths()
+
+        assert paths is not None
+        assert paths.cores_dir == temp_root / "cores"
+        assert paths.info_dir == temp_root / "info"

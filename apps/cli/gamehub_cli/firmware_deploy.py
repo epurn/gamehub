@@ -93,6 +93,29 @@ _RETROARCH_MENU_COMBO_VALUE = "4"
 _RETROARCH_MENU_COMBO_LABEL = "Start+Select"
 _RETROARCH_ALL_USERS_MENU_KEY = "all_users_control_menu"
 _RETROARCH_ALL_USERS_MENU_VALUE = "true"
+_RETROARCH_ANALOG_DPAD_KEYS = tuple(f"input_player{index}_analog_dpad_mode" for index in range(1, 9))
+_RETROARCH_ANALOG_DPAD_VALUE = "0"
+_RETROARCH_LIBRETRO_DEVICE_KEYS = tuple(f"input_libretro_device_p{index}" for index in range(1, 9))
+_RETROARCH_LIBRETRO_DEVICE_VALUES = {"input_libretro_device_p1": "261"}
+_RETROARCH_LIBRETRO_DEVICE_DEFAULT = "1"
+_RETROARCH_REMAP_PORT_KEYS = tuple(f"input_remap_port_p{index}" for index in range(1, 9))
+_RETROARCH_REMAP_PORT_VALUES = {f"input_remap_port_p{index}": str(index - 1) for index in range(1, 9)}
+_RETROARCH_TURBO_KEYS = {
+    "input_turbo_allow_dpad": "false",
+    "input_turbo_bind": "-1",
+    "input_turbo_button": "0",
+    "input_turbo_duty_cycle": "0",
+    "input_turbo_enable": "true",
+    "input_turbo_mode": "0",
+    "input_turbo_period": "6",
+}
+_RETROARCH_REMAP_DIRECTORY_KEY = "input_remapping_directory"
+_RETROARCH_CONFIG_DIRECTORY_KEY = "config_directory"
+_RETROARCH_SWANSTATION_CORE_NAME = "SwanStation"
+_RETROARCH_PSX_CORE_OPTIONS = {
+    "swanstation_Controller1.Type": "AnalogController",
+    "swanstation_Controller2.Type": "AnalogController",
+}
 _PCSX2_MENU_COMBO_LABEL = "Back+Start"
 _DOLPHIN_GENERAL_STOP_MACRO = "@(SELECT+START)"
 _AZAHAR_FULLSCREEN_KEY = "fullscreen"
@@ -232,6 +255,57 @@ def _upsert_simple_cfg_key(lines: list[str], key: str, value: str) -> tuple[list
         output.append(desired)
         changed = True
     return output, changed
+
+
+def _path_with_tilde_expanded(raw: str) -> Path:
+    value = raw.strip()
+    if value == "~":
+        return Path.home()
+    if value.startswith("~/") or value.startswith("~\\"):
+        return Path.home() / value[2:]
+    return Path(value)
+
+
+def _resolve_retroarch_cfg_path(raw: str, *, cfg_path: Path) -> Path:
+    value = raw.strip()
+    if os.name == "nt" and value.startswith((":\\", ":/")):
+        return cfg_path.parent / value[2:]
+    candidate = _path_with_tilde_expanded(value)
+    if not candidate.is_absolute():
+        candidate = cfg_path.parent / candidate
+    return candidate
+
+
+def _resolve_retroarch_remap_dir(cfg_path: Path, lines: list[str]) -> Path:
+    raw_remap = _read_simple_cfg_key(lines, _RETROARCH_REMAP_DIRECTORY_KEY)
+    if raw_remap:
+        return _resolve_retroarch_cfg_path(raw_remap, cfg_path=cfg_path)
+    raw_config_dir = _read_simple_cfg_key(lines, _RETROARCH_CONFIG_DIRECTORY_KEY)
+    if raw_config_dir:
+        return _resolve_retroarch_cfg_path(raw_config_dir, cfg_path=cfg_path) / "remaps"
+    return cfg_path.parent / "config" / "remaps"
+
+
+def _write_retroarch_remap_file(remap_dir: Path, *, core_name: str) -> tuple[Path, bool]:
+    remap_path = remap_dir / core_name / f"{core_name}.rmp"
+    remap_lines = _read_ini_lines(remap_path)
+    changed = False
+    for key in _RETROARCH_LIBRETRO_DEVICE_KEYS:
+        desired = _RETROARCH_LIBRETRO_DEVICE_VALUES.get(key, _RETROARCH_LIBRETRO_DEVICE_DEFAULT)
+        remap_lines, updated = _upsert_simple_cfg_key(remap_lines, key, desired)
+        changed |= updated
+    for key in _RETROARCH_ANALOG_DPAD_KEYS:
+        remap_lines, updated = _upsert_simple_cfg_key(remap_lines, key, _RETROARCH_ANALOG_DPAD_VALUE)
+        changed |= updated
+    for key, desired in _RETROARCH_REMAP_PORT_VALUES.items():
+        remap_lines, updated = _upsert_simple_cfg_key(remap_lines, key, desired)
+        changed |= updated
+    for key, desired in _RETROARCH_TURBO_KEYS.items():
+        remap_lines, updated = _upsert_simple_cfg_key(remap_lines, key, desired)
+        changed |= updated
+    if changed or not remap_path.exists():
+        _write_ini_atomic(remap_path, remap_lines)
+    return remap_path, changed
 
 
 def _upsert_qsettings_key(lines: list[str], key: str, value: str) -> tuple[list[str], bool]:
@@ -636,20 +710,49 @@ def _configure_retroarch_runtime(
         if verbose:
             writer("retroarch\tskipped\thotkeys\treason=config_missing")
         return None
+    core_options_path = cfg_path.with_name("retroarch-core-options.cfg")
 
     if dry_run:
         if verbose:
-            details = f"menu_combo={_RETROARCH_MENU_COMBO_LABEL}\tall_users_menu=true"
+            if os.name == "nt":
+                details = f"menu_combo={_RETROARCH_MENU_COMBO_LABEL}\tall_users_menu=true"
+            else:
+                details = (
+                    f"menu_combo={_RETROARCH_MENU_COMBO_LABEL}\tall_users_menu=true\t"
+                    f"analog_dpad_mode={_RETROARCH_ANALOG_DPAD_VALUE}\tlibretro_device_p1=261"
+                )
             writer(
                 f"retroarch\tdry-run\tconfigure\t{cfg_path}\t{details}"
+            )
+            writer(
+                "retroarch\tdry-run\tcore-options\t"
+                f"{core_options_path}\tpsx_controller=AnalogController"
+            )
+            remap_dir = _resolve_retroarch_remap_dir(cfg_path, _read_ini_lines(cfg_path))
+            writer(
+                "retroarch\tdry-run\tremap\t"
+                f"{remap_dir / _RETROARCH_SWANSTATION_CORE_NAME / (_RETROARCH_SWANSTATION_CORE_NAME + '.rmp')}"
             )
         return cfg_path
 
     lines = _read_ini_lines(cfg_path)
     existing_combo = _read_simple_cfg_key(lines, _RETROARCH_MENU_COMBO_KEY)
     existing_all_users = _read_simple_cfg_key(lines, _RETROARCH_ALL_USERS_MENU_KEY)
+    is_windows = os.name == "nt"
+    existing_analog = (
+        {key: _read_simple_cfg_key(lines, key) for key in _RETROARCH_ANALOG_DPAD_KEYS} if not is_windows else {}
+    )
+    existing_libretro = (
+        {key: _read_simple_cfg_key(lines, key) for key in _RETROARCH_LIBRETRO_DEVICE_KEYS} if not is_windows else {}
+    )
+    existing_remap = {key: _read_simple_cfg_key(lines, key) for key in _RETROARCH_REMAP_PORT_KEYS} if not is_windows else {}
+    existing_turbo = {key: _read_simple_cfg_key(lines, key) for key in _RETROARCH_TURBO_KEYS} if not is_windows else {}
     changed_combo = False
     changed_all_users = False
+    changed_analog = False
+    changed_libretro = False
+    changed_remap = False
+    changed_turbo = False
     if _retroarch_menu_combo_requires_migration(existing_combo) or not cfg_path.exists():
         lines, changed_combo = _upsert_simple_cfg_key(
             lines,
@@ -662,13 +765,63 @@ def _configure_retroarch_runtime(
             _RETROARCH_ALL_USERS_MENU_KEY,
             _RETROARCH_ALL_USERS_MENU_VALUE,
         )
-    if changed_combo or changed_all_users or not cfg_path.exists():
+    if not is_windows:
+        for key in _RETROARCH_ANALOG_DPAD_KEYS:
+            existing_value = existing_analog.get(key)
+            if not existing_value or existing_value != _RETROARCH_ANALOG_DPAD_VALUE or not cfg_path.exists():
+                lines, changed = _upsert_simple_cfg_key(lines, key, _RETROARCH_ANALOG_DPAD_VALUE)
+                changed_analog |= changed
+        for key in _RETROARCH_LIBRETRO_DEVICE_KEYS:
+            desired = _RETROARCH_LIBRETRO_DEVICE_VALUES.get(key, _RETROARCH_LIBRETRO_DEVICE_DEFAULT)
+            existing_value = existing_libretro.get(key)
+            if not existing_value or existing_value != desired or not cfg_path.exists():
+                lines, changed = _upsert_simple_cfg_key(lines, key, desired)
+                changed_libretro |= changed
+        for key in _RETROARCH_REMAP_PORT_KEYS:
+            desired = _RETROARCH_REMAP_PORT_VALUES.get(key)
+            existing_value = existing_remap.get(key)
+            if desired is not None and (not existing_value or existing_value != desired or not cfg_path.exists()):
+                lines, changed = _upsert_simple_cfg_key(lines, key, desired)
+                changed_remap |= changed
+        for key, desired in _RETROARCH_TURBO_KEYS.items():
+            existing_value = existing_turbo.get(key)
+            if not existing_value or existing_value != desired or not cfg_path.exists():
+                lines, changed = _upsert_simple_cfg_key(lines, key, desired)
+                changed_turbo |= changed
+    if (
+        changed_combo
+        or changed_all_users
+        or (not is_windows and (changed_analog or changed_libretro or changed_remap or changed_turbo))
+        or not cfg_path.exists()
+    ):
         _write_ini_atomic(cfg_path, lines)
+    core_lines = _read_ini_lines(core_options_path)
+    core_changed = False
+    for key, value in _RETROARCH_PSX_CORE_OPTIONS.items():
+        existing_value = _read_simple_cfg_key(core_lines, key)
+        if existing_value != value or not core_options_path.exists():
+            core_lines, changed = _upsert_simple_cfg_key(core_lines, key, value)
+            core_changed |= changed
+    if core_changed or not core_options_path.exists():
+        _write_ini_atomic(core_options_path, core_lines)
+    remap_dir = _resolve_retroarch_remap_dir(cfg_path, lines)
+    remap_path, _ = _write_retroarch_remap_file(remap_dir, core_name=_RETROARCH_SWANSTATION_CORE_NAME)
     if verbose:
-        details = f"menu_combo={_RETROARCH_MENU_COMBO_LABEL}\tall_users_menu=true"
+        if is_windows:
+            details = f"menu_combo={_RETROARCH_MENU_COMBO_LABEL}\tall_users_menu=true"
+        else:
+            details = (
+                f"menu_combo={_RETROARCH_MENU_COMBO_LABEL}\tall_users_menu=true\t"
+                f"analog_dpad_mode={_RETROARCH_ANALOG_DPAD_VALUE}\tlibretro_device_p1=261"
+            )
         writer(
             f"retroarch\tconfigured\t{cfg_path}\t{details}"
         )
+        writer(
+            "retroarch\tconfigured\tcore-options\t"
+            f"{core_options_path}\tpsx_controller=AnalogController"
+        )
+        writer(f"retroarch\tconfigured\tremap\t{remap_path}")
     return cfg_path
 
 

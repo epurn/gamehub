@@ -75,6 +75,18 @@ def retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path
     if explicit_cfg_path is not None:
         values.append(explicit_cfg_path.expanduser())
 
+    if os.name == "nt":
+        try:
+            from .emulators import resolve_emulator_executable
+        except Exception:
+            resolve_emulator_executable = None
+        if resolve_emulator_executable is not None:
+            exe_raw = resolve_emulator_executable("retroarch").strip('"')
+            if exe_raw:
+                exe_path = Path(exe_raw)
+                if exe_path.exists():
+                    values.append(exe_path.parent / "retroarch.cfg")
+
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
         values.append(Path(appdata) / "RetroArch" / "retroarch.cfg")

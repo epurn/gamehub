@@ -316,15 +316,37 @@ def test_deploy_firmware_configures_retroarch_menu_combo(monkeypatch) -> None:
         target_dir = temp_root / "retroarch" / "system"
         cfg_path = temp_root / "retroarch" / "retroarch.cfg"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text('input_menu_toggle_gamepad_combo = "0"\n', encoding="utf-8")
+        cfg_path.write_text('input_menu_toggle_gamepad_combo = "0"\ninput_remapping_directory = "config/remaps"\n', encoding="utf-8")
         monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
         monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
         text = cfg_path.read_text(encoding="utf-8")
         assert 'input_menu_toggle_gamepad_combo = "4"' in text
         assert 'all_users_control_menu = "true"' in text
+        for index in range(1, 9):
+            assert f'input_player{index}_analog_dpad_mode = "0"' in text
+        assert 'input_libretro_device_p1 = "261"' in text
+        for index in range(2, 9):
+            assert f'input_libretro_device_p{index} = "1"' in text
+        for index in range(1, 9):
+            assert f'input_remap_port_p{index} = "{index - 1}"' in text
+        assert 'input_turbo_allow_dpad = "false"' in text
+        assert 'input_turbo_bind = "-1"' in text
+        assert 'input_turbo_button = "0"' in text
+        assert 'input_turbo_duty_cycle = "0"' in text
+        assert 'input_turbo_enable = "true"' in text
+        assert 'input_turbo_mode = "0"' in text
+        assert 'input_turbo_period = "6"' in text
+        remap_path = cfg_path.parent / "config" / "remaps" / "SwanStation" / "SwanStation.rmp"
+        remap_text = remap_path.read_text(encoding="utf-8")
+        assert 'input_libretro_device_p1 = "261"' in remap_text
+        assert 'input_libretro_device_p2 = "1"' in remap_text
+        core_opts = cfg_path.with_name("retroarch-core-options.cfg").read_text(encoding="utf-8")
+        assert 'swanstation_Controller1.Type = "AnalogController"' in core_opts
+        assert 'swanstation_Controller2.Type = "AnalogController"' in core_opts
 
 
 def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch) -> None:
@@ -337,6 +359,7 @@ def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch) -> No
         logs: list[str] = []
 
         monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
         monkeypatch.setattr(
             "gamehub_cli.firmware_deploy._target_dirs_for_system",
             lambda _name, config=None: [temp_root / "retroarch" / "system"],
@@ -347,6 +370,38 @@ def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch) -> No
         assert any("retroarch\tdry-run\tconfigure" in line for line in logs)
         assert any("menu_combo=Start+Select" in line for line in logs)
         assert any("all_users_menu=true" in line for line in logs)
+        assert any("analog_dpad_mode=0" in line for line in logs)
+        assert any("retroarch\tdry-run\tcore-options" in line for line in logs)
+        assert any("retroarch\tdry-run\tremap" in line for line in logs)
+
+
+def test_deploy_firmware_windows_avoids_psx_cfg_overrides(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = _config(temp_root)
+        index = _index("PSX", "scph5501.bin")
+        source = config.firmware_dir / "PSX" / "scph5501.bin"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"bios")
+        target_dir = temp_root / "retroarch" / "system"
+        cfg_path = temp_root / "retroarch" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text('input_menu_toggle_gamepad_combo = "0"\ninput_remapping_directory = ":/config/remaps"\n', encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        text = cfg_path.read_text(encoding="utf-8")
+        assert 'input_menu_toggle_gamepad_combo = "4"' in text
+        assert 'all_users_control_menu = "true"' in text
+        assert "input_libretro_device_p1" not in text
+        assert "input_player1_analog_dpad_mode" not in text
+        assert "input_remap_port_p1" not in text
+        assert "input_turbo_allow_dpad" not in text
+        remap_path = cfg_path.parent / "config" / "remaps" / "SwanStation" / "SwanStation.rmp"
+        remap_text = remap_path.read_text(encoding="utf-8")
+        assert 'input_libretro_device_p1 = "261"' in remap_text
 
 
 def test_default_dolphin_ini_path_prefers_existing_flatpak_ini(monkeypatch) -> None:
@@ -604,6 +659,19 @@ def test_resolve_retroarch_system_dirs_expands_tilde_cfg_values(monkeypatch) -> 
         dirs = _resolve_retroarch_system_dirs()
 
         assert home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "system" in dirs
+
+
+def test_resolve_retroarch_system_dirs_windows_colon_prefix(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-retroarch-colon-") as temp_root:
+        cfg_path = temp_root / "retroarch.cfg"
+        cfg_path.write_text('system_directory = ":/system"\n', encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.firmware_targets.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [cfg_path])
+
+        dirs = _resolve_retroarch_system_dirs()
+
+        assert temp_root / "system" in dirs
         assert all("/~/" not in path.as_posix() for path in dirs)
 
 

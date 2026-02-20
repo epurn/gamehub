@@ -192,44 +192,44 @@ _DOLPHIN_XBOX_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
 )
 
 _DOLPHIN_KBM_GCPAD_BINDINGS: tuple[tuple[str, str], ...] = (
-    ("Buttons/A", "`X`"),
+    ("Buttons/A", "X"),
     ("Buttons/B", "`Z`"),
     ("Buttons/X", "`C`"),
     ("Buttons/Y", "`S`"),
     ("Buttons/Z", "`D`"),
-    ("Buttons/Start", "`Return`"),
-    ("Main Stick/Up", "`Up`"),
-    ("Main Stick/Down", "`Down`"),
-    ("Main Stick/Left", "`Left`"),
-    ("Main Stick/Right", "`Right`"),
+    ("Buttons/Start", "`RETURN`"),
+    ("Main Stick/Up", "UP"),
+    ("Main Stick/Down", "DOWN"),
+    ("Main Stick/Left", "LEFT"),
+    ("Main Stick/Right", "RIGHT"),
     ("Main Stick/Modifier", "`Shift`"),
     ("Main Stick/Calibration", "100.00 141.42 100.00 141.42 100.00 141.42 100.00 141.42"),
-    ("C-Stick/Up", "`T`"),
-    ("C-Stick/Down", "`G`"),
-    ("C-Stick/Left", "`F`"),
-    ("C-Stick/Right", "`H`"),
+    ("C-Stick/Up", "`I`"),
+    ("C-Stick/Down", "`K`"),
+    ("C-Stick/Left", "`J`"),
+    ("C-Stick/Right", "`L`"),
     ("C-Stick/Modifier", "`Ctrl`"),
     ("C-Stick/Calibration", "100.00 141.42 100.00 141.42 100.00 141.42 100.00 141.42"),
     ("Triggers/L", "`Q`"),
     ("Triggers/R", "`W`"),
-    ("D-Pad/Up", "`I`"),
-    ("D-Pad/Down", "`K`"),
-    ("D-Pad/Left", "`J`"),
-    ("D-Pad/Right", "`L`"),
+    ("D-Pad/Up", "`T`"),
+    ("D-Pad/Down", "`G`"),
+    ("D-Pad/Left", "`F`"),
+    ("D-Pad/Right", "`H`"),
 )
 
 _DOLPHIN_KBM_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
-    ("Buttons/A", "`Click 1`"),
-    ("Buttons/B", "`Click 3`"),
+    ("Buttons/A", "`Click 0`"),
+    ("Buttons/B", "`Click 1`"),
     ("Buttons/1", "`1`"),
     ("Buttons/2", "`2`"),
-    ("Buttons/-", "`Q`"),
-    ("Buttons/+", "`E`"),
-    ("Buttons/Home", "`Return`"),
-    ("D-Pad/Up", "`Up`"),
-    ("D-Pad/Down", "`Down`"),
-    ("D-Pad/Left", "`Left`"),
-    ("D-Pad/Right", "`Right`"),
+    ("Buttons/-", "Q"),
+    ("Buttons/+", "E"),
+    ("Buttons/Home", "RETURN"),
+    ("D-Pad/Up", "UP"),
+    ("D-Pad/Down", "DOWN"),
+    ("D-Pad/Left", "LEFT"),
+    ("D-Pad/Right", "RIGHT"),
     ("IR/Up", "`Cursor Y-`"),
     ("IR/Down", "`Cursor Y+`"),
     ("IR/Left", "`Cursor X-`"),
@@ -262,12 +262,12 @@ _DOLPHIN_KBM_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
     ("IMUGyroscope/Yaw Left", "`Gyro Yaw Left`"),
     ("IMUGyroscope/Yaw Right", "`Gyro Yaw Right`"),
     ("Extension", "Nunchuk"),
-    ("Nunchuk/Buttons/C", "`Control_L`"),
-    ("Nunchuk/Buttons/Z", "`Shift_L`"),
-    ("Nunchuk/Stick/Up", "`W`"),
-    ("Nunchuk/Stick/Down", "`S`"),
-    ("Nunchuk/Stick/Left", "`A`"),
-    ("Nunchuk/Stick/Right", "`D`"),
+    ("Nunchuk/Buttons/C", "LCONTROL"),
+    ("Nunchuk/Buttons/Z", "LSHIFT"),
+    ("Nunchuk/Stick/Up", "W"),
+    ("Nunchuk/Stick/Down", "S"),
+    ("Nunchuk/Stick/Left", "A"),
+    ("Nunchuk/Stick/Right", "D"),
     ("Nunchuk/Stick/Calibration", "100.00 141.42 100.00 141.42 100.00 141.42 100.00 141.42"),
     ("Nunchuk/Shake/X", "`Click 2`"),
     ("Nunchuk/Shake/Y", "`Click 2`"),
@@ -278,8 +278,8 @@ _DOLPHIN_KBM_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
 def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
     if profile_name == PROFILE_KBM:
         if sys.platform.startswith("linux"):
-            return "XInput2/0/Virtual core pointer", "XInput2/0/Virtual core pointer"
-        return "DInput/0/Keyboard Mouse", "DInput/0/Keyboard Mouse"
+            return "XInput2/0/Virtual core pointer", "None"
+        return "DInput/0/Keyboard Mouse", "None"
     if sys.platform.startswith("linux"):
         # Linux Dolphin controller device roots are SDL/evdev-style, not XInput.
         if profile_name == PROFILE_XBOX_1P:
@@ -292,12 +292,19 @@ def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
 
 def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
     device0, device1 = _dolphin_device_pair(profile_name)
+    general_hotkeys: dict[str, str] = {}
     if profile_name == PROFILE_KBM:
         gcpad_bindings = _DOLPHIN_KBM_GCPAD_BINDINGS
         wiimote_bindings = _DOLPHIN_KBM_WIIMOTE_BINDINGS
-        hotkey_value = "`Escape`"
-        general_stop = "`Escape`"
-        general_exit = "`Escape`"
+        hotkey_value = "ESCAPE"
+        general_stop = "ESCAPE"
+        general_exit = "ESCAPE"
+        general_hotkeys = {
+            "General/Open": "@(Ctrl+O)",
+            "General/Toggle Pause": "F10",
+            "General/Toggle Fullscreen": "@(Alt+RETURN)",
+            "General/Take Screenshot": "F9",
+        }
         if sys.platform.startswith("linux"):
             hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
         else:
@@ -327,7 +334,12 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
     hotkey_sections = {
         "Hotkeys1": {"Device": hotkey_device0, "Keys/Stop": hotkey_value, "Keys/Exit": hotkey_value},
         "Hotkeys2": {"Device": hotkey_device1, "Keys/Stop": hotkey_value, "Keys/Exit": hotkey_value},
-        "Hotkeys": {"Device": hotkey_device0, "General/Stop": general_stop, "General/Exit": general_exit},
+        "Hotkeys": {
+            "Device": hotkey_device0,
+            "General/Stop": general_stop,
+            "General/Exit": general_exit,
+            **general_hotkeys,
+        },
     }
 
     return {

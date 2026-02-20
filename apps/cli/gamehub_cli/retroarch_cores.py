@@ -60,6 +60,12 @@ def _path_with_tilde_expanded(raw: str) -> Path:
     return Path(value)
 
 
+def _normalize_retroarch_cfg_path(raw: str, *, cfg_path: Path) -> Path | None:
+    if os.name == "nt" and raw.startswith((":\\", ":/")):
+        return cfg_path.parent / raw[2:]
+    return None
+
+
 def _core_suffix() -> str:
     if os.name == "nt":
         return ".dll"
@@ -147,12 +153,12 @@ def resolve_retroarch_paths(
         raw_core = parsed.get("libretro_directory")
         raw_info = parsed.get("libretro_info_path")
         if raw_core:
-            candidate = _path_with_tilde_expanded(raw_core)
+            candidate = _normalize_retroarch_cfg_path(raw_core, cfg_path=cfg_path) or _path_with_tilde_expanded(raw_core)
             if not candidate.is_absolute():
                 candidate = cfg_path.parent / candidate
             config_cores = candidate
         if raw_info:
-            candidate = _path_with_tilde_expanded(raw_info)
+            candidate = _normalize_retroarch_cfg_path(raw_info, cfg_path=cfg_path) or _path_with_tilde_expanded(raw_info)
             if not candidate.is_absolute():
                 candidate = cfg_path.parent / candidate
             config_info = candidate

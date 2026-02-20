@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import shutil
+from uuid import uuid4
 
 from gamehub_cli.config import ControllersConfig, GamehubConfig
 from gamehub_cli.controller_detection import XboxController
@@ -65,6 +68,43 @@ def test_parse_controller_payload_strips_wrapping_quotes_from_args() -> None:
     assert payload.target_args == ("-b", "C:/Games/Path With Spaces/game.iso")
 
 
+def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch) -> None:
+    temp_root = Path(".pytest_tmp_local") / f"gamehub-azahar-sdl-{uuid4().hex}"
+    temp_root.mkdir(parents=True, exist_ok=False)
+    try:
+        azahar_dir = temp_root / "Azahar"
+        azahar_dir.mkdir(parents=True, exist_ok=True)
+        azahar_exe = azahar_dir / "azahar.exe"
+        azahar_exe.write_text("", encoding="utf-8")
+
+        token = encode_controller_payload(
+            {
+                "v": 1,
+                "emulator": "azahar",
+                "target_exe": str(azahar_exe),
+                "target_args": ["-f", "rom.3ds"],
+            }
+        )
+        config = _config()
+        observed: dict[str, str] = {}
+
+        monkeypatch.setattr("gamehub_cli.controller_launch.load_config", lambda path=None: config)
+        monkeypatch.setattr("gamehub_cli.controller_launch.seed_default_profiles", lambda config: [])
+        monkeypatch.setattr("gamehub_cli.controller_launch.detect_xbox_controllers", lambda max_devices=2: [])
+        monkeypatch.setattr(
+            "gamehub_cli.controller_launch.apply_controller_profile",
+            lambda *args, **kwargs: observed.setdefault("sdl_dir", os.environ.get("GAMEHUB_AZAHAR_SDL_DIR", "")),
+        )
+        monkeypatch.setattr("gamehub_cli.controller_launch._run_target", lambda payload: 0)
+        monkeypatch.delenv("GAMEHUB_AZAHAR_SDL_DIR", raising=False)
+
+        run_controller_launch(payload_token=token)
+
+        assert observed["sdl_dir"] == str(azahar_dir)
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
 def test_run_controller_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
     token = encode_controller_payload(
         {
@@ -127,6 +167,39 @@ def test_run_controller_launch_detection_failure_falls_back_to_kbm_profile_selec
 
     assert exit_code == 3
     assert applied_counts == [0]
+
+
+def test_run_controller_launch_uses_azahar_windows_exit_hook(monkeypatch) -> None:
+    token = encode_controller_payload(
+        {
+            "v": 1,
+            "emulator": "azahar",
+            "target_exe": "C:/Emu/Azahar.exe",
+            "target_args": ["-f", "rom.3ds"],
+        }
+    )
+    config = _config()
+    hook_calls: list[str] = []
+
+    monkeypatch.setattr("gamehub_cli.controller_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controller_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controller_launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.controller_launch.apply_controller_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.controller_launch.sys.platform", "win32")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
+    monkeypatch.setattr(
+        "gamehub_cli.controller_launch._run_windows_azahar_target_with_exit_hook",
+        lambda payload: hook_calls.append(payload.emulator) or 11,
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.controller_launch._run_target",
+        lambda payload: (_ for _ in ()).throw(AssertionError("direct launch should not be used")),
+    )
+
+    exit_code = run_controller_launch(payload_token=token)
+
+    assert exit_code == 11
+    assert hook_calls == ["azahar"]
 
 
 def test_run_controller_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypatch) -> None:

@@ -1364,6 +1364,10 @@ def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkey
         )
         index = LibraryIndex(index_version=1, systems=(), titles=(title,))
         monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\Dolphin\\Dolphin.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync_steam_stage.resolve_dolphin_runtime_user_dir",
+            lambda config=None: temp_root / "Dolphin Emulator" / "User",
+        )
 
         specs = _build_shortcut_specs(index=index, config=config)
 
@@ -1371,7 +1375,7 @@ def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkey
         assert specs[0].exe == '"C:\\Dolphin\\Dolphin.exe"'
         assert "-b -u " in specs[0].launch_options
         assert "Dolphin.Display.Fullscreen=True" in specs[0].launch_options
-        assert "Dolphin Emulator" in specs[0].launch_options
+        assert str(temp_root / "Dolphin Emulator" / "User") in specs[0].launch_options
         assert "-e" in specs[0].launch_options
         assert f'"{temp_root / "library" / "roms" / "Wii" / "Super Mario Galaxy.rvz"}"' in specs[0].launch_options
 

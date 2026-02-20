@@ -13,6 +13,8 @@ from typing import Callable
 from .config import GamehubConfig
 from .controller_profiles import (
     PROFILE_KBM,
+    PROFILE_XBOX_1P,
+    PROFILE_XBOX_2P,
     VALID_PROFILES,
     load_profile_file,
     profile_name_for_controller_count,
@@ -34,6 +36,7 @@ _AZAHAR_GUID_MODE_ENV = "GAMEHUB_AZAHAR_GUID_MODE"
 _AZAHAR_FIXED_GUID_ENV = "GAMEHUB_AZAHAR_FIXED_GUID"
 _AZAHAR_GUID_VALUE_RE = re.compile(r"[0-9a-fA-F]{32}")
 _AZAHAR_FLATPAK_GUID_TIMEOUT_SEC = 1.5
+_AZAHAR_WINDOWS_SDL_DIR_ENV = "GAMEHUB_AZAHAR_SDL_DIR"
 
 
 class _SDLJoystickGUID(ctypes.Structure):
@@ -242,6 +245,97 @@ def _discover_linux_sdl_guid(*, port: int) -> str | None:
         return guid
     finally:
         sdl.SDL_Quit()
+
+
+def _discover_windows_sdl_guid(*, port: int) -> str | None:
+    if not sys.platform.startswith("win"):
+        return None
+
+    def _candidate_dirs_from_emulators() -> list[Path]:
+        try:
+            from .emulators import resolve_emulator_executable
+        except Exception:
+            return []
+        dirs: list[Path] = []
+        for emulator_name in ("azahar", "retroarch", "pcsx2", "dolphin"):
+            raw = str(resolve_emulator_executable(emulator_name)).strip('"')
+            if not raw:
+                continue
+            candidate = Path(raw)
+            if candidate.exists():
+                dirs.append(candidate.parent)
+        return dirs
+
+    library_candidates: list[str] = []
+    env_dir = os.environ.get(_AZAHAR_WINDOWS_SDL_DIR_ENV)
+    if env_dir:
+        env_path = Path(env_dir.strip().strip('"'))
+        if env_path.is_file():
+            library_candidates.append(str(env_path))
+        else:
+            for dll_name in ("SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"):
+                candidate = env_path / dll_name
+                if candidate.exists():
+                    library_candidates.append(str(candidate))
+    for candidate_dir in _candidate_dirs_from_emulators():
+        for dll_name in ("SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"):
+            candidate = candidate_dir / dll_name
+            if candidate.exists():
+                library_candidates.append(str(candidate))
+    detected = ctypes.util.find_library("SDL2")
+    if detected:
+        library_candidates.append(detected)
+    library_candidates.extend(["SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"])
+
+    sdl = None
+    for candidate in library_candidates:
+        try:
+            sdl = ctypes.CDLL(candidate)
+            break
+        except OSError:
+            continue
+    if sdl is None:
+        return None
+
+    try:
+        sdl.SDL_Init.argtypes = [ctypes.c_uint32]
+        sdl.SDL_Init.restype = ctypes.c_int
+        sdl.SDL_Quit.argtypes = []
+        sdl.SDL_Quit.restype = None
+        sdl.SDL_NumJoysticks.argtypes = []
+        sdl.SDL_NumJoysticks.restype = ctypes.c_int
+        sdl.SDL_JoystickGetDeviceGUID.argtypes = [ctypes.c_int]
+        sdl.SDL_JoystickGetDeviceGUID.restype = _SDLJoystickGUID
+        sdl.SDL_JoystickGetGUIDString.argtypes = [_SDLJoystickGUID, ctypes.c_char_p, ctypes.c_int]
+        sdl.SDL_JoystickGetGUIDString.restype = None
+    except AttributeError:
+        return None
+
+    # SDL_INIT_JOYSTICK
+    if sdl.SDL_Init(0x00000200) != 0:
+        return None
+
+    try:
+        count = int(sdl.SDL_NumJoysticks())
+        if count <= 0 or port < 0 or port >= count:
+            return None
+        guid_value = sdl.SDL_JoystickGetDeviceGUID(port)
+        text = ctypes.create_string_buffer(33)
+        sdl.SDL_JoystickGetGUIDString(guid_value, text, len(text))
+        guid = text.value.decode("ascii", errors="ignore").strip().lower()
+        if len(guid) != 32 or set(guid) == {"0"}:
+            return None
+        return guid
+    finally:
+        sdl.SDL_Quit()
+
+
+def _discover_host_sdl_guid(*, port: int) -> str | None:
+    if sys.platform.startswith("linux"):
+        return _discover_linux_sdl_guid(port=port)
+    if sys.platform.startswith("win"):
+        return _discover_windows_sdl_guid(port=port)
+    return None
 
 
 def _azahar_flatpak_guid_probe_script(port: int) -> str:
@@ -512,8 +606,26 @@ def _dolphin_linux_device_pair() -> tuple[str, str]:
     if len(controllers) >= 2:
         return f"evdev/0/{controllers[0].name}", f"evdev/1/{controllers[1].name}"
     if len(controllers) == 1:
-        return f"evdev/0/{controllers[0].name}", "SDL/1/Gamepad"
+        return f"evdev/0/{controllers[0].name}", "XInput2/0/Virtual core pointer"
     return "SDL/0/Gamepad", "SDL/1/Gamepad"
+
+
+def _dolphin_windows_device_pair(profile_name: str) -> tuple[str, str]:
+    controllers = detect_xbox_controllers(max_devices=2)
+    if profile_name == PROFILE_KBM:
+        return "DInput/0/Keyboard Mouse", "None"
+    if profile_name == PROFILE_XBOX_2P:
+        if len(controllers) >= 2:
+            return (
+                f"XInput/{controllers[0].slot}/Gamepad",
+                f"XInput/{controllers[1].slot}/Gamepad",
+            )
+        return "XInput/0/Gamepad", "XInput/1/Gamepad"
+    if profile_name == PROFILE_XBOX_1P:
+        if len(controllers) >= 1:
+            return f"XInput/{controllers[0].slot}/Gamepad", "DInput/0/Keyboard Mouse"
+        return "XInput/0/Gamepad", "DInput/0/Keyboard Mouse"
+    return "DInput/0/Keyboard Mouse", "DInput/0/Keyboard Mouse"
 
 
 def _override_dolphin_device_sections(
@@ -521,17 +633,17 @@ def _override_dolphin_device_sections(
     *,
     profile_name: str,
 ) -> dict[str, dict[str, str]]:
-    if not sys.platform.startswith("linux"):
+    if sys.platform.startswith("linux"):
+        if profile_name == PROFILE_KBM:
+            pad_device0, pad_device1 = "XInput2/0/Virtual core pointer", "None"
+        else:
+            pad_device0, pad_device1 = _dolphin_linux_device_pair()
+        hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
+    elif sys.platform.startswith("win"):
+        pad_device0, pad_device1 = _dolphin_windows_device_pair(profile_name)
+        hotkey_device0, hotkey_device1 = pad_device0, pad_device1
+    else:
         return sections
-    if profile_name == PROFILE_KBM:
-        pad_device0, pad_device1 = "XInput2/0/Virtual core pointer", "XInput2/0/Virtual core pointer"
-    else:
-        pad_device0, pad_device1 = _dolphin_linux_device_pair()
-    # Keep gameplay device tokens precise, but let hotkeys resolve from any backend.
-    if profile_name == PROFILE_KBM:
-        hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
-    else:
-        hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
     updated: dict[str, dict[str, str]] = {section: dict(values) for section, values in sections.items()}
     for section_name, device in (
         ("GCPad1", pad_device0),
@@ -550,8 +662,8 @@ def _override_dolphin_device_sections(
 
 def _dolphin_hotkey_expression_for_profile(profile_name: str) -> str:
     if profile_name == PROFILE_KBM:
-        return "`Escape`"
-    return "(`Back` & `Start`) | (`BACK` & `START`) | (`SELECT` & `START`) | (`Button 6` & `Button 7`)"
+        return "ESCAPE"
+    return "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
 
 
 def _override_dolphin_hotkey_sections(
@@ -600,7 +712,7 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
     )
     pairs = _parse_qsettings_pairs(profile_lines)
     touched: list[Path] = []
-    linux_controller_mode = sys.platform.startswith("linux") and profile_name != PROFILE_KBM
+    controller_mode = profile_name != PROFILE_KBM
     guid_mode = _azahar_guid_mode()
     fixed_guid = _azahar_fixed_guid() if guid_mode == "fixed" else None
     runtime_guid_cache: dict[int, str | None] = {}
@@ -611,14 +723,14 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
         detected_port = 0
         selected_guid: str | None = None
         strip_guid_tokens = False
-        if linux_controller_mode:
+        if controller_mode:
             existing_guid, detected_port = _azahar_detect_sdl_identity(lines)
             normalized_port = _azahar_normalize_sdl_port(detected_port)
             runtime_guid: str | None = None
             host_guid: str | None = None
             need_discovery = guid_mode in {"detect", "preserve"} or (guid_mode == "fixed" and fixed_guid is None)
             if need_discovery:
-                if _is_azahar_flatpak_config_path(target_path):
+                if sys.platform.startswith("linux") and _is_azahar_flatpak_config_path(target_path):
                     if normalized_port in runtime_guid_cache:
                         runtime_guid = runtime_guid_cache[normalized_port]
                     else:
@@ -627,7 +739,7 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
                 if normalized_port in host_guid_cache:
                     host_guid = host_guid_cache[normalized_port]
                 else:
-                    host_guid = _discover_linux_sdl_guid(port=normalized_port)
+                    host_guid = _discover_host_sdl_guid(port=normalized_port)
                     host_guid_cache[normalized_port] = host_guid
             selected_guid, strip_guid_tokens = _select_azahar_guid(
                 mode=guid_mode,
@@ -640,7 +752,7 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
         for key, value in pairs.items():
             existing = _read_qsettings_key(lines, key)
             desired = value
-            if linux_controller_mode and key.startswith("profiles\\1\\"):
+            if controller_mode and key.startswith("profiles\\1\\"):
                 desired = _inject_azahar_sdl_identity(
                     value,
                     guid=selected_guid,

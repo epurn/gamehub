@@ -41,6 +41,66 @@ def _configured_path(config: GamehubConfig | None, setting_name: str) -> Path | 
     return value.expanduser()
 
 
+def _windows_dolphin_user_dir_candidates() -> list[Path]:
+    values: list[Path] = []
+    dolphin_raw = resolve_emulator_executable("dolphin").strip('"')
+    dolphin_exe = Path(dolphin_raw) if dolphin_raw else None
+    if dolphin_exe is not None and dolphin_exe.exists():
+        values.append(dolphin_exe.parent / "User")
+    user_profile = os.environ.get("USERPROFILE")
+    if user_profile:
+        values.append(Path(user_profile) / "Documents" / "Dolphin Emulator")
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        values.append(Path(appdata) / "Dolphin Emulator")
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        values.append(Path(local_app_data) / "Dolphin Emulator")
+    return unique_paths(values)
+
+
+def _windows_dolphin_install_root() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "Programs" / "Dolphin"
+    return Path.home() / "AppData" / "Local" / "Programs" / "Dolphin"
+
+
+def _windows_dolphin_preferred_user_dir_from_install() -> Path | None:
+    dolphin_raw = resolve_emulator_executable("dolphin").strip('"')
+    if not dolphin_raw:
+        return None
+    dolphin_exe = Path(dolphin_raw)
+    if not dolphin_exe.exists():
+        return None
+    install_root = _windows_dolphin_install_root()
+    try:
+        dolphin_exe = dolphin_exe.resolve()
+    except OSError:
+        dolphin_exe = dolphin_exe
+    try:
+        install_root = install_root.resolve()
+    except OSError:
+        install_root = install_root
+    if install_root in dolphin_exe.parents:
+        return install_root / "User"
+    return None
+
+
+def _select_existing_dolphin_user_dir(candidates: list[Path]) -> Path | None:
+    if not candidates:
+        return None
+    config_files = ("Dolphin.ini", "GCPadNew.ini", "WiimoteNew.ini", "Hotkeys.ini")
+    for candidate in candidates:
+        config_root = candidate / "Config"
+        if any((config_root / filename).exists() for filename in config_files):
+            return candidate
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def retroarch_cfg_candidates_for_config(config: GamehubConfig | None = None) -> list[Path]:
     return retroarch_cfg_candidates(explicit_cfg_path=_configured_path(config, "retroarch_cfg_path"))
 
@@ -58,6 +118,9 @@ def resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[P
             continue
         if raw.lower() == "default":
             values.append(cfg_path.parent / "system")
+            continue
+        if os.name == "nt" and raw.startswith((":\\", ":/")):
+            values.append(cfg_path.parent / raw[2:])
             continue
         candidate = _path_with_tilde_expanded(raw)
         if not candidate.is_absolute():
@@ -158,6 +221,16 @@ def resolve_dolphin_user_dirs(config: GamehubConfig | None = None) -> list[Path]
         values.append(user_override)
         return unique_paths(values)
 
+    if os.name == "nt":
+        install_user_dir = _windows_dolphin_preferred_user_dir_from_install()
+        if install_user_dir is not None:
+            return [install_user_dir]
+        candidates = _windows_dolphin_user_dir_candidates()
+        selected = _select_existing_dolphin_user_dir(candidates)
+        if selected is not None:
+            return [selected]
+        return candidates[:1]
+
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
         values.append(Path(appdata) / "Dolphin Emulator")
@@ -189,9 +262,19 @@ def resolve_dolphin_runtime_user_dir(config: GamehubConfig | None = None) -> Pat
     if user_override:
         return user_override
 
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        return Path(appdata) / "Dolphin Emulator"
+    if os.name == "nt":
+        install_user_dir = _windows_dolphin_preferred_user_dir_from_install()
+        if install_user_dir is not None:
+            return install_user_dir
+        candidates = _windows_dolphin_user_dir_candidates()
+        selected = _select_existing_dolphin_user_dir(candidates)
+        if selected is not None:
+            return selected
+        if candidates:
+            return candidates[0]
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "Dolphin Emulator"
 
     home = Path.home()
     legacy = home / ".dolphin-emu"
@@ -224,10 +307,8 @@ def resolve_dolphin_config_dirs(config: GamehubConfig | None = None) -> list[Pat
 
     runtime = resolve_dolphin_runtime_user_dir(config=config)
     values.append(runtime)
-
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "Dolphin Emulator")
+    if os.name == "nt":
+        return unique_paths(values)
 
     home = Path.home()
     legacy = home / ".dolphin-emu"

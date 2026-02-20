@@ -72,7 +72,7 @@ Steam close behavior:
      - detects attached Xbox controllers
      - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
      - launches the original emulator command
-   - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
+- with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 11. Save `state.json`
 
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
@@ -88,7 +88,16 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - `retroarch.cfg` `system_directory`
   - Linux defaults (`~/.config/retroarch/system` and Flatpak `~/.var/app/org.libretro.RetroArch/config/retroarch/system`)
   - Windows portable executable directory (`<retroarch-dir>/system`) when applicable
-  - when a RetroArch config file is found, GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) for controller quick-menu access
+- when a RetroArch config file is found, GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) for controller quick-menu access
+  - on Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`
+  - RetroArch `system_directory = ":/system"` (portable-relative) is normalized to `<retroarch.cfg dir>/system` on Windows
+  - RetroArch `libretro_directory = ":/cores"` and `libretro_info_path = ":/info"` (portable-relative) are normalized to `<retroarch.cfg dir>/cores` / `<retroarch.cfg dir>/info` on Windows
+  - GAMEHUB writes `config/remaps/SwanStation/SwanStation.rmp` (or the configured `input_remapping_directory`) with the tested DualShock + analog/turbo defaults
+  - GAMEHUB also sets `input_player1_analog_dpad_mode .. input_player8_analog_dpad_mode = "0"`
+  - GAMEHUB also sets `input_libretro_device_p1 = "261"` (DualShock) and `input_libretro_device_p2..p8 = "1"`
+  - GAMEHUB also sets `input_remap_port_p1..p8 = "0".."7"` and the tested `input_turbo_*` defaults
+  - GAMEHUB also ensures `swanstation_Controller1.Type` / `swanstation_Controller2.Type` are set to `"AnalogController"` in `retroarch-core-options.cfg` so PSX defaults to DualShock-style pads
+  - On Windows, GAMEHUB keeps PSX controller overrides out of `retroarch.cfg` and applies them via the Swanstation core remap file only
   - GAMEHUB also sets `all_users_control_menu = "true"` so menu combo works from non-primary controllers
 - `PS2` config is auto-updated and setup wizard completion is written into `PCSX2.ini`.
   - default BIOS target is `<gamehub_dir>/firmware/PS2` unless overridden by `PCSX2_BIOS_DIR`/`GAMEHUB_PCSX2_BIOS_DIR`/`[linux].pcsx2_bios_dir`
@@ -112,7 +121,7 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
 - Dolphin writes `Interface/ConfirmStop = False` in `Dolphin.ini` so stop/exit flows do not block on confirmation prompts.
 - GAMEHUB bootstraps `Config/Hotkeys.ini` with controller-friendly stop/exit bindings:
   - pad1/pad2 `Back+Start`
-- Windows Dolphin controller bootstrap sets explicit `XInput/0` and `XInput/1` device roots for pad/wiimote slots 1 and 2.
+- Windows Dolphin controller bootstrap prefers detected XInput slots (for example `XInput/0` or `XInput/1`) and falls back to `XInput/0` + `XInput/1` when detection is unavailable.
 - Linux Dolphin controller bootstrap auto-detects evdev gamepads from `/proc/bus/input/devices` (for example `evdev/0/Xbox Wireless Controller`, `evdev/1/Xbox Wireless Controller`) and falls back to `SDL/0` + `SDL/1` when evdev devices are not detected.
 - Dolphin writes `Interface/BackgroundInput = True` to reduce focus-related controller input drops when launched through Steam.
 - Existing Dolphin input files are preserved once present; sync reconciles managed stop/exit hotkeys each run.
@@ -136,6 +145,12 @@ Linux path notes:
 - Linux Flatpak Dolphin launches wrapped by `controller-launch` include a fail-open `Select+Start` exit hook by default:
   - monitors `/dev/input/js*` (configurable button indices) and `/dev/input/event*` (`BTN_SELECT` + `BTN_START`)
   - on combo press, issues `flatpak kill org.DolphinEmu.dolphin-emu`
+- Windows Azahar launches wrapped by `controller-launch` include a fail-open `Start+Select` XInput exit hook by default (disable with `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false`).
+
+Windows path notes:
+- If Dolphin is installed by GAMEHUB (default `LOCALAPPDATA/Programs/Dolphin`), the runtime user dir is pinned to `<dolphin-install>/User`.
+- Otherwise, Dolphin user dir detection prefers a portable `<dolphin-install>/User` folder when present, then `%USERPROFILE%/Documents/Dolphin Emulator`, then `%APPDATA%/Dolphin Emulator`.
+- Override with `DOLPHIN_EMU_USERPATH` / `GAMEHUB_DOLPHIN_EMU_USERPATH` (or `dolphin_user_path` in `config.toml`).
   - can be disabled by setting `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false`
 - N3DS Steam Input limitation (current):
   - GAMEHUB does not auto-apply Steam Input templates for N3DS.
@@ -149,13 +164,18 @@ Controller launch profile defaults:
   - `0` Xbox controllers -> `kbm`
   - `1` Xbox controller -> `xbox_1p`
   - `2+` Xbox controllers -> `xbox_2p`
-- Linux Azahar GUID policy is configurable:
+- Dolphin device defaults within profiles:
+  - `kbm`: P1 keyboard/mouse, P2 disabled
+  - `xbox_1p`: P1 controller, P2 keyboard/mouse
+  - `xbox_2p`: P1 + P2 controllers
+- Azahar GUID policy is configurable:
   - `preserve` (default): keep existing GUID if present, otherwise use discovered GUID
   - `detect`: always prefer discovered GUID when available
   - `fixed`: force `GAMEHUB_AZAHAR_FIXED_GUID`
   - `off`: strip/avoid GUID tokens and rely on SDL `port` only
   - legacy `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID=true` behaves like `detect`
 - GUID discovery order (Linux): probe Azahar Flatpak runtime first (if available), then fall back to host SDL.
+- GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available, otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID for Steam/Flatpak launches.
 - `RetroArch` shortcuts remain direct (not wrapped).
 
@@ -165,10 +185,12 @@ Environment overrides:
 - `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG`
 - `DOLPHIN_EMU_USERPATH`
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`
+- `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`
 - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`
+- `GAMEHUB_AZAHAR_SDL_DIR`
 - `GAMEHUB_AZAHAR_GUID_MODE`
 - `GAMEHUB_AZAHAR_FIXED_GUID`
 - `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID`

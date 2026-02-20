@@ -78,3 +78,18 @@ def test_retroarch_cfg_candidates_dedupes_explicit_path(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.platform_paths.os.name", "posix")
     candidates = retroarch_cfg_candidates(explicit_cfg_path=explicit)
     assert candidates.count(explicit) == 1
+
+
+def test_retroarch_cfg_candidates_includes_portable_windows_cfg(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-paths-") as temp_root:
+        retroarch_root = temp_root / "RetroArch-Win64"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        retroarch_exe = retroarch_root / "retroarch.exe"
+        retroarch_exe.write_text("", encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.platform_paths.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.emulators.resolve_emulator_executable", lambda _name: str(retroarch_exe))
+
+        candidates = retroarch_cfg_candidates(explicit_cfg_path=None)
+
+        assert retroarch_root / "retroarch.cfg" in candidates

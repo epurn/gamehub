@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import base64
+import ctypes
+import ctypes.wintypes
 import json
 import os
 from pathlib import Path
@@ -9,10 +11,15 @@ import shlex
 import subprocess
 import sys
 import threading
+import time
 
 from . import azahar_exit_hook
 from .config import load_config
-from .controller_apply import apply_controller_profile, apply_named_controller_profile
+from .controller_apply import (
+    _AZAHAR_WINDOWS_SDL_DIR_ENV,
+    apply_controller_profile,
+    apply_named_controller_profile,
+)
 from .controller_detection import detect_xbox_controllers
 from .controller_profiles import PROFILE_KBM, seed_default_profiles
 
@@ -21,6 +28,100 @@ _DOLPHIN_LINUX_EXIT_HOOK_ENV = "GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK"
 _DOLPHIN_EXIT_BUTTON_SELECT_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT"
 _DOLPHIN_EXIT_BUTTON_START_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_START"
 _DOLPHIN_EXIT_JS_DEVICE_ENV = "GAMEHUB_DOLPHIN_EXIT_JS_DEVICE"
+_AZAHAR_WINDOWS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK"
+_CONTROLLER_DETECT_RETRIES = 2
+_CONTROLLER_DETECT_DELAY_SEC = 0.25
+_XINPUT_GAMEPAD_START = 0x0010
+_XINPUT_GAMEPAD_BACK = 0x0020
+_XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
+_WM_CLOSE = 0x0010
+
+
+class _XInputGamepad(ctypes.Structure):
+    _fields_ = [
+        ("wButtons", ctypes.c_ushort),
+        ("bLeftTrigger", ctypes.c_ubyte),
+        ("bRightTrigger", ctypes.c_ubyte),
+        ("sThumbLX", ctypes.c_short),
+        ("sThumbLY", ctypes.c_short),
+        ("sThumbRX", ctypes.c_short),
+        ("sThumbRY", ctypes.c_short),
+    ]
+
+
+class _XInputState(ctypes.Structure):
+    _fields_ = [("dwPacketNumber", ctypes.c_ulong), ("Gamepad", _XInputGamepad)]
+
+
+def _load_xinput() -> ctypes.CDLL | None:
+    if not sys.platform.startswith("win"):
+        return None
+    for dll_name in _XINPUT_DLLS:
+        try:
+            lib = ctypes.WinDLL(dll_name)
+        except OSError:
+            continue
+        try:
+            lib.XInputGetState.argtypes = [ctypes.c_uint, ctypes.POINTER(_XInputState)]
+            lib.XInputGetState.restype = ctypes.c_uint
+        except AttributeError:
+            continue
+        return lib
+    return None
+
+
+def _xinput_combo_pressed(lib: ctypes.CDLL) -> bool:
+    for index in range(4):
+        state = _XInputState()
+        if lib.XInputGetState(index, ctypes.byref(state)) != 0:
+            continue
+        buttons = int(state.Gamepad.wButtons)
+        if (buttons & _XINPUT_GAMEPAD_START) and (buttons & _XINPUT_GAMEPAD_BACK):
+            return True
+    return False
+
+
+def _send_windows_close_by_pid(pid: int) -> bool:
+    if not sys.platform.startswith("win"):
+        return False
+    user32 = ctypes.windll.user32
+    hwnds: list[int] = []
+
+    enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+
+    @enum_proc
+    def _enum_window(hwnd: ctypes.wintypes.HWND, _lparam: ctypes.wintypes.LPARAM) -> bool:
+        proc_id = ctypes.wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc_id))
+        if proc_id.value == pid:
+            hwnds.append(int(hwnd))
+        return True
+
+    user32.EnumWindows(_enum_window, 0)
+    if not hwnds:
+        return False
+    for hwnd in hwnds:
+        user32.PostMessageW(ctypes.wintypes.HWND(hwnd), _WM_CLOSE, 0, 0)
+    return True
+
+
+def _monitor_windows_azahar_exit_combo(process: subprocess.Popen[bytes]) -> None:
+    lib = _load_xinput()
+    if lib is None:
+        return
+    while process.poll() is None:
+        if _xinput_combo_pressed(lib):
+            if _send_windows_close_by_pid(process.pid):
+                deadline = time.monotonic() + 2.0
+                while process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.05)
+            if process.poll() is None:
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
+            return
+        time.sleep(0.1)
 
 
 @dataclass(frozen=True)
@@ -152,6 +253,14 @@ def _payload_targets_flatpak_app(payload: ControllerLaunchPayload, *, app_id: st
     return "run" in args_folded and app_id.casefold() in args_folded
 
 
+def _should_use_windows_azahar_exit_hook(payload: ControllerLaunchPayload) -> bool:
+    if not sys.platform.startswith("win"):
+        return False
+    if "azahar" not in payload.emulator:
+        return False
+    return _env_enabled(_AZAHAR_WINDOWS_EXIT_HOOK_ENV, default=True)
+
+
 def _should_use_linux_dolphin_exit_hook(payload: ControllerLaunchPayload) -> bool:
     if not sys.platform.startswith("linux"):
         return False
@@ -189,6 +298,20 @@ def _run_linux_dolphin_target_with_exit_hook(payload: ControllerLaunchPayload) -
     return int(azahar_exit_hook._wait_for_session_exit(process, _DOLPHIN_FLATPAK_APP_ID))
 
 
+def _run_windows_azahar_target_with_exit_hook(payload: ControllerLaunchPayload) -> int:
+    executable = _unquote_executable(payload.target_exe)
+    command = [executable, *payload.target_args]
+    cwd = None
+    if payload.start_dir:
+        candidate = Path(payload.start_dir)
+        if candidate.exists():
+            cwd = str(candidate)
+    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    watcher = threading.Thread(target=_monitor_windows_azahar_exit_combo, args=(process,), daemon=True)
+    watcher.start()
+    return int(process.wait())
+
+
 def _run_target(payload: ControllerLaunchPayload) -> int:
     executable = _unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
@@ -202,6 +325,11 @@ def _run_target(payload: ControllerLaunchPayload) -> int:
 
 
 def _run_target_with_optional_exit_hook(payload: ControllerLaunchPayload) -> int:
+    if _should_use_windows_azahar_exit_hook(payload):
+        try:
+            return _run_windows_azahar_target_with_exit_hook(payload)
+        except Exception as exc:
+            print(f"Warning: Azahar exit hook failed (error={exc}); falling back to direct launch")
     if _should_use_linux_dolphin_exit_hook(payload):
         try:
             return _run_linux_dolphin_target_with_exit_hook(payload)
@@ -210,10 +338,31 @@ def _run_target_with_optional_exit_hook(payload: ControllerLaunchPayload) -> int
     return _run_target(payload)
 
 
+def _detect_controller_count_with_retry(*, max_devices: int = 2) -> tuple[int, Exception | None]:
+    last_error: Exception | None = None
+    for attempt in range(_CONTROLLER_DETECT_RETRIES + 1):
+        try:
+            count = len(detect_xbox_controllers(max_devices=max_devices))
+        except Exception as exc:
+            last_error = exc
+            count = 0
+        if count > 0 or attempt >= _CONTROLLER_DETECT_RETRIES:
+            return count, last_error
+        time.sleep(_CONTROLLER_DETECT_DELAY_SEC)
+    return 0, last_error
+
+
 def run_controller_launch(*, payload_token: str, config_path: Path | None = None) -> int:
     payload = parse_controller_payload(payload_token)
     resolved_config = _resolve_config_path(config_path, payload)
     config = load_config(resolved_config)
+
+    if "azahar" in payload.emulator:
+        target_exe = _unquote_executable(payload.target_exe)
+        candidate = Path(target_exe)
+        if target_exe and _AZAHAR_WINDOWS_SDL_DIR_ENV not in os.environ:
+            if candidate.exists():
+                os.environ[_AZAHAR_WINDOWS_SDL_DIR_ENV] = str(candidate.parent)
 
     if config.controllers.launch_autoconfig:
         try:
@@ -222,7 +371,9 @@ def run_controller_launch(*, payload_token: str, config_path: Path | None = None
             print(f"Warning: failed to seed controller profile defaults (error={exc})")
         controller_count = 0
         try:
-            controller_count = len(detect_xbox_controllers(max_devices=2))
+            controller_count, detect_error = _detect_controller_count_with_retry(max_devices=2)
+            if controller_count == 0 and detect_error is not None:
+                raise detect_error
         except Exception as exc:
             print(
                 "Warning: controller detection failed "

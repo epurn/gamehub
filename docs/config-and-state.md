@@ -120,16 +120,18 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND`: overrides `[linux].emulator_install_command`.
 - `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`: overrides the default pinned Windows Azahar installer URL used by emulator auto-install.
+- `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`: enables/disables Windows Azahar `Start+Select` exit hook (`true` by default).
 - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`: enables/disables Linux Azahar `Select+Start` exit hook wrapper (`true` by default).
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Azahar exit hook (default `4`).
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Azahar exit hook (default `6`).
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Azahar exit hook (for example `/dev/input/js0`).
+- `GAMEHUB_AZAHAR_SDL_DIR`: optional directory containing Azahar's `SDL2.dll` for Windows GUID discovery.
 - `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`: enables/disables Linux Dolphin Flatpak `Select+Start` exit hook wrapper in `controller-launch` (`true` by default).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
-- `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID`: when `true`, Linux Azahar controller apply replaces existing GUID-bound SDL mappings with discovered GUIDs (Flatpak runtime first, host SDL fallback) (default `false`).
-- `GAMEHUB_AZAHAR_GUID_MODE`: Linux Azahar GUID policy for controller apply (`preserve` default, `detect`, `fixed`, `off`).
+- `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID`: when `true`, Azahar controller apply replaces existing GUID-bound SDL mappings with discovered GUIDs (Linux Flatpak runtime first, then host SDL fallback) (default `false`).
+- `GAMEHUB_AZAHAR_GUID_MODE`: Azahar GUID policy for controller apply (`preserve` default, `detect`, `fixed`, `off`).
 - `GAMEHUB_AZAHAR_FIXED_GUID`: 32-hex SDL GUID used when `GAMEHUB_AZAHAR_GUID_MODE=fixed`.
 - Linux Azahar exit hook input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
@@ -149,6 +151,17 @@ Linux PS2 note:
 
 RetroArch note:
 - When a RetroArch config file is discovered (`retroarch.cfg` candidates or explicit override), GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) and `all_users_control_menu = "true"` for controller quick-menu access.
+- On Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`.
+- RetroArch `system_directory = ":/system"` (portable-relative) is normalized to `<retroarch.cfg dir>/system` on Windows.
+- RetroArch `libretro_directory = ":/cores"` and `libretro_info_path = ":/info"` (portable-relative) are normalized to `<retroarch.cfg dir>/cores` / `<retroarch.cfg dir>/info` on Windows.
+- GAMEHUB also writes a Swanstation core remap file to `<config remap dir>/SwanStation/SwanStation.rmp` (default `<retroarch.cfg dir>/config/remaps/...`) with the tested DualShock + analog/turbo defaults.
+- GAMEHUB also sets:
+  - `input_player1_analog_dpad_mode .. input_player8_analog_dpad_mode = "0"`
+  - `input_libretro_device_p1 = "261"` (DualShock) and `input_libretro_device_p2..p8 = "1"`
+  - `input_remap_port_p1..p8 = "0".."7"`
+  - input turbo defaults (`input_turbo_*`) matching the tested PSX baseline
+- GAMEHUB also ensures `swanstation_Controller1.Type = "AnalogController"` and `swanstation_Controller2.Type = "AnalogController"` in `retroarch-core-options.cfg` so PSX games default to DualShock-style pads.
+- On Windows, GAMEHUB keeps PSX controller overrides out of `retroarch.cfg` and applies them only via the Swanstation core remap file.
 
 Controller launch autoconfig:
 - Applies to Steam shortcut launches for `PCSX2`, `Dolphin`, and `Azahar`.
@@ -166,6 +179,14 @@ Controller launch autoconfig:
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
 
+Windows Dolphin defaults:
+- If Dolphin is installed by GAMEHUB (default `LOCALAPPDATA/Programs/Dolphin`), the runtime user dir is pinned to `<dolphin-install>/User`.
+- Otherwise, Dolphin user dir detection prefers:
+  - Portable `<dolphin-install>/User`
+  - `%USERPROFILE%/Documents/Dolphin Emulator`
+  - `%APPDATA%/Dolphin Emulator` (fallback)
+- Override with `DOLPHIN_EMU_USERPATH` / `GAMEHUB_DOLPHIN_EMU_USERPATH` (or `dolphin_user_path` in `config.toml`).
+
 Linux Dolphin defaults:
 - Native runtime user dir: `~/.local/share/dolphin-emu`
 - Flatpak runtime user dir: `~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu`
@@ -177,15 +198,17 @@ N3DS Azahar defaults:
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
 - On Linux, GAMEHUB bootstraps SDL controller bindings for Azahar profile 1 when keyboard defaults are detected.
-- On Linux controller-profile apply, Azahar GUID behavior is policy-driven:
+- On controller-profile apply, Azahar GUID behavior is policy-driven:
   - `preserve` (default): keep existing GUID if present, otherwise use discovered GUID
   - `detect`: always prefer discovered GUID when available
   - `fixed`: force `GAMEHUB_AZAHAR_FIXED_GUID`
   - `off`: strip/avoid GUID tokens and rely on SDL `port` only
   - Legacy override `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID=true` maps to `detect`
 - GUID discovery order (Linux): probe Azahar Flatpak runtime first (if available), then fall back to host SDL.
+- GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise preserve existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
 - On Linux, GAMEHUB uses a wrapper launch hook by default to close Azahar when `Select+Start` is pressed (native-controller mode).
+- On Windows, GAMEHUB uses a controller-launch XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
 - On Linux Flatpak Dolphin launches wrapped by `controller-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
 - Steam Input layout/template copy for N3DS remains manual in this pass.
 
