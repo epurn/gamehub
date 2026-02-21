@@ -373,6 +373,113 @@ def test_run_sync_skip_steam_relaunch_still_applies_steam_updates(monkeypatch) -
     assert received.get("reopen") is False
 
 
+def test_run_sync_reseed_profiles_forces_defaults(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": []}
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-reseed.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=True),
+    )
+    called: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.ensure_emulators", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.ensure_retroarch_cores", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._apply_downloads", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._build_artwork_assignments", lambda *args, **kwargs: {})
+    monkeypatch.setattr("gamehub_cli.sync._resolve_steam_context", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.seed_default_profiles",
+        lambda *args, **kwargs: called.update({"force": kwargs.get("force")}) or [],
+    )
+
+    exit_code = run_sync(
+        config=config,
+        dry_run=False,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=True,
+        reseed_profiles=True,
+    )
+
+    assert exit_code == 0
+    assert called.get("force") is True
+
+
+def test_run_sync_skips_profile_seed_when_autoconfig_disabled(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": []}
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-no-seed.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.ensure_emulators", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.ensure_retroarch_cores", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._apply_downloads", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._build_artwork_assignments", lambda *args, **kwargs: {})
+    monkeypatch.setattr("gamehub_cli.sync._resolve_steam_context", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.seed_default_profiles",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("seed_default_profiles should not be called")),
+    )
+
+    exit_code = run_sync(
+        config=config,
+        dry_run=False,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=True,
+    )
+
+    assert exit_code == 0
+
+
 def test_run_sync_retries_index_fetch_after_timeout(monkeypatch) -> None:
     class FakeResponse:
         def raise_for_status(self) -> None:

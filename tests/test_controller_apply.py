@@ -100,9 +100,16 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
 
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
         hotkeys_text = (config_dir / "Hotkeys.ini").read_text(encoding="utf-8")
+        dolphin_text = (config_dir / "Dolphin.ini").read_text(encoding="utf-8")
         assert profile == "xbox_2p"
         assert "[User]" in gcpad_text
         assert "Foo = Bar" in gcpad_text
+        assert "[Core]" in dolphin_text
+        assert "SIDevice0 = 6" in dolphin_text
+        assert "SIDevice1 = 6" in dolphin_text
+        assert "[Controls]" in dolphin_text
+        assert "WiimoteSource0 = 1" in dolphin_text
+        assert "WiimoteSource1 = 1" in dolphin_text
         if sys.platform.startswith("linux"):
             assert "Device = SDL/0/Gamepad" in gcpad_text
             assert "Device = SDL/1/Gamepad" in gcpad_text

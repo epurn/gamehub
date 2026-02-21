@@ -51,22 +51,24 @@ gamehub sync --dry-run --skip-steam --verbose
 grep -n "Bios" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ls ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios
 ```
-8. Linux PCSX2 controller autoconfig writes generic SDL mappings for Pad1+Pad2 by default. Verify with:
+8. PCSX2 controller bindings and hotkeys are applied at launch via controller profiles when `launch_autoconfig` is enabled. After launching a PS2 title once via Steam, verify with:
 ```bash
 grep -nE "^\[Pad1\]|^\[Pad2\]|^Type =|^Cross =|^Start =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 grep -n "^OpenPauseMenu =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ```
-   - If Pad1 was still keyboard-defaulted, re-run sync once on the updated client build; bootstrap now rewrites keyboard/mouse defaults to SDL controller bindings.
-   - `OpenPauseMenu` is bootstrapped to `SDL-0/Back & SDL-0/Start` when missing or keyboard-only.
-9. Dolphin runtime bootstrap (GC/Wii) writes fullscreen/controller/hotkey config under the resolved Dolphin user path. Flatpak example:
+   - Use `--reseed-profiles` to overwrite the default profile files if you need to reset them.
+9. Dolphin runtime bootstrap (GC/Wii) writes display/confirm/background input flags in `Dolphin.ini`. Controller profiles apply input + hotkey config at launch. Flatpak example:
 ```bash
 grep -nE "^\[Display\]|^Fullscreen =|^\[Interface\]|^(ConfirmStop|BackgroundInput) =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Config/Dolphin.ini
+```
+After launching a GC/Wii title once, verify input + hotkeys:
+```bash
 grep -nE "^\[Hotkeys1\]|^Keys/(Stop|Exit) =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Config/Hotkeys.ini
 grep -n "^Device =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Config/GCPadNew.ini
 ```
-   - Controller exit default is `Back+Start` (pad1/pad2).
-   - On Linux, GAMEHUB prefers evdev device roots (for example `evdev/0/Xbox Wireless Controller`) and falls back to `SDL/<n>/Gamepad` when evdev cannot be detected.
-   - Existing Dolphin input files are preserved once present; sync reconciles managed stop/exit hotkeys each run.
+   - Controller exit default is `Back+Start` (pad1/pad2) and is applied via controller profiles.
+   - On Linux, controller profiles prefer evdev device roots (for example `evdev/0/Xbox Wireless Controller`) and fall back to `SDL/<n>/Gamepad` when evdev cannot be detected.
+   - Existing Dolphin input files are preserved once present; controller profile apply reconciles managed stop/exit hotkeys.
 10. RetroArch menu combo bootstrap sets `Start+Select` when a writable RetroArch config file is discovered. Verify with:
 ```bash
 grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg ~/.config/retroarch/retroarch.cfg 2>/dev/null

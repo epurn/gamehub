@@ -687,6 +687,13 @@ def _override_dolphin_hotkey_sections(
 def _apply_dolphin_profile(config: GamehubConfig, profile_name: str) -> list[Path]:
     touched: list[Path] = []
     for target_dir in _dolphin_target_config_dirs(config):
+        dolphin_ini = target_dir / "Dolphin.ini"
+        dolphin_sections = {
+            "Core": {"SIDevice0": "6", "SIDevice1": "6"},
+            "Controls": {"WiimoteSource0": "1", "WiimoteSource1": "1"},
+        }
+        _apply_managed_ini_sections(target_path=dolphin_ini, sections=dolphin_sections)
+        touched.append(dolphin_ini)
         for filename in ("GCPadNew.ini", "WiimoteNew.ini", "Hotkeys.ini"):
             profile_lines = load_profile_file(
                 config,

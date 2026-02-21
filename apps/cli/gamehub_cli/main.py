@@ -41,6 +41,11 @@ if typer is not None:
             "--require-steam-closed",
             help="Fail if Steam cannot be closed before config writes",
         ),
+        reseed_profiles: bool = typer.Option(
+            False,
+            "--reseed-profiles",
+            help="Overwrite default controller profiles during sync",
+        ),
     ) -> None:
         loaded = load_config(config)
         raise typer.Exit(
@@ -52,6 +57,7 @@ if typer is not None:
                 require_steam_closed=require_steam_closed,
                 skip_steam=skip_steam,
                 skip_steam_relaunch=skip_steam_relaunch,
+                reseed_profiles=reseed_profiles,
             )
         )
 
@@ -89,6 +95,7 @@ def main() -> None:
     sync_parser.add_argument("--skip-steam", action="store_true")
     sync_parser.add_argument("--skip-steam-relaunch", action="store_true")
     sync_parser.add_argument("--require-steam-closed", action="store_true")
+    sync_parser.add_argument("--reseed-profiles", action="store_true")
     controller_launch_parser = subparsers.add_parser("controller-launch", help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
@@ -104,6 +111,7 @@ def main() -> None:
                 require_steam_closed=args.require_steam_closed,
                 skip_steam=args.skip_steam,
                 skip_steam_relaunch=args.skip_steam_relaunch,
+                reseed_profiles=args.reseed_profiles,
             )
         )
     if args.command == "controller-launch":

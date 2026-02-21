@@ -283,7 +283,6 @@ def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
                     'retroarch_cores_base_url = "https://example.invalid/cores/"',
                     'pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"',
                     'pcsx2_bios_dir = "~/.config/PCSX2/bios"',
-                    "pcsx2_controller_autoconfig = false",
                     'dolphin_user_path = "~/.local/share/dolphin-emu"',
                 ]
             ),
@@ -302,7 +301,6 @@ def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
         assert loaded.linux.retroarch_cores_base_url == "https://example.invalid/cores/"
         assert loaded.linux.pcsx2_ini_path == Path("~/.config/PCSX2/inis/PCSX2.ini").expanduser()
         assert loaded.linux.pcsx2_bios_dir == Path("~/.config/PCSX2/bios").expanduser()
-        assert loaded.linux.pcsx2_controller_autoconfig is False
         assert loaded.linux.dolphin_user_path == Path("~/.local/share/dolphin-emu").expanduser()
 
 
@@ -362,25 +360,6 @@ def test_load_config_supports_centralized_env_precedence(monkeypatch) -> None:
         assert loaded.linux.dolphin_user_path == Path("D:/Dolphin/User")
         assert loaded.controllers.launch_autoconfig is False
         assert loaded.controllers.profiles_dir == Path("D:/GameHub/profiles")
-
-
-def test_load_config_supports_pcsx2_controller_autoconfig_env_override(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
-        config_path = temp_root / "config.toml"
-        config_path.write_text(
-            "\n".join(
-                [
-                    "[linux]",
-                    "pcsx2_controller_autoconfig = false",
-                ]
-            ),
-            encoding="utf-8",
-        )
-        monkeypatch.setenv("GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG", "true")
-
-        loaded = load_config(config_path)
-
-        assert loaded.linux.pcsx2_controller_autoconfig is True
 
 
 def test_load_config_normalizes_quoted_sgdb_api_key(monkeypatch) -> None:

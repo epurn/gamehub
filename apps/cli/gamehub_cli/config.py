@@ -27,7 +27,6 @@ class LinuxConfig:
     retroarch_cores_base_url: str | None = None
     pcsx2_ini_path: Path | None = None
     pcsx2_bios_dir: Path | None = None
-    pcsx2_controller_autoconfig: bool = True
     dolphin_user_path: Path | None = None
 
 
@@ -262,9 +261,6 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     config_dolphin_user_path = _normalize_optional_path(linux.get("dolphin_user_path"))
     env_dolphin_user_path = _normalize_optional_path(_first_env_value("DOLPHIN_EMU_USERPATH", "GAMEHUB_DOLPHIN_EMU_USERPATH"))
 
-    config_pcsx2_controller_autoconfig = _normalize_optional_bool(linux.get("pcsx2_controller_autoconfig"))
-    env_pcsx2_controller_autoconfig = _normalize_optional_bool(_first_env_value("GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG"))
-
     config_controller_launch_autoconfig = _normalize_optional_bool(controllers.get("launch_autoconfig"))
     env_controller_launch_autoconfig = _normalize_optional_bool(
         _first_env_value("GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG")
@@ -321,11 +317,6 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
             ),
             pcsx2_ini_path=env_pcsx2_ini_path if env_pcsx2_ini_path is not None else config_pcsx2_ini_path,
             pcsx2_bios_dir=env_pcsx2_bios_dir if env_pcsx2_bios_dir is not None else config_pcsx2_bios_dir,
-            pcsx2_controller_autoconfig=(
-                env_pcsx2_controller_autoconfig
-                if env_pcsx2_controller_autoconfig is not None
-                else (config_pcsx2_controller_autoconfig if config_pcsx2_controller_autoconfig is not None else True)
-            ),
             dolphin_user_path=env_dolphin_user_path if env_dolphin_user_path is not None else config_dolphin_user_path,
         ),
         controllers=ControllersConfig(

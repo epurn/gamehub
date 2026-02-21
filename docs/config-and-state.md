@@ -60,8 +60,6 @@ retroarch_info_dir = "~/.config/retroarch/info"
 retroarch_cores_base_url = "https://buildbot.libretro.com/nightly/linux/x86_64/latest/"
 pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"
 pcsx2_bios_dir = "~/.config/PCSX2/bios"
-# Linux PCSX2 controller bootstrap (generic SDL mapping for Pad1 + Pad2)
-pcsx2_controller_autoconfig = true
 dolphin_user_path = "~/.local/share/dolphin-emu"
 
 [controllers]
@@ -109,10 +107,10 @@ Firmware deployment and Linux runtime env overrides:
 - `DOLPHIN_EMU_USERPATH` or `GAMEHUB_DOLPHIN_EMU_USERPATH`: explicit Dolphin runtime user directory target.
   - GC/Wii firmware deploys into `<userpath>/GC` and `<userpath>/Wii`.
   - Steam launch templates are normalized to pass `-u "<userpath>"`.
-  - Dolphin runtime config files (`Dolphin.ini`, `GCPadNew.ini`, `WiimoteNew.ini`, `Hotkeys.ini`) are bootstrapped under `<userpath>/Config`.
+  - Dolphin runtime config bootstraps `Dolphin.ini` under `<userpath>/Config` (display/fullscreen + background input flags).
+  - Dolphin input profiles (`GCPadNew.ini`, `WiimoteNew.ini`, `Hotkeys.ini`) are applied at launch via controller profiles.
 - `GAMEHUB_RETROARCH_CFG_PATH`: explicit RetroArch config file path.
 - `GAMEHUB_PCSX2_INI_PATH`: explicit PCSX2 ini path.
-- `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG`: overrides `[linux].pcsx2_controller_autoconfig` (`true`/`false`).
 - `GAMEHUB_RETROARCH_CORES_BASE_URL`: optional base URL override for RetroArch core downloads.
 - `GAMEHUB_RETROARCH_CORES_DIR`: explicit RetroArch cores directory for core auto-provisioning.
 - `GAMEHUB_RETROARCH_INFO_DIR`: explicit RetroArch info directory for `.info` metadata auto-provisioning.
@@ -145,9 +143,7 @@ Firmware deployment and Linux runtime env overrides:
 
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
-- On Linux, GAMEHUB can also bootstrap generic SDL controller mappings for `Pad1` and `Pad2` so first-run PCSX2 controller setup works for Xbox/DS4/DS5/other SDL controllers without per-device hardcoding.
-- During this bootstrap, keyboard/mouse default pad bindings are replaced with SDL bindings; set `[linux].pcsx2_controller_autoconfig = false` (or `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG=false`) to opt out.
-- GAMEHUB also bootstraps `Hotkeys/OpenPauseMenu = SDL-0/Back & SDL-0/Start` when the existing binding is missing or keyboard-only.
+- PCSX2 controller bindings and hotkeys are managed at launch via controller profiles when `launch_autoconfig` is enabled.
 
 RetroArch note:
 - When a RetroArch config file is discovered (`retroarch.cfg` candidates or explicit override), GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) and `all_users_control_menu = "true"` for controller quick-menu access.
@@ -173,7 +169,8 @@ Controller launch autoconfig:
   - `<root>/dolphin/<profile>/WiimoteNew.ini`
   - `<root>/dolphin/<profile>/Hotkeys.ini`
   - `<root>/azahar/<profile>/qt-config.ini`
-- Non-dry sync re-seeds default profiles on every sync when using the default profile root.
+- Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
+- Use `--reseed-profiles` to overwrite defaults on demand.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`) so GAMEHUB will not overwrite them; missing files still fall back to bundled defaults.
 - If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
@@ -197,7 +194,7 @@ N3DS Azahar defaults:
   - Windows: `%APPDATA%/Azahar/config/qt-config.ini`
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
-- On Linux, GAMEHUB bootstraps SDL controller bindings for Azahar profile 1 when keyboard defaults are detected.
+- Azahar controller bindings are applied at launch via controller profiles; GUID/port normalization follows the configured policy.
 - On controller-profile apply, Azahar GUID behavior is policy-driven:
   - `preserve` (default): keep existing GUID if present, otherwise use discovered GUID
   - `detect`: always prefer discovered GUID when available

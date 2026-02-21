@@ -12,6 +12,7 @@ Command:
 - `--skip-steam`: run sync downloads/state updates but skip Steam lifecycle and Steam file updates
 - `--skip-steam-relaunch`: apply Steam updates but do not relaunch Steam at end
 - `--require-steam-closed`: fail if Steam cannot be closed before config writes
+- `--reseed-profiles`: overwrite default controller profiles during sync
 - `--config <path>`: TOML config path override
 
 Steam close behavior:
@@ -102,9 +103,6 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
 - `PS2` config is auto-updated and setup wizard completion is written into `PCSX2.ini`.
   - default BIOS target is `<gamehub_dir>/firmware/PS2` unless overridden by `PCSX2_BIOS_DIR`/`GAMEHUB_PCSX2_BIOS_DIR`/`[linux].pcsx2_bios_dir`
   - for Flatpak PCSX2 on Linux (no explicit BIOS override), GAMEHUB targets `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there so the sandbox can read them reliably
-  - on Linux, GAMEHUB bootstraps generic SDL pad bindings for `Pad1` and `Pad2` (no controller-model hardcoding) unless disabled with `[linux].pcsx2_controller_autoconfig = false`
-  - keyboard/mouse default pad bindings are replaced by SDL controller bindings during bootstrap
-  - GAMEHUB bootstraps `Hotkeys/OpenPauseMenu = SDL-0/Back & SDL-0/Start` when the existing binding is missing or keyboard-only
 - `GC` firmware is mirrored to Dolphin runtime user path `GC/` (native default: `~/.local/share/dolphin-emu/GC`, Flatpak: `~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/GC`).
 - `N3DS` has no required firmware deployment targets in this pass.
 - When `N3DS` is present in the index, GAMEHUB bootstraps Azahar runtime config in `qt-config.ini` with:
@@ -112,20 +110,11 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - `confirmClose=false` (disables quit confirmation while emulation is running)
   - Windows default path: `%APPDATA%/Azahar/config/qt-config.ini`
   - Linux Flatpak default path: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
-- On Linux, GAMEHUB also bootstraps Azahar SDL controller bindings for profile 1 when keyboard-default mappings are detected.
 - GAMEHUB does not decrypt ROM content; N3DS ROMs must already be in a format Azahar can load.
 - When `GC`/`Wii` systems are present, GAMEHUB writes Dolphin runtime config `Config/Dolphin.ini` with `[Display] Fullscreen = True` under the same resolved runtime user path and mirrors to additional detected config roots when present.
-- GAMEHUB also bootstraps Dolphin `Config/GCPadNew.ini` and enables GC controller ports in `Dolphin.ini` (`SIDevice0/1 = 6`).
-- For Wii input, GAMEHUB bootstraps `Config/WiimoteNew.ini` with two emulated Wii remotes (`Wiimote1` + `Wiimote2`) with right-stick pointer bindings (`IR/* = Right Stick`) and Nunchuk extension defaults.
-- Wii bootstrap is explicit Wiimote+Nunchuk emulation (`[Wiimote*] Source = 1`, `Extension = Nunchuk`) and is not treated as GameCube pad input.
 - Dolphin writes `Interface/ConfirmStop = False` in `Dolphin.ini` so stop/exit flows do not block on confirmation prompts.
-- GAMEHUB bootstraps `Config/Hotkeys.ini` with controller-friendly stop/exit bindings:
-  - pad1/pad2 `Back+Start`
-- Windows Dolphin controller bootstrap prefers detected XInput slots (for example `XInput/0` or `XInput/1`) and falls back to `XInput/0` + `XInput/1` when detection is unavailable.
-- Linux Dolphin controller bootstrap auto-detects evdev gamepads from `/proc/bus/input/devices` (for example `evdev/0/Xbox Wireless Controller`, `evdev/1/Xbox Wireless Controller`) and falls back to `SDL/0` + `SDL/1` when evdev devices are not detected.
 - Dolphin writes `Interface/BackgroundInput = True` to reduce focus-related controller input drops when launched through Steam.
-- Existing Dolphin input files are preserved once present; sync reconciles managed stop/exit hotkeys each run.
-- Legacy managed Linux configs written with `XInput/<n>/Gamepad` or `All Devices` are auto-migrated on sync.
+- Dolphin input profiles (`GCPadNew.ini`, `WiimoteNew.ini`, `Hotkeys.ini`) and input-source keys (`SIDevice0/1`, `WiimoteSource0/1`) are applied at launch by controller profiles, not during firmware deploy.
 - Wii does not require indexed firmware in v1.
 
 Linux path notes:
@@ -158,8 +147,10 @@ Windows path notes:
 
 Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
-- Non-dry sync re-seeds default profiles on every sync when using the default profile root.
+- Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
+- Use `--reseed-profiles` to overwrite default profiles on demand.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`) so GAMEHUB will not overwrite them; missing files still fall back to bundled defaults.
+- Controller profiles apply input mappings for `PCSX2`, `Dolphin`, and `Azahar` at launch; firmware deploy does not write controller bindings.
 - Profile selection:
   - `0` Xbox controllers -> `kbm`
   - `1` Xbox controller -> `xbox_1p`
@@ -182,7 +173,6 @@ Controller launch profile defaults:
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`
 - `PCSX2_BIOS_DIR`
-- `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG`
 - `DOLPHIN_EMU_USERPATH`
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`
 - `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`
