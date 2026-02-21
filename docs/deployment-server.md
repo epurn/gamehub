@@ -31,7 +31,7 @@ Required values in `docker/.env`:
   - Official release image: `ghcr.io/epurn/gamehub-server`
 - `GAMEHUB_IMAGE_TAG`: image tag to run
   - `latest` for most recent release
-  - `v1.0.3` (or any release tag) for pinned deploys
+  - `v1.1.0` (or any release tag) for pinned deploys
 - Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`, meaning startup/manual refresh only)
 - Optional: `GAMEHUB_HASH_CACHE_PATH` (path for persistent SHA256 cache DB; default is `/app/.cache/gamehub/hash-cache.sqlite3`)
 
