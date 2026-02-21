@@ -15,13 +15,10 @@ from pathlib import Path
 
 from ..common.config import load_config
 from . import azahar_exit_hook
-from .apply import (
-    _AZAHAR_WINDOWS_SDL_DIR_ENV,
-    apply_controller_profile,
-    apply_named_controller_profile,
-)
+from .apply import apply_controller_profile, apply_named_controller_profile
 from .detection import detect_xbox_controllers
 from .profiles import PROFILE_KBM, seed_default_profiles
+from .sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
 
 _DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
 _DOLPHIN_LINUX_EXIT_HOOK_ENV = "GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK"

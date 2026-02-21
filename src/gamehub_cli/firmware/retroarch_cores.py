@@ -152,7 +152,10 @@ def resolve_retroarch_paths(
 
     config_cores: Path | None = None
     config_info: Path | None = None
-    for cfg_path in retroarch_cfg_candidates(explicit_cfg_path=explicit_cfg_path):
+    for cfg_path in retroarch_cfg_candidates(
+        explicit_cfg_path=explicit_cfg_path,
+        resolve_emulator_executable=resolve_emulator_executable,
+    ):
         parsed = parse_simple_kv_config(cfg_path)
         raw_core = parsed.get("libretro_directory")
         raw_info = parsed.get("libretro_info_path")

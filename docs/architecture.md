@@ -19,13 +19,22 @@
 - `controllers` may depend on `firmware`, `emulators`, and `common`.
 - `firmware` may depend on `emulators` and `common`.
 - `steam` may depend on `common`.
-- `common` may depend on `emulators` for emulator path-resolution helpers.
+- `common` must not depend on other CLI feature packages.
 - `emulators` must not depend on other CLI feature packages.
+- `gamehub_common` must not depend on `gamehub_cli` or `gamehub_server`.
+- `gamehub_server` must not depend on `gamehub_cli`.
+- `gamehub_cli` must not depend on `gamehub_server`.
 
 ## Guardrails
 - `tests/test_architecture.py` enforces:
 - an acyclic dependency graph across `sync`, `steam`, `emulators`, `firmware`, `controllers`, and `common`
 - explicit allowed dependency directions for each core package
+- disallowed inter-package imports across `gamehub_cli`, `gamehub_server`, and `gamehub_common`
+
+## Public package surfaces
+- `gamehub_cli.steam` only re-exports intentional public Steam APIs; internal patch points live in concrete modules (for example `gamehub_cli.steam.lifecycle`).
+- `gamehub_cli.sync` package exports are limited to `run_sync` and `configure_dependencies`.
+- Internal test patch targets should use concrete modules, not package-level compatibility aliases.
 
 ## Entry points
 - Top-level CLI entrypoint remains `gamehub = gamehub_cli.main:main`.

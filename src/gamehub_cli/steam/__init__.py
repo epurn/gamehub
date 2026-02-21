@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from . import lifecycle as _lifecycle
 from .artwork import backup_steam_configs, copy_grid_art, prune_grid_noncanonical_variants
 from .collections import update_cloud_collections, update_collections
 from .lifecycle import (
     build_context,
     close_steam_best_effort,
+    discover_steam_id,
+    discover_userdata_dir,
     is_steam_running,
     reopen_steam,
     steam_id64_from_userdata_id,
@@ -28,18 +27,6 @@ from .types import (
     SteamShortcutSpec,
 )
 
-_candidate_userdata_dirs = _lifecycle._candidate_userdata_dirs
-
-
-def discover_userdata_dir(explicit_userdata_dir: Path | None = None) -> Path | None:
-    _lifecycle._candidate_userdata_dirs = _candidate_userdata_dirs
-    return _lifecycle.discover_userdata_dir(explicit_userdata_dir)
-
-
-def discover_steam_id(userdata_dir: Path, preferred_steam_id: str | None = None) -> str | None:
-    return _lifecycle.discover_steam_id(userdata_dir, preferred_steam_id=preferred_steam_id)
-
-
 __all__ = [
     "DEFAULT_USER_COLLECTIONS_PATH",
     "GAMEHUB_SYSTEM_PREFIX",
@@ -52,7 +39,6 @@ __all__ = [
     "SteamContext",
     "SteamShortcutSpec",
     "USER_COLLECTIONS_KEY",
-    "_candidate_userdata_dirs",
     "backup_steam_configs",
     "build_context",
     "close_steam_best_effort",

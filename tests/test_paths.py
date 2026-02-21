@@ -83,8 +83,10 @@ def test_retroarch_cfg_candidates_includes_portable_windows_cfg(monkeypatch, wor
         retroarch_exe.write_text("", encoding="utf-8")
 
         monkeypatch.setattr("gamehub_cli.common.platform_paths._OS_NAME", "nt")
-        monkeypatch.setattr("gamehub_cli.emulators.resolve_emulator_executable", lambda _name: str(retroarch_exe))
 
-        candidates = retroarch_cfg_candidates(explicit_cfg_path=None)
+        candidates = retroarch_cfg_candidates(
+            explicit_cfg_path=None,
+            resolve_emulator_executable=lambda _name: str(retroarch_exe),
+        )
 
         assert retroarch_root / "retroarch.cfg" in candidates

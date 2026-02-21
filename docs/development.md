@@ -23,6 +23,7 @@ python -m venv venv
 
 ## CLI module boundaries
 - `src/gamehub_cli/common/config.py`: config schema + TOML/env resolution.
+- `src/gamehub_cli/common/config_edit.py`: shared key-value config editing primitives (simple cfg + QSettings).
 - `src/gamehub_cli/sync/orchestrator.py`: orchestration and dependency wiring only.
 - `src/gamehub_cli/sync/index.py`: index fetch/retry policy.
 - `src/gamehub_cli/sync/planner.py`: index/state diff and action planning.
@@ -34,16 +35,35 @@ python -m venv venv
 - `src/gamehub_cli/sync/steam_stage.py`: Steam lifecycle + shortcuts/collections apply stage.
 - `src/gamehub_cli/emulators/__init__.py`: public emulator exports.
 - `src/gamehub_cli/emulators/resolution.py`: emulator executable discovery/resolution.
-- `src/gamehub_cli/emulators/installer.py`: install backend selection/execution.
+- `src/gamehub_cli/emulators/installer.py`: install orchestration only.
+- `src/gamehub_cli/emulators/install_common.py`: shared install command/version/path helpers.
+- `src/gamehub_cli/emulators/install_windows.py`: Windows installer backends (winget + bundled installer flows).
+- `src/gamehub_cli/emulators/install_linux.py`: Linux package/backend install flows.
+- `src/gamehub_cli/emulators/install_flatpak.py`: Flatpak backend helpers + install flow.
 - `src/gamehub_cli/firmware/deploy.py`: firmware deployment orchestration.
+- `src/gamehub_cli/firmware/runtime_retroarch.py`: RetroArch runtime config/bootstrap.
+- `src/gamehub_cli/firmware/runtime_pcsx2.py`: PCSX2 runtime config/bootstrap.
+- `src/gamehub_cli/firmware/runtime_dolphin.py`: Dolphin runtime config/bootstrap.
+- `src/gamehub_cli/firmware/runtime_azahar.py`: Azahar runtime config/bootstrap.
+- `src/gamehub_cli/firmware/deploy_copy.py`: checksum/copy helpers for firmware deployment.
 - `src/gamehub_cli/firmware/targets.py`: emulator-specific firmware target discovery.
 - `src/gamehub_cli/firmware/pcsx2_ini.py`: PCSX2 INI read/update/controller bootstrap logic.
 - `src/gamehub_cli/controllers/profiles.py`: bundled/user-overridden controller profile defaults and seeding.
 - `src/gamehub_cli/controllers/detection.py`: Xbox controller detection (Linux `/proc` + Windows XInput).
-- `src/gamehub_cli/controllers/apply.py`: managed-key profile application for PCSX2/Dolphin/Azahar.
+- `src/gamehub_cli/controllers/apply.py`: controller profile orchestration entrypoints only.
+- `src/gamehub_cli/controllers/apply_pcsx2.py`: PCSX2 profile application logic.
+- `src/gamehub_cli/controllers/apply_dolphin.py`: Dolphin profile and device/hotkey application logic.
+- `src/gamehub_cli/controllers/apply_azahar.py`: Azahar profile and SDL identity application logic.
+- `src/gamehub_cli/controllers/sdl_guid.py`: SDL GUID discovery and normalization helpers.
+- `src/gamehub_cli/controllers/apply_ini.py`: INI section parse/apply helpers used by controller apply modules.
 - `src/gamehub_cli/controllers/launch.py`: hidden wrapper entrypoint used by wrapped Steam shortcuts.
 - `src/gamehub_cli/steam/types.py`: Steam dataclasses/constants.
 - `src/gamehub_cli/steam/lifecycle.py`, `src/gamehub_cli/steam/shortcuts.py`, `src/gamehub_cli/steam/collections.py`, `src/gamehub_cli/steam/artwork.py`, `src/gamehub_cli/steam/io.py`: focused Steam responsibilities.
+
+Canonical internal patch/import targets:
+- Steam lifecycle discovery hooks: `gamehub_cli.steam.lifecycle`.
+- Firmware runtime hooks: `gamehub_cli.firmware.runtime_*` and `gamehub_cli.firmware.targets`.
+- Controller runtime hooks: `gamehub_cli.controllers.apply_*` and `gamehub_cli.controllers.sdl_guid`.
 
 ## Run tests
 ```powershell

@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
 from typing import Any, Callable
 from urllib.parse import urljoin
 
@@ -49,10 +48,7 @@ def _default_dependencies() -> SyncDependencies:
 _DEPS = _default_dependencies()
 
 # Compatibility exports for existing tests/helpers.
-httpx: ModuleType | None = sync_index.httpx
-_is_retryable_index_status = sync_index._is_retryable_index_status
-_is_retryable_index_fetch_error = sync_index._is_retryable_index_fetch_error
-kinds_to_download = artwork_stage.kinds_to_download
+httpx = sync_index.httpx
 
 
 def configure_dependencies(

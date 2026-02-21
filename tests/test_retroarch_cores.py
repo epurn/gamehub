@@ -206,7 +206,8 @@ def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch, works
         monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.sys.platform", "linux")
         monkeypatch.setattr(
-            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: []
+            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates",
+            lambda explicit_cfg_path=None, resolve_emulator_executable=None: [],
         )
         monkeypatch.setattr(
             "gamehub_cli.firmware.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch"
@@ -229,7 +230,8 @@ def test_resolve_retroarch_paths_linux_prefers_flatpak_when_export_detected(monk
         monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr(
-            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: []
+            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates",
+            lambda explicit_cfg_path=None, resolve_emulator_executable=None: [],
         )
         monkeypatch.setattr(
             "gamehub_cli.firmware.retroarch_cores.resolve_emulator_executable", lambda _name: str(export)
@@ -261,7 +263,7 @@ def test_resolve_retroarch_paths_expands_tilde_cfg_values(monkeypatch, workspace
         monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr(
             "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates",
-            lambda explicit_cfg_path=None: [cfg_path],
+            lambda explicit_cfg_path=None, resolve_emulator_executable=None: [cfg_path],
         )
         monkeypatch.setattr(
             "gamehub_cli.firmware.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch"
@@ -290,7 +292,8 @@ def test_resolve_retroarch_paths_windows_colon_cfg_values(monkeypatch, workspace
 
         monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "nt")
         monkeypatch.setattr(
-            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [cfg_path]
+            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates",
+            lambda explicit_cfg_path=None, resolve_emulator_executable=None: [cfg_path],
         )
 
         paths = resolve_retroarch_paths()

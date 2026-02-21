@@ -4,9 +4,12 @@ import ast
 from pathlib import Path
 
 CORE = {"sync", "steam", "emulators", "firmware", "controllers", "common"}
-SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "gamehub_cli"
+CLI_SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "gamehub_cli"
+SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
+TOP_PACKAGES = {"gamehub_cli", "gamehub_server", "gamehub_common"}
+
 ALLOWED_DEPENDENCIES: dict[str, set[str]] = {
-    "common": {"emulators"},
+    "common": set(),
     "controllers": {"common", "emulators", "firmware"},
     "emulators": set(),
     "firmware": {"common", "emulators"},
@@ -14,16 +17,22 @@ ALLOWED_DEPENDENCIES: dict[str, set[str]] = {
     "sync": {"common", "controllers", "emulators", "firmware", "steam"},
 }
 
+TOP_LEVEL_DISALLOWED: dict[str, set[str]] = {
+    "gamehub_cli": {"gamehub_server"},
+    "gamehub_server": {"gamehub_cli"},
+    "gamehub_common": {"gamehub_cli", "gamehub_server"},
+}
+
 
 def _module_group(module_path: Path) -> str | None:
-    rel = module_path.relative_to(SRC_ROOT)
+    rel = module_path.relative_to(CLI_SRC_ROOT)
     if rel.parts[0] in CORE:
         return rel.parts[0]
     return None
 
 
 def _module_package_parts(module_path: Path) -> list[str]:
-    rel = module_path.relative_to(SRC_ROOT)
+    rel = module_path.relative_to(CLI_SRC_ROOT)
     if rel.name == "__init__.py":
         return list(rel.parent.parts)
     return list(rel.with_suffix("").parts[:-1])
@@ -61,9 +70,9 @@ def _imported_groups(node: ast.AST, module_path: Path) -> set[str]:
     return found
 
 
-def _graph() -> dict[str, set[str]]:
+def _cli_graph() -> dict[str, set[str]]:
     graph = {group: set() for group in CORE}
-    for py in SRC_ROOT.rglob("*.py"):
+    for py in CLI_SRC_ROOT.rglob("*.py"):
         if "__pycache__" in py.parts:
             continue
         src_group = _module_group(py)
@@ -97,13 +106,54 @@ def _has_cycle(graph: dict[str, set[str]]) -> bool:
     return any(dfs(node) for node in sorted(graph))
 
 
+def _source_top_package(module_path: Path) -> str | None:
+    rel = module_path.relative_to(SRC_ROOT)
+    if not rel.parts:
+        return None
+    package = rel.parts[0]
+    if package in TOP_PACKAGES:
+        return package
+    return None
+
+
+def _top_level_imports(node: ast.AST) -> set[str]:
+    found: set[str] = set()
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            package = alias.name.split(".", 1)[0]
+            if package in TOP_PACKAGES:
+                found.add(package)
+        return found
+    if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+        package = node.module.split(".", 1)[0]
+        if package in TOP_PACKAGES:
+            found.add(package)
+    return found
+
+
+def _top_level_graph() -> dict[str, set[str]]:
+    graph = {package: set() for package in TOP_PACKAGES}
+    for py in SRC_ROOT.rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        source_package = _source_top_package(py)
+        if source_package is None:
+            continue
+        tree = ast.parse(py.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            for target in _top_level_imports(node):
+                if target != source_package:
+                    graph[source_package].add(target)
+    return graph
+
+
 def test_core_package_dependencies_are_acyclic() -> None:
-    graph = _graph()
+    graph = _cli_graph()
     assert not _has_cycle(graph), f"Detected cycle in core package graph: {graph}"
 
 
 def test_core_package_dependencies_follow_allowed_directions() -> None:
-    graph = _graph()
+    graph = _cli_graph()
     violations: dict[str, set[str]] = {}
     for source, targets in graph.items():
         allowed_targets = ALLOWED_DEPENDENCIES[source]
@@ -112,3 +162,15 @@ def test_core_package_dependencies_follow_allowed_directions() -> None:
             violations[source] = disallowed
 
     assert not violations, f"Disallowed core package dependencies detected: {violations}"
+
+
+def test_top_level_package_dependencies_follow_allowed_directions() -> None:
+    graph = _top_level_graph()
+    violations: dict[str, set[str]] = {}
+    for source, targets in graph.items():
+        disallowed_targets = TOP_LEVEL_DISALLOWED.get(source, set())
+        disallowed = {target for target in targets if target in disallowed_targets}
+        if disallowed:
+            violations[source] = disallowed
+
+    assert not violations, f"Disallowed top-level package dependencies detected: {violations}"

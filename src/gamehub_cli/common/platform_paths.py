@@ -92,19 +92,17 @@ def parse_simple_kv_config(path: Path) -> dict[str, str]:
     return parsed
 
 
-def retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path]:
+def retroarch_cfg_candidates(
+    explicit_cfg_path: Path | None = None,
+    resolve_emulator_executable: Callable[[str], str] | None = None,
+) -> list[Path]:
     values: list[Path] = []
     if explicit_cfg_path is not None:
         values.append(explicit_cfg_path.expanduser())
 
     if _OS_NAME == "nt":
-        resolver: Callable[[str], str] | None = None
-        try:
-            from ..emulators import resolve_emulator_executable as resolver
-        except Exception:
-            resolver = None
-        if resolver is not None:
-            exe_raw = resolver("retroarch").strip('"')
+        if resolve_emulator_executable is not None:
+            exe_raw = resolve_emulator_executable("retroarch").strip('"')
             if exe_raw:
                 exe_path = _host_path(exe_raw)
                 if exe_path.exists():

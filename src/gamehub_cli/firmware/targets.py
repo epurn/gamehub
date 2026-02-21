@@ -124,7 +124,10 @@ def _select_existing_dolphin_user_dir(candidates: list[Path]) -> Path | None:
 
 
 def retroarch_cfg_candidates_for_config(config: GamehubConfig | None = None) -> list[Path]:
-    return retroarch_cfg_candidates(explicit_cfg_path=_configured_path(config, "retroarch_cfg_path"))
+    return retroarch_cfg_candidates(
+        explicit_cfg_path=_configured_path(config, "retroarch_cfg_path"),
+        resolve_emulator_executable=resolve_emulator_executable,
+    )
 
 
 def resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[Path]:

@@ -44,7 +44,7 @@ def test_discover_userdata_dir_does_not_fallback_when_explicit_missing(monkeypat
         existing = temp_root / "detected" / "userdata"
         existing.mkdir(parents=True, exist_ok=True)
         missing = temp_root / "missing" / "userdata"
-        monkeypatch.setattr("gamehub_cli.steam._candidate_userdata_dirs", lambda: [existing])
+        monkeypatch.setattr("gamehub_cli.steam.lifecycle._candidate_userdata_dirs", lambda: [existing])
 
         resolved = discover_userdata_dir(missing)
 
