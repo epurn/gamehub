@@ -105,7 +105,7 @@ jobs:
 
           sources = [
               Path("docker/compose.yaml"),
-              Path(".env.production.template"),
+              Path("docker/.env.template"),
               Path("docs/deployment-server.md"),
               Path("scripts/verify_server_deploy.ps1"),
           ]
