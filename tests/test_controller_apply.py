@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+import subprocess
 import shutil
 import sys
 from uuid import uuid4
@@ -483,6 +484,26 @@ def test_apply_controller_profile_azahar_linux_dedupes_guid_tokens(monkeypatch) 
 
         assert "guid:ABC123,guid:ABC123" not in text
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:ABC123,port:0"' in text
+
+
+def test_probe_azahar_flatpak_guid_uses_equals_command_flag(monkeypatch) -> None:
+    import gamehub_cli.controller_apply as controller_apply_mod
+
+    captured: dict[str, list[str]] = {}
+
+    def _fake_run(cmd, **kwargs):
+        captured["cmd"] = list(cmd)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="030018dc5e040000130b000000006800\n", stderr="")
+
+    monkeypatch.setattr(controller_apply_mod.sys, "platform", "linux")
+    monkeypatch.setattr(controller_apply_mod.shutil, "which", lambda name: "/usr/bin/flatpak")
+    monkeypatch.setattr(controller_apply_mod.subprocess, "run", _fake_run)
+
+    guid = controller_apply_mod._probe_azahar_flatpak_guid(port=0)
+
+    assert guid == "030018dc5e040000130b000000006800"
+    assert "--command=python3" in captured["cmd"]
+    assert "--command" not in captured["cmd"]
 
 
 @contextmanager

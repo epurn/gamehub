@@ -34,7 +34,7 @@ _AZAHAR_ANALOG_ENGINE_RE = re.compile(r"engine\$0sdl", flags=re.IGNORECASE)
 _AZAHAR_GUID_VALUE_RE = re.compile(r"[0-9a-fA-F]{32}")
 # Flatpak cold starts can exceed 1-2s on immutable hosts.
 # Keep this generous so runtime GUID probing is reliable.
-_AZAHAR_FLATPAK_GUID_TIMEOUT_SEC = 8.0
+_AZAHAR_FLATPAK_GUID_TIMEOUT_SEC = 3.0
 _AZAHAR_WINDOWS_SDL_DIR_ENV = "GAMEHUB_AZAHAR_SDL_DIR"
 
 
@@ -383,8 +383,7 @@ def _probe_azahar_flatpak_guid(*, port: int, timeout_sec: float = _AZAHAR_FLATPA
                     "flatpak",
                     "run",
                     "--device=all",
-                    "--command",
-                    interpreter,
+                    f"--command={interpreter}",
                     AZAHAR_FLATPAK_APP_ID,
                     "-c",
                     script,
