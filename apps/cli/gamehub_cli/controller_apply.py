@@ -664,23 +664,29 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
         existing_guid: str | None = None
         detected_port = 0
         selected_guid: str | None = None
+        is_flatpak_target = sys.platform.startswith("linux") and _is_azahar_flatpak_config_path(target_path)
         if controller_mode:
             existing_guid, detected_port = _azahar_detect_sdl_identity(lines)
             normalized_port = _azahar_normalize_sdl_port(detected_port)
             runtime_guid: str | None = None
             host_guid: str | None = None
-            if sys.platform.startswith("linux") and _is_azahar_flatpak_config_path(target_path):
+            if is_flatpak_target:
                 if normalized_port in runtime_guid_cache:
                     runtime_guid = runtime_guid_cache[normalized_port]
                 else:
                     runtime_guid = _probe_azahar_flatpak_guid(port=normalized_port)
                     runtime_guid_cache[normalized_port] = runtime_guid
-            if normalized_port in host_guid_cache:
-                host_guid = host_guid_cache[normalized_port]
+            if not is_flatpak_target:
+                if normalized_port in host_guid_cache:
+                    host_guid = host_guid_cache[normalized_port]
+                else:
+                    host_guid = _discover_host_sdl_guid(port=normalized_port)
+                    host_guid_cache[normalized_port] = host_guid
+                selected_guid = runtime_guid or host_guid or existing_guid
             else:
-                host_guid = _discover_host_sdl_guid(port=normalized_port)
-                host_guid_cache[normalized_port] = host_guid
-            selected_guid = runtime_guid or host_guid or existing_guid
+                # Host SDL GUIDs are not reliably interchangeable with Flatpak runtime GUIDs.
+                # For Flatpak targets, prefer runtime discovery and otherwise preserve existing GUIDs.
+                selected_guid = runtime_guid or existing_guid
         changed = False
         for key, value in pairs.items():
             existing = _read_qsettings_key(lines, key)

@@ -291,7 +291,10 @@ def test_apply_controller_profile_azahar_linux_preserves_existing_sdl_bindings_w
         monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
         monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: True)
         monkeypatch.setattr("gamehub_cli.controller_apply._probe_azahar_flatpak_guid", lambda port=1: None)
-        monkeypatch.setattr("gamehub_cli.controller_apply._discover_linux_sdl_guid", lambda port=1: None)
+        monkeypatch.setattr(
+            "gamehub_cli.controller_apply._discover_linux_sdl_guid",
+            lambda port=1: "040018dc5e040000130b000000006800",
+        )
 
         apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
         text = qt_config.read_text(encoding="utf-8")
@@ -373,7 +376,9 @@ def test_apply_controller_profile_azahar_linux_injects_runtime_guid(monkeypatch)
         assert "guid:030018dc5e040000130b000000006800" in zr_line
 
 
-def test_apply_controller_profile_azahar_linux_uses_host_guid_when_runtime_unavailable(monkeypatch) -> None:
+def test_apply_controller_profile_azahar_linux_flatpak_runtime_unavailable_keeps_port_only_when_no_existing_guid(
+    monkeypatch,
+) -> None:
     with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
@@ -384,6 +389,31 @@ def test_apply_controller_profile_azahar_linux_uses_host_guid_when_runtime_unava
         monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
         monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: True)
+        monkeypatch.setattr("gamehub_cli.controller_apply._probe_azahar_flatpak_guid", lambda port=0: None)
+        monkeypatch.setattr(
+            "gamehub_cli.controller_apply._discover_linux_sdl_guid",
+            lambda port=0: "040018dc5e040000130b000000006800",
+        )
+
+        apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
+        text = qt_config.read_text(encoding="utf-8")
+
+        assert r'profiles\1\button_a="button:0,engine:sdl,port:0"' in text
+        assert "guid:" not in text
+        assert "guid$0" not in text
+
+
+def test_apply_controller_profile_azahar_linux_non_flatpak_uses_host_guid_when_runtime_unavailable(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text("profile=0\n", encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: False)
         monkeypatch.setattr("gamehub_cli.controller_apply._probe_azahar_flatpak_guid", lambda port=0: None)
         monkeypatch.setattr(
             "gamehub_cli.controller_apply._discover_linux_sdl_guid",

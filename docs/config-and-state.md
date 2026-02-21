@@ -193,7 +193,8 @@ N3DS Azahar defaults:
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
 - Azahar controller bindings are applied at launch via controller profiles. GUID normalization is always detect-based.
-- GUID discovery order (Linux): probe Azahar Flatpak runtime first (if available), then fall back to host SDL, then keep existing GUID when discovery is unavailable.
+- GUID discovery order (Linux Flatpak config paths): probe Azahar Flatpak runtime first; if unavailable, preserve existing GUID and otherwise keep port-only mappings (host GUID is not injected into Flatpak configs).
+- GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
 - On Linux, GAMEHUB uses a wrapper launch hook by default to close Azahar when `Select+Start` is pressed (native-controller mode).
