@@ -24,16 +24,13 @@ from .firmware_targets import default_pcsx2_ini_path, resolve_dolphin_config_dir
 from .platform_paths import AZAHAR_FLATPAK_APP_ID
 from .pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
 
-_MANAGED_PCSX2_SECTIONS = ("InputSources", "Pad1", "Pad2", "Hotkeys")
+_MANAGED_PCSX2_SECTIONS = ("InputSources", "Pad1", "Pad2", "Hotkeys", "UI")
 _AZAHAR_QT_CONFIG_FILENAME = "qt-config.ini"
 _AZAHAR_GUID_RE = re.compile(r"guid(?::|\$0)(?P<guid>[0-9a-fA-F]+)")
 _AZAHAR_PORT_RE = re.compile(r"port(?::|\$0)(?P<port>\d+)")
 _AZAHAR_ANALOG_GUID_RE = re.compile(r"\$1guid\$0[0-9a-fA-F]+", flags=re.IGNORECASE)
 _AZAHAR_ANALOG_PORT_RE = re.compile(r"\$1port\$0\d+")
 _AZAHAR_ANALOG_ENGINE_RE = re.compile(r"engine\$0sdl", flags=re.IGNORECASE)
-_AZAHAR_FORCE_DISCOVERED_GUID_ENV = "GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID"
-_AZAHAR_GUID_MODE_ENV = "GAMEHUB_AZAHAR_GUID_MODE"
-_AZAHAR_FIXED_GUID_ENV = "GAMEHUB_AZAHAR_FIXED_GUID"
 _AZAHAR_GUID_VALUE_RE = re.compile(r"[0-9a-fA-F]{32}")
 _AZAHAR_FLATPAK_GUID_TIMEOUT_SEC = 1.5
 _AZAHAR_WINDOWS_SDL_DIR_ENV = "GAMEHUB_AZAHAR_SDL_DIR"
@@ -41,41 +38,6 @@ _AZAHAR_WINDOWS_SDL_DIR_ENV = "GAMEHUB_AZAHAR_SDL_DIR"
 
 class _SDLJoystickGUID(ctypes.Structure):
     _fields_ = [("data", ctypes.c_uint8 * 16)]
-
-
-def _env_enabled(name: str, *, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    normalized = raw.strip().casefold()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    return default
-
-
-def _azahar_guid_mode() -> str:
-    # Backward-compat: keep legacy force flag behavior.
-    if _env_enabled(_AZAHAR_FORCE_DISCOVERED_GUID_ENV, default=False):
-        return "detect"
-    raw = os.environ.get(_AZAHAR_GUID_MODE_ENV)
-    if raw is None:
-        return "preserve"
-    mode = raw.strip().casefold()
-    if mode in {"preserve", "detect", "fixed", "off"}:
-        return mode
-    return "preserve"
-
-
-def _azahar_fixed_guid() -> str | None:
-    raw = os.environ.get(_AZAHAR_FIXED_GUID_ENV)
-    if raw is None:
-        return None
-    value = raw.strip()
-    if re.fullmatch(r"[0-9a-fA-F]{32}", value) is None:
-        return None
-    return value
 
 
 def _parse_ini_sections(lines: list[str]) -> dict[str, dict[str, str]]:
@@ -448,33 +410,6 @@ def _azahar_normalize_sdl_port(value: int) -> int:
     return value
 
 
-def _select_azahar_guid(
-    *,
-    mode: str,
-    existing_guid: str | None,
-    runtime_guid: str | None,
-    host_guid: str | None,
-    fixed_guid: str | None,
-) -> tuple[str | None, bool]:
-    if mode == "off":
-        return None, True
-    if mode == "fixed":
-        if fixed_guid is not None:
-            return fixed_guid, False
-        if existing_guid is not None:
-            return existing_guid, False
-        return runtime_guid if runtime_guid is not None else host_guid, False
-    if mode == "detect":
-        return runtime_guid or host_guid or existing_guid, False
-
-    if existing_guid is None:
-        return runtime_guid or host_guid, False
-    if runtime_guid is not None and existing_guid != runtime_guid:
-        if host_guid is not None and existing_guid == host_guid:
-            return runtime_guid, False
-    return existing_guid, False
-
-
 def _inject_azahar_sdl_identity(
     value: str,
     *,
@@ -585,6 +520,7 @@ def _apply_pcsx2_profile(config: GamehubConfig, profile_name: str) -> list[Path]
         for section_name in _MANAGED_PCSX2_SECTIONS
         if section_name in sections
     }
+    managed_sections.setdefault("UI", {})["ConfirmShutdown"] = "false"
     target = default_pcsx2_ini_path(config=config)
     _apply_managed_ini_sections(target_path=target, sections=managed_sections)
     return [target]
@@ -636,9 +572,10 @@ def _override_dolphin_device_sections(
     if sys.platform.startswith("linux"):
         if profile_name == PROFILE_KBM:
             pad_device0, pad_device1 = "XInput2/0/Virtual core pointer", "None"
+            hotkey_device0, hotkey_device1 = "XInput2/0/Virtual core pointer", "XInput2/0/Virtual core pointer"
         else:
             pad_device0, pad_device1 = _dolphin_linux_device_pair()
-        hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
+            hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
     elif sys.platform.startswith("win"):
         pad_device0, pad_device1 = _dolphin_windows_device_pair(profile_name)
         hotkey_device0, hotkey_device1 = pad_device0, pad_device1
@@ -720,8 +657,6 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
     pairs = _parse_qsettings_pairs(profile_lines)
     touched: list[Path] = []
     controller_mode = profile_name != PROFILE_KBM
-    guid_mode = _azahar_guid_mode()
-    fixed_guid = _azahar_fixed_guid() if guid_mode == "fixed" else None
     runtime_guid_cache: dict[int, str | None] = {}
     host_guid_cache: dict[int, str | None] = {}
     for target_path in _azahar_target_config_paths():
@@ -729,32 +664,23 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
         existing_guid: str | None = None
         detected_port = 0
         selected_guid: str | None = None
-        strip_guid_tokens = False
         if controller_mode:
             existing_guid, detected_port = _azahar_detect_sdl_identity(lines)
             normalized_port = _azahar_normalize_sdl_port(detected_port)
             runtime_guid: str | None = None
             host_guid: str | None = None
-            need_discovery = guid_mode in {"detect", "preserve"} or (guid_mode == "fixed" and fixed_guid is None)
-            if need_discovery:
-                if sys.platform.startswith("linux") and _is_azahar_flatpak_config_path(target_path):
-                    if normalized_port in runtime_guid_cache:
-                        runtime_guid = runtime_guid_cache[normalized_port]
-                    else:
-                        runtime_guid = _probe_azahar_flatpak_guid(port=normalized_port)
-                        runtime_guid_cache[normalized_port] = runtime_guid
-                if normalized_port in host_guid_cache:
-                    host_guid = host_guid_cache[normalized_port]
+            if sys.platform.startswith("linux") and _is_azahar_flatpak_config_path(target_path):
+                if normalized_port in runtime_guid_cache:
+                    runtime_guid = runtime_guid_cache[normalized_port]
                 else:
-                    host_guid = _discover_host_sdl_guid(port=normalized_port)
-                    host_guid_cache[normalized_port] = host_guid
-            selected_guid, strip_guid_tokens = _select_azahar_guid(
-                mode=guid_mode,
-                existing_guid=existing_guid,
-                runtime_guid=runtime_guid,
-                host_guid=host_guid,
-                fixed_guid=fixed_guid,
-            )
+                    runtime_guid = _probe_azahar_flatpak_guid(port=normalized_port)
+                    runtime_guid_cache[normalized_port] = runtime_guid
+            if normalized_port in host_guid_cache:
+                host_guid = host_guid_cache[normalized_port]
+            else:
+                host_guid = _discover_host_sdl_guid(port=normalized_port)
+                host_guid_cache[normalized_port] = host_guid
+            selected_guid = runtime_guid or host_guid or existing_guid
         changed = False
         for key, value in pairs.items():
             existing = _read_qsettings_key(lines, key)
@@ -764,7 +690,7 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
                     value,
                     guid=selected_guid,
                     port=detected_port,
-                    strip_guid=strip_guid_tokens,
+                    strip_guid=False,
                 )
                 if existing is not None and ("engine:sdl" in existing.casefold() or "engine$0sdl" in existing.casefold()):
                     # Preserve existing SDL mappings, but always normalize identity tokens
@@ -773,7 +699,7 @@ def _apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path
                         existing,
                         guid=selected_guid,
                         port=detected_port,
-                        strip_guid=strip_guid_tokens,
+                        strip_guid=False,
                     )
                     if upgraded != existing:
                         lines, key_changed = _upsert_qsettings_key(lines, key, upgraded)

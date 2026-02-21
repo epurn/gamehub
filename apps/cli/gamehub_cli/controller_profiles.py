@@ -122,7 +122,8 @@ def _pcsx2_profile_text(profile_name: str) -> str:
         open_pause_menu = "Keyboard/Escape"
     elif profile_name == PROFILE_XBOX_1P:
         pad1 = _pcsx2_pad_mapping_dict(0)
-        pad2 = _pcsx2_keyboard_pad_bindings(2)
+        # Keep xbox_1p fallback deterministic: P2 uses primary keyboard layout.
+        pad2 = _pcsx2_keyboard_pad_bindings(1)
         open_pause_menu = "SDL-0/Back & SDL-0/Start"
     else:
         pad1 = _pcsx2_pad_mapping_dict(0)
@@ -294,8 +295,10 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
     device0, device1 = _dolphin_device_pair(profile_name)
     general_hotkeys: dict[str, str] = {}
     if profile_name == PROFILE_KBM:
-        gcpad_bindings = _DOLPHIN_KBM_GCPAD_BINDINGS
-        wiimote_bindings = _DOLPHIN_KBM_WIIMOTE_BINDINGS
+        gcpad_bindings_1 = _DOLPHIN_KBM_GCPAD_BINDINGS
+        gcpad_bindings_2 = _DOLPHIN_KBM_GCPAD_BINDINGS
+        wiimote_bindings_1 = _DOLPHIN_KBM_WIIMOTE_BINDINGS
+        wiimote_bindings_2 = _DOLPHIN_KBM_WIIMOTE_BINDINGS
         hotkey_value = "ESCAPE"
         general_stop = "ESCAPE"
         general_exit = "ESCAPE"
@@ -306,29 +309,46 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
             "General/Take Screenshot": "F9",
         }
         if sys.platform.startswith("linux"):
-            hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
+            hotkey_device0, hotkey_device1 = "XInput2/0/Virtual core pointer", "XInput2/0/Virtual core pointer"
         else:
             hotkey_device0, hotkey_device1 = device0, device1
+    elif profile_name == PROFILE_XBOX_1P:
+        gcpad_bindings_1 = _DOLPHIN_XBOX_GCPAD_BINDINGS
+        gcpad_bindings_2 = _DOLPHIN_KBM_GCPAD_BINDINGS
+        wiimote_bindings_1 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
+        wiimote_bindings_2 = _DOLPHIN_KBM_WIIMOTE_BINDINGS
+        hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
+        general_stop = "@(SELECT+START)"
+        general_exit = "@(SELECT+START)"
+        hotkey_device0, hotkey_device1 = device0, device1
     else:
-        gcpad_bindings = _DOLPHIN_XBOX_GCPAD_BINDINGS
-        wiimote_bindings = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
+        gcpad_bindings_1 = _DOLPHIN_XBOX_GCPAD_BINDINGS
+        gcpad_bindings_2 = _DOLPHIN_XBOX_GCPAD_BINDINGS
+        wiimote_bindings_1 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
+        wiimote_bindings_2 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
         hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         general_stop = "@(SELECT+START)"
         general_exit = "@(SELECT+START)"
         hotkey_device0, hotkey_device1 = device0, device1
 
     gcpad_sections: dict[str, dict[str, str]] = {}
-    for pad_number, device in ((1, device0), (2, device1)):
+    for pad_number, device, bindings in (
+        (1, device0, gcpad_bindings_1),
+        (2, device1, gcpad_bindings_2),
+    ):
         section = f"GCPad{pad_number}"
         gcpad_sections[section] = {"Device": device}
-        for key, value in gcpad_bindings:
+        for key, value in bindings:
             gcpad_sections[section][key] = value
 
     wiimote_sections: dict[str, dict[str, str]] = {}
-    for wiimote_number, device in ((1, device0), (2, device1)):
+    for wiimote_number, device, bindings in (
+        (1, device0, wiimote_bindings_1),
+        (2, device1, wiimote_bindings_2),
+    ):
         section = f"Wiimote{wiimote_number}"
         wiimote_sections[section] = {"Device": device, "Source": "1", "Extension": "Nunchuk"}
-        for key, value in wiimote_bindings:
+        for key, value in bindings:
             wiimote_sections[section][key] = value
 
     hotkey_sections = {

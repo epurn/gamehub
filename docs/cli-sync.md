@@ -149,6 +149,7 @@ Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
 - Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
 - Use `--reseed-profiles` to overwrite default profiles on demand.
+- If you used older branch builds before these controller profile changes, run one non-dry sync with `--reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`) so GAMEHUB will not overwrite them; missing files still fall back to bundled defaults.
 - Controller profiles apply input mappings for `PCSX2`, `Dolphin`, and `Azahar` at launch; firmware deploy does not write controller bindings.
 - Profile selection:
@@ -159,13 +160,8 @@ Controller launch profile defaults:
   - `kbm`: P1 keyboard/mouse, P2 disabled
   - `xbox_1p`: P1 controller, P2 keyboard/mouse
   - `xbox_2p`: P1 + P2 controllers
-- Azahar GUID policy is configurable:
-  - `preserve` (default): keep existing GUID if present, otherwise use discovered GUID
-  - `detect`: always prefer discovered GUID when available
-  - `fixed`: force `GAMEHUB_AZAHAR_FIXED_GUID`
-  - `off`: strip/avoid GUID tokens and rely on SDL `port` only
-  - legacy `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID=true` behaves like `detect`
-- GUID discovery order (Linux): probe Azahar Flatpak runtime first (if available), then fall back to host SDL.
+- Azahar GUID normalization is always detect-based.
+- GUID discovery order (Linux): probe Azahar Flatpak runtime first (if available), then fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available, otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID for Steam/Flatpak launches.
 - `RetroArch` shortcuts remain direct (not wrapped).
@@ -181,9 +177,6 @@ Environment overrides:
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`
 - `GAMEHUB_AZAHAR_SDL_DIR`
-- `GAMEHUB_AZAHAR_GUID_MODE`
-- `GAMEHUB_AZAHAR_FIXED_GUID`
-- `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID`
 - `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`

@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from pathlib import Path
 import shutil
+import sys
 from uuid import uuid4
 
 from gamehub_cli.config import ControllersConfig, GamehubConfig
@@ -54,6 +55,25 @@ def test_seed_default_profiles_creates_profile_tree() -> None:
         assert (root / "dolphin" / "kbm" / "GCPadNew.ini").exists()
         assert (root / "dolphin" / "xbox_1p" / "WiimoteNew.ini").exists()
         assert (root / "azahar" / "xbox_2p" / "qt-config.ini").exists()
+
+        pcsx2_xbox_1p = (root / "pcsx2" / "xbox_1p" / "PCSX2.ini").read_text(encoding="utf-8")
+        assert "Cross = SDL-0/A" in pcsx2_xbox_1p
+        assert "Cross = Keyboard/K" in pcsx2_xbox_1p
+        assert "Cross = Keyboard/Num0" not in pcsx2_xbox_1p
+
+        dolphin_gc_xbox_1p = (root / "dolphin" / "xbox_1p" / "GCPadNew.ini").read_text(encoding="utf-8")
+        assert "[GCPad2]" in dolphin_gc_xbox_1p
+        assert "Buttons/A = X" in dolphin_gc_xbox_1p
+        assert "Buttons/A = SOUTH | `Button A`" in dolphin_gc_xbox_1p
+
+        dolphin_wii_xbox_1p = (root / "dolphin" / "xbox_1p" / "WiimoteNew.ini").read_text(encoding="utf-8")
+        assert "[Wiimote2]" in dolphin_wii_xbox_1p
+        assert "Buttons/A = `Click 0`" in dolphin_wii_xbox_1p
+        assert "Buttons/A = SOUTH | `Button A`" in dolphin_wii_xbox_1p
+
+        dolphin_kbm_hotkeys = (root / "dolphin" / "kbm" / "Hotkeys.ini").read_text(encoding="utf-8")
+        if sys.platform.startswith("linux"):
+            assert "Device = XInput2/0/Virtual core pointer" in dolphin_kbm_hotkeys
 
 
 def test_seed_default_profiles_skips_custom_profiles_dir() -> None:

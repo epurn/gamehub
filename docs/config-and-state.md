@@ -128,9 +128,6 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
-- `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID`: when `true`, Azahar controller apply replaces existing GUID-bound SDL mappings with discovered GUIDs (Linux Flatpak runtime first, then host SDL fallback) (default `false`).
-- `GAMEHUB_AZAHAR_GUID_MODE`: Azahar GUID policy for controller apply (`preserve` default, `detect`, `fixed`, `off`).
-- `GAMEHUB_AZAHAR_FIXED_GUID`: 32-hex SDL GUID used when `GAMEHUB_AZAHAR_GUID_MODE=fixed`.
 - Linux Azahar exit hook input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
@@ -171,6 +168,7 @@ Controller launch autoconfig:
   - `<root>/azahar/<profile>/qt-config.ini`
 - Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
 - Use `--reseed-profiles` to overwrite defaults on demand.
+- If you used older branch builds before these controller profile changes, run one non-dry sync with `--reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`) so GAMEHUB will not overwrite them; missing files still fall back to bundled defaults.
 - If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
@@ -194,15 +192,9 @@ N3DS Azahar defaults:
   - Windows: `%APPDATA%/Azahar/config/qt-config.ini`
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
-- Azahar controller bindings are applied at launch via controller profiles; GUID/port normalization follows the configured policy.
-- On controller-profile apply, Azahar GUID behavior is policy-driven:
-  - `preserve` (default): keep existing GUID if present, otherwise use discovered GUID
-  - `detect`: always prefer discovered GUID when available
-  - `fixed`: force `GAMEHUB_AZAHAR_FIXED_GUID`
-  - `off`: strip/avoid GUID tokens and rely on SDL `port` only
-  - Legacy override `GAMEHUB_AZAHAR_FORCE_DISCOVERED_GUID=true` maps to `detect`
-- GUID discovery order (Linux): probe Azahar Flatpak runtime first (if available), then fall back to host SDL.
-- GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise preserve existing GUIDs and fall back to port-only mappings.
+- Azahar controller bindings are applied at launch via controller profiles. GUID normalization is always detect-based.
+- GUID discovery order (Linux): probe Azahar Flatpak runtime first (if available), then fall back to host SDL, then keep existing GUID when discovery is unavailable.
+- GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
 - On Linux, GAMEHUB uses a wrapper launch hook by default to close Azahar when `Select+Start` is pressed (native-controller mode).
 - On Windows, GAMEHUB uses a controller-launch XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
