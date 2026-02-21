@@ -7,7 +7,7 @@ import shutil
 from uuid import uuid4
 
 from gamehub_cli.config import ControllersConfig, GamehubConfig
-from gamehub_cli.controller_launch import parse_controller_payload
+from gamehub_cli.controllers.launch import parse_controller_payload
 from gamehub_cli.planner import PlanAction, SyncPlan
 from gamehub_cli.state import SyncState
 from gamehub_cli.sync import (
@@ -23,8 +23,6 @@ from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
 def _normalize_path_token(value: str) -> str:
     return value.strip().strip('"').replace("\\", "/")
-
-
 
 
 def test_apply_downloads_runs_firmware_before_content(monkeypatch) -> None:
@@ -91,10 +89,14 @@ def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.sync.backup_steam_configs", lambda context: order.append("backup") or [])
     monkeypatch.setattr(
         "gamehub_cli.sync.upsert_shortcuts",
-        lambda context, desired_shortcuts: order.append("shortcuts")
-        or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})(),
+        lambda context, desired_shortcuts: (
+            order.append("shortcuts")
+            or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})()
+        ),
     )
-    monkeypatch.setattr("gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0
+    )
     monkeypatch.setattr(
         "gamehub_cli.sync.update_cloud_collections",
         lambda context, app_ids_by_system: order.append("collections-cloud") or 0,
@@ -113,7 +115,17 @@ def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:
         artwork_by_title={},
     )
 
-    assert order == ["close", "wait", "backup", "shortcuts", "collections", "collections-cloud", "art", "prune", "reopen"]
+    assert order == [
+        "close",
+        "wait",
+        "backup",
+        "shortcuts",
+        "collections",
+        "collections-cloud",
+        "art",
+        "prune",
+        "reopen",
+    ]
 
 
 def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) -> None:
@@ -144,10 +156,14 @@ def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) 
     monkeypatch.setattr("gamehub_cli.sync.backup_steam_configs", lambda context: order.append("backup") or [])
     monkeypatch.setattr(
         "gamehub_cli.sync.upsert_shortcuts",
-        lambda context, desired_shortcuts: order.append("shortcuts")
-        or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})(),
+        lambda context, desired_shortcuts: (
+            order.append("shortcuts")
+            or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})()
+        ),
     )
-    monkeypatch.setattr("gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0
+    )
     monkeypatch.setattr(
         "gamehub_cli.sync.update_cloud_collections",
         lambda context, app_ids_by_system: order.append("collections-cloud") or 0,
@@ -196,10 +212,14 @@ def test_apply_steam_updates_reopens_even_if_steam_was_not_running(monkeypatch) 
     monkeypatch.setattr("gamehub_cli.sync.backup_steam_configs", lambda context: order.append("backup") or [])
     monkeypatch.setattr(
         "gamehub_cli.sync.upsert_shortcuts",
-        lambda context, desired_shortcuts: order.append("shortcuts")
-        or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})(),
+        lambda context, desired_shortcuts: (
+            order.append("shortcuts")
+            or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})()
+        ),
     )
-    monkeypatch.setattr("gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0
+    )
     monkeypatch.setattr(
         "gamehub_cli.sync.update_cloud_collections",
         lambda context, app_ids_by_system: order.append("collections-cloud") or 0,
@@ -247,10 +267,14 @@ def test_apply_steam_updates_skip_relaunch_still_updates_steam(monkeypatch, caps
     monkeypatch.setattr("gamehub_cli.sync.backup_steam_configs", lambda context: order.append("backup") or [])
     monkeypatch.setattr(
         "gamehub_cli.sync.upsert_shortcuts",
-        lambda context, desired_shortcuts: order.append("shortcuts")
-        or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})(),
+        lambda context, desired_shortcuts: (
+            order.append("shortcuts")
+            or type("Result", (), {"app_ids_by_title": {}, "app_ids_by_system": {}, "total_shortcuts": 0})()
+        ),
     )
-    monkeypatch.setattr("gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.update_collections", lambda context, app_ids_by_system: order.append("collections") or 0
+    )
     monkeypatch.setattr(
         "gamehub_cli.sync.update_cloud_collections",
         lambda context, app_ids_by_system: order.append("collections-cloud") or 0,
@@ -305,7 +329,9 @@ def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync._apply_steam_updates",
-        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True: steam_called.__setitem__("value", True),
+        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True: (
+            steam_called.__setitem__("value", True)
+        ),
     )
 
     exit_code = run_sync(
@@ -655,7 +681,9 @@ def test_run_sync_applies_steam_updates_even_when_no_downloads(monkeypatch) -> N
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync._apply_steam_updates",
-        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True: steam_called.__setitem__("value", True),
+        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True: (
+            steam_called.__setitem__("value", True)
+        ),
     )
 
     exit_code = run_sync(
@@ -735,8 +763,8 @@ def test_bootstrap_firmware_dirs_creates_system_subdirs() -> None:
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         index = LibraryIndex(
             index_version=1,
             systems=(
@@ -778,8 +806,8 @@ def test_bootstrap_firmware_dirs_dry_run_does_not_mutate() -> None:
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         index = LibraryIndex(
             index_version=1,
             systems=(
@@ -817,8 +845,8 @@ def test_build_artwork_assignments_uses_cache_without_api_key() -> None:
             sgdb_api_key=None,
             sgdb_cache_dir=cache_dir,
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         index = LibraryIndex(
             index_version=1,
             systems=(),
@@ -867,8 +895,8 @@ def test_build_shortcut_specs_resolves_emulator_path(monkeypatch) -> None:
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_nes_mario",
             system="NES",
@@ -886,13 +914,15 @@ def test_build_shortcut_specs_resolves_emulator_path(monkeypatch) -> None:
             assets=(),
         )
         index = LibraryIndex(index_version=1, systems=(), titles=(title,))
-        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
+        )
 
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
         assert specs[0].exe == '"C:\\RetroArch\\retroarch.exe"'
-        assert '-L cores/fceumm_libretro.dll' in specs[0].launch_options
+        assert "-L cores/fceumm_libretro.dll" in specs[0].launch_options
 
 
 def test_build_shortcut_specs_retroarch_injects_fullscreen_when_missing(monkeypatch) -> None:
@@ -908,8 +938,8 @@ def test_build_shortcut_specs_retroarch_injects_fullscreen_when_missing(monkeypa
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_nes_mario",
             system="NES",
@@ -927,7 +957,9 @@ def test_build_shortcut_specs_retroarch_injects_fullscreen_when_missing(monkeypa
             assets=(),
         )
         index = LibraryIndex(index_version=1, systems=(), titles=(title,))
-        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
+        )
 
         specs = _build_shortcut_specs(index=index, config=config)
 
@@ -949,8 +981,8 @@ def test_build_shortcut_specs_linux_normalizes_retroarch_core_token(monkeypatch)
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_nes_mario",
             system="NES",
@@ -1007,8 +1039,8 @@ def test_build_shortcut_specs_linux_flatpak_pcsx2_uses_file_forwarding(monkeypat
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_ps2_gt4",
             system="PS2",
@@ -1181,7 +1213,9 @@ def test_build_shortcut_specs_retroarch_not_wrapped_with_controller_autoconfig(m
             assets=(),
         )
         index = LibraryIndex(index_version=1, systems=(), titles=(title,))
-        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
+        )
 
         specs = _build_shortcut_specs(index=index, config=config)
 
@@ -1203,8 +1237,8 @@ def test_build_shortcut_specs_windows_azahar_uses_native_launch_template(monkeyp
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_n3ds_pilotwings",
             system="N3DS",
@@ -1246,8 +1280,8 @@ def test_build_shortcut_specs_linux_flatpak_azahar_uses_file_forwarding(monkeypa
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_n3ds_pilotwings",
             system="N3DS",
@@ -1280,9 +1314,9 @@ def test_build_shortcut_specs_linux_flatpak_azahar_uses_file_forwarding(monkeypa
 
         assert len(specs) == 1
         assert specs[0].exe == '"/usr/bin/python3"'
-        assert "-m gamehub_cli.azahar_exit_hook" in specs[0].launch_options
+        assert "-m gamehub_cli.controllers.azahar_exit_hook" in specs[0].launch_options
         assert "--app-id org.azahar_emu.Azahar" in specs[0].launch_options
-        assert '/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds' in specs[0].launch_options
+        assert "/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds" in specs[0].launch_options
 
 
 def test_build_shortcut_specs_linux_flatpak_azahar_can_disable_exit_hook(monkeypatch) -> None:
@@ -1298,8 +1332,8 @@ def test_build_shortcut_specs_linux_flatpak_azahar_can_disable_exit_hook(monkeyp
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_n3ds_pilotwings",
             system="N3DS",
@@ -1348,8 +1382,8 @@ def test_build_shortcut_specs_pcsx2_injects_fullscreen_when_missing(monkeypatch)
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_ps2_gt4",
             system="PS2",
@@ -1389,8 +1423,8 @@ def test_build_shortcut_specs_uses_title_rom_path_for_all_titles(monkeypatch) ->
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title_psx = TitleEntry(
             title_id="title_psx",
             system="PSX",
@@ -1424,18 +1458,22 @@ def test_build_shortcut_specs_uses_title_rom_path_for_all_titles(monkeypatch) ->
             assets=(),
         )
         index = LibraryIndex(index_version=1, systems=(), titles=(title_psx, title_ps2))
-        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
+        )
 
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 2
         by_title = {spec.title_name: spec for spec in specs}
-        assert str(temp_root / "library" / "roms" / "PSX" / "Crash Team Racing.cue") in by_title[
-            "Crash Team Racing"
-        ].launch_options
-        assert str(temp_root / "library" / "roms" / "PS2" / "Gran Turismo 4.bin") in by_title[
-            "Gran Turismo 4"
-        ].launch_options
+        assert (
+            str(temp_root / "library" / "roms" / "PSX" / "Crash Team Racing.cue")
+            in by_title["Crash Team Racing"].launch_options
+        )
+        assert (
+            str(temp_root / "library" / "roms" / "PS2" / "Gran Turismo 4.bin")
+            in by_title["Gran Turismo 4"].launch_options
+        )
 
 
 def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkeypatch) -> None:
@@ -1451,8 +1489,8 @@ def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkey
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_wii_mg",
             system="Wii",
@@ -1472,7 +1510,7 @@ def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkey
         index = LibraryIndex(index_version=1, systems=(), titles=(title,))
         monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\Dolphin\\Dolphin.exe")
         monkeypatch.setattr(
-            "gamehub_cli.sync_steam_stage.resolve_dolphin_runtime_user_dir",
+            "gamehub_cli.sync.steam_stage.resolve_dolphin_runtime_user_dir",
             lambda config=None: temp_root / "Dolphin Emulator" / "User",
         )
 
@@ -1500,8 +1538,8 @@ def test_build_shortcut_specs_dolphin_does_not_duplicate_fullscreen_config(monke
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_gc_double_dash",
             system="GC",
@@ -1541,8 +1579,8 @@ def test_build_shortcut_specs_linux_flatpak_dolphin_uses_file_forwarding_and_dev
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_wii_mg",
             system="Wii",
@@ -1567,10 +1605,12 @@ def test_build_shortcut_specs_linux_flatpak_dolphin_uses_file_forwarding_and_dev
         monkeypatch.setattr("gamehub_cli.sync.sys.platform", "linux")
         monkeypatch.setattr(
             "gamehub_cli.sync.from_rel_path",
-            lambda base, rel_path, preferred_root="roms": Path("/var/home/deck/GameHub/roms/Wii/Super Mario Galaxy.rvz"),
+            lambda base, rel_path, preferred_root="roms": Path(
+                "/var/home/deck/GameHub/roms/Wii/Super Mario Galaxy.rvz"
+            ),
         )
         monkeypatch.setattr(
-            "gamehub_cli.sync_steam_stage.resolve_dolphin_runtime_user_dir",
+            "gamehub_cli.sync.steam_stage.resolve_dolphin_runtime_user_dir",
             lambda config=None: Path("/var/home/deck/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu"),
         )
 
@@ -1579,12 +1619,12 @@ def test_build_shortcut_specs_linux_flatpak_dolphin_uses_file_forwarding_and_dev
         assert len(specs) == 1
         assert specs[0].exe == "flatpak"
         assert "run --device=all --file-forwarding org.DolphinEmu.dolphin-emu -b -u " in specs[0].launch_options
-        assert '/var/home/deck/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu' in specs[0].launch_options
+        assert "/var/home/deck/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu" in specs[0].launch_options
         assert '-e @@ "/var/home/deck/GameHub/roms/Wii/Super Mario Galaxy.rvz" @@' in specs[0].launch_options
 
 
 def test_build_shortcut_specs_windows_dolphin_does_not_probe_help_output(monkeypatch) -> None:
-    import gamehub_cli.sync_steam_stage as sync_steam_stage
+    import gamehub_cli.sync.steam_stage as sync_steam_stage
 
     with _workspace_tempdir("gamehub-sync-shortcuts-dolphin-win-probe-") as temp_root:
         config = GamehubConfig(
@@ -1598,8 +1638,8 @@ def test_build_shortcut_specs_windows_dolphin_does_not_probe_help_output(monkeyp
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_wii_mg",
             system="Wii",
@@ -1622,7 +1662,7 @@ def test_build_shortcut_specs_windows_dolphin_does_not_probe_help_output(monkeyp
 
         sync_steam_stage._supports_dolphin_inline_config.cache_clear()
         monkeypatch.setattr(
-            "gamehub_cli.sync_steam_stage.subprocess.run",
+            "gamehub_cli.sync.steam_stage.subprocess.run",
             lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Unexpected Dolphin help probe")),
         )
 
@@ -1645,8 +1685,8 @@ def test_build_shortcut_specs_dolphin_skips_config_arg_when_parser_is_legacy(mon
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        controllers=ControllersConfig(launch_autoconfig=False),
-    )
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
         title = TitleEntry(
             title_id="title_gc_double_dash",
             system="GC",
@@ -1665,7 +1705,7 @@ def test_build_shortcut_specs_dolphin_skips_config_arg_when_parser_is_legacy(mon
         )
         index = LibraryIndex(index_version=1, systems=(), titles=(title,))
         monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\Dolphin\\Dolphin.exe")
-        monkeypatch.setattr("gamehub_cli.sync_steam_stage._supports_dolphin_inline_config", lambda _exe: False)
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage._supports_dolphin_inline_config", lambda _exe: False)
 
         specs = _build_shortcut_specs(index=index, config=config)
 
@@ -1673,5 +1713,3 @@ def test_build_shortcut_specs_dolphin_skips_config_arg_when_parser_is_legacy(mon
         assert "Dolphin.Display.Fullscreen=True" not in specs[0].launch_options
         assert "-b -u" in specs[0].launch_options
         assert "-e" in specs[0].launch_options
-
-

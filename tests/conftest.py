@@ -14,9 +14,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "apps" / "server"))
-sys.path.insert(0, str(ROOT / "apps" / "cli"))
-sys.path.insert(0, str(ROOT / "shared" / "gamehub_common"))
+sys.path.insert(0, str(ROOT / "src"))
 
 TMP_ROOT = ROOT / ".pytest_tmp_local"
 TMP_PREFIXES = ("gamehub-",)

@@ -15,7 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from gamehub_common.models import TitleEntry
 
-from .fsops import replace_file
+from .common.fsops import replace_file
 
 SGDB_ART_KINDS = ("grid", "hero", "logo", "icon")
 SGDB_GRID_LANDSCAPE_KIND = "grid_landscape"

@@ -12,7 +12,7 @@ try:
 except ModuleNotFoundError:
     httpx = None
 
-from .fsops import replace_file
+from .common.fsops import replace_file
 
 DEFAULT_DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 

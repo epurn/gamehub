@@ -5,9 +5,7 @@ from pathlib import Path
 import shutil
 from uuid import uuid4
 
-from gamehub_cli.fsops import replace_file
-
-
+from gamehub_cli.common.fsops import replace_file
 
 
 def test_replace_file_uses_native_replace_when_available() -> None:

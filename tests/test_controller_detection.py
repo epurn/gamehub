@@ -6,7 +6,7 @@ import shutil
 from uuid import uuid4
 
 from gamehub_cli import controller_detection
-from gamehub_cli.controller_detection import XboxController, detect_xbox_controllers
+from gamehub_cli.controllers.detection import XboxController, detect_xbox_controllers
 
 
 def test_linux_parse_xbox_devices_filters_and_orders_by_js() -> None:

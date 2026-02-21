@@ -125,7 +125,7 @@ gamehub sync --dry-run --skip-steam
 5. Server deploy checks:
 ```bash
 docker compose -f docker/compose.yaml --env-file docker/.env config
-docker build -f apps/server/Dockerfile .
+docker build -f docker/Dockerfile .
 ```
 
 ## 3. Bazzite Real Sync Validation

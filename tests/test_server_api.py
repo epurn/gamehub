@@ -10,6 +10,7 @@ from gamehub_server.main import IndexRepository, app
 import gamehub_server.main as server_main
 from gamehub_common.models import LibraryIndex
 
+
 def _write_file(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
@@ -190,10 +191,7 @@ def test_warm_index_cache_logs_start_and_completion(monkeypatch, caplog) -> None
 
     messages = [record.getMessage() for record in caplog.records]
     assert any("index warmup started" in message for message in messages)
-    assert any(
-        "index warmup completed elapsed_seconds=2.250 systems=2 titles=3" in message
-        for message in messages
-    )
+    assert any("index warmup completed elapsed_seconds=2.250 systems=2 titles=3" in message for message in messages)
 
 
 def test_warm_index_cache_logs_error_and_reraises(monkeypatch, caplog) -> None:
@@ -211,7 +209,9 @@ def test_warm_index_cache_logs_error_and_reraises(monkeypatch, caplog) -> None:
             server_main.warm_index_cache()
 
     start_logs = [record for record in caplog.records if "index warmup started" in record.getMessage()]
-    error_logs = [record for record in caplog.records if "index warmup failed elapsed_seconds=1.500" in record.getMessage()]
+    error_logs = [
+        record for record in caplog.records if "index warmup failed elapsed_seconds=1.500" in record.getMessage()
+    ]
     assert start_logs
     assert error_logs
     assert error_logs[0].exc_info is not None

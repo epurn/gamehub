@@ -18,8 +18,6 @@ from gamehub_cli.steam import (
 )
 
 
-
-
 def _context(temp_root: Path) -> SteamContext:
     config_dir = temp_root / "userdata" / "76561198000000001" / "config"
     config_dir.mkdir(parents=True, exist_ok=True)

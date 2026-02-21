@@ -13,8 +13,6 @@ import pytest
 from gamehub_cli.downloads import download_with_atomic_write
 
 
-
-
 @contextmanager
 def _http_file_server(path: str, payload: bytes):
     class Handler(BaseHTTPRequestHandler):

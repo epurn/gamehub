@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .fsops import replace_file
+from .common.fsops import replace_file
 
 
 @dataclass

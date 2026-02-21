@@ -11,8 +11,6 @@ from gamehub_cli.emulators import ensure_emulators, resolve_emulator_executable
 from gamehub_common.models import LibraryIndex, SystemSpec
 
 
-
-
 def _index_with_emulators(*names: str) -> LibraryIndex:
     systems = tuple(
         SystemSpec(
@@ -628,7 +626,11 @@ def test_ensure_emulators_windows_azahar_uses_github_release_installer(monkeypat
 
     def fake_azahar_install(*, verbose: bool):
         state["installed"] = True
-        return True, Path("C:/Temp/azahar-installer.exe"), "https://github.com/azahar-emu/azahar/releases/download/2124.3/example.exe"
+        return (
+            True,
+            Path("C:/Temp/azahar-installer.exe"),
+            "https://github.com/azahar-emu/azahar/releases/download/2124.3/example.exe",
+        )
 
     monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
     monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "win32")
@@ -667,7 +669,10 @@ def test_ensure_emulators_windows_azahar_installer_failure_warns_manual_fallback
     out = capsys.readouterr().out
     assert "automatic silent Azahar install failed" in out
     assert "run installer manually: C:/Temp/azahar-2124.3-windows-msys2-installer.exe" in out
-    assert "install Azahar manually from https://github.com/azahar-emu/azahar/releases/download/2124.3/azahar-2124.3-windows-msys2-installer.exe and re-run sync" in out
+    assert (
+        "install Azahar manually from https://github.com/azahar-emu/azahar/releases/download/2124.3/azahar-2124.3-windows-msys2-installer.exe and re-run sync"
+        in out
+    )
 
 
 def test_ensure_emulators_windows_azahar_installer_retries_with_uac_elevation(monkeypatch, capsys) -> None:

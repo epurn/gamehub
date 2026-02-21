@@ -13,8 +13,6 @@ from gamehub_cli.sync import _build_artwork_assignments
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
 
-
-
 def _query_text(request: httpx.Request) -> str:
     query = request.url.query
     if isinstance(query, bytes):

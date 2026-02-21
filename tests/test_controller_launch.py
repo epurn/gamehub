@@ -6,8 +6,8 @@ import shutil
 from uuid import uuid4
 
 from gamehub_cli.config import ControllersConfig, GamehubConfig
-from gamehub_cli.controller_detection import XboxController
-from gamehub_cli.controller_launch import (
+from gamehub_cli.controllers.detection import XboxController
+from gamehub_cli.controllers.launch import (
     encode_controller_payload,
     parse_controller_payload,
     run_controller_launch,
@@ -56,15 +56,15 @@ def test_parse_controller_payload_strips_wrapping_quotes_from_args() -> None:
         {
             "v": 1,
             "emulator": "dolphin",
-            "target_exe": "\"C:/Emu/Dolphin.exe\"",
+            "target_exe": '"C:/Emu/Dolphin.exe"',
             "target_args": ['"-b"', '"C:/Games/Path With Spaces/game.iso"'],
-            "start_dir": "\"C:/Emu\"",
+            "start_dir": '"C:/Emu"',
         }
     )
 
     payload = parse_controller_payload(token)
 
-    assert payload.target_exe == "\"C:/Emu/Dolphin.exe\""
+    assert payload.target_exe == '"C:/Emu/Dolphin.exe"'
     assert payload.target_args == ("-b", "C:/Games/Path With Spaces/game.iso")
 
 
@@ -88,14 +88,14 @@ def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch) -> None:
         config = _config()
         observed: dict[str, str] = {}
 
-        monkeypatch.setattr("gamehub_cli.controller_launch.load_config", lambda path=None: config)
-        monkeypatch.setattr("gamehub_cli.controller_launch.seed_default_profiles", lambda config: [])
-        monkeypatch.setattr("gamehub_cli.controller_launch.detect_xbox_controllers", lambda max_devices=2: [])
+        monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+        monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+        monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
         monkeypatch.setattr(
-            "gamehub_cli.controller_launch.apply_controller_profile",
+            "gamehub_cli.controllers.launch.apply_controller_profile",
             lambda *args, **kwargs: observed.setdefault("sdl_dir", os.environ.get("GAMEHUB_AZAHAR_SDL_DIR", "")),
         )
-        monkeypatch.setattr("gamehub_cli.controller_launch._run_target", lambda payload: 0)
+        monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
         monkeypatch.delenv("GAMEHUB_AZAHAR_SDL_DIR", raising=False)
 
         run_controller_launch(payload_token=token)
@@ -117,21 +117,21 @@ def test_run_controller_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
     config = _config()
     fallback_calls: list[str] = []
 
-    monkeypatch.setattr("gamehub_cli.controller_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controller_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch.detect_xbox_controllers",
+        "gamehub_cli.controllers.launch.detect_xbox_controllers",
         lambda max_devices=2: [XboxController(slot=0, name="XInput/0", subtype=0)],
     )
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch.apply_controller_profile",
+        "gamehub_cli.controllers.launch.apply_controller_profile",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch.apply_named_controller_profile",
+        "gamehub_cli.controllers.launch.apply_named_controller_profile",
         lambda config, emulator_name, profile_name: fallback_calls.append(f"{emulator_name}:{profile_name}"),
     )
-    monkeypatch.setattr("gamehub_cli.controller_launch._run_target", lambda payload: 7)
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 7)
 
     exit_code = run_controller_launch(payload_token=token)
 
@@ -151,17 +151,17 @@ def test_run_controller_launch_detection_failure_falls_back_to_kbm_profile_selec
     config = _config()
     applied_counts: list[int] = []
 
-    monkeypatch.setattr("gamehub_cli.controller_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controller_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch.detect_xbox_controllers",
+        "gamehub_cli.controllers.launch.detect_xbox_controllers",
         lambda max_devices=2: (_ for _ in ()).throw(RuntimeError("detect failed")),
     )
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch.apply_controller_profile",
+        "gamehub_cli.controllers.launch.apply_controller_profile",
         lambda cfg, emulator_name, controller_count: applied_counts.append(controller_count),
     )
-    monkeypatch.setattr("gamehub_cli.controller_launch._run_target", lambda payload: 3)
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 3)
 
     exit_code = run_controller_launch(payload_token=token)
 
@@ -181,18 +181,18 @@ def test_run_controller_launch_uses_azahar_windows_exit_hook(monkeypatch) -> Non
     config = _config()
     hook_calls: list[str] = []
 
-    monkeypatch.setattr("gamehub_cli.controller_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controller_launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controller_launch.detect_xbox_controllers", lambda max_devices=2: [])
-    monkeypatch.setattr("gamehub_cli.controller_launch.apply_controller_profile", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gamehub_cli.controller_launch.sys.platform", "win32")
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.apply_controller_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "win32")
     monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch._run_windows_azahar_target_with_exit_hook",
+        "gamehub_cli.controllers.launch._run_windows_azahar_target_with_exit_hook",
         lambda payload: hook_calls.append(payload.emulator) or 11,
     )
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch._run_target",
+        "gamehub_cli.controllers.launch._run_target",
         lambda payload: (_ for _ in ()).throw(AssertionError("direct launch should not be used")),
     )
 
@@ -214,17 +214,17 @@ def test_run_controller_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypa
     config = _config()
     hook_calls: list[str] = []
 
-    monkeypatch.setattr("gamehub_cli.controller_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controller_launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controller_launch.detect_xbox_controllers", lambda max_devices=2: [])
-    monkeypatch.setattr("gamehub_cli.controller_launch.apply_controller_profile", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gamehub_cli.controller_launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.apply_controller_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch._run_linux_dolphin_target_with_exit_hook",
+        "gamehub_cli.controllers.launch._run_linux_dolphin_target_with_exit_hook",
         lambda payload: hook_calls.append(payload.emulator) or 9,
     )
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch._run_target",
+        "gamehub_cli.controllers.launch._run_target",
         lambda payload: (_ for _ in ()).throw(AssertionError("direct launch should not be used")),
     )
 
@@ -245,17 +245,17 @@ def test_run_controller_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) 
     )
     config = _config()
 
-    monkeypatch.setattr("gamehub_cli.controller_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controller_launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controller_launch.detect_xbox_controllers", lambda max_devices=2: [])
-    monkeypatch.setattr("gamehub_cli.controller_launch.apply_controller_profile", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gamehub_cli.controller_launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.apply_controller_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
     monkeypatch.setenv("GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK", "false")
     monkeypatch.setattr(
-        "gamehub_cli.controller_launch._run_linux_dolphin_target_with_exit_hook",
+        "gamehub_cli.controllers.launch._run_linux_dolphin_target_with_exit_hook",
         lambda payload: (_ for _ in ()).throw(AssertionError("hook should be disabled")),
     )
-    monkeypatch.setattr("gamehub_cli.controller_launch._run_target", lambda payload: 4)
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 4)
 
     exit_code = run_controller_launch(payload_token=token)
 

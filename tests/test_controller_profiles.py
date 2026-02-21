@@ -7,7 +7,7 @@ import sys
 from uuid import uuid4
 
 from gamehub_cli.config import ControllersConfig, GamehubConfig
-from gamehub_cli.controller_profiles import (
+from gamehub_cli.controllers.profiles import (
     PROFILE_KBM,
     PROFILE_XBOX_1P,
     PROFILE_XBOX_2P,
@@ -125,4 +125,3 @@ def _workspace_tempdir(prefix: str):
         yield temp_root
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
-

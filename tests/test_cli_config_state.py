@@ -9,8 +9,6 @@ from gamehub_cli.config import ControllersConfig, LinuxConfig, default_config_pa
 from gamehub_cli.state import SyncState, load_state, save_state_atomic
 
 
-
-
 def test_load_config_uses_defaults_when_file_is_missing(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-cli-config-") as temp_root:
         monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
@@ -80,7 +78,9 @@ def test_default_config_path_prefers_home_dot_gamehub(monkeypatch) -> None:
         home_config.write_text("[server]\nurl='http://example.invalid:8123'\n", encoding="utf-8")
         monkeypatch.chdir(temp_root)
         monkeypatch.setattr("gamehub_cli.config.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname))
+        monkeypatch.setattr(
+            "gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname)
+        )
 
         resolved = default_config_path()
 
@@ -106,7 +106,9 @@ def test_load_config_uses_home_dot_gamehub_default_when_workspace_missing(monkey
         )
         monkeypatch.chdir(temp_root)
         monkeypatch.setattr("gamehub_cli.config.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname))
+        monkeypatch.setattr(
+            "gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname)
+        )
 
         loaded = load_config()
 
@@ -124,7 +126,9 @@ def test_default_config_path_uses_legacy_when_present(monkeypatch) -> None:
         legacy_config.write_text("[server]\nurl='http://legacy.invalid:8123'\n", encoding="utf-8")
         monkeypatch.chdir(temp_root)
         monkeypatch.setattr("gamehub_cli.config.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname))
+        monkeypatch.setattr(
+            "gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname)
+        )
 
         resolved = default_config_path()
 
@@ -138,7 +142,7 @@ def test_load_config_toml_overrides_defaults(monkeypatch) -> None:
         config_path.write_text(
             "\n".join(
                 [
-                    '[server]',
+                    "[server]",
                     'url = "http://example.invalid:9000"',
                     "index_timeout_seconds = 45",
                     "index_fetch_attempts = 4",

@@ -7,15 +7,13 @@ import shutil
 from uuid import uuid4
 import zipfile
 
-from gamehub_cli.retroarch_cores import (
+from gamehub_cli.firmware.retroarch_cores import (
     RetroArchPaths,
     ensure_retroarch_cores,
     resolve_retroarch_paths,
     required_retroarch_cores,
 )
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
-
-
 
 
 def _zip_blob(member_name: str, payload: bytes) -> bytes:
@@ -99,13 +97,13 @@ def test_ensure_retroarch_cores_installs_core_and_info_once_for_shared_core(monk
                 return _zip_blob("gambatte_libretro.info", b"info")
             return _zip_blob("gambatte_libretro.dll", b"core")
 
-        monkeypatch.setattr("gamehub_cli.retroarch_cores._core_suffix", lambda: ".dll")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores._core_suffix", lambda: ".dll")
         monkeypatch.setattr(
-            "gamehub_cli.retroarch_cores._core_base_url",
+            "gamehub_cli.firmware.retroarch_cores._core_base_url",
             lambda: "https://buildbot.libretro.com/nightly/windows/x86_64/latest/",
         )
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.resolve_retroarch_paths", lambda: paths)
-        monkeypatch.setattr("gamehub_cli.retroarch_cores._download_bytes", fake_download)
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.resolve_retroarch_paths", lambda: paths)
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores._download_bytes", fake_download)
 
         ensure_retroarch_cores(index=index, dry_run=False, verbose=False)
 
@@ -140,13 +138,13 @@ def test_ensure_retroarch_cores_dry_run_reports_missing(monkeypatch, capsys) -> 
                 ),
             ),
         )
-        monkeypatch.setattr("gamehub_cli.retroarch_cores._core_suffix", lambda: ".dll")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores._core_suffix", lambda: ".dll")
         monkeypatch.setattr(
-            "gamehub_cli.retroarch_cores._core_base_url",
+            "gamehub_cli.firmware.retroarch_cores._core_base_url",
             lambda: "https://buildbot.libretro.com/nightly/windows/x86_64/latest/",
         )
         monkeypatch.setattr(
-            "gamehub_cli.retroarch_cores.resolve_retroarch_paths",
+            "gamehub_cli.firmware.retroarch_cores.resolve_retroarch_paths",
             lambda: RetroArchPaths(cores_dir=temp_root / "cores", info_dir=temp_root / "info"),
         )
 
@@ -176,21 +174,21 @@ def test_ensure_retroarch_cores_read_only_info_dir_warns_without_download_label(
             ),
             titles=(),
         )
-        monkeypatch.setattr("gamehub_cli.retroarch_cores._core_suffix", lambda: ".dll")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores._core_suffix", lambda: ".dll")
         monkeypatch.setattr(
-            "gamehub_cli.retroarch_cores._core_base_url",
+            "gamehub_cli.firmware.retroarch_cores._core_base_url",
             lambda: "https://buildbot.libretro.com/nightly/windows/x86_64/latest/",
         )
         monkeypatch.setattr(
-            "gamehub_cli.retroarch_cores.resolve_retroarch_paths",
+            "gamehub_cli.firmware.retroarch_cores.resolve_retroarch_paths",
             lambda: RetroArchPaths(cores_dir=cores_dir, info_dir=info_dir),
         )
         monkeypatch.setattr(
-            "gamehub_cli.retroarch_cores._ensure_dir_writable",
+            "gamehub_cli.firmware.retroarch_cores._ensure_dir_writable",
             lambda path: (False, "[Errno 30] Read-only file system"),
         )
         monkeypatch.setattr(
-            "gamehub_cli.retroarch_cores._download_bytes",
+            "gamehub_cli.firmware.retroarch_cores._download_bytes",
             lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected download")),
         )
 
@@ -205,11 +203,15 @@ def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch) -> No
     with _workspace_tempdir("gamehub-retroarch-linux-") as temp_root:
         home = temp_root / "home"
         home.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [])
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.sys.platform", "linux")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: []
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch"
+        )
 
         paths = resolve_retroarch_paths()
 
@@ -224,11 +226,15 @@ def test_resolve_retroarch_paths_linux_prefers_flatpak_when_export_detected(monk
         export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.libretro.RetroArch"
         export.parent.mkdir(parents=True, exist_ok=True)
         export.write_bytes(b"#!/bin/sh")
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [])
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: []
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.retroarch_cores.resolve_emulator_executable", lambda _name: str(export)
+        )
 
         paths = resolve_retroarch_paths()
 
@@ -251,14 +257,16 @@ def test_resolve_retroarch_paths_expands_tilde_cfg_values(monkeypatch) -> None:
             + "\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr(
-            "gamehub_cli.retroarch_cores.retroarch_cfg_candidates",
+            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates",
             lambda explicit_cfg_path=None: [cfg_path],
         )
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch"
+        )
 
         paths = resolve_retroarch_paths()
 
@@ -281,8 +289,10 @@ def test_resolve_retroarch_paths_windows_colon_cfg_values(monkeypatch) -> None:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.os.name", "nt")
-        monkeypatch.setattr("gamehub_cli.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [cfg_path])
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "nt")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [cfg_path]
+        )
 
         paths = resolve_retroarch_paths()
 

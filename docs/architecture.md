@@ -24,11 +24,7 @@
 ## Guardrails
 - `tests/test_architecture.py` enforces an acyclic dependency graph across `sync`, `steam`, `emulators`, `firmware`, `controllers`, and `common`.
 
-## Compatibility shims
-- Legacy internal module paths remain as thin shim files under `src/gamehub_cli/` (for example `controller_apply.py` and `firmware_deploy.py`).
-- Shim modules alias to the feature package modules so runtime behavior comes from one implementation path.
-
 ## Entry points
 - Top-level CLI entrypoint remains `gamehub = gamehub_cli.main:main`.
 - Top-level server entrypoint remains `gamehub-server = gamehub_server.main:run`.
-- Internal module paths under legacy `apps/...` are no longer the canonical runtime source.
+- Internal module paths under legacy `apps/...` were removed as part of the `src/` migration.
