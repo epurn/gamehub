@@ -11,28 +11,39 @@ DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
 AZAHAR_FLATPAK_APP_ID = "org.azahar_emu.Azahar"
 
 
+def _safe_home_path() -> Path:
+    try:
+        return Path.home()
+    except RuntimeError:
+        for env_name in ("USERPROFILE", "HOME"):
+            raw = os.environ.get(env_name, "").strip()
+            if raw:
+                return Path(raw)
+        return Path.cwd()
+
+
 def linux_flatpak_retroarch_root() -> Path:
-    return Path.home() / ".var" / "app" / RETROARCH_FLATPAK_APP_ID / "config" / "retroarch"
+    return _safe_home_path() / ".var" / "app" / RETROARCH_FLATPAK_APP_ID / "config" / "retroarch"
 
 
 def linux_flatpak_pcsx2_root() -> Path:
-    return Path.home() / ".var" / "app" / PCSX2_FLATPAK_APP_ID / "config" / "PCSX2"
+    return _safe_home_path() / ".var" / "app" / PCSX2_FLATPAK_APP_ID / "config" / "PCSX2"
 
 
 def linux_flatpak_dolphin_root() -> Path:
-    return Path.home() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "data" / "dolphin-emu"
+    return _safe_home_path() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "data" / "dolphin-emu"
 
 
 def linux_flatpak_dolphin_config_root() -> Path:
-    return Path.home() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "config" / "dolphin-emu"
+    return _safe_home_path() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "config" / "dolphin-emu"
 
 
 def linux_flatpak_azahar_root() -> Path:
-    return Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "data" / "azahar-emu"
+    return _safe_home_path() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "data" / "azahar-emu"
 
 
 def linux_flatpak_azahar_config_root() -> Path:
-    return Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu"
+    return _safe_home_path() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu"
 
 
 def is_flatpak_command(path_value: str | Path, app_id: str) -> bool:
@@ -91,7 +102,8 @@ def retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path
     if os.name == "nt" and appdata:
         values.append(Path(appdata) / "RetroArch" / "retroarch.cfg")
 
-    home = Path.home()
-    values.append(home / ".config" / "retroarch" / "retroarch.cfg")
-    values.append(linux_flatpak_retroarch_root() / "retroarch.cfg")
+    if os.name != "nt":
+        home = _safe_home_path()
+        values.append(home / ".config" / "retroarch" / "retroarch.cfg")
+        values.append(linux_flatpak_retroarch_root() / "retroarch.cfg")
     return unique_paths(values)
