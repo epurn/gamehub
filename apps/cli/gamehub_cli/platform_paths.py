@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PosixPath, WindowsPath
 from typing import Iterable
 
 
@@ -10,16 +10,27 @@ PCSX2_FLATPAK_APP_ID = "net.pcsx2.PCSX2"
 DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
 AZAHAR_FLATPAK_APP_ID = "org.azahar_emu.Azahar"
 
+try:
+    _HOST_PATH_CLS = type(Path.cwd())
+except Exception:
+    _HOST_PATH_CLS = WindowsPath if os.name == "nt" else PosixPath
+
 
 def _safe_home_path() -> Path:
     try:
-        return Path.home()
-    except RuntimeError:
-        for env_name in ("USERPROFILE", "HOME"):
-            raw = os.environ.get(env_name, "").strip()
-            if raw:
-                return Path(raw)
-        return Path.cwd()
+        return _host_path(str(Path.home()))
+    except Exception:
+        pass
+    for raw in (os.path.expanduser("~"), os.environ.get("USERPROFILE", ""), os.environ.get("HOME", "")):
+        value = str(raw).strip()
+        if not value or value == "~":
+            continue
+        return _host_path(value)
+    return _host_path(os.getcwd())
+
+
+def _host_path(raw: str) -> Path:
+    return _HOST_PATH_CLS(raw)
 
 
 def linux_flatpak_retroarch_root() -> Path:
@@ -94,13 +105,13 @@ def retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path
         if resolve_emulator_executable is not None:
             exe_raw = resolve_emulator_executable("retroarch").strip('"')
             if exe_raw:
-                exe_path = Path(exe_raw)
+                exe_path = _host_path(exe_raw)
                 if exe_path.exists():
                     values.append(exe_path.parent / "retroarch.cfg")
 
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "RetroArch" / "retroarch.cfg")
+        values.append(_host_path(appdata) / "RetroArch" / "retroarch.cfg")
 
     if os.name != "nt":
         home = _safe_home_path()
