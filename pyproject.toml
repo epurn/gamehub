@@ -20,15 +20,60 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3.0", "pyinstaller>=6.10.0", "build>=1.2.2"]
+dev = [
+  "pytest>=8.3.0",
+  "pyinstaller>=6.10.0",
+  "build>=1.2.2",
+  "ruff>=0.11.0",
+  "mypy>=1.11.0",
+]
 
 [project.scripts]
 gamehub = "gamehub_cli.main:main"
 gamehub-server = "gamehub_server.main:run"
 
 [tool.setuptools]
-package-dir = { "" = "." }
+package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
-where = ["apps/cli", "apps/server", "shared/gamehub_common"]
+where = ["src"]
 include = ["gamehub_cli*", "gamehub_server*", "gamehub_common*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+mypy_path = "src"
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["gamehub_cli.*", "gamehub_server.*", "gamehub_common.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+  "gamehub_cli.emulators.__init__",
+  "gamehub_cli.steam.__init__",
+  "gamehub_cli.steam.types",
+  "gamehub_cli.sync.__init__",
+  "gamehub_cli.sync.index",
+  "gamehub_cli.sync.orchestrator",
+  "gamehub_common.ids",
+]
+check_untyped_defs = true
+ignore_errors = false

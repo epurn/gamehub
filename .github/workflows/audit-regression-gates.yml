@@ -3,8 +3,7 @@ name: Audit Regression Gates
 on:
   pull_request:
     paths:
-      - "apps/cli/**"
-      - "shared/**"
+      - "src/**"
       - "tests/**"
       - "pyproject.toml"
       - ".github/workflows/audit-regression-gates.yml"
@@ -14,8 +13,7 @@ on:
     branches:
       - main
     paths:
-      - "apps/cli/**"
-      - "shared/**"
+      - "src/**"
       - "tests/**"
       - "pyproject.toml"
       - ".github/workflows/audit-regression-gates.yml"
@@ -47,11 +45,12 @@ jobs:
           from pathlib import Path
 
           allowed_paths = {
-              Path("apps/cli/gamehub_cli/emulator_install.py").as_posix(),
+              Path("src/gamehub_cli/emulator_install.py").as_posix(),
+              Path("src/gamehub_cli/emulators/installer.py").as_posix(),
           }
 
           hits: list[str] = []
-          for root in (Path("apps"), Path("shared")):
+          for root in (Path("src"),):
               for path in root.rglob("*.py"):
                   text = path.read_text(encoding="utf-8", errors="ignore")
                   if "bazzite" in text.casefold() and path.as_posix() not in allowed_paths:
@@ -94,6 +93,18 @@ jobs:
             tests/test_steam.py \
             tests/test_steam_integration.py \
             tests/test_sync.py
+
+      - name: Ruff format check (src)
+        run: |
+          python -m ruff format --check src
+
+      - name: Ruff lint (src)
+        run: |
+          python -m ruff check src
+
+      - name: Mypy (src)
+        run: |
+          python -m mypy src
 
       - name: Dependency vulnerability audit
         run: |

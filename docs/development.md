@@ -22,28 +22,39 @@ python -m venv venv
 ```
 
 ## CLI module boundaries
-- `apps/cli/gamehub_cli/sync.py`: orchestration only.
-- `apps/cli/gamehub_cli/sync_index.py`: index fetch/retry policy.
-- `apps/cli/gamehub_cli/sync_transfer_stage.py`: download/bootstrap plan application.
-- `apps/cli/gamehub_cli/sync_artwork_stage.py`: SGDB artwork assignment/download logic.
-- `apps/cli/gamehub_cli/sync_steam_stage.py`: Steam lifecycle + shortcuts/collections apply stage.
-- `apps/cli/gamehub_cli/emulators.py`: compatibility facade and public entrypoint.
-- `apps/cli/gamehub_cli/emulator_resolution.py`: emulator executable discovery/resolution.
-- `apps/cli/gamehub_cli/emulator_install.py`: install backend selection/execution.
-- `apps/cli/gamehub_cli/firmware_deploy.py`: firmware deployment orchestration.
-- `apps/cli/gamehub_cli/firmware_targets.py`: emulator-specific firmware target discovery.
-- `apps/cli/gamehub_cli/pcsx2_ini.py`: PCSX2 INI read/update/controller bootstrap logic.
-- `apps/cli/gamehub_cli/controller_profiles.py`: bundled/user-overridden controller profile defaults and seeding.
-- `apps/cli/gamehub_cli/controller_detection.py`: Xbox controller detection (Linux `/proc` + Windows XInput).
-- `apps/cli/gamehub_cli/controller_apply.py`: managed-key profile application for PCSX2/Dolphin/Azahar.
-- `apps/cli/gamehub_cli/controller_launch.py`: hidden wrapper entrypoint used by wrapped Steam shortcuts.
-- `apps/cli/gamehub_cli/steam.py`: compatibility facade + shared dataclasses/constants.
-- `apps/cli/gamehub_cli/steam_lifecycle.py`, `apps/cli/gamehub_cli/steam_shortcuts.py`, `apps/cli/gamehub_cli/steam_collections.py`, `apps/cli/gamehub_cli/steam_artwork.py`, `apps/cli/gamehub_cli/steam_io.py`: focused Steam responsibilities.
+- `src/gamehub_cli/sync/orchestrator.py`: orchestration and dependency wiring only.
+- `src/gamehub_cli/sync/index.py`: index fetch/retry policy.
+- `src/gamehub_cli/sync/transfer_stage.py`: download/bootstrap plan application.
+- `src/gamehub_cli/sync/artwork_stage.py`: SGDB artwork assignment/download logic.
+- `src/gamehub_cli/sync/steam_stage.py`: Steam lifecycle + shortcuts/collections apply stage.
+- `src/gamehub_cli/emulators/__init__.py`: emulator service composition entrypoint.
+- `src/gamehub_cli/emulators/resolution.py`: emulator executable discovery/resolution.
+- `src/gamehub_cli/emulators/installer.py`: install backend selection/execution.
+- `src/gamehub_cli/firmware/deploy.py`: firmware deployment orchestration.
+- `src/gamehub_cli/firmware/targets.py`: emulator-specific firmware target discovery.
+- `src/gamehub_cli/firmware/pcsx2_ini.py`: PCSX2 INI read/update/controller bootstrap logic.
+- `src/gamehub_cli/controllers/profiles.py`: bundled/user-overridden controller profile defaults and seeding.
+- `src/gamehub_cli/controllers/detection.py`: Xbox controller detection (Linux `/proc` + Windows XInput).
+- `src/gamehub_cli/controllers/apply.py`: managed-key profile application for PCSX2/Dolphin/Azahar.
+- `src/gamehub_cli/controllers/launch.py`: hidden wrapper entrypoint used by wrapped Steam shortcuts.
+- `src/gamehub_cli/steam/types.py`: Steam dataclasses/constants.
+- `src/gamehub_cli/steam/lifecycle.py`, `src/gamehub_cli/steam/shortcuts.py`, `src/gamehub_cli/steam/collections.py`, `src/gamehub_cli/steam/artwork.py`, `src/gamehub_cli/steam/io.py`: focused Steam responsibilities.
 
 ## Run tests
 ```powershell
 .\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
+
+## Static checks
+```powershell
+.\venv\Scripts\python.exe -m ruff format --check src
+.\venv\Scripts\python.exe -m ruff check src
+.\venv\Scripts\python.exe -m mypy src
+```
+
+Typing note:
+- `mypy` is configured with incremental strictness via `[[tool.mypy.overrides]]` in `pyproject.toml`.
+- New/edited modules in `src/` should move from baseline `ignore_errors` into explicit checked overrides as they are cleaned up.
 
 ## Run audit regression slices (local)
 Use this before opening a PR that touches CLI portability, Steam integration, or config/env precedence logic.
