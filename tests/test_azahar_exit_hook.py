@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from gamehub_cli import azahar_exit_hook
+from gamehub_cli.controllers import azahar_exit_hook
 
 
 def test_handle_js_event_detects_select_start_combo() -> None:

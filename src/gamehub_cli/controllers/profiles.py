@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 import os
 import sys
 import tempfile
+from pathlib import Path
 from typing import Callable
 
-from ..config import GamehubConfig
+from ..common.config import GamehubConfig
 from ..common.fsops import replace_file
 from ..firmware.pcsx2_ini import pcsx2_pad_bindings
 

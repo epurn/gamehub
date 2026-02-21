@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import shutil
 import sys
+from pathlib import Path
 from typing import Iterable
 
 from gamehub_common.models import LibraryIndex
@@ -28,6 +28,8 @@ _EMULATOR_COMMAND_ALIASES = {
 }
 
 _HOST_PATH_TYPE = type(Path.cwd())
+_OS_NAME = os.name
+_SYS_PLATFORM = sys.platform
 
 
 def _safe_path(value: str) -> Path:
@@ -64,7 +66,7 @@ def _canonical_emulator_name(emulator_value: str) -> str:
 def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
     canonical = _canonical_emulator_name(emulator_value)
     values: list[Path] = []
-    if os.name == "nt":
+    if _OS_NAME == "nt":
         program_files = os.environ.get("ProgramFiles")
         program_files_x86 = os.environ.get("ProgramFiles(x86)")
         local_app_data = os.environ.get("LOCALAPPDATA")
@@ -125,7 +127,7 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
         values.extend(_windows_registry_install_candidates(canonical))
         return tuple(values)
 
-    if sys.platform.startswith("linux"):
+    if _SYS_PLATFORM.startswith("linux"):
         home = _HOST_PATH_TYPE.home()
         if canonical == "retroarch":
             values.extend((_safe_path("/usr/bin/retroarch"), _safe_path("/usr/local/bin/retroarch")))
@@ -174,7 +176,7 @@ def _registry_display_names(canonical: str) -> tuple[str, ...]:
 
 
 def _windows_registry_install_candidates(canonical: str) -> tuple[Path, ...]:
-    if os.name != "nt" or winreg is None:
+    if _OS_NAME != "nt" or winreg is None:
         return ()
     names = _registry_display_names(canonical)
     subkeys = (
@@ -303,7 +305,7 @@ def _resolve_winget_command() -> str | None:
     resolved = shutil.which("winget")
     if resolved:
         return resolved
-    if os.name != "nt":
+    if _OS_NAME != "nt":
         return None
     local_app_data = os.environ.get("LOCALAPPDATA")
     if not local_app_data:

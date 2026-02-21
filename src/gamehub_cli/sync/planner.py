@@ -6,8 +6,8 @@ from pathlib import Path
 from gamehub_common.ids import sha256_file
 from gamehub_common.models import LibraryIndex
 
-from .config import GamehubConfig
-from .common.paths import from_rel_path
+from ..common.config import GamehubConfig
+from ..common.paths import from_rel_path
 from .state import SyncState
 
 

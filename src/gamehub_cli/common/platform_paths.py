@@ -4,16 +4,16 @@ import os
 from pathlib import Path, PosixPath, WindowsPath
 from typing import Iterable
 
-
 RETROARCH_FLATPAK_APP_ID = "org.libretro.RetroArch"
 PCSX2_FLATPAK_APP_ID = "net.pcsx2.PCSX2"
 DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
 AZAHAR_FLATPAK_APP_ID = "org.azahar_emu.Azahar"
+_OS_NAME = os.name
 
 try:
     _HOST_PATH_CLS = type(Path.cwd())
 except Exception:
-    _HOST_PATH_CLS = WindowsPath if os.name == "nt" else PosixPath
+    _HOST_PATH_CLS = WindowsPath if _OS_NAME == "nt" else PosixPath
 
 
 def _safe_home_path() -> Path:
@@ -97,7 +97,7 @@ def retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path
     if explicit_cfg_path is not None:
         values.append(explicit_cfg_path.expanduser())
 
-    if os.name == "nt":
+    if _OS_NAME == "nt":
         try:
             from ..emulators import resolve_emulator_executable
         except Exception:
@@ -110,10 +110,10 @@ def retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path
                     values.append(exe_path.parent / "retroarch.cfg")
 
     appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
+    if _OS_NAME == "nt" and appdata:
         values.append(_host_path(appdata) / "RetroArch" / "retroarch.cfg")
 
-    if os.name != "nt":
+    if _OS_NAME != "nt":
         home = _safe_home_path()
         values.append(home / ".config" / "retroarch" / "retroarch.cfg")
         values.append(linux_flatpak_retroarch_root() / "retroarch.cfg")

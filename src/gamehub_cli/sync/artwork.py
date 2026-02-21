@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import hashlib
 import os
-from pathlib import Path, PurePosixPath
 import time
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
 from typing import Callable
 from urllib.parse import quote, urlparse
 
@@ -15,7 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from gamehub_common.models import TitleEntry
 
-from .common.fsops import replace_file
+from ..common.fsops import replace_file
 
 SGDB_ART_KINDS = ("grid", "hero", "logo", "icon")
 SGDB_GRID_LANDSCAPE_KIND = "grid_landscape"

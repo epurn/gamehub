@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from pathlib import Path
-import shutil
-from uuid import uuid4
 
 from gamehub_cli.common.paths import from_rel_path
 from gamehub_cli.common.platform_paths import (
@@ -21,8 +18,8 @@ def test_from_rel_path_uses_posix_relative_segments() -> None:
     assert resolved == Path("D:/GameHub/roms/NES/Super Mario Bros.nes")
 
 
-def test_from_rel_path_prefers_legacy_existing_path_when_canonical_missing() -> None:
-    with _workspace_tempdir("gamehub-paths-") as temp_root:
+def test_from_rel_path_prefers_legacy_existing_path_when_canonical_missing(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-paths-") as temp_root:
         legacy = temp_root / "NES" / "SuperMarioBros.nes"
         legacy.parent.mkdir(parents=True, exist_ok=True)
         legacy.write_bytes(b"legacy")
@@ -31,8 +28,8 @@ def test_from_rel_path_prefers_legacy_existing_path_when_canonical_missing() -> 
         assert resolved == legacy
 
 
-def test_from_rel_path_prefers_canonical_when_present() -> None:
-    with _workspace_tempdir("gamehub-paths-") as temp_root:
+def test_from_rel_path_prefers_canonical_when_present(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-paths-") as temp_root:
         canonical = temp_root / "roms" / "NES" / "SuperMarioBros.nes"
         canonical.parent.mkdir(parents=True, exist_ok=True)
         canonical.write_bytes(b"canonical")
@@ -51,8 +48,8 @@ def test_unique_paths_dedupes_expanduser_results(monkeypatch) -> None:
     assert values == [Path("C:/RetroArch"), Path("D:/RetroArch")]
 
 
-def test_parse_simple_kv_config_reads_key_value_pairs() -> None:
-    with _workspace_tempdir("gamehub-paths-") as temp_root:
+def test_parse_simple_kv_config_reads_key_value_pairs(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-paths-") as temp_root:
         cfg = temp_root / "retroarch.cfg"
         cfg.write_text(
             "\n".join(
@@ -73,19 +70,19 @@ def test_retroarch_cfg_candidates_dedupes_explicit_path(monkeypatch) -> None:
     home = Path("/var/home/deck")
     explicit = home / ".config" / "retroarch" / "retroarch.cfg"
     monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
-    monkeypatch.setattr("gamehub_cli.common.platform_paths.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.common.platform_paths._OS_NAME", "posix")
     candidates = retroarch_cfg_candidates(explicit_cfg_path=explicit)
     assert candidates.count(explicit) == 1
 
 
-def test_retroarch_cfg_candidates_includes_portable_windows_cfg(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-paths-") as temp_root:
+def test_retroarch_cfg_candidates_includes_portable_windows_cfg(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-paths-") as temp_root:
         retroarch_root = temp_root / "RetroArch-Win64"
         retroarch_root.mkdir(parents=True, exist_ok=True)
         retroarch_exe = retroarch_root / "retroarch.exe"
         retroarch_exe.write_text("", encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.common.platform_paths.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.common.platform_paths._OS_NAME", "nt")
         monkeypatch.setattr("gamehub_cli.emulators.resolve_emulator_executable", lambda _name: str(retroarch_exe))
 
         candidates = retroarch_cfg_candidates(explicit_cfg_path=None)

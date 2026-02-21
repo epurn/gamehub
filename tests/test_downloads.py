@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import hashlib
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-import shutil
 import threading
-from uuid import uuid4
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from gamehub_cli.downloads import download_with_atomic_write
+from gamehub_cli.sync.downloads import download_with_atomic_write
 
 
 @contextmanager
@@ -42,10 +39,10 @@ def _http_file_server(path: str, payload: bytes):
         thread.join(timeout=2)
 
 
-def test_download_with_atomic_write_success() -> None:
+def test_download_with_atomic_write_success(workspace_tempdir) -> None:
     payload = b"download-payload" * 4096
     expected_sha = hashlib.sha256(payload).hexdigest()
-    with _workspace_tempdir("gamehub-download-") as temp_root:
+    with workspace_tempdir("gamehub-download-") as temp_root:
         destination = temp_root / "roms" / "NES" / "SuperMarioBros.nes"
         with _http_file_server("/v1/files/file_mario", payload) as server_url:
             download_with_atomic_write(
@@ -61,9 +58,9 @@ def test_download_with_atomic_write_success() -> None:
             assert part_path.stat().st_size == 0
 
 
-def test_download_with_atomic_write_checksum_mismatch_cleans_partial() -> None:
+def test_download_with_atomic_write_checksum_mismatch_cleans_partial(workspace_tempdir) -> None:
     payload = b"bad-payload" * 1024
-    with _workspace_tempdir("gamehub-download-") as temp_root:
+    with workspace_tempdir("gamehub-download-") as temp_root:
         destination = temp_root / "firmware" / "PSX" / "scph5501.bin"
         with _http_file_server("/v1/firmware/PSX/scph5501.bin", payload) as server_url:
             with pytest.raises(ValueError, match="Checksum mismatch"):

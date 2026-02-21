@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from . import lifecycle as _lifecycle
 from .artwork import backup_steam_configs, copy_grid_art, prune_grid_noncanonical_variants
 from .collections import update_cloud_collections, update_collections
-from . import lifecycle as _lifecycle
 from .lifecycle import (
     build_context,
     close_steam_best_effort,

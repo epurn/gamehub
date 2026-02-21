@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import json
 from pathlib import Path
-import shutil
-from uuid import uuid4
 
 import vdf
 
@@ -30,8 +27,8 @@ def _context(temp_root: Path) -> SteamContext:
     )
 
 
-def test_fake_userdata_round_trip_shortcuts_collections_and_art() -> None:
-    with _workspace_tempdir("gamehub-steam-integration-") as temp_root:
+def test_fake_userdata_round_trip_shortcuts_collections_and_art(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-integration-") as temp_root:
         context = _context(temp_root)
         initial = {"collections": [{"name": "Manual", "added": ["123"], "removed": []}]}
         context.localconfig_path.write_text(
@@ -88,8 +85,8 @@ def test_fake_userdata_round_trip_shortcuts_collections_and_art() -> None:
         assert all(path.exists() for path in copied)
 
 
-def test_fake_userdata_handles_corrupt_localconfig() -> None:
-    with _workspace_tempdir("gamehub-steam-integration-") as temp_root:
+def test_fake_userdata_handles_corrupt_localconfig(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-integration-") as temp_root:
         context = _context(temp_root)
         context.localconfig_path.write_text("not-vdf", encoding="utf-8")
 

@@ -4,16 +4,16 @@ from pathlib import Path
 
 from gamehub_common.models import LibraryIndex
 
-from ..artwork import (
+from ..common.config import GamehubConfig
+from .artwork import (
     SGDB_ART_KINDS,
     SgdbArtworkPipeline,
     SgdbClient,
     build_lookup_plan,
     cached_artwork_files,
-    required_cache_kinds,
     redact_secret,
+    required_cache_kinds,
 )
-from ..config import GamehubConfig
 
 
 def kinds_to_download(kinds: tuple[str, ...]) -> str:

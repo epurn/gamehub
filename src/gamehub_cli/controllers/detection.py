@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 import ctypes
 import re
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 
 _PROC_INPUT_DEVICES_PATH = Path("/proc/bus/input/devices")
 _INPUT_DEVICE_NAME_RE = re.compile(r'^N:\s+Name="(?P<name>.*)"$')

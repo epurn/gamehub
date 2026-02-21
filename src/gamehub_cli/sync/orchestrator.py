@@ -1,23 +1,24 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable
-import time
 from urllib.parse import urljoin
 
 from gamehub_common.models import LibraryIndex
 
-from ..config import GamehubConfig
+from ..common.config import GamehubConfig
 from ..controllers.profiles import seed_default_profiles
 from ..emulators import ensure_emulators
 from ..firmware.deploy import deploy_firmware_to_emulators
 from ..firmware.retroarch_cores import ensure_retroarch_cores
-from ..planner import create_sync_plan
-from ..state import load_state, mark_synced, save_state_atomic
 from ..steam import steam_id64_from_userdata_id
-from . import artwork_stage, index as sync_index, steam_stage, transfer_stage
+from . import artwork_stage, steam_stage, transfer_stage
+from . import index as sync_index
+from .planner import create_sync_plan
+from .state import load_state, mark_synced, save_state_atomic
 
 
 @dataclass(frozen=True)

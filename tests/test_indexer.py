@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from gamehub_common.ids import make_file_id, make_title_id, sha256_file
 import gamehub_server.indexer as indexer_module
+from gamehub_common.ids import make_file_id, make_title_id, sha256_file
 from gamehub_server.indexer import SYSTEM_CATALOG, build_index
 
 INITIAL_SYSTEM_SET = {
@@ -31,8 +31,8 @@ def _write_file(path: Path, payload: bytes = b"x") -> None:
     path.write_bytes(payload)
 
 
-def test_build_index_scans_single_title() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+def test_build_index_scans_single_title(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         rom_path = root / "roms" / "NES" / "SuperMarioBros.nes"
         _write_file(rom_path, b"rom")
         bundle = build_index(root)
@@ -53,16 +53,16 @@ def test_build_index_scans_single_title() -> None:
         assert bundle.asset_paths == {}
 
 
-def test_build_index_rejects_nested_title_directories() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as temp_dir:
+def test_build_index_rejects_nested_title_directories(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as temp_dir:
         root = temp_dir
         _write_file(root / "roms" / "NES" / "SuperMarioBros" / "mario.nes")
         with pytest.raises(ValueError, match="Unexpected title directory"):
             build_index(root)
 
 
-def test_build_index_rejects_duplicate_title_stems() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as temp_dir:
+def test_build_index_rejects_duplicate_title_stems(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as temp_dir:
         root = temp_dir
         _write_file(root / "roms" / "PS2" / "FinalFantasyX.iso")
         _write_file(root / "roms" / "PS2" / "FinalFantasyX.chd")
@@ -70,8 +70,8 @@ def test_build_index_rejects_duplicate_title_stems() -> None:
             build_index(root)
 
 
-def test_build_index_includes_firmware_metadata() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as temp_dir:
+def test_build_index_includes_firmware_metadata(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as temp_dir:
         root = temp_dir
         _write_file(root / "roms" / "PS2" / "FinalFantasyX.iso")
         _write_file(root / "firmware" / "PS2" / "scph10000.bin", b"required")
@@ -88,8 +88,8 @@ def test_build_index_includes_firmware_metadata() -> None:
         assert by_name["custom_patch.bin"].sha256 == sha256_file(root / "firmware" / "PS2" / "custom_patch.bin")
 
 
-def test_build_index_requires_required_firmware_for_indexed_system() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as temp_dir:
+def test_build_index_requires_required_firmware_for_indexed_system(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as temp_dir:
         root = temp_dir
         _write_file(root / "roms" / "PS2" / "FinalFantasyX.iso")
         with pytest.raises(ValueError, match="Missing required firmware for PS2: scph10000.bin"):
@@ -111,7 +111,7 @@ def test_system_catalog_matches_initial_supported_set() -> None:
     assert ' -fullscreen "{rom}"' in SYSTEM_CATALOG["PS2"]["launch_template"]
 
 
-def test_build_index_supports_all_initial_systems() -> None:
+def test_build_index_supports_all_initial_systems(workspace_tempdir) -> None:
     filenames = {
         "GB": "Tetris.gb",
         "GBA": "MetroidFusion.gba",
@@ -128,7 +128,7 @@ def test_build_index_supports_all_initial_systems() -> None:
         "PS2": "FinalFantasyX.iso",
     }
 
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         for system, filename in filenames.items():
             _write_file(root / "roms" / system / filename, b"rom")
         _write_file(root / "firmware" / "PSX" / "scph5501.bin", b"psx-fw")
@@ -145,8 +145,8 @@ def test_build_index_supports_all_initial_systems() -> None:
         assert len(bundle.index.titles) == len(INITIAL_SYSTEM_SET)
 
 
-def test_build_index_ignores_psx_and_ps2_7z_archives() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+def test_build_index_ignores_psx_and_ps2_7z_archives(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         _write_file(root / "roms" / "PSX" / "Ape Escape.7z", b"archive")
         _write_file(root / "roms" / "PS2" / "Shadow of the Colossus.7z", b"archive")
 
@@ -154,8 +154,8 @@ def test_build_index_ignores_psx_and_ps2_7z_archives() -> None:
         assert not bundle.index.titles
 
 
-def test_build_index_does_not_require_wii_keys_file() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+def test_build_index_does_not_require_wii_keys_file(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
 
         bundle = build_index(root)
@@ -163,8 +163,8 @@ def test_build_index_does_not_require_wii_keys_file() -> None:
         assert bundle.index.titles[0].system == "Wii"
 
 
-def test_build_index_ignores_wii_firmware_directory_files() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+def test_build_index_ignores_wii_firmware_directory_files(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
         _write_file(root / "firmware" / "Wii" / "keys.md", b"wiiu-keys")
         _write_file(root / "firmware" / "Wii" / "keys.bin", b"legacy")
@@ -174,8 +174,8 @@ def test_build_index_ignores_wii_firmware_directory_files() -> None:
         assert wii.firmware == ()
 
 
-def test_build_index_supports_dolphin_ciso_for_gc_and_wii() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+def test_build_index_supports_dolphin_ciso_for_gc_and_wii(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         _write_file(root / "roms" / "GC" / "FZeroGX.ciso", b"gc-ciso")
         _write_file(root / "roms" / "Wii" / "MarioKartWii.ciso", b"wii-ciso")
 
@@ -185,8 +185,8 @@ def test_build_index_supports_dolphin_ciso_for_gc_and_wii() -> None:
         assert by_system["Wii"].rom.extension == ".ciso"
 
 
-def test_build_index_supports_n3ds_supported_extensions_and_ignores_unsupported() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+def test_build_index_supports_n3ds_supported_extensions_and_ignores_unsupported(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         _write_file(root / "roms" / "N3DS" / "Pilotwings.3ds", b"rom-3ds")
         _write_file(root / "roms" / "N3DS" / "MiiMaker.cci", b"rom-cci")
         _write_file(root / "roms" / "N3DS" / "HomeMenu.cxi", b"rom-cxi")
@@ -202,8 +202,8 @@ def test_build_index_supports_n3ds_supported_extensions_and_ignores_unsupported(
         assert "InstallMe" not in names
 
 
-def test_build_index_ignores_n3ds_firmware_directory_files() -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+def test_build_index_ignores_n3ds_firmware_directory_files(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         _write_file(root / "roms" / "N3DS" / "Pilotwings.3ds", b"rom")
         _write_file(root / "firmware" / "N3DS" / "legacy_keys.txt", b"keys")
         _write_file(root / "firmware" / "N3DS" / "seeddb.bin", b"seeddb")
@@ -213,8 +213,8 @@ def test_build_index_ignores_n3ds_firmware_directory_files() -> None:
         assert n3ds.firmware == ()
 
 
-def test_build_index_reuses_cached_hashes_for_unchanged_files(monkeypatch) -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+def test_build_index_reuses_cached_hashes_for_unchanged_files(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         _write_file(root / "roms" / "PS2" / "FinalFantasyX.iso", b"rom")
         _write_file(root / "firmware" / "PS2" / "scph10000.bin", b"fw")
         build_index(root)
@@ -232,8 +232,8 @@ def test_build_index_reuses_cached_hashes_for_unchanged_files(monkeypatch) -> No
         assert calls == []
 
 
-def test_build_index_rehashes_changed_files(monkeypatch) -> None:
-    with _workspace_tempdir(prefix="gamehub-indexer-") as root:
+def test_build_index_rehashes_changed_files(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
         rom_path = root / "roms" / "NES" / "SuperMarioBros.nes"
         _write_file(rom_path, b"rom-v1")
         build_index(root)

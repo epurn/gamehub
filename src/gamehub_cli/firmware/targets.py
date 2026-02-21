@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path, PosixPath, WindowsPath
 import sys
+from pathlib import Path, PosixPath, WindowsPath
 
-from ..config import GamehubConfig
-from ..emulators import resolve_emulator_executable
+from ..common.config import GamehubConfig
 from ..common.platform_paths import (
     AZAHAR_FLATPAK_APP_ID,
     DOLPHIN_FLATPAK_APP_ID,
@@ -21,6 +20,7 @@ from ..common.platform_paths import (
     retroarch_cfg_candidates,
     unique_paths,
 )
+from ..emulators import resolve_emulator_executable
 
 try:
     _HOST_PATH_CLS = type(Path.cwd())

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
 import os
-from pathlib import Path
 import shutil
+from datetime import datetime
+from pathlib import Path
 
-from .types import SteamArtworkAssignment, SteamContext
 from .shortcuts import _canonical_signed_app_id_from_unsigned, _canonical_unsigned_app_id
+from .types import SteamArtworkAssignment, SteamContext
 
 
 def _unlink_best_effort(path: Path) -> bool:

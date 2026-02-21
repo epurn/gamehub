@@ -5,6 +5,14 @@ from pathlib import Path
 
 CORE = {"sync", "steam", "emulators", "firmware", "controllers", "common"}
 SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "gamehub_cli"
+ALLOWED_DEPENDENCIES: dict[str, set[str]] = {
+    "common": {"emulators"},
+    "controllers": {"common", "emulators", "firmware"},
+    "emulators": set(),
+    "firmware": {"common", "emulators"},
+    "steam": {"common"},
+    "sync": {"common", "controllers", "emulators", "firmware", "steam"},
+}
 
 
 def _module_group(module_path: Path) -> str | None:
@@ -92,3 +100,15 @@ def _has_cycle(graph: dict[str, set[str]]) -> bool:
 def test_core_package_dependencies_are_acyclic() -> None:
     graph = _graph()
     assert not _has_cycle(graph), f"Detected cycle in core package graph: {graph}"
+
+
+def test_core_package_dependencies_follow_allowed_directions() -> None:
+    graph = _graph()
+    violations: dict[str, set[str]] = {}
+    for source, targets in graph.items():
+        allowed_targets = ALLOWED_DEPENDENCIES[source]
+        disallowed = {target for target in targets if target not in allowed_targets}
+        if disallowed:
+            violations[source] = disallowed
+
+    assert not violations, f"Disallowed core package dependencies detected: {violations}"

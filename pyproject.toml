@@ -45,7 +45,7 @@ line-length = 120
 src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
-select = ["E", "F"]
+select = ["E", "F", "I"]
 ignore = ["E501"]
 
 [tool.ruff.format]
@@ -60,20 +60,33 @@ mypy_path = "src"
 ignore_missing_imports = true
 check_untyped_defs = false
 warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = ["gamehub_cli.*", "gamehub_server.*", "gamehub_common.*"]
-ignore_errors = true
+warn_return_any = false
 
 [[tool.mypy.overrides]]
 module = [
-  "gamehub_cli.emulators.__init__",
-  "gamehub_cli.steam.__init__",
-  "gamehub_cli.steam.types",
-  "gamehub_cli.sync.__init__",
-  "gamehub_cli.sync.index",
-  "gamehub_cli.sync.orchestrator",
   "gamehub_common.ids",
+  "gamehub_common.models",
+  "gamehub_cli.sync.planner",
+  "gamehub_cli.sync.state",
 ]
 check_untyped_defs = true
-ignore_errors = false
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+warn_return_any = true
+
+[[tool.mypy.overrides]]
+module = [
+  "gamehub_cli.common.config",
+  "gamehub_cli.common.platform_paths",
+  "gamehub_cli.controllers.*",
+  "gamehub_cli.emulators.*",
+  "gamehub_cli.firmware.*",
+  "gamehub_cli.main",
+  "gamehub_cli.steam.*",
+  "gamehub_cli.sync.artwork",
+  "gamehub_cli.sync.downloads",
+  "gamehub_cli.sync.index",
+  "gamehub_cli.sync.transfer_stage",
+  "gamehub_server.*",
+]
+ignore_errors = true

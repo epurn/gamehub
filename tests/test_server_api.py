@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from gamehub_server.main import IndexRepository, app
 import gamehub_server.main as server_main
 from gamehub_common.models import LibraryIndex
+from gamehub_server.main import IndexRepository, app
 
 
 def _write_file(path: Path, payload: bytes) -> None:
@@ -17,8 +17,8 @@ def _write_file(path: Path, payload: bytes) -> None:
 
 
 @pytest.fixture
-def api_client():
-    with _workspace_tempdir(prefix="gamehub-api-") as temp_dir:
+def api_client(workspace_tempdir):
+    with workspace_tempdir(prefix="gamehub-api-") as temp_dir:
         root = temp_dir
         _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom-bytes")
         _write_file(root / "firmware" / "NES" / "dummy.bin", b"firmware-bytes")

@@ -15,14 +15,17 @@
 - `src/gamehub_cli/common`: shared file/path/platform helpers used across features.
 
 ## Dependency direction (target)
-- `sync` may depend on all feature packages.
-- `controllers` may depend on `firmware` and `common`.
+- `sync` may depend on `steam`, `controllers`, `firmware`, `emulators`, and `common`.
+- `controllers` may depend on `firmware`, `emulators`, and `common`.
 - `firmware` may depend on `emulators` and `common`.
-- `steam` may depend on `common` only for I/O helpers.
-- `emulators` and `common` should not depend on higher-level feature packages.
+- `steam` may depend on `common`.
+- `common` may depend on `emulators` for emulator path-resolution helpers.
+- `emulators` must not depend on other CLI feature packages.
 
 ## Guardrails
-- `tests/test_architecture.py` enforces an acyclic dependency graph across `sync`, `steam`, `emulators`, `firmware`, `controllers`, and `common`.
+- `tests/test_architecture.py` enforces:
+- an acyclic dependency graph across `sync`, `steam`, `emulators`, `firmware`, `controllers`, and `common`
+- explicit allowed dependency directions for each core package
 
 ## Entry points
 - Top-level CLI entrypoint remains `gamehub = gamehub_cli.main:main`.

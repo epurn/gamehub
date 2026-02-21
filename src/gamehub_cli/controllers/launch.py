@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import base64
 import ctypes
 import ctypes.wintypes
 import json
 import os
-from pathlib import Path
 import shlex
 import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
+from pathlib import Path
 
+from ..common.config import load_config
 from . import azahar_exit_hook
-from ..config import load_config
 from .apply import (
     _AZAHAR_WINDOWS_SDL_DIR_ENV,
     apply_controller_profile,

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 import os
-import shutil
-from uuid import uuid4
+from pathlib import Path
 
-from gamehub_cli.config import ControllersConfig, GamehubConfig
+from gamehub_cli.common.config import ControllersConfig, GamehubConfig
 from gamehub_cli.controllers.detection import XboxController
 from gamehub_cli.controllers.launch import (
     encode_controller_payload,
@@ -68,10 +66,8 @@ def test_parse_controller_payload_strips_wrapping_quotes_from_args() -> None:
     assert payload.target_args == ("-b", "C:/Games/Path With Spaces/game.iso")
 
 
-def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch) -> None:
-    temp_root = Path(".pytest_tmp_local") / f"gamehub-azahar-sdl-{uuid4().hex}"
-    temp_root.mkdir(parents=True, exist_ok=False)
-    try:
+def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-azahar-sdl-") as temp_root:
         azahar_dir = temp_root / "Azahar"
         azahar_dir.mkdir(parents=True, exist_ok=True)
         azahar_exe = azahar_dir / "azahar.exe"
@@ -101,8 +97,6 @@ def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch) -> None:
         run_controller_launch(payload_token=token)
 
         assert observed["sdl_dir"] == str(azahar_dir)
-    finally:
-        shutil.rmtree(temp_root, ignore_errors=True)
 
 
 def test_run_controller_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:

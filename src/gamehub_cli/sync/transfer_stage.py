@@ -1,17 +1,17 @@
 from __future__ import annotations
 
+import inspect
 from collections import Counter
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-import inspect
 from pathlib import Path
 
 from gamehub_common.models import LibraryIndex
 
-from ..config import GamehubConfig
-from .. import downloads
-from ..downloads import download_with_atomic_write
-from ..planner import PlanAction, SyncPlan
-from ..state import SyncState
+from ..common.config import GamehubConfig
+from . import downloads
+from .downloads import download_with_atomic_write
+from .planner import PlanAction, SyncPlan
+from .state import SyncState
 
 DEFAULT_MAX_PARALLEL_DOWNLOADS = 4
 

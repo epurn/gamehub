@@ -1,28 +1,28 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path, PosixPath
 import shutil
 import sys
+from pathlib import Path, PosixPath
 from typing import Callable
 from uuid import uuid4
 
 from gamehub_common.ids import sha256_file
 from gamehub_common.models import LibraryIndex
 
-from ..config import GamehubConfig
-from ..emulators import resolve_emulator_executable
-from . import targets as firmware_targets
-from . import pcsx2_ini as pcsx2_ini
+from ..common.config import GamehubConfig
 from ..common.fsops import replace_file
 from ..common.platform_paths import (
     AZAHAR_FLATPAK_APP_ID,
     PCSX2_FLATPAK_APP_ID,
     is_flatpak_command,
-    linux_flatpak_azahar_root,
     linux_flatpak_azahar_config_root,
+    linux_flatpak_azahar_root,
     linux_flatpak_pcsx2_root,
 )
+from ..emulators import resolve_emulator_executable
+from . import pcsx2_ini as pcsx2_ini
+from . import targets as firmware_targets
 
 _RETROARCH_SYSTEM_NAMES = {"GB", "GBA", "GBC", "GEN_MD", "N64", "NDS", "NES", "PSX", "SNES"}
 _RETROARCH_MENU_COMBO_KEY = "input_menu_toggle_gamepad_combo"

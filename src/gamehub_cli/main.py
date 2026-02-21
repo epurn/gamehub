@@ -8,7 +8,7 @@ try:
 except ModuleNotFoundError:
     typer = None
 
-from .config import load_config
+from .common.config import load_config
 from .controllers.launch import run_controller_launch
 from .sync import run_sync
 

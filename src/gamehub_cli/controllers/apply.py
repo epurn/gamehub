@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 import ctypes
 import ctypes.util
 import os
@@ -8,9 +7,14 @@ import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import Callable
 
-from ..config import GamehubConfig
+from ..common.config import GamehubConfig
+from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID
+from ..firmware.pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
+from ..firmware.targets import default_pcsx2_ini_path, resolve_dolphin_config_dirs, resolve_dolphin_runtime_user_dir
+from .detection import detect_xbox_controllers
 from .profiles import (
     PROFILE_KBM,
     PROFILE_XBOX_1P,
@@ -19,10 +23,6 @@ from .profiles import (
     load_profile_file,
     profile_name_for_controller_count,
 )
-from .detection import detect_xbox_controllers
-from ..firmware.targets import default_pcsx2_ini_path, resolve_dolphin_config_dirs, resolve_dolphin_runtime_user_dir
-from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID
-from ..firmware.pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
 
 _MANAGED_PCSX2_SECTIONS = ("InputSources", "Pad1", "Pad2", "Hotkeys", "UI")
 _AZAHAR_QT_CONFIG_FILENAME = "qt-config.ini"

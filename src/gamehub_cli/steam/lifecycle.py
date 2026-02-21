@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 from .types import LINUX_STEAM_PROCESS_NAMES, STEAM_ID64_BASE, SteamContext
 

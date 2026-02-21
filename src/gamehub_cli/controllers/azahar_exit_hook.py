@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import re
 import struct
 import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 _JS_EVENT_FORMAT = "IhBB"
 _JS_EVENT_SIZE = struct.calcsize(_JS_EVENT_FORMAT)

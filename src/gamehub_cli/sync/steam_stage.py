@@ -1,20 +1,17 @@
 from __future__ import annotations
 
-from functools import lru_cache
 import os
 import re
-from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import sys
+from functools import lru_cache
+from pathlib import Path
 
 from gamehub_common.models import LibraryIndex
 
-from ..config import GamehubConfig
-from ..controllers.launch import encode_controller_payload
-from ..emulators import resolve_emulator_executable
-from ..firmware.targets import resolve_dolphin_runtime_user_dir
+from ..common.config import GamehubConfig
 from ..common.paths import from_rel_path
 from ..common.platform_paths import (
     AZAHAR_FLATPAK_APP_ID,
@@ -22,7 +19,10 @@ from ..common.platform_paths import (
     PCSX2_FLATPAK_APP_ID,
     is_flatpak_command,
 )
+from ..controllers.launch import encode_controller_payload
+from ..emulators import resolve_emulator_executable
 from ..firmware.retroarch_cores import resolve_retroarch_paths
+from ..firmware.targets import resolve_dolphin_runtime_user_dir
 from ..steam import (
     SteamArtworkAssignment,
     SteamContext,

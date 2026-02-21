@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import io
-from pathlib import Path
-import shutil
-from uuid import uuid4
 import zipfile
+from pathlib import Path
 
 from gamehub_cli.firmware.retroarch_cores import (
     RetroArchPaths,
     ensure_retroarch_cores,
-    resolve_retroarch_paths,
     required_retroarch_cores,
+    resolve_retroarch_paths,
 )
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
@@ -63,8 +60,8 @@ def test_required_retroarch_cores_uses_fallback_mapping_for_missing_core_token()
     assert required == {"NDS": "melondsds_libretro"}
 
 
-def test_ensure_retroarch_cores_installs_core_and_info_once_for_shared_core(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-retroarch-cores-") as temp_root:
+def test_ensure_retroarch_cores_installs_core_and_info_once_for_shared_core(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-retroarch-cores-") as temp_root:
         cores_dir = temp_root / "cores"
         info_dir = temp_root / "info"
         paths = RetroArchPaths(cores_dir=cores_dir, info_dir=info_dir)
@@ -114,8 +111,8 @@ def test_ensure_retroarch_cores_installs_core_and_info_once_for_shared_core(monk
         assert calls[1].endswith("/assets/frontend/info.zip")
 
 
-def test_ensure_retroarch_cores_dry_run_reports_missing(monkeypatch, capsys) -> None:
-    with _workspace_tempdir("gamehub-retroarch-cores-") as temp_root:
+def test_ensure_retroarch_cores_dry_run_reports_missing(monkeypatch, capsys, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-retroarch-cores-") as temp_root:
         index = LibraryIndex(
             index_version=1,
             systems=(),
@@ -155,8 +152,10 @@ def test_ensure_retroarch_cores_dry_run_reports_missing(monkeypatch, capsys) -> 
         assert "retroarch-info\tmissing\tN64\tmupen64plus_next_libretro.info" in out
 
 
-def test_ensure_retroarch_cores_read_only_info_dir_warns_without_download_label(monkeypatch, capsys) -> None:
-    with _workspace_tempdir("gamehub-retroarch-cores-ro-") as temp_root:
+def test_ensure_retroarch_cores_read_only_info_dir_warns_without_download_label(
+    monkeypatch, capsys, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-retroarch-cores-ro-") as temp_root:
         cores_dir = temp_root / "cores"
         info_dir = temp_root / "info"
         cores_dir.mkdir(parents=True, exist_ok=True)
@@ -199,8 +198,8 @@ def test_ensure_retroarch_cores_read_only_info_dir_warns_without_download_label(
         assert "failed to download RetroArch info.zip" not in out
 
 
-def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-retroarch-linux-") as temp_root:
+def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-retroarch-linux-") as temp_root:
         home = temp_root / "home"
         home.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.Path.home", classmethod(lambda cls: home))
@@ -220,8 +219,8 @@ def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch) -> No
         assert paths.info_dir != Path("/usr/bin/info")
 
 
-def test_resolve_retroarch_paths_linux_prefers_flatpak_when_export_detected(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-retroarch-flatpak-") as temp_root:
+def test_resolve_retroarch_paths_linux_prefers_flatpak_when_export_detected(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-retroarch-flatpak-") as temp_root:
         home = temp_root / "home"
         export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.libretro.RetroArch"
         export.parent.mkdir(parents=True, exist_ok=True)
@@ -242,8 +241,8 @@ def test_resolve_retroarch_paths_linux_prefers_flatpak_when_export_detected(monk
         assert paths.cores_dir == home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "cores"
 
 
-def test_resolve_retroarch_paths_expands_tilde_cfg_values(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-retroarch-cfg-tilde-") as temp_root:
+def test_resolve_retroarch_paths_expands_tilde_cfg_values(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-retroarch-cfg-tilde-") as temp_root:
         home = temp_root / "home"
         cfg_path = home / ".config" / "retroarch" / "retroarch.cfg"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -275,8 +274,8 @@ def test_resolve_retroarch_paths_expands_tilde_cfg_values(monkeypatch) -> None:
         assert paths.info_dir == home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "info"
 
 
-def test_resolve_retroarch_paths_windows_colon_cfg_values(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-retroarch-cfg-colon-") as temp_root:
+def test_resolve_retroarch_paths_windows_colon_cfg_values(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-retroarch-cfg-colon-") as temp_root:
         cfg_path = temp_root / "retroarch.cfg"
         cfg_path.write_text(
             "\n".join(

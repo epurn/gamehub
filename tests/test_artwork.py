@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from pathlib import Path
-import shutil
-from uuid import uuid4
 
 import httpx
 
-from gamehub_cli.artwork import SgdbArtworkPipeline, SgdbClient, redact_secret
-from gamehub_cli.config import GamehubConfig
-from gamehub_cli.sync import _build_artwork_assignments
+from gamehub_cli.common.config import GamehubConfig
+from gamehub_cli.sync.artwork import SgdbArtworkPipeline, SgdbClient, redact_secret
+from gamehub_cli.sync.orchestrator import _build_artwork_assignments
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
 
@@ -80,7 +77,7 @@ def test_sgdb_client_retries_transient_then_parses_game_id() -> None:
     assert request_count["search"] == 2
 
 
-def test_sgdb_client_download_to_cache_skips_existing_file() -> None:
+def test_sgdb_client_download_to_cache_skips_existing_file(workspace_tempdir) -> None:
     request_count = {"download": 0}
     payload = b"grid-image"
 
@@ -94,7 +91,7 @@ def test_sgdb_client_download_to_cache_skips_existing_file() -> None:
             )
         return httpx.Response(status_code=404, json={"success": False})
 
-    with _workspace_tempdir("gamehub-artwork-") as temp_root:
+    with workspace_tempdir("gamehub-artwork-") as temp_root:
         destination = temp_root / "cache" / "grid.png"
         client = SgdbClient("test-key", transport=httpx.MockTransport(handler))
         try:
@@ -107,7 +104,7 @@ def test_sgdb_client_download_to_cache_skips_existing_file() -> None:
     assert request_count["download"] == 1
 
 
-def test_sgdb_client_download_falls_back_to_no_auth_on_401() -> None:
+def test_sgdb_client_download_falls_back_to_no_auth_on_401(workspace_tempdir) -> None:
     payload = b"fallback-image"
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -121,7 +118,7 @@ def test_sgdb_client_download_falls_back_to_no_auth_on_401() -> None:
             )
         return httpx.Response(status_code=404, json={"success": False})
 
-    with _workspace_tempdir("gamehub-artwork-") as temp_root:
+    with workspace_tempdir("gamehub-artwork-") as temp_root:
         destination = temp_root / "cache" / "protected.png"
         client = SgdbClient("test-key", transport=httpx.MockTransport(handler))
         try:
@@ -131,7 +128,7 @@ def test_sgdb_client_download_falls_back_to_no_auth_on_401() -> None:
             client.close()
 
 
-def test_sgdb_pipeline_continues_on_lookup_failure() -> None:
+def test_sgdb_pipeline_continues_on_lookup_failure(workspace_tempdir) -> None:
     payload = b"grid-bytes"
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -153,7 +150,7 @@ def test_sgdb_pipeline_continues_on_lookup_failure() -> None:
 
     good = _title("title_good", "Good Game", "file_good")
     bad = _title("title_bad", "Bad Game", "file_bad")
-    with _workspace_tempdir("gamehub-artwork-") as temp_root:
+    with workspace_tempdir("gamehub-artwork-") as temp_root:
         client = SgdbClient(
             "test-key",
             transport=httpx.MockTransport(handler),
@@ -172,7 +169,7 @@ def test_sgdb_pipeline_continues_on_lookup_failure() -> None:
         assert any("Bad Game" in warning for warning in result.warnings)
 
 
-def test_sgdb_pipeline_tries_next_candidate_url_after_download_401() -> None:
+def test_sgdb_pipeline_tries_next_candidate_url_after_download_401(workspace_tempdir) -> None:
     payload = b"good-grid"
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -199,7 +196,7 @@ def test_sgdb_pipeline_tries_next_candidate_url_after_download_401() -> None:
         return httpx.Response(status_code=404, json={"success": False})
 
     title = _title("title_retry", "Retry Game", "file_retry")
-    with _workspace_tempdir("gamehub-artwork-") as temp_root:
+    with workspace_tempdir("gamehub-artwork-") as temp_root:
         client = SgdbClient("test-key", transport=httpx.MockTransport(handler))
         try:
             pipeline = SgdbArtworkPipeline(client, cache_dir=temp_root / "cache", kinds=("grid",))
@@ -263,7 +260,7 @@ def test_sgdb_client_resolve_grid_urls_supports_dimension_filter() -> None:
     assert queries == ["dimensions=600x900"]
 
 
-def test_sgdb_pipeline_skips_api_calls_when_required_kinds_already_cached() -> None:
+def test_sgdb_pipeline_skips_api_calls_when_required_kinds_already_cached(workspace_tempdir) -> None:
     request_count = {"api": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -271,7 +268,7 @@ def test_sgdb_pipeline_skips_api_calls_when_required_kinds_already_cached() -> N
         return httpx.Response(status_code=500, json={"success": False})
 
     title = _title("title_cached", "Cached Game", "file_cached")
-    with _workspace_tempdir("gamehub-artwork-") as temp_root:
+    with workspace_tempdir("gamehub-artwork-") as temp_root:
         title_cache = temp_root / "cache" / title.title_id
         cached_grid = title_cache / "grid-old.png"
         cached_grid_landscape = title_cache / "grid_landscape-old.png"
@@ -328,8 +325,8 @@ def test_build_artwork_assignments_dry_run_reports_plan(capsys) -> None:
     assert "sgd...key" in output
 
 
-def test_build_artwork_assignments_dry_run_skips_fully_cached_titles(capsys) -> None:
-    with _workspace_tempdir("gamehub-artwork-") as temp_root:
+def test_build_artwork_assignments_dry_run_skips_fully_cached_titles(capsys, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-artwork-") as temp_root:
         cache_dir = temp_root / "sgdb-cache"
         title_id = "title_mario"
         title_cache = cache_dir / title_id

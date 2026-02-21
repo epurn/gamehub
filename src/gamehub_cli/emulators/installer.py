@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from gamehub_common.models import LibraryIndex
 
+from . import resolution as emulator_resolution
 from .resolution import (
     _canonical_emulator_name,
     _is_emulator_available,
@@ -76,7 +77,14 @@ _AZAHAR_WINDOWS_SILENT_INSTALL_FLAGS: tuple[tuple[str, ...], ...] = (
     ("/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"),
 )
 _HOST_PATH_TYPE = type(Path.cwd())
+_OS_NAME = os.name
+_SYS_PLATFORM = sys.platform
 _WINERROR_ELEVATION_REQUIRED = 740
+
+
+def _sync_resolution_runtime_overrides() -> None:
+    emulator_resolution._OS_NAME = _OS_NAME
+    emulator_resolution._SYS_PLATFORM = _SYS_PLATFORM
 
 
 def _safe_path(value: str) -> Path:
@@ -93,14 +101,14 @@ def _run_install_command(command: list[str], *, verbose: bool) -> int:
             text=True,
         )
     except OSError as exc:
-        if os.name == "nt" and getattr(exc, "winerror", None) == _WINERROR_ELEVATION_REQUIRED:
+        if _OS_NAME == "nt" and getattr(exc, "winerror", None) == _WINERROR_ELEVATION_REQUIRED:
             return _WINERROR_ELEVATION_REQUIRED
         raise
     return int(completed.returncode)
 
 
 def _run_windows_elevated_command(executable: Path, args: tuple[str, ...], *, verbose: bool) -> int:
-    if os.name != "nt":
+    if _OS_NAME != "nt":
         return 1
     powershell_cmd = shutil.which("powershell") or shutil.which("pwsh")
     if not powershell_cmd:
@@ -175,7 +183,7 @@ def _required_has_dolphin(required: list[str]) -> bool:
 
 
 def _validate_windows_dolphin_runtime(required: list[str]) -> None:
-    if os.name != "nt":
+    if _OS_NAME != "nt":
         return
     if not _required_has_dolphin(required):
         return
@@ -200,7 +208,7 @@ def _validate_windows_dolphin_runtime(required: list[str]) -> None:
 
 
 def _install_dolphin_from_official_release_archive(*, verbose: bool) -> bool:
-    if os.name != "nt":
+    if _OS_NAME != "nt":
         return False
     archive_url, version = _latest_dolphin_windows_archive_url()
     if not archive_url or not version:
@@ -272,7 +280,7 @@ def _download_azahar_windows_installer(url: str) -> Path | None:
 
 
 def _install_azahar_from_windows_installer(*, verbose: bool) -> tuple[bool, Path | None, str]:
-    if os.name != "nt":
+    if _OS_NAME != "nt":
         return False, None, ""
     installer_url = _azahar_windows_installer_url()
     installer_path = _download_azahar_windows_installer(installer_url)
@@ -643,15 +651,17 @@ def ensure_emulators(
     linux_install_command: str | None = None,
     linux_flatpak_remote: str | None = None,
 ) -> None:
+    _sync_resolution_runtime_overrides()
+
     required = sorted(_required_emulators(index))
     if not required:
         return
 
     linux_dist_id = ""
     linux_backend = ""
-    if os.name == "nt":
+    if _OS_NAME == "nt":
         missing = [name for name in required if not _is_emulator_available(name)]
-    elif sys.platform.startswith("linux"):
+    elif _SYS_PLATFORM.startswith("linux"):
         linux_backend = (linux_install_backend or "auto").strip().casefold()
         linux_dist_id = _linux_dist_id()
         missing = _linux_missing_emulators(required, backend=linux_backend, dist_id=linux_dist_id)
@@ -661,7 +671,7 @@ def ensure_emulators(
     if not missing:
         if verbose:
             print(f"Emulators ready: {', '.join(required)}")
-        if sys.platform.startswith("linux"):
+        if _SYS_PLATFORM.startswith("linux"):
             _validate_forced_linux_flatpak_emulators(required, backend=linux_backend, dist_id=linux_dist_id)
         _validate_windows_dolphin_runtime(required)
         return
@@ -671,12 +681,12 @@ def ensure_emulators(
         print("Dry-run: emulator auto-install skipped")
         _validate_windows_dolphin_runtime(required)
         return
-    if os.name == "nt":
+    if _OS_NAME == "nt":
         _install_windows(missing, verbose=verbose)
         _validate_windows_dolphin_runtime(required)
         return
 
-    if sys.platform.startswith("linux"):
+    if _SYS_PLATFORM.startswith("linux"):
         backend = linux_backend
         custom_command = linux_install_command
         dist_id = linux_dist_id

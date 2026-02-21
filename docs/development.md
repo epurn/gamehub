@@ -22,12 +22,17 @@ python -m venv venv
 ```
 
 ## CLI module boundaries
+- `src/gamehub_cli/common/config.py`: config schema + TOML/env resolution.
 - `src/gamehub_cli/sync/orchestrator.py`: orchestration and dependency wiring only.
 - `src/gamehub_cli/sync/index.py`: index fetch/retry policy.
+- `src/gamehub_cli/sync/planner.py`: index/state diff and action planning.
+- `src/gamehub_cli/sync/state.py`: persisted sync-state load/save/mark helpers.
+- `src/gamehub_cli/sync/downloads.py`: streamed atomic download primitive.
+- `src/gamehub_cli/sync/artwork.py`: SteamGridDB client/pipeline/cache primitives.
 - `src/gamehub_cli/sync/transfer_stage.py`: download/bootstrap plan application.
 - `src/gamehub_cli/sync/artwork_stage.py`: SGDB artwork assignment/download logic.
 - `src/gamehub_cli/sync/steam_stage.py`: Steam lifecycle + shortcuts/collections apply stage.
-- `src/gamehub_cli/emulators/__init__.py`: emulator service composition entrypoint.
+- `src/gamehub_cli/emulators/__init__.py`: public emulator exports.
 - `src/gamehub_cli/emulators/resolution.py`: emulator executable discovery/resolution.
 - `src/gamehub_cli/emulators/installer.py`: install backend selection/execution.
 - `src/gamehub_cli/firmware/deploy.py`: firmware deployment orchestration.
@@ -47,14 +52,14 @@ python -m venv venv
 
 ## Static checks
 ```powershell
-.\venv\Scripts\python.exe -m ruff format --check src
-.\venv\Scripts\python.exe -m ruff check src
+.\venv\Scripts\python.exe -m ruff format --check src tests
+.\venv\Scripts\python.exe -m ruff check src tests
 .\venv\Scripts\python.exe -m mypy src
 ```
 
 Typing note:
 - `mypy` is configured with incremental strictness via `[[tool.mypy.overrides]]` in `pyproject.toml`.
-- New/edited modules in `src/` should move from baseline `ignore_errors` into explicit checked overrides as they are cleaned up.
+- The old wildcard `ignore_errors` override was removed; strictness and temporary suppressions are now explicit per module pattern.
 
 ## Run audit regression slices (local)
 Use this before opening a PR that touches CLI portability, Steam integration, or config/env precedence logic.

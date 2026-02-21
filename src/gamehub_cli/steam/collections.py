@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import time
+from pathlib import Path
 
 import vdf
 
-from .types import DEFAULT_USER_COLLECTIONS_PATH, SteamContext, USER_COLLECTIONS_KEY
 from .io import _atomic_write_text
 from .shortcuts import _canonical_unsigned_app_id
+from .types import DEFAULT_USER_COLLECTIONS_PATH, USER_COLLECTIONS_KEY, SteamContext
 
 
 def _find_key_path(payload: object, target: str, path: list[str] | None = None) -> list[str] | None:

@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import io
 import os
-from pathlib import Path
 import re
 import sys
 import tempfile
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urljoin
 from urllib.request import urlopen
-import zipfile
 
 from gamehub_common.models import LibraryIndex
 
-from ..emulators import resolve_emulator_executable
 from ..common.fsops import replace_file
 from ..common.platform_paths import (
     RETROARCH_FLATPAK_APP_ID,
@@ -22,6 +21,7 @@ from ..common.platform_paths import (
     parse_simple_kv_config,
     retroarch_cfg_candidates,
 )
+from ..emulators import resolve_emulator_executable
 
 try:
     import httpx  # type: ignore
