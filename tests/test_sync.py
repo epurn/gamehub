@@ -6,7 +6,8 @@ import re
 import shutil
 from uuid import uuid4
 
-from gamehub_cli.config import GamehubConfig
+from gamehub_cli.config import ControllersConfig, GamehubConfig
+from gamehub_cli.controller_launch import parse_controller_payload
 from gamehub_cli.planner import PlanAction, SyncPlan
 from gamehub_cli.state import SyncState
 from gamehub_cli.sync import (
@@ -18,6 +19,10 @@ from gamehub_cli.sync import (
     run_sync,
 )
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
+
+
+def _normalize_path_token(value: str) -> str:
+    return value.strip().strip('"').replace("\\", "/")
 
 
 
@@ -72,6 +77,7 @@ def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:
         sgdb_api_key=None,
         sgdb_cache_dir=Path("artwork_cache"),
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
     )
 
     monkeypatch.setattr("gamehub_cli.sync.discover_userdata_dir", lambda explicit: Path("userdata"))
@@ -124,6 +130,7 @@ def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) 
         sgdb_api_key=None,
         sgdb_cache_dir=Path("artwork_cache"),
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
     )
 
     monkeypatch.setattr("gamehub_cli.sync.discover_userdata_dir", lambda explicit: Path("userdata"))
@@ -177,6 +184,7 @@ def test_apply_steam_updates_reopens_even_if_steam_was_not_running(monkeypatch) 
         sgdb_api_key=None,
         sgdb_cache_dir=Path("artwork_cache"),
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
     )
 
     monkeypatch.setattr("gamehub_cli.sync.discover_userdata_dir", lambda explicit: Path("userdata"))
@@ -227,6 +235,7 @@ def test_apply_steam_updates_skip_relaunch_still_updates_steam(monkeypatch, caps
         sgdb_api_key=None,
         sgdb_cache_dir=Path("artwork_cache"),
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
     )
 
     monkeypatch.setattr("gamehub_cli.sync.discover_userdata_dir", lambda explicit: Path("userdata"))
@@ -290,6 +299,7 @@ def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
         sgdb_api_key=None,
         sgdb_cache_dir=Path("artwork_cache"),
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
     )
     steam_called = {"value": False}
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
@@ -337,6 +347,7 @@ def test_run_sync_skip_steam_relaunch_still_applies_steam_updates(monkeypatch) -
         sgdb_api_key=None,
         sgdb_cache_dir=Path("artwork_cache"),
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
     )
     received: dict[str, object] = {}
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
@@ -360,6 +371,113 @@ def test_run_sync_skip_steam_relaunch_still_applies_steam_updates(monkeypatch) -
     assert exit_code == 0
     assert received.get("called") is True
     assert received.get("reopen") is False
+
+
+def test_run_sync_reseed_profiles_forces_defaults(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": []}
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-reseed.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=True),
+    )
+    called: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.ensure_emulators", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.ensure_retroarch_cores", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._apply_downloads", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._build_artwork_assignments", lambda *args, **kwargs: {})
+    monkeypatch.setattr("gamehub_cli.sync._resolve_steam_context", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.seed_default_profiles",
+        lambda *args, **kwargs: called.update({"force": kwargs.get("force")}) or [],
+    )
+
+    exit_code = run_sync(
+        config=config,
+        dry_run=False,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=True,
+        reseed_profiles=True,
+    )
+
+    assert exit_code == 0
+    assert called.get("force") is True
+
+
+def test_run_sync_skips_profile_seed_when_autoconfig_disabled(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": []}
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-no-seed.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.ensure_emulators", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.ensure_retroarch_cores", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._apply_downloads", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync._build_artwork_assignments", lambda *args, **kwargs: {})
+    monkeypatch.setattr("gamehub_cli.sync._resolve_steam_context", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.seed_default_profiles",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("seed_default_profiles should not be called")),
+    )
+
+    exit_code = run_sync(
+        config=config,
+        dry_run=False,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=True,
+    )
+
+    assert exit_code == 0
 
 
 def test_run_sync_retries_index_fetch_after_timeout(monkeypatch) -> None:
@@ -481,6 +599,7 @@ def test_run_sync_invokes_retroarch_core_provisioner(monkeypatch) -> None:
         sgdb_api_key=None,
         sgdb_cache_dir=Path("artwork_cache"),
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
     )
     core_args: dict[str, object] = {}
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
@@ -530,6 +649,7 @@ def test_run_sync_applies_steam_updates_even_when_no_downloads(monkeypatch) -> N
         sgdb_api_key=None,
         sgdb_cache_dir=Path("artwork_cache"),
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
     )
     steam_called = {"value": False}
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
@@ -576,6 +696,7 @@ def test_run_sync_dry_run_errors_for_missing_configured_steam_id(monkeypatch) ->
         sgdb_api_key=None,
         sgdb_cache_dir=Path("artwork_cache"),
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
     )
     monkeypatch.setattr("gamehub_cli.sync.httpx", FakeHttpx)
     monkeypatch.setattr("gamehub_cli.sync.discover_userdata_dir", lambda explicit: Path("userdata"))
@@ -614,7 +735,8 @@ def test_bootstrap_firmware_dirs_creates_system_subdirs() -> None:
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         index = LibraryIndex(
             index_version=1,
             systems=(
@@ -656,7 +778,8 @@ def test_bootstrap_firmware_dirs_dry_run_does_not_mutate() -> None:
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         index = LibraryIndex(
             index_version=1,
             systems=(
@@ -694,7 +817,8 @@ def test_build_artwork_assignments_uses_cache_without_api_key() -> None:
             sgdb_api_key=None,
             sgdb_cache_dir=cache_dir,
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         index = LibraryIndex(
             index_version=1,
             systems=(),
@@ -743,7 +867,8 @@ def test_build_shortcut_specs_resolves_emulator_path(monkeypatch) -> None:
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_nes_mario",
             system="NES",
@@ -783,7 +908,8 @@ def test_build_shortcut_specs_retroarch_injects_fullscreen_when_missing(monkeypa
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_nes_mario",
             system="NES",
@@ -823,7 +949,8 @@ def test_build_shortcut_specs_linux_normalizes_retroarch_core_token(monkeypatch)
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_nes_mario",
             system="NES",
@@ -880,7 +1007,8 @@ def test_build_shortcut_specs_linux_flatpak_pcsx2_uses_file_forwarding(monkeypat
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_ps2_gt4",
             system="PS2",
@@ -916,6 +1044,152 @@ def test_build_shortcut_specs_linux_flatpak_pcsx2_uses_file_forwarding(monkeypat
         assert "/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso" in specs[0].launch_options
 
 
+def test_build_shortcut_specs_wraps_pcsx2_when_controller_autoconfig_enabled(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-linux-ps2-wrap-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=True),
+            config_path=temp_root / "custom-config.toml",
+        )
+        title = TitleEntry(
+            title_id="title_ps2_gt4",
+            system="PS2",
+            title_name="Gran Turismo 4",
+            title_rel_dir="PS2/Gran Turismo 4.iso",
+            emulator="pcsx2",
+            launch_template='"{emulator}" -fullscreen "{rom}"',
+            rom=RomSpec(
+                file_id="rom_ps2",
+                rel_path="roms/PS2/Gran Turismo 4.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.resolve_emulator_executable",
+            lambda value: "/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2",
+        )
+        monkeypatch.setattr("gamehub_cli.sync.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.sync.sys.executable", "/usr/bin/python3")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.from_rel_path",
+            lambda base, rel_path: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
+        )
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert _normalize_path_token(specs[0].exe) == "/usr/bin/python3"
+        assert specs[0].launch_options.startswith("-m gamehub_cli.main controller-launch --payload ")
+        assert "controller-launch --payload" in specs[0].launch_options
+        payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
+        payload = parse_controller_payload(payload_token)
+        assert payload.emulator == "pcsx2"
+        assert payload.config_path == str(temp_root / "custom-config.toml")
+        assert payload.target_exe == "flatpak"
+        assert "net.pcsx2.PCSX2" in " ".join(payload.target_args)
+
+
+def test_build_shortcut_specs_wrapper_uses_direct_command_for_frozen_exe(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-win-ps2-wrap-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=True),
+        )
+        title = TitleEntry(
+            title_id="title_ps2_gt4",
+            system="PS2",
+            title_name="Gran Turismo 4",
+            title_rel_dir="PS2/Gran Turismo 4.iso",
+            emulator="pcsx2",
+            launch_template='"{emulator}" -fullscreen "{rom}"',
+            rom=RomSpec(
+                file_id="rom_ps2",
+                rel_path="roms/PS2/Gran Turismo 4.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\PCSX2\\pcsx2-qt.exe")
+        monkeypatch.setattr("gamehub_cli.sync.sys.executable", "C:\\GameHub\\gamehub-windows-amd64.exe")
+        monkeypatch.setattr("gamehub_cli.sync.sys.frozen", True, raising=False)
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert _normalize_path_token(specs[0].exe) == "C:/GameHub/gamehub-windows-amd64.exe"
+        assert specs[0].launch_options.startswith("controller-launch --payload ")
+        payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
+        payload = parse_controller_payload(payload_token)
+        assert payload.emulator == "pcsx2"
+        assert _normalize_path_token(payload.target_exe) == "C:/PCSX2/pcsx2-qt.exe"
+
+
+def test_build_shortcut_specs_retroarch_not_wrapped_with_controller_autoconfig(monkeypatch) -> None:
+    with _workspace_tempdir("gamehub-sync-shortcuts-retroarch-nowrap-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=True),
+        )
+        title = TitleEntry(
+            title_id="title_nes_mario",
+            system="NES",
+            title_name="Super Mario Bros",
+            title_rel_dir="NES/Super Mario Bros.nes",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/fceumm_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_nes",
+                rel_path="roms/NES/Super Mario Bros.nes",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".nes",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe")
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert specs[0].exe == '"C:\\RetroArch\\retroarch.exe"'
+        assert "controller-launch" not in specs[0].launch_options
+
+
 def test_build_shortcut_specs_windows_azahar_uses_native_launch_template(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-sync-shortcuts-n3ds-win-") as temp_root:
         config = GamehubConfig(
@@ -929,7 +1203,8 @@ def test_build_shortcut_specs_windows_azahar_uses_native_launch_template(monkeyp
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_n3ds_pilotwings",
             system="N3DS",
@@ -971,7 +1246,8 @@ def test_build_shortcut_specs_linux_flatpak_azahar_uses_file_forwarding(monkeypa
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_n3ds_pilotwings",
             system="N3DS",
@@ -1022,7 +1298,8 @@ def test_build_shortcut_specs_linux_flatpak_azahar_can_disable_exit_hook(monkeyp
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_n3ds_pilotwings",
             system="N3DS",
@@ -1071,7 +1348,8 @@ def test_build_shortcut_specs_pcsx2_injects_fullscreen_when_missing(monkeypatch)
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_ps2_gt4",
             system="PS2",
@@ -1111,7 +1389,8 @@ def test_build_shortcut_specs_uses_title_rom_path_for_all_titles(monkeypatch) ->
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title_psx = TitleEntry(
             title_id="title_psx",
             system="PSX",
@@ -1172,7 +1451,8 @@ def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkey
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_wii_mg",
             system="Wii",
@@ -1191,6 +1471,10 @@ def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkey
         )
         index = LibraryIndex(index_version=1, systems=(), titles=(title,))
         monkeypatch.setattr("gamehub_cli.sync.resolve_emulator_executable", lambda value: "C:\\Dolphin\\Dolphin.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync_steam_stage.resolve_dolphin_runtime_user_dir",
+            lambda config=None: temp_root / "Dolphin Emulator" / "User",
+        )
 
         specs = _build_shortcut_specs(index=index, config=config)
 
@@ -1198,7 +1482,7 @@ def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkey
         assert specs[0].exe == '"C:\\Dolphin\\Dolphin.exe"'
         assert "-b -u " in specs[0].launch_options
         assert "Dolphin.Display.Fullscreen=True" in specs[0].launch_options
-        assert "Dolphin Emulator" in specs[0].launch_options
+        assert str(temp_root / "Dolphin Emulator" / "User") in specs[0].launch_options
         assert "-e" in specs[0].launch_options
         assert f'"{temp_root / "library" / "roms" / "Wii" / "Super Mario Galaxy.rvz"}"' in specs[0].launch_options
 
@@ -1216,7 +1500,8 @@ def test_build_shortcut_specs_dolphin_does_not_duplicate_fullscreen_config(monke
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_gc_double_dash",
             system="GC",
@@ -1256,7 +1541,8 @@ def test_build_shortcut_specs_linux_flatpak_dolphin_uses_file_forwarding_and_dev
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_wii_mg",
             system="Wii",
@@ -1312,7 +1598,8 @@ def test_build_shortcut_specs_windows_dolphin_does_not_probe_help_output(monkeyp
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_wii_mg",
             system="Wii",
@@ -1358,7 +1645,8 @@ def test_build_shortcut_specs_dolphin_skips_config_arg_when_parser_is_legacy(mon
             sgdb_api_key=None,
             sgdb_cache_dir=temp_root / "cache",
             sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-        )
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
         title = TitleEntry(
             title_id="title_gc_double_dash",
             system="GC",
@@ -1385,3 +1673,5 @@ def test_build_shortcut_specs_dolphin_skips_config_arg_when_parser_is_legacy(mon
         assert "Dolphin.Display.Fullscreen=True" not in specs[0].launch_options
         assert "-b -u" in specs[0].launch_options
         assert "-e" in specs[0].launch_options
+
+

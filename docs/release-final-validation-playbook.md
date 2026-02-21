@@ -124,7 +124,7 @@ gamehub sync --dry-run --skip-steam
 ```
 5. Server deploy checks:
 ```bash
-docker compose -f docker/compose.yaml --env-file .env.production config
+docker compose -f docker/compose.yaml --env-file docker/.env config
 docker build -f apps/server/Dockerfile .
 ```
 
@@ -222,3 +222,4 @@ Release is `PASS` only when all of the following are true:
 3. Real sync succeeded on Windows and Bazzite (including second idempotency pass).
 4. Manual Steam verification passed on both platforms.
 5. GitHub release workflows and artifacts are complete.
+

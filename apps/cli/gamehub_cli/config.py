@@ -27,8 +27,13 @@ class LinuxConfig:
     retroarch_cores_base_url: str | None = None
     pcsx2_ini_path: Path | None = None
     pcsx2_bios_dir: Path | None = None
-    pcsx2_controller_autoconfig: bool = True
     dolphin_user_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class ControllersConfig:
+    launch_autoconfig: bool = True
+    profiles_dir: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -48,6 +53,8 @@ class GamehubConfig:
     index_retry_backoff_seconds: float = 1.5
     max_parallel_downloads: int = 4
     linux: LinuxConfig = field(default_factory=LinuxConfig)
+    controllers: ControllersConfig = field(default_factory=ControllersConfig)
+    config_path: Path | None = None
 
 
 _VALID_SGDB_KINDS = ("grid", "hero", "logo", "icon")
@@ -205,6 +212,7 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     steam = data.get("steam", {}) if isinstance(data.get("steam", {}), dict) else {}
     sgdb = data.get("sgdb", {}) if isinstance(data.get("sgdb", {}), dict) else {}
     linux = data.get("linux", {}) if isinstance(data.get("linux", {}), dict) else {}
+    controllers = data.get("controllers", {}) if isinstance(data.get("controllers", {}), dict) else {}
 
     env_api_key = _normalize_secret(_first_env_value("GAMEHUB_SGDB_API_KEY"))
     config_api_key = _normalize_secret(sgdb.get("api_key"))
@@ -253,8 +261,12 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     config_dolphin_user_path = _normalize_optional_path(linux.get("dolphin_user_path"))
     env_dolphin_user_path = _normalize_optional_path(_first_env_value("DOLPHIN_EMU_USERPATH", "GAMEHUB_DOLPHIN_EMU_USERPATH"))
 
-    config_pcsx2_controller_autoconfig = _normalize_optional_bool(linux.get("pcsx2_controller_autoconfig"))
-    env_pcsx2_controller_autoconfig = _normalize_optional_bool(_first_env_value("GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG"))
+    config_controller_launch_autoconfig = _normalize_optional_bool(controllers.get("launch_autoconfig"))
+    env_controller_launch_autoconfig = _normalize_optional_bool(
+        _first_env_value("GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG")
+    )
+    config_controller_profiles_dir = _normalize_optional_path(controllers.get("profiles_dir"))
+    env_controller_profiles_dir = _normalize_optional_path(_first_env_value("GAMEHUB_CONTROLLER_PROFILES_DIR"))
     library_dir, firmware_dir, state_path = _resolve_paths(paths)
     return GamehubConfig(
         server_url=str(server.get("url", "http://127.0.0.1:8000")),
@@ -305,11 +317,19 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
             ),
             pcsx2_ini_path=env_pcsx2_ini_path if env_pcsx2_ini_path is not None else config_pcsx2_ini_path,
             pcsx2_bios_dir=env_pcsx2_bios_dir if env_pcsx2_bios_dir is not None else config_pcsx2_bios_dir,
-            pcsx2_controller_autoconfig=(
-                env_pcsx2_controller_autoconfig
-                if env_pcsx2_controller_autoconfig is not None
-                else (config_pcsx2_controller_autoconfig if config_pcsx2_controller_autoconfig is not None else True)
-            ),
             dolphin_user_path=env_dolphin_user_path if env_dolphin_user_path is not None else config_dolphin_user_path,
         ),
+        controllers=ControllersConfig(
+            launch_autoconfig=(
+                env_controller_launch_autoconfig
+                if env_controller_launch_autoconfig is not None
+                else (config_controller_launch_autoconfig if config_controller_launch_autoconfig is not None else True)
+            ),
+            profiles_dir=(
+                env_controller_profiles_dir
+                if env_controller_profiles_dir is not None
+                else config_controller_profiles_dir
+            ),
+        ),
+        config_path=path,
     )

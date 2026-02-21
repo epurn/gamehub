@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PosixPath, WindowsPath
 import sys
 
 from .config import GamehubConfig
@@ -22,14 +22,36 @@ from .platform_paths import (
     unique_paths,
 )
 
+try:
+    _HOST_PATH_CLS = type(Path.cwd())
+except Exception:
+    _HOST_PATH_CLS = WindowsPath if os.name == "nt" else PosixPath
+
+
+def _safe_home_path() -> Path:
+    try:
+        return _host_path(str(Path.home()))
+    except Exception:
+        pass
+    for raw in (os.path.expanduser("~"), os.environ.get("USERPROFILE", ""), os.environ.get("HOME", "")):
+        value = str(raw).strip()
+        if not value or value == "~":
+            continue
+        return _host_path(value)
+    return _host_path(os.getcwd())
+
+
+def _host_path(raw: str) -> Path:
+    return _HOST_PATH_CLS(raw)
+
 
 def _path_with_tilde_expanded(raw: str) -> Path:
     value = raw.strip()
     if value == "~":
-        return Path.home()
+        return _safe_home_path()
     if value.startswith("~/") or value.startswith("~\\"):
-        return Path.home() / value[2:]
-    return Path(value)
+        return _safe_home_path() / value[2:]
+    return _host_path(value)
 
 
 def _configured_path(config: GamehubConfig | None, setting_name: str) -> Path | None:
@@ -39,6 +61,66 @@ def _configured_path(config: GamehubConfig | None, setting_name: str) -> Path | 
     if value is None:
         return None
     return value.expanduser()
+
+
+def _windows_dolphin_user_dir_candidates() -> list[Path]:
+    values: list[Path] = []
+    dolphin_raw = resolve_emulator_executable("dolphin").strip('"')
+    dolphin_exe = _host_path(dolphin_raw) if dolphin_raw else None
+    if dolphin_exe is not None and dolphin_exe.exists():
+        values.append(dolphin_exe.parent / "User")
+    user_profile = os.environ.get("USERPROFILE")
+    if user_profile:
+        values.append(_host_path(user_profile) / "Documents" / "Dolphin Emulator")
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        values.append(_host_path(appdata) / "Dolphin Emulator")
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        values.append(_host_path(local_app_data) / "Dolphin Emulator")
+    return unique_paths(values)
+
+
+def _windows_dolphin_install_root() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return _host_path(local_app_data) / "Programs" / "Dolphin"
+    return _safe_home_path() / "AppData" / "Local" / "Programs" / "Dolphin"
+
+
+def _windows_dolphin_preferred_user_dir_from_install() -> Path | None:
+    dolphin_raw = resolve_emulator_executable("dolphin").strip('"')
+    if not dolphin_raw:
+        return None
+    dolphin_exe = _host_path(dolphin_raw)
+    if not dolphin_exe.exists():
+        return None
+    install_root = _windows_dolphin_install_root()
+    try:
+        dolphin_exe = dolphin_exe.resolve()
+    except OSError:
+        dolphin_exe = dolphin_exe
+    try:
+        install_root = install_root.resolve()
+    except OSError:
+        install_root = install_root
+    if install_root in dolphin_exe.parents:
+        return install_root / "User"
+    return None
+
+
+def _select_existing_dolphin_user_dir(candidates: list[Path]) -> Path | None:
+    if not candidates:
+        return None
+    config_files = ("Dolphin.ini", "GCPadNew.ini", "WiimoteNew.ini", "Hotkeys.ini")
+    for candidate in candidates:
+        config_root = candidate / "Config"
+        if any((config_root / filename).exists() for filename in config_files):
+            return candidate
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def retroarch_cfg_candidates_for_config(config: GamehubConfig | None = None) -> list[Path]:
@@ -59,13 +141,16 @@ def resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[P
         if raw.lower() == "default":
             values.append(cfg_path.parent / "system")
             continue
+        if os.name == "nt" and raw.startswith((":\\", ":/")):
+            values.append(cfg_path.parent / raw[2:])
+            continue
         candidate = _path_with_tilde_expanded(raw)
         if not candidate.is_absolute():
             candidate = cfg_path.parent / candidate
         values.append(candidate)
 
     retroarch_raw = resolve_emulator_executable("retroarch").strip('"')
-    retroarch_exe = Path(retroarch_raw)
+    retroarch_exe = _host_path(retroarch_raw)
     prefer_flatpak = is_flatpak_command(retroarch_exe, RETROARCH_FLATPAK_APP_ID) or (
         RETROARCH_FLATPAK_APP_ID.casefold() in retroarch_raw.casefold()
     )
@@ -77,8 +162,8 @@ def resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[P
 
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "RetroArch" / "system")
-    home = Path.home()
+        values.append(_host_path(appdata) / "RetroArch" / "system")
+    home = _safe_home_path()
     native = home / ".config" / "retroarch" / "system"
     flatpak = linux_flatpak_retroarch_root() / "system"
     if sys.platform.startswith("linux") and prefer_flatpak:
@@ -97,13 +182,13 @@ def pcsx2_ini_candidates(config: GamehubConfig | None = None) -> list[Path]:
         values.append(ini_override)
     user_profile = os.environ.get("USERPROFILE")
     if os.name == "nt" and user_profile:
-        values.append(Path(user_profile) / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
-        values.append(Path(user_profile) / "Documents" / "PCSX2" / "PCSX2.ini")
+        values.append(_host_path(user_profile) / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
+        values.append(_host_path(user_profile) / "Documents" / "PCSX2" / "PCSX2.ini")
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "PCSX2" / "inis" / "PCSX2.ini")
-        values.append(Path(appdata) / "PCSX2" / "PCSX2.ini")
-    home = Path.home()
+        values.append(_host_path(appdata) / "PCSX2" / "inis" / "PCSX2.ini")
+        values.append(_host_path(appdata) / "PCSX2" / "PCSX2.ini")
+    home = _safe_home_path()
     values.append(home / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
     values.append(home / "Documents" / "PCSX2" / "PCSX2.ini")
     values.append(home / ".config" / "PCSX2" / "inis" / "PCSX2.ini")
@@ -131,16 +216,16 @@ def resolve_pcsx2_bios_dirs(config: GamehubConfig | None = None) -> list[Path]:
 
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "PCSX2" / "bios")
+        values.append(_host_path(appdata) / "PCSX2" / "bios")
     user_profile = os.environ.get("USERPROFILE")
     if os.name == "nt" and user_profile:
-        values.append(Path(user_profile) / "Documents" / "PCSX2" / "bios")
-    home = Path.home()
+        values.append(_host_path(user_profile) / "Documents" / "PCSX2" / "bios")
+    home = _safe_home_path()
     native = home / ".config" / "PCSX2" / "bios"
     flatpak = linux_flatpak_pcsx2_root() / "bios"
     docs = home / "Documents" / "PCSX2" / "bios"
     pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
-    pcsx2_exe = Path(pcsx2_raw)
+    pcsx2_exe = _host_path(pcsx2_raw)
     prefer_flatpak = is_flatpak_command(pcsx2_exe, PCSX2_FLATPAK_APP_ID) or (
         PCSX2_FLATPAK_APP_ID.casefold() in pcsx2_raw.casefold()
     )
@@ -158,11 +243,21 @@ def resolve_dolphin_user_dirs(config: GamehubConfig | None = None) -> list[Path]
         values.append(user_override)
         return unique_paths(values)
 
+    if os.name == "nt":
+        install_user_dir = _windows_dolphin_preferred_user_dir_from_install()
+        if install_user_dir is not None:
+            return [install_user_dir]
+        candidates = _windows_dolphin_user_dir_candidates()
+        selected = _select_existing_dolphin_user_dir(candidates)
+        if selected is not None:
+            return [selected]
+        return candidates[:1]
+
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "Dolphin Emulator")
+        values.append(_host_path(appdata) / "Dolphin Emulator")
 
-    home = Path.home()
+    home = _safe_home_path()
     legacy = home / ".dolphin-emu"
     if legacy.exists():
         values.append(legacy)
@@ -174,7 +269,7 @@ def resolve_dolphin_user_dirs(config: GamehubConfig | None = None) -> list[Path]
         return unique_paths(values)
 
     dolphin_raw = resolve_emulator_executable("dolphin").strip('"')
-    dolphin_exe = Path(dolphin_raw)
+    dolphin_exe = _host_path(dolphin_raw)
     if is_flatpak_command(dolphin_exe, DOLPHIN_FLATPAK_APP_ID) or (
         DOLPHIN_FLATPAK_APP_ID.casefold() in dolphin_raw.casefold()
     ):
@@ -189,18 +284,28 @@ def resolve_dolphin_runtime_user_dir(config: GamehubConfig | None = None) -> Pat
     if user_override:
         return user_override
 
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        return Path(appdata) / "Dolphin Emulator"
+    if os.name == "nt":
+        install_user_dir = _windows_dolphin_preferred_user_dir_from_install()
+        if install_user_dir is not None:
+            return install_user_dir
+        candidates = _windows_dolphin_user_dir_candidates()
+        selected = _select_existing_dolphin_user_dir(candidates)
+        if selected is not None:
+            return selected
+        if candidates:
+            return candidates[0]
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return _host_path(appdata) / "Dolphin Emulator"
 
-    home = Path.home()
+    home = _safe_home_path()
     legacy = home / ".dolphin-emu"
     if legacy.exists():
         return legacy
 
     if sys.platform.startswith("linux"):
         flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / DOLPHIN_FLATPAK_APP_ID
-        flatpak_export_system = Path("/var/lib/flatpak/exports/bin") / DOLPHIN_FLATPAK_APP_ID
+        flatpak_export_system = _host_path("/var/lib/flatpak/exports/bin") / DOLPHIN_FLATPAK_APP_ID
         flatpak_data = linux_flatpak_dolphin_root()
         flatpak_config = linux_flatpak_dolphin_config_root()
         if (
@@ -224,12 +329,10 @@ def resolve_dolphin_config_dirs(config: GamehubConfig | None = None) -> list[Pat
 
     runtime = resolve_dolphin_runtime_user_dir(config=config)
     values.append(runtime)
+    if os.name == "nt":
+        return unique_paths(values)
 
-    appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "Dolphin Emulator")
-
-    home = Path.home()
+    home = _safe_home_path()
     legacy = home / ".dolphin-emu"
     if legacy.exists():
         values.append(legacy)
@@ -242,7 +345,7 @@ def resolve_dolphin_config_dirs(config: GamehubConfig | None = None) -> list[Pat
         return unique_paths(values)
 
     dolphin_raw = resolve_emulator_executable("dolphin").strip('"')
-    dolphin_exe = Path(dolphin_raw)
+    dolphin_exe = _host_path(dolphin_raw)
     if is_flatpak_command(dolphin_exe, DOLPHIN_FLATPAK_APP_ID) or (
         DOLPHIN_FLATPAK_APP_ID.casefold() in dolphin_raw.casefold()
     ):
@@ -257,10 +360,10 @@ def resolve_azahar_user_dirs(config: GamehubConfig | None = None) -> list[Path]:
     values: list[Path] = []
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "Azahar")
+        values.append(_host_path(appdata) / "Azahar")
         return unique_paths(values)
 
-    home = Path.home()
+    home = _safe_home_path()
     native = home / ".local" / "share" / "azahar"
     flatpak = linux_flatpak_azahar_root()
     existing_linux = [path for path in (flatpak, native) if path.exists()]
@@ -269,7 +372,7 @@ def resolve_azahar_user_dirs(config: GamehubConfig | None = None) -> list[Path]:
         return unique_paths(values)
 
     azahar_raw = resolve_emulator_executable("azahar").strip('"')
-    azahar_exe = Path(azahar_raw)
+    azahar_exe = _host_path(azahar_raw)
     if is_flatpak_command(azahar_exe, AZAHAR_FLATPAK_APP_ID) or (
         AZAHAR_FLATPAK_APP_ID.casefold() in azahar_raw.casefold()
     ):
@@ -283,11 +386,11 @@ def resolve_azahar_user_dirs(config: GamehubConfig | None = None) -> list[Path]:
 def resolve_azahar_runtime_user_dir(config: GamehubConfig | None = None) -> Path:
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
-        return Path(appdata) / "Azahar"
+        return _host_path(appdata) / "Azahar"
 
-    home = Path.home()
+    home = _safe_home_path()
     flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / AZAHAR_FLATPAK_APP_ID
-    flatpak_export_system = Path("/var/lib/flatpak/exports/bin") / AZAHAR_FLATPAK_APP_ID
+    flatpak_export_system = _host_path("/var/lib/flatpak/exports/bin") / AZAHAR_FLATPAK_APP_ID
     flatpak_data = linux_flatpak_azahar_root()
     if (
         flatpak_data.exists()
@@ -317,7 +420,7 @@ def default_pcsx2_ini_path(config: GamehubConfig | None = None) -> Path:
 
     if sys.platform.startswith("linux"):
         pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
-        pcsx2_exe = Path(pcsx2_raw)
+        pcsx2_exe = _host_path(pcsx2_raw)
         if is_flatpak_command(pcsx2_exe, PCSX2_FLATPAK_APP_ID) or (
             PCSX2_FLATPAK_APP_ID.casefold() in pcsx2_raw.casefold()
         ):
@@ -329,12 +432,13 @@ def default_pcsx2_ini_path(config: GamehubConfig | None = None) -> Path:
             return candidate
     if sys.platform.startswith("linux"):
         pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
-        pcsx2_exe = Path(pcsx2_raw)
+        pcsx2_exe = _host_path(pcsx2_raw)
         if is_flatpak_command(pcsx2_exe, PCSX2_FLATPAK_APP_ID) or (
             PCSX2_FLATPAK_APP_ID.casefold() in pcsx2_raw.casefold()
         ):
             return linux_flatpak_pcsx2_root() / "inis" / "PCSX2.ini"
-        return Path.home() / ".config" / "PCSX2" / "inis" / "PCSX2.ini"
+        return _safe_home_path() / ".config" / "PCSX2" / "inis" / "PCSX2.ini"
     if candidates:
         return candidates[0]
-    return Path.home() / "Documents" / "PCSX2" / "inis" / "PCSX2.ini"
+    return _safe_home_path() / "Documents" / "PCSX2" / "inis" / "PCSX2.ini"
+

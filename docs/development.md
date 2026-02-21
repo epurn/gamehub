@@ -33,6 +33,10 @@ python -m venv venv
 - `apps/cli/gamehub_cli/firmware_deploy.py`: firmware deployment orchestration.
 - `apps/cli/gamehub_cli/firmware_targets.py`: emulator-specific firmware target discovery.
 - `apps/cli/gamehub_cli/pcsx2_ini.py`: PCSX2 INI read/update/controller bootstrap logic.
+- `apps/cli/gamehub_cli/controller_profiles.py`: bundled/user-overridden controller profile defaults and seeding.
+- `apps/cli/gamehub_cli/controller_detection.py`: Xbox controller detection (Linux `/proc` + Windows XInput).
+- `apps/cli/gamehub_cli/controller_apply.py`: managed-key profile application for PCSX2/Dolphin/Azahar.
+- `apps/cli/gamehub_cli/controller_launch.py`: hidden wrapper entrypoint used by wrapped Steam shortcuts.
 - `apps/cli/gamehub_cli/steam.py`: compatibility facade + shared dataclasses/constants.
 - `apps/cli/gamehub_cli/steam_lifecycle.py`, `apps/cli/gamehub_cli/steam_shortcuts.py`, `apps/cli/gamehub_cli/steam_collections.py`, `apps/cli/gamehub_cli/steam_artwork.py`, `apps/cli/gamehub_cli/steam_io.py`: focused Steam responsibilities.
 

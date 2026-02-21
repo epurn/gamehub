@@ -60,9 +60,14 @@ retroarch_info_dir = "~/.config/retroarch/info"
 retroarch_cores_base_url = "https://buildbot.libretro.com/nightly/linux/x86_64/latest/"
 pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"
 pcsx2_bios_dir = "~/.config/PCSX2/bios"
-# Linux PCSX2 controller bootstrap (generic SDL mapping for Pad1 + Pad2)
-pcsx2_controller_autoconfig = true
 dolphin_user_path = "~/.local/share/dolphin-emu"
+
+[controllers]
+# Launch-time controller profile application for non-RetroArch emulators.
+launch_autoconfig = true
+# Optional explicit profile root.
+# Default when omitted: <paths.gamehub_dir>/controller_profiles
+profiles_dir = "~/.gamehub/controller_profiles"
 ```
 
 Secret policy:
@@ -102,10 +107,10 @@ Firmware deployment and Linux runtime env overrides:
 - `DOLPHIN_EMU_USERPATH` or `GAMEHUB_DOLPHIN_EMU_USERPATH`: explicit Dolphin runtime user directory target.
   - GC/Wii firmware deploys into `<userpath>/GC` and `<userpath>/Wii`.
   - Steam launch templates are normalized to pass `-u "<userpath>"`.
-  - Dolphin runtime config files (`Dolphin.ini`, `GCPadNew.ini`, `WiimoteNew.ini`, `Hotkeys.ini`) are bootstrapped under `<userpath>/Config`.
+  - Dolphin runtime config bootstraps `Dolphin.ini` under `<userpath>/Config` (display/fullscreen + background input flags).
+  - Dolphin input profiles (`GCPadNew.ini`, `WiimoteNew.ini`, `Hotkeys.ini`) are applied at launch via controller profiles.
 - `GAMEHUB_RETROARCH_CFG_PATH`: explicit RetroArch config file path.
 - `GAMEHUB_PCSX2_INI_PATH`: explicit PCSX2 ini path.
-- `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG`: overrides `[linux].pcsx2_controller_autoconfig` (`true`/`false`).
 - `GAMEHUB_RETROARCH_CORES_BASE_URL`: optional base URL override for RetroArch core downloads.
 - `GAMEHUB_RETROARCH_CORES_DIR`: explicit RetroArch cores directory for core auto-provisioning.
 - `GAMEHUB_RETROARCH_INFO_DIR`: explicit RetroArch info directory for `.info` metadata auto-provisioning.
@@ -113,13 +118,21 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND`: overrides `[linux].emulator_install_command`.
 - `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`: overrides the default pinned Windows Azahar installer URL used by emulator auto-install.
+- `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`: enables/disables Windows Azahar `Start+Select` exit hook (`true` by default).
 - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`: enables/disables Linux Azahar `Select+Start` exit hook wrapper (`true` by default).
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Azahar exit hook (default `4`).
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Azahar exit hook (default `6`).
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Azahar exit hook (for example `/dev/input/js0`).
+- `GAMEHUB_AZAHAR_SDL_DIR`: optional directory containing Azahar's `SDL2.dll` for Windows GUID discovery.
+- `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`: enables/disables Linux Dolphin Flatpak `Select+Start` exit hook wrapper in `controller-launch` (`true` by default).
+- `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
+- `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
+- `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
 - Linux Azahar exit hook input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
+- `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`: overrides `[controllers].launch_autoconfig` (`true`/`false`).
+- `GAMEHUB_CONTROLLER_PROFILES_DIR`: overrides `[controllers].profiles_dir`.
 - `GAMEHUB_INDEX_TIMEOUT_SECONDS`: overrides `[server].index_timeout_seconds`.
 - `GAMEHUB_INDEX_FETCH_ATTEMPTS`: overrides `[server].index_fetch_attempts`.
 - `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
@@ -127,14 +140,47 @@ Firmware deployment and Linux runtime env overrides:
 
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
-- On Linux, GAMEHUB can also bootstrap generic SDL controller mappings for `Pad1` and `Pad2` so first-run PCSX2 controller setup works for Xbox/DS4/DS5/other SDL controllers without per-device hardcoding.
-- During this bootstrap, keyboard/mouse default pad bindings are replaced with SDL bindings; set `[linux].pcsx2_controller_autoconfig = false` (or `GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG=false`) to opt out.
-- GAMEHUB also bootstraps `Hotkeys/OpenPauseMenu = SDL-0/Back & SDL-0/Start` when the existing binding is missing or keyboard-only.
+- PCSX2 controller bindings and hotkeys are managed at launch via controller profiles when `launch_autoconfig` is enabled.
 
 RetroArch note:
 - When a RetroArch config file is discovered (`retroarch.cfg` candidates or explicit override), GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) and `all_users_control_menu = "true"` for controller quick-menu access.
+- On Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`.
+- RetroArch `system_directory = ":/system"` (portable-relative) is normalized to `<retroarch.cfg dir>/system` on Windows.
+- RetroArch `libretro_directory = ":/cores"` and `libretro_info_path = ":/info"` (portable-relative) are normalized to `<retroarch.cfg dir>/cores` / `<retroarch.cfg dir>/info` on Windows.
+- GAMEHUB also writes a Swanstation core remap file to `<config remap dir>/SwanStation/SwanStation.rmp` (default `<retroarch.cfg dir>/config/remaps/...`) with the tested DualShock + analog/turbo defaults.
+- GAMEHUB also sets:
+  - `input_player1_analog_dpad_mode .. input_player8_analog_dpad_mode = "0"`
+  - `input_libretro_device_p1 = "261"` (DualShock) and `input_libretro_device_p2..p8 = "1"`
+  - `input_remap_port_p1..p8 = "0".."7"`
+  - input turbo defaults (`input_turbo_*`) matching the tested PSX baseline
+- GAMEHUB also ensures `swanstation_Controller1.Type = "AnalogController"` and `swanstation_Controller2.Type = "AnalogController"` in `retroarch-core-options.cfg` so PSX games default to DualShock-style pads.
+- On Windows, GAMEHUB keeps PSX controller overrides out of `retroarch.cfg` and applies them only via the Swanstation core remap file.
+
+Controller launch autoconfig:
+- Applies to Steam shortcut launches for `PCSX2`, `Dolphin`, and `Azahar`.
+- Does not wrap `RetroArch` launches.
+- Runtime flow: detect Xbox controller count (`0`, `1`, `2+`) -> choose profile (`kbm`, `xbox_1p`, `xbox_2p`) -> apply managed keys -> launch emulator.
+- Default profile root is `<gamehub_dir>/controller_profiles` and includes seeded defaults:
+  - `<root>/pcsx2/<profile>/PCSX2.ini`
+  - `<root>/dolphin/<profile>/GCPadNew.ini`
+  - `<root>/dolphin/<profile>/WiimoteNew.ini`
+  - `<root>/dolphin/<profile>/Hotkeys.ini`
+  - `<root>/azahar/<profile>/qt-config.ini`
+- Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
+- Use `--reseed-profiles` to overwrite defaults on demand.
+- If you used older branch builds before these controller profile changes, run one non-dry sync with `--reseed-profiles` before retesting.
+- To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`) so GAMEHUB will not overwrite them; missing files still fall back to bundled defaults.
+- If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
+
+Windows Dolphin defaults:
+- If Dolphin is installed by GAMEHUB (default `LOCALAPPDATA/Programs/Dolphin`), the runtime user dir is pinned to `<dolphin-install>/User`.
+- Otherwise, Dolphin user dir detection prefers:
+  - Portable `<dolphin-install>/User`
+  - `%USERPROFILE%/Documents/Dolphin Emulator`
+  - `%APPDATA%/Dolphin Emulator` (fallback)
+- Override with `DOLPHIN_EMU_USERPATH` / `GAMEHUB_DOLPHIN_EMU_USERPATH` (or `dolphin_user_path` in `config.toml`).
 
 Linux Dolphin defaults:
 - Native runtime user dir: `~/.local/share/dolphin-emu`
@@ -146,8 +192,14 @@ N3DS Azahar defaults:
   - Windows: `%APPDATA%/Azahar/config/qt-config.ini`
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
-- On Linux, GAMEHUB bootstraps SDL controller bindings for Azahar profile 1 when keyboard defaults are detected.
+- Azahar controller bindings are applied at launch via controller profiles. GUID normalization is always detect-based.
+- GUID discovery order (Linux Flatpak config paths): probe Azahar Flatpak runtime first; if unavailable, preserve existing GUID and otherwise keep port-only mappings (host GUID is not injected into Flatpak configs).
+- GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
+- GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise keep existing GUIDs and fall back to port-only mappings.
+- If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
 - On Linux, GAMEHUB uses a wrapper launch hook by default to close Azahar when `Select+Start` is pressed (native-controller mode).
+- On Windows, GAMEHUB uses a controller-launch XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
+- On Linux Flatpak Dolphin launches wrapped by `controller-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
 - Steam Input layout/template copy for N3DS remains manual in this pass.
 
 ## State file

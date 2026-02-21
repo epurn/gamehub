@@ -22,7 +22,7 @@ Docker-first home server + client CLI that syncs emulator libraries into Steam n
 | Platform | Xbox controllers |
 | --- | --- |
 | Bazzite | ✅ |
-| Windows | ❌ |
+| Windows | ✅ |
 | SteamOS (Deck) | ❌ |
 | Other Linux distros (Fedora/Ubuntu/etc.) | ❌ |
 | macOS | ❌ |
@@ -38,6 +38,7 @@ Details: [Platform Support (v1)](docs/platform-support.md)
   - grid/hero/logo/icon artwork
 - SGDB artwork cache with cache-first lookups and portrait+landscape grid support.
 - Steam lifecycle safety: close -> backup -> write -> reopen.
+- Launch-time controller autoconfig for `PCSX2`, `Dolphin`, and `Azahar` (Xbox-first) with user-overridable profile files.
 
 Supported systems in v1.1:
 - `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
@@ -76,17 +77,29 @@ Invoke-WebRequest https://github.com/epurn/gamehub/releases/latest/download/game
 
 More detail: [docs/client-install.md](docs/client-install.md), [docs/config-and-state.md](docs/config-and-state.md), [docs/cli-sync.md](docs/cli-sync.md)
 
+### Controller Autoconfig Quick Start (PCSX2/Dolphin/Azahar)
+- Ensure `[controllers].launch_autoconfig = true` (or `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG=true`).
+- Run one non-dry sync to seed default controller profiles.
+- If you used older preview/branch builds before recent controller profile fixes, run one sync with:
+  - `gamehub sync --reseed-profiles`
+- Launch emulator shortcuts from Steam (not directly from emulator executables) so launch-time profile apply runs.
+- Profile selection is automatic by detected Xbox count:
+  - `0` controllers -> `kbm`
+  - `1` controller -> `xbox_1p`
+  - `2+` controllers -> `xbox_2p`
+- On Linux Flatpak Azahar paths, GUID injection prefers Flatpak runtime detection; if runtime GUID discovery is unavailable, GAMEHUB preserves existing GUIDs and otherwise keeps port-only SDL mappings.
+
 ## 🖥️ Server Deployment (Latest Release)
-Place `.env.production` in the repo root (next to [`docker/compose.yaml`](docker/compose.yaml)).
+Place `docker/.env` next to [`docker/compose.yaml`](docker/compose.yaml).
 
 ```powershell
-Copy-Item .env.production.template .env.production
-# Edit .env.production:
+Copy-Item docker/.env.template docker/.env
+# Edit docker/.env:
 # - GAMEHUB_DATA_HOST_PATH=<host path containing roms/ and firmware/>
 # - GAMEHUB_SERVER_PORT=8000
 # - GAMEHUB_IMAGE_TAG=latest
-docker compose -f docker/compose.yaml --env-file .env.production pull gamehub-server
-docker compose -f docker/compose.yaml --env-file .env.production up -d
+docker compose -f docker/compose.yaml --env-file docker/.env pull gamehub-server
+docker compose -f docker/compose.yaml --env-file docker/.env up -d
 .\scripts\verify_server_deploy.ps1 -BaseUrl "http://127.0.0.1:8000"
 ```
 If you changed `GAMEHUB_SERVER_PORT`, update the verify URL to match.
@@ -112,3 +125,4 @@ More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbo
 - Server API: [docs/server-api.md](docs/server-api.md)
 - Operational runbook: [docs/runbook.md](docs/runbook.md)
 - Release + pre-public audit flow: [docs/release-process.md](docs/release-process.md)
+

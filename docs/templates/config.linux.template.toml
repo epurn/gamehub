@@ -41,11 +41,10 @@ flatpak_remote = "flathub"
 # retroarch_info_dir = "~/.config/retroarch/info"
 # pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"
 # pcsx2_bios_dir = "~/.config/PCSX2/bios"
-# pcsx2_controller_autoconfig = true
 # Dolphin runtime user dir used for:
 # - Steam launch `-u` target
 # - firmware deploy to `GC/` and `Wii/`
-# - runtime config bootstrap under `Config/`
+# - runtime config bootstrap under `Config/` (Dolphin.ini display/input flags only)
 # dolphin_user_path = "~/.local/share/dolphin-emu"
 # Flatpak Dolphin example:
 # dolphin_user_path = "~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu"
@@ -57,3 +56,10 @@ cache_dir = "/home/<user>/GameHub/artwork-cache/sgdb"
 # SteamOS/Bazzite alternative:
 # cache_dir = "/var/home/<user>/GameHub/artwork-cache/sgdb"
 enabled_kinds = ["grid", "hero", "logo", "icon"]
+
+[controllers]
+# Launch-time controller profile wrapper for PCSX2/Dolphin/Azahar.
+launch_autoconfig = true
+# Optional explicit profile directory.
+# Default when omitted: <paths.gamehub_dir>/controller_profiles
+# profiles_dir = "/home/<user>/GameHub/controller_profiles"

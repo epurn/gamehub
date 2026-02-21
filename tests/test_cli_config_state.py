@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 from uuid import uuid4
 
-from gamehub_cli.config import LinuxConfig, default_config_path, load_config
+from gamehub_cli.config import ControllersConfig, LinuxConfig, default_config_path, load_config
 from gamehub_cli.state import SyncState, load_state, save_state_atomic
 
 
@@ -36,6 +36,7 @@ def test_load_config_uses_defaults_when_file_is_missing(monkeypatch) -> None:
         assert loaded.sgdb_cache_dir == expected_state_root / "artwork_cache" / "sgdb"
         assert loaded.sgdb_enabled_kinds == ("grid", "hero", "logo", "icon")
         assert loaded.linux == LinuxConfig()
+        assert loaded.controllers == ControllersConfig()
 
 
 def test_load_config_prefers_workspace_config_when_present(monkeypatch) -> None:
@@ -245,6 +246,26 @@ def test_load_config_supports_server_index_fetch_env_overrides(monkeypatch) -> N
         assert loaded.index_retry_backoff_seconds == 2.5
 
 
+def test_load_config_supports_controllers_block() -> None:
+    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[controllers]",
+                    "launch_autoconfig = false",
+                    'profiles_dir = "D:/GameHub/controller_profiles"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_config(config_path)
+
+        assert loaded.controllers.launch_autoconfig is False
+        assert loaded.controllers.profiles_dir == Path("D:/GameHub/controller_profiles")
+
+
 def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
     with _workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
@@ -262,7 +283,6 @@ def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
                     'retroarch_cores_base_url = "https://example.invalid/cores/"',
                     'pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"',
                     'pcsx2_bios_dir = "~/.config/PCSX2/bios"',
-                    "pcsx2_controller_autoconfig = false",
                     'dolphin_user_path = "~/.local/share/dolphin-emu"',
                 ]
             ),
@@ -281,7 +301,6 @@ def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
         assert loaded.linux.retroarch_cores_base_url == "https://example.invalid/cores/"
         assert loaded.linux.pcsx2_ini_path == Path("~/.config/PCSX2/inis/PCSX2.ini").expanduser()
         assert loaded.linux.pcsx2_bios_dir == Path("~/.config/PCSX2/bios").expanduser()
-        assert loaded.linux.pcsx2_controller_autoconfig is False
         assert loaded.linux.dolphin_user_path == Path("~/.local/share/dolphin-emu").expanduser()
 
 
@@ -322,6 +341,8 @@ def test_load_config_supports_centralized_env_precedence(monkeypatch) -> None:
         monkeypatch.setenv("GAMEHUB_PCSX2_INI_PATH", "D:/PCSX2/PCSX2.ini")
         monkeypatch.setenv("PCSX2_BIOS_DIR", "D:/PCSX2/bios")
         monkeypatch.setenv("DOLPHIN_EMU_USERPATH", "D:/Dolphin/User")
+        monkeypatch.setenv("GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG", "false")
+        monkeypatch.setenv("GAMEHUB_CONTROLLER_PROFILES_DIR", "D:/GameHub/profiles")
 
         loaded = load_config(config_path)
 
@@ -337,25 +358,8 @@ def test_load_config_supports_centralized_env_precedence(monkeypatch) -> None:
         assert loaded.linux.pcsx2_ini_path == Path("D:/PCSX2/PCSX2.ini")
         assert loaded.linux.pcsx2_bios_dir == Path("D:/PCSX2/bios")
         assert loaded.linux.dolphin_user_path == Path("D:/Dolphin/User")
-
-
-def test_load_config_supports_pcsx2_controller_autoconfig_env_override(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
-        config_path = temp_root / "config.toml"
-        config_path.write_text(
-            "\n".join(
-                [
-                    "[linux]",
-                    "pcsx2_controller_autoconfig = false",
-                ]
-            ),
-            encoding="utf-8",
-        )
-        monkeypatch.setenv("GAMEHUB_PCSX2_CONTROLLER_AUTOCONFIG", "true")
-
-        loaded = load_config(config_path)
-
-        assert loaded.linux.pcsx2_controller_autoconfig is True
+        assert loaded.controllers.launch_autoconfig is False
+        assert loaded.controllers.profiles_dir == Path("D:/GameHub/profiles")
 
 
 def test_load_config_normalizes_quoted_sgdb_api_key(monkeypatch) -> None:

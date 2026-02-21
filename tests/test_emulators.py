@@ -430,6 +430,53 @@ def test_ensure_emulators_linux_flatpak_installs_azahar(monkeypatch, capsys) -> 
     assert "Installing emulator 'azahar' via flatpak (org.azahar_emu.Azahar)..." in capsys.readouterr().out
 
 
+def test_ensure_emulators_linux_flatpak_maps_azahar_qt_alias(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("azahar-qt")
+    state = {"installed": False}
+
+    def fake_which(name: str) -> str | None:
+        if name == "flatpak":
+            return "/usr/bin/flatpak"
+        if name in {"azahar", "azahar-qt"}:
+            return "/usr/bin/azahar-qt" if state["installed"] else None
+        if name == "org.azahar_emu.Azahar":
+            return "/home/deck/.local/share/flatpak/exports/bin/org.azahar_emu.Azahar" if state["installed"] else None
+        return None
+
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        commands.append(cmd)
+        if cmd[:3] == ["flatpak", "info", "--show-ref"]:
+            code = 0 if state["installed"] else 1
+            return type("Completed", (), {"returncode": code, "stdout": ""})()
+        if cmd[:3] == ["flatpak", "remotes", "--columns=name"]:
+            return type("Completed", (), {"returncode": 0, "stdout": "flathub\n"})()
+        if cmd[:4] == ["flatpak", "install", "--user", "-y"]:
+            state["installed"] = True
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+        return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+
+    ensure_emulators(
+        index=index,
+        dry_run=False,
+        verbose=False,
+        linux_install_backend="flatpak",
+        linux_flatpak_remote="flathub",
+    )
+
+    assert ["flatpak", "install", "--user", "-y", "flathub", "org.azahar_emu.Azahar"] in commands
+    out = capsys.readouterr().out
+    assert "No flatpak mapping for emulator" not in out
+
+
 def test_ensure_emulators_linux_flatpak_remote_fallbacks_to_unpinned(monkeypatch, capsys) -> None:
     index = _index_with_emulators("retroarch")
     state = {"installed": False}

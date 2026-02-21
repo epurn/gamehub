@@ -60,6 +60,12 @@ def _path_with_tilde_expanded(raw: str) -> Path:
     return Path(value)
 
 
+def _normalize_retroarch_cfg_path(raw: str, *, cfg_path: Path) -> Path | None:
+    if os.name == "nt" and raw.startswith((":\\", ":/")):
+        return cfg_path.parent / raw[2:]
+    return None
+
+
 def _core_suffix() -> str:
     if os.name == "nt":
         return ".dll"
@@ -147,12 +153,12 @@ def resolve_retroarch_paths(
         raw_core = parsed.get("libretro_directory")
         raw_info = parsed.get("libretro_info_path")
         if raw_core:
-            candidate = _path_with_tilde_expanded(raw_core)
+            candidate = _normalize_retroarch_cfg_path(raw_core, cfg_path=cfg_path) or _path_with_tilde_expanded(raw_core)
             if not candidate.is_absolute():
                 candidate = cfg_path.parent / candidate
             config_cores = candidate
         if raw_info:
-            candidate = _path_with_tilde_expanded(raw_info)
+            candidate = _normalize_retroarch_cfg_path(raw_info, cfg_path=cfg_path) or _path_with_tilde_expanded(raw_info)
             if not candidate.is_absolute():
                 candidate = cfg_path.parent / candidate
             config_info = candidate
@@ -216,6 +222,16 @@ def _install_from_zip_blob(zip_blob: bytes, member_name: str, destination: Path)
                     tmp.write(chunk)
         replace_file(tmp_path, destination)
     return True
+
+
+def _ensure_dir_writable(path: Path) -> tuple[bool, str | None]:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return False, str(exc)
+    if os.access(path, os.W_OK):
+        return True, None
+    return False, f"directory is not writable: {path}"
 
 
 def ensure_retroarch_cores(
@@ -305,18 +321,30 @@ def ensure_retroarch_cores(
             print(f"retroarch-core\tinstalled\t{core_base}\t{target_path}")
 
     if infos_to_download:
-        try:
-            info_blob = _download_bytes(_assets_url())
-            for core_base in infos_to_download:
-                info_path = paths.info_dir / f"{core_base}.info"
-                ok = _install_from_zip_blob(info_blob, info_path.name, info_path)
-                if not ok:
-                    print(f"Warning: info.zip missing {info_path.name}")
-                    continue
-                if verbose:
-                    print(f"retroarch-info\tinstalled\t{core_base}\t{info_path}")
-        except Exception as exc:
-            print(f"Warning: failed to download RetroArch info.zip: {exc}")
+        writable, writable_error = _ensure_dir_writable(paths.info_dir)
+        if not writable:
+            print(
+                "Warning: skipping RetroArch info metadata install because info_dir is not writable "
+                f"({paths.info_dir}): {writable_error}"
+            )
+        else:
+            try:
+                info_blob = _download_bytes(_assets_url())
+            except Exception as exc:
+                print(f"Warning: failed to download RetroArch info.zip: {exc}")
+            else:
+                for core_base in infos_to_download:
+                    info_path = paths.info_dir / f"{core_base}.info"
+                    try:
+                        ok = _install_from_zip_blob(info_blob, info_path.name, info_path)
+                    except OSError as exc:
+                        print(f"Warning: failed to write RetroArch info file {info_path}: {exc}")
+                        continue
+                    if not ok:
+                        print(f"Warning: info.zip missing {info_path.name}")
+                        continue
+                    if verbose:
+                        print(f"retroarch-info\tinstalled\t{core_base}\t{info_path}")
 
     requested = len(cores_to_download)
     print(

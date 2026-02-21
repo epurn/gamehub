@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PosixPath, WindowsPath
 from typing import Iterable
 
 
@@ -10,29 +10,51 @@ PCSX2_FLATPAK_APP_ID = "net.pcsx2.PCSX2"
 DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
 AZAHAR_FLATPAK_APP_ID = "org.azahar_emu.Azahar"
 
+try:
+    _HOST_PATH_CLS = type(Path.cwd())
+except Exception:
+    _HOST_PATH_CLS = WindowsPath if os.name == "nt" else PosixPath
+
+
+def _safe_home_path() -> Path:
+    try:
+        return _host_path(str(Path.home()))
+    except Exception:
+        pass
+    for raw in (os.path.expanduser("~"), os.environ.get("USERPROFILE", ""), os.environ.get("HOME", "")):
+        value = str(raw).strip()
+        if not value or value == "~":
+            continue
+        return _host_path(value)
+    return _host_path(os.getcwd())
+
+
+def _host_path(raw: str) -> Path:
+    return _HOST_PATH_CLS(raw)
+
 
 def linux_flatpak_retroarch_root() -> Path:
-    return Path.home() / ".var" / "app" / RETROARCH_FLATPAK_APP_ID / "config" / "retroarch"
+    return _safe_home_path() / ".var" / "app" / RETROARCH_FLATPAK_APP_ID / "config" / "retroarch"
 
 
 def linux_flatpak_pcsx2_root() -> Path:
-    return Path.home() / ".var" / "app" / PCSX2_FLATPAK_APP_ID / "config" / "PCSX2"
+    return _safe_home_path() / ".var" / "app" / PCSX2_FLATPAK_APP_ID / "config" / "PCSX2"
 
 
 def linux_flatpak_dolphin_root() -> Path:
-    return Path.home() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "data" / "dolphin-emu"
+    return _safe_home_path() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "data" / "dolphin-emu"
 
 
 def linux_flatpak_dolphin_config_root() -> Path:
-    return Path.home() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "config" / "dolphin-emu"
+    return _safe_home_path() / ".var" / "app" / DOLPHIN_FLATPAK_APP_ID / "config" / "dolphin-emu"
 
 
 def linux_flatpak_azahar_root() -> Path:
-    return Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "data" / "azahar-emu"
+    return _safe_home_path() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "data" / "azahar-emu"
 
 
 def linux_flatpak_azahar_config_root() -> Path:
-    return Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu"
+    return _safe_home_path() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu"
 
 
 def is_flatpak_command(path_value: str | Path, app_id: str) -> bool:
@@ -75,11 +97,24 @@ def retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path
     if explicit_cfg_path is not None:
         values.append(explicit_cfg_path.expanduser())
 
+    if os.name == "nt":
+        try:
+            from .emulators import resolve_emulator_executable
+        except Exception:
+            resolve_emulator_executable = None
+        if resolve_emulator_executable is not None:
+            exe_raw = resolve_emulator_executable("retroarch").strip('"')
+            if exe_raw:
+                exe_path = _host_path(exe_raw)
+                if exe_path.exists():
+                    values.append(exe_path.parent / "retroarch.cfg")
+
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
-        values.append(Path(appdata) / "RetroArch" / "retroarch.cfg")
+        values.append(_host_path(appdata) / "RetroArch" / "retroarch.cfg")
 
-    home = Path.home()
-    values.append(home / ".config" / "retroarch" / "retroarch.cfg")
-    values.append(linux_flatpak_retroarch_root() / "retroarch.cfg")
+    if os.name != "nt":
+        home = _safe_home_path()
+        values.append(home / ".config" / "retroarch" / "retroarch.cfg")
+        values.append(linux_flatpak_retroarch_root() / "retroarch.cfg")
     return unique_paths(values)
