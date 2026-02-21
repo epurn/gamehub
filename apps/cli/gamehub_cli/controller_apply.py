@@ -32,7 +32,9 @@ _AZAHAR_ANALOG_GUID_RE = re.compile(r"\$1guid\$0[0-9a-fA-F]+", flags=re.IGNORECA
 _AZAHAR_ANALOG_PORT_RE = re.compile(r"\$1port\$0\d+")
 _AZAHAR_ANALOG_ENGINE_RE = re.compile(r"engine\$0sdl", flags=re.IGNORECASE)
 _AZAHAR_GUID_VALUE_RE = re.compile(r"[0-9a-fA-F]{32}")
-_AZAHAR_FLATPAK_GUID_TIMEOUT_SEC = 1.5
+# Flatpak cold starts can exceed 1-2s on immutable hosts.
+# Keep this generous so runtime GUID probing is reliable.
+_AZAHAR_FLATPAK_GUID_TIMEOUT_SEC = 8.0
 _AZAHAR_WINDOWS_SDL_DIR_ENV = "GAMEHUB_AZAHAR_SDL_DIR"
 
 
