@@ -58,7 +58,7 @@ def _configured_path(config: GamehubConfig | None, setting_name: str) -> Path | 
     if config is None:
         return None
     value = getattr(config.linux, setting_name, None)
-    if value is None:
+    if not isinstance(value, Path):
         return None
     return value.expanduser()
 

@@ -4,14 +4,18 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Iterable
+from types import ModuleType
+from typing import Any, Iterable
 
 from gamehub_common.models import LibraryIndex
 
+winreg: ModuleType | None
 try:
-    import winreg  # type: ignore
+    import winreg as _winreg
 except ModuleNotFoundError:  # pragma: no cover
     winreg = None
+else:
+    winreg = _winreg
 
 _FLATPAK_APP_IDS = {
     "retroarch": "org.libretro.RetroArch",
@@ -223,7 +227,7 @@ def _windows_registry_install_candidates(canonical: str) -> tuple[Path, ...]:
     return tuple(values)
 
 
-def _registry_value(key: object, name: str) -> str:
+def _registry_value(key: Any, name: str) -> str:
     if winreg is None:
         return ""
     try:

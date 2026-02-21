@@ -5,17 +5,21 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Callable
+from types import TracebackType
+from typing import Any, Callable
 from urllib.parse import quote, urlparse
-
-try:
-    import httpx  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    httpx = None
 
 from gamehub_common.models import TitleEntry
 
 from ..common.fsops import replace_file
+
+httpx: Any
+_httpx: Any | None
+try:
+    import httpx as _httpx
+except ModuleNotFoundError:  # pragma: no cover
+    _httpx = None
+httpx = _httpx
 
 SGDB_ART_KINDS = ("grid", "hero", "logo", "icon")
 SGDB_GRID_LANDSCAPE_KIND = "grid_landscape"
@@ -134,7 +138,7 @@ class SgdbClient:
         timeout_seconds: float = 20.0,
         max_retries: int = 2,
         backoff_seconds: float = 0.5,
-        transport: object | None = None,
+        transport: Any | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         if httpx is None:
@@ -161,7 +165,12 @@ class SgdbClient:
     def __enter__(self) -> "SgdbClient":
         return self
 
-    def __exit__(self, _exc_type, _exc, _tb) -> None:
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _tb: TracebackType | None,
+    ) -> None:
         self.close()
 
     def _request_json(self, path: str) -> dict:

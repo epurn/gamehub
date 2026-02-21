@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-
-try:
-    import typer
-except ModuleNotFoundError:
-    typer = None
+from typing import Any
 
 from .common.config import load_config
 from .controllers.launch import run_controller_launch
 from .sync import run_sync
+
+typer: Any
+_typer: Any | None
+try:
+    import typer as _typer
+except ModuleNotFoundError:
+    _typer = None
+typer = _typer
 
 if typer is not None:
     app = typer.Typer(add_completion=False, no_args_is_help=True)

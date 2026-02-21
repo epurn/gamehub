@@ -68,9 +68,15 @@ def fetch_index_with_retries(
             if client is not None:
                 response = client.get(index_url, timeout=timeout_seconds)
                 response.raise_for_status()
-                return response.json()
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    raise ValueError("Server index response must be a JSON object")
+                return payload
             with urlopen(index_url, timeout=timeout_seconds) as response:  # noqa: S310
-                return json.loads(response.read().decode("utf-8"))
+                payload = json.loads(response.read().decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("Server index response must be a JSON object")
+                return payload
         except Exception as exc:
             last_error = exc
             if attempt >= total_attempts or not _is_retryable_index_fetch_error(exc, httpx_module=client):

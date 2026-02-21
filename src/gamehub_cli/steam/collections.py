@@ -53,10 +53,9 @@ def _decode_user_collections(raw: object) -> tuple[list[object], str, dict[str, 
     """
     if isinstance(raw, dict):
         metadata = dict(raw)
-        collections = metadata.get("collections")
-        if not isinstance(collections, list):
-            collections = []
-        return list(collections), "dict", metadata
+        collections_obj = metadata.get("collections")
+        collections = list(collections_obj) if isinstance(collections_obj, list) else []
+        return collections, "dict", metadata
     if isinstance(raw, list):
         return list(raw), "list", {}
     if not isinstance(raw, str) or not raw.strip():
@@ -75,10 +74,9 @@ def _decode_user_collections(raw: object) -> tuple[list[object], str, dict[str, 
             return list(parsed), "list", {}
         if isinstance(parsed, dict):
             metadata = dict(parsed)
-            collections = metadata.get("collections")
-            if not isinstance(collections, list):
-                collections = []
-            return list(collections), "dict", metadata
+            collections_obj = metadata.get("collections")
+            collections = list(collections_obj) if isinstance(collections_obj, list) else []
+            return collections, "dict", metadata
     return [], "dict", {}
 
 
@@ -94,7 +92,7 @@ def _load_localconfig(path: Path) -> dict:
 
 
 def _dump_localconfig(payload: dict) -> str:
-    return vdf.dumps(payload, pretty=True)
+    return str(vdf.dumps(payload, pretty=True))
 
 
 def _collection_id_for_system(system_name: str) -> str:
@@ -179,10 +177,10 @@ def update_cloud_collections(context: SteamContext, app_ids_by_system: dict[str,
         }
         desired_json = json.dumps(desired_value, separators=(",", ":"), sort_keys=True)
 
-        pair = entry_by_key.get(key)
+        existing_pair = entry_by_key.get(key)
         current_payload: dict[str, object] | None = None
-        if pair is not None and isinstance(pair[1], dict):
-            current_payload = pair[1]
+        if existing_pair is not None and isinstance(existing_pair[1], dict):
+            current_payload = existing_pair[1]
         if (
             current_payload
             and current_payload.get("is_deleted") is not True
@@ -197,11 +195,11 @@ def update_cloud_collections(context: SteamContext, app_ids_by_system: dict[str,
             "version": str(next_version),
         }
         next_version += 1
-        if pair is None:
+        if existing_pair is None:
             entries.append([key, payload])
             entry_by_key[key] = entries[-1]
         else:
-            pair[1] = payload
+            existing_pair[1] = payload
         updates += 1
 
     # Mark stale GAMEHUB-managed cloud collections as deleted.

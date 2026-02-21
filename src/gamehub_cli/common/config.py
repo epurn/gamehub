@@ -5,15 +5,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-try:
-    from platformdirs import user_config_dir, user_state_dir
-except ModuleNotFoundError:
-
-    def user_config_dir(appname: str) -> str:
-        return str(Path.home() / f".{appname}")
-
-    def user_state_dir(appname: str) -> str:
-        return str(Path.home() / f".{appname}")
+from platformdirs import user_config_dir, user_state_dir
 
 
 @dataclass(frozen=True)
@@ -132,6 +124,8 @@ def _normalize_optional_float(raw: object, *, minimum: float = 0.0) -> float | N
         return None
     if isinstance(raw, bool):
         return None
+    if not isinstance(raw, (int, float, str)):
+        return None
     try:
         value = float(raw)
     except (TypeError, ValueError):
@@ -145,6 +139,8 @@ def _normalize_optional_int(raw: object, *, minimum: int = 0) -> int | None:
     if raw is None:
         return None
     if isinstance(raw, bool):
+        return None
+    if not isinstance(raw, (int, float, str)):
         return None
     try:
         value = int(str(raw).strip())
@@ -184,6 +180,15 @@ def _first_env_value(*names: str) -> str | None:
     return None
 
 
+def _as_section(raw: object) -> dict[str, object]:
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _path_or_default(raw: object, default: Path) -> Path:
+    normalized = _normalize_optional_path(raw)
+    return normalized if normalized is not None else default
+
+
 def _resolve_paths(paths: dict[str, object]) -> tuple[Path, Path, Path]:
     """
     Resolve client storage locations.
@@ -191,11 +196,11 @@ def _resolve_paths(paths: dict[str, object]) -> tuple[Path, Path, Path]:
     Canonical config key is `paths.gamehub_dir`.
     Legacy keys are accepted as fallback for compatibility.
     """
-    root = Path(paths.get("gamehub_dir", paths.get("library_dir", default_gamehub_dir()))).expanduser()
+    root = _path_or_default(paths.get("gamehub_dir", paths.get("library_dir")), default_gamehub_dir())
     if "gamehub_dir" in paths:
         return root, root / "firmware", root / "state.json"
-    firmware = Path(paths.get("firmware_dir", root / "firmware")).expanduser()
-    state = Path(paths.get("state_path", root / "state.json")).expanduser()
+    firmware = _path_or_default(paths.get("firmware_dir"), root / "firmware")
+    state = _path_or_default(paths.get("state_path"), root / "state.json")
     return root, firmware, state
 
 
@@ -208,12 +213,12 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
             data = loaded
 
     default_root = default_gamehub_dir()
-    server = data.get("server", {}) if isinstance(data.get("server", {}), dict) else {}
-    paths = data.get("paths", {}) if isinstance(data.get("paths", {}), dict) else {}
-    steam = data.get("steam", {}) if isinstance(data.get("steam", {}), dict) else {}
-    sgdb = data.get("sgdb", {}) if isinstance(data.get("sgdb", {}), dict) else {}
-    linux = data.get("linux", {}) if isinstance(data.get("linux", {}), dict) else {}
-    controllers = data.get("controllers", {}) if isinstance(data.get("controllers", {}), dict) else {}
+    server = _as_section(data.get("server"))
+    paths = _as_section(data.get("paths"))
+    steam = _as_section(data.get("steam"))
+    sgdb = _as_section(data.get("sgdb"))
+    linux = _as_section(data.get("linux"))
+    controllers = _as_section(data.get("controllers"))
 
     env_api_key = _normalize_secret(_first_env_value("GAMEHUB_SGDB_API_KEY"))
     config_api_key = _normalize_secret(sgdb.get("api_key"))
@@ -270,9 +275,13 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     )
     config_controller_profiles_dir = _normalize_optional_path(controllers.get("profiles_dir"))
     env_controller_profiles_dir = _normalize_optional_path(_first_env_value("GAMEHUB_CONTROLLER_PROFILES_DIR"))
+    server_url = _normalize_optional_text(server.get("url")) or "http://127.0.0.1:8000"
+    steam_id = _normalize_optional_text(steam.get("steam_id"))
+    steam_exe = _normalize_optional_path(steam.get("steam_exe"))
+    sgdb_cache_dir = _path_or_default(sgdb.get("cache_dir"), default_root / "artwork_cache" / "sgdb")
     library_dir, firmware_dir, state_path = _resolve_paths(paths)
     return GamehubConfig(
-        server_url=str(server.get("url", "http://127.0.0.1:8000")),
+        server_url=server_url,
         index_timeout_seconds=env_index_timeout if env_index_timeout is not None else config_index_timeout,
         index_fetch_attempts=env_index_attempts if env_index_attempts is not None else (config_index_attempts or 3),
         index_retry_backoff_seconds=(
@@ -288,10 +297,10 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
         firmware_dir=firmware_dir,
         state_path=state_path,
         steam_userdata_dir=steam_userdata_dir,
-        steam_id=str(steam["steam_id"]) if steam.get("steam_id") else None,
-        steam_exe=Path(steam["steam_exe"]).expanduser() if steam.get("steam_exe") else None,
+        steam_id=steam_id,
+        steam_exe=steam_exe,
         sgdb_api_key=sgdb_api_key,
-        sgdb_cache_dir=Path(sgdb.get("cache_dir", default_root / "artwork_cache" / "sgdb")).expanduser(),
+        sgdb_cache_dir=sgdb_cache_dir,
         sgdb_enabled_kinds=_normalize_sgdb_kinds(sgdb.get("enabled_kinds")),
         linux=LinuxConfig(
             emulator_install_backend=(

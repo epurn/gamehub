@@ -167,16 +167,24 @@ def wait_for_steam_exit(timeout_seconds: int = 20) -> bool:
 
 
 def _spawn_detached(command: list[str], *, shell: bool = False) -> subprocess.Popen:
-    kwargs = {
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "close_fds": True,
-        "shell": shell,
-    }
     if os.name != "nt":
-        kwargs["start_new_session"] = True
-    return subprocess.Popen(command, **kwargs)
+        return subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            shell=shell,
+            start_new_session=True,
+        )
+    return subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        shell=shell,
+    )
 
 
 def _wait_for_steam_start(timeout_seconds: float = 12.0) -> bool:

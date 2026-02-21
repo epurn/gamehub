@@ -14,7 +14,7 @@ from ..controllers.profiles import seed_default_profiles
 from ..emulators import ensure_emulators
 from ..firmware.deploy import deploy_firmware_to_emulators
 from ..firmware.retroarch_cores import ensure_retroarch_cores
-from ..steam import steam_id64_from_userdata_id
+from ..steam import SteamContext, SteamShortcutSpec, steam_id64_from_userdata_id
 from . import artwork_stage, steam_stage, transfer_stage
 from . import index as sync_index
 from .planner import create_sync_plan
@@ -28,8 +28,8 @@ class SyncDependencies:
     apply_downloads: Callable[..., None]
     bootstrap_firmware_dirs: Callable[[GamehubConfig, LibraryIndex, bool, bool], None]
     build_artwork_assignments: Callable[..., dict[str, dict[str, Path]]]
-    build_shortcut_specs: Callable[[LibraryIndex, GamehubConfig], list]
-    resolve_steam_context: Callable[[GamehubConfig], object | None]
+    build_shortcut_specs: Callable[[LibraryIndex, GamehubConfig], list[SteamShortcutSpec]]
+    resolve_steam_context: Callable[[GamehubConfig], SteamContext | None]
     apply_steam_updates: Callable[..., None]
 
 
@@ -62,8 +62,8 @@ def configure_dependencies(
     apply_downloads: Callable[..., None] | None = None,
     bootstrap_firmware_dirs: Callable[[GamehubConfig, LibraryIndex, bool, bool], None] | None = None,
     build_artwork_assignments: Callable[..., dict[str, dict[str, Path]]] | None = None,
-    build_shortcut_specs: Callable[[LibraryIndex, GamehubConfig], list] | None = None,
-    resolve_steam_context: Callable[[GamehubConfig], object | None] | None = None,
+    build_shortcut_specs: Callable[[LibraryIndex, GamehubConfig], list[SteamShortcutSpec]] | None = None,
+    resolve_steam_context: Callable[[GamehubConfig], SteamContext | None] | None = None,
     apply_steam_updates: Callable[..., None] | None = None,
 ) -> None:
     """Allow explicit sync dependency overrides without mutating stage modules."""
@@ -123,11 +123,11 @@ def _build_artwork_assignments(
     )
 
 
-def _build_shortcut_specs(index: LibraryIndex, config: GamehubConfig):
+def _build_shortcut_specs(index: LibraryIndex, config: GamehubConfig) -> list[SteamShortcutSpec]:
     return _DEPS.build_shortcut_specs(index, config)
 
 
-def _resolve_steam_context(config: GamehubConfig):
+def _resolve_steam_context(config: GamehubConfig) -> SteamContext | None:
     return _DEPS.resolve_steam_context(config)
 
 

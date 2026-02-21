@@ -135,7 +135,7 @@ def _parse_shortcuts_table(path: Path) -> list[dict]:
 
 def _encode_shortcuts(entries: list[dict]) -> bytes:
     payload = {"shortcuts": {str(index): entry for index, entry in enumerate(entries)}}
-    return vdf.binary_dumps(payload)
+    return bytes(vdf.binary_dumps(payload))
 
 
 def _compute_shortcut_app_id(exe: str, app_name: str) -> str:

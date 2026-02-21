@@ -4,6 +4,7 @@ import inspect
 from collections import Counter
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any, Callable
 
 from gamehub_common.models import LibraryIndex
 
@@ -78,7 +79,7 @@ def apply_downloads(
             http_client.close()
 
 
-def _supports_http_client_kwarg(download_callable: object) -> bool:
+def _supports_http_client_kwarg(download_callable: Callable[..., object]) -> bool:
     try:
         params = inspect.signature(download_callable).parameters
     except (TypeError, ValueError):
@@ -86,7 +87,11 @@ def _supports_http_client_kwarg(download_callable: object) -> bool:
     return "http_client" in params
 
 
-def _build_http_client(timeout_seconds: float, max_parallel_downloads: int, supports_http_client: bool):
+def _build_http_client(
+    timeout_seconds: float,
+    max_parallel_downloads: int,
+    supports_http_client: bool,
+) -> Any | None:
     if not supports_http_client:
         return None
     if downloads.httpx is None:
@@ -107,7 +112,7 @@ def _download_one(
     server_url: str,
     action: PlanAction,
     timeout_seconds: float,
-    http_client,
+    http_client: Any | None,
     supports_http_client: bool,
 ) -> None:
     if supports_http_client and http_client is not None:
@@ -131,7 +136,7 @@ def _apply_download_group(
     verbose: bool,
     max_parallel_downloads: int,
     state_checksums: dict[str, str],
-    http_client,
+    http_client: Any | None,
     supports_http_client: bool,
     total_count: int,
 ) -> None:
@@ -155,7 +160,7 @@ def _apply_download_group(
     if verbose:
         print(f"download\tparallel\tworkers={worker_count}\tactions={len(actions)}")
     with ThreadPoolExecutor(max_workers=worker_count) as pool:
-        future_by_action: dict[Future[None], object] = {}
+        future_by_action: dict[Future[None], PlanAction] = {}
         for action in actions:
             future = pool.submit(
                 _download_one,

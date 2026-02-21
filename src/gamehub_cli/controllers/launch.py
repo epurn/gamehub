@@ -163,9 +163,21 @@ def _parse_target_args(raw: object) -> tuple[str, ...]:
     return ()
 
 
+def _parse_payload_version(raw: object) -> int:
+    if isinstance(raw, bool):
+        return 1
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text and text.isdigit():
+            return int(text)
+    return 1
+
+
 def parse_controller_payload(token: str) -> ControllerLaunchPayload:
     payload = _decode_payload_token(token)
-    version = int(payload.get("v", 1))
+    version = _parse_payload_version(payload.get("v", 1))
     emulator = str(payload.get("emulator", "")).strip().casefold()
     target_exe = str(payload.get("target_exe", "")).strip()
     if not emulator:

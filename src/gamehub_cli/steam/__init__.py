@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from . import lifecycle as _lifecycle
 from .artwork import backup_steam_configs, copy_grid_art, prune_grid_noncanonical_variants
 from .collections import update_cloud_collections, update_collections
@@ -29,12 +31,12 @@ from .types import (
 _candidate_userdata_dirs = _lifecycle._candidate_userdata_dirs
 
 
-def discover_userdata_dir(explicit_userdata_dir=None):
+def discover_userdata_dir(explicit_userdata_dir: Path | None = None) -> Path | None:
     _lifecycle._candidate_userdata_dirs = _candidate_userdata_dirs
     return _lifecycle.discover_userdata_dir(explicit_userdata_dir)
 
 
-def discover_steam_id(userdata_dir, preferred_steam_id=None):
+def discover_steam_id(userdata_dir: Path, preferred_steam_id: str | None = None) -> str | None:
     return _lifecycle.discover_steam_id(userdata_dir, preferred_steam_id=preferred_steam_id)
 
 

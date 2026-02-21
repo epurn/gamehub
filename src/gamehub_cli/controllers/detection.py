@@ -95,7 +95,7 @@ class _XInputCapabilities(ctypes.Structure):
     ]
 
 
-def _load_xinput_dll() -> object | None:
+def _load_xinput_dll() -> ctypes.CDLL | None:
     for dll_name in _XINPUT_DLLS:
         try:
             return ctypes.WinDLL(dll_name)

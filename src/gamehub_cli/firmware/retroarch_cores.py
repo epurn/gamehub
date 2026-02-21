@@ -8,6 +8,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urljoin
 from urllib.request import urlopen
 
@@ -23,10 +24,13 @@ from ..common.platform_paths import (
 )
 from ..emulators import resolve_emulator_executable
 
+httpx: Any
+_httpx: Any | None
 try:
-    import httpx  # type: ignore
+    import httpx as _httpx
 except ModuleNotFoundError:  # pragma: no cover
-    httpx = None
+    _httpx = None
+httpx = _httpx
 
 
 DEFAULT_CORE_BY_SYSTEM: dict[str, str] = {
@@ -208,7 +212,7 @@ def _download_bytes(url: str, timeout_seconds: float = 30.0) -> bytes:
         response.raise_for_status()
         return bytes(response.content)
     with urlopen(url, timeout=timeout_seconds) as response:  # noqa: S310
-        return response.read()
+        return bytes(response.read())
 
 
 def _install_from_zip_blob(zip_blob: bytes, member_name: str, destination: Path) -> bool:

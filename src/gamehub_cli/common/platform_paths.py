@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path, PosixPath, WindowsPath
-from typing import Iterable
+from typing import Callable, Iterable
 
 RETROARCH_FLATPAK_APP_ID = "org.libretro.RetroArch"
 PCSX2_FLATPAK_APP_ID = "net.pcsx2.PCSX2"
@@ -98,12 +98,13 @@ def retroarch_cfg_candidates(explicit_cfg_path: Path | None = None) -> list[Path
         values.append(explicit_cfg_path.expanduser())
 
     if _OS_NAME == "nt":
+        resolver: Callable[[str], str] | None = None
         try:
-            from ..emulators import resolve_emulator_executable
+            from ..emulators import resolve_emulator_executable as resolver
         except Exception:
-            resolve_emulator_executable = None
-        if resolve_emulator_executable is not None:
-            exe_raw = resolve_emulator_executable("retroarch").strip('"')
+            resolver = None
+        if resolver is not None:
+            exe_raw = resolver("retroarch").strip('"')
             if exe_raw:
                 exe_path = _host_path(exe_raw)
                 if exe_path.exists():

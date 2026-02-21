@@ -7,12 +7,15 @@ from typing import Any
 from urllib.parse import urljoin
 from urllib.request import urlopen
 
-try:
-    import httpx  # type: ignore
-except ModuleNotFoundError:
-    httpx = None
-
 from ..common.fsops import replace_file
+
+httpx: Any
+_httpx: Any | None
+try:
+    import httpx as _httpx
+except ModuleNotFoundError:
+    _httpx = None
+httpx = _httpx
 
 DEFAULT_DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 

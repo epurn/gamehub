@@ -212,10 +212,10 @@ def _retroarch_all_users_menu_requires_migration(binding: str | None) -> bool:
 
 
 def _sync_targets_module() -> None:
-    firmware_targets.resolve_emulator_executable = resolve_emulator_executable
-    firmware_targets.os = os
-    firmware_targets.sys = sys
-    firmware_targets.Path = Path
+    setattr(firmware_targets, "resolve_emulator_executable", resolve_emulator_executable)
+    setattr(firmware_targets, "os", os)
+    setattr(firmware_targets, "sys", sys)
+    setattr(firmware_targets, "Path", Path)
 
 
 def _retroarch_cfg_candidates(config: GamehubConfig | None = None) -> list[Path]:
@@ -337,9 +337,9 @@ def _copy_or_link(source: Path, destination: Path) -> str:
 
 
 def _sync_pcsx2_ini_module() -> None:
-    pcsx2_ini.os = os
-    pcsx2_ini.Path = Path
-    pcsx2_ini.replace_file = replace_file
+    setattr(pcsx2_ini, "os", os)
+    setattr(pcsx2_ini, "Path", Path)
+    setattr(pcsx2_ini, "replace_file", replace_file)
 
 
 def _read_ini_lines(path: Path) -> list[str]:
@@ -442,10 +442,12 @@ def _configure_retroarch_runtime(
                 lines, changed = _upsert_simple_cfg_key(lines, key, desired)
                 changed_libretro |= changed
         for key in _RETROARCH_REMAP_PORT_KEYS:
-            desired = _RETROARCH_REMAP_PORT_VALUES.get(key)
+            desired_port = _RETROARCH_REMAP_PORT_VALUES.get(key)
             existing_value = existing_remap.get(key)
-            if desired is not None and (not existing_value or existing_value != desired or not cfg_path.exists()):
-                lines, changed = _upsert_simple_cfg_key(lines, key, desired)
+            if desired_port is not None and (
+                not existing_value or existing_value != desired_port or not cfg_path.exists()
+            ):
+                lines, changed = _upsert_simple_cfg_key(lines, key, desired_port)
                 changed_remap |= changed
         for key, desired in _RETROARCH_TURBO_KEYS.items():
             existing_value = existing_turbo.get(key)

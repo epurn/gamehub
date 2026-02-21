@@ -169,9 +169,9 @@ def _discover_linux_sdl_guid(*, port: int) -> str | None:
     library_candidates.extend(["libSDL2-2.0.so.0", "libSDL2.so"])
 
     sdl = None
-    for candidate in library_candidates:
+    for library_candidate in library_candidates:
         try:
-            sdl = ctypes.CDLL(candidate)
+            sdl = ctypes.CDLL(library_candidate)
             break
         except OSError:
             continue
@@ -252,9 +252,9 @@ def _discover_windows_sdl_guid(*, port: int) -> str | None:
     library_candidates.extend(["SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"])
 
     sdl = None
-    for candidate in library_candidates:
+    for library_candidate in library_candidates:
         try:
-            sdl = ctypes.CDLL(candidate)
+            sdl = ctypes.CDLL(library_candidate)
             break
         except OSError:
             continue

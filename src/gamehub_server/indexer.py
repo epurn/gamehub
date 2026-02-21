@@ -7,6 +7,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from gamehub_common.ids import make_file_id, make_title_id, sha256_file
 from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SystemSpec, TitleEntry
@@ -16,7 +17,16 @@ ROMS_ROOT_NAME = "roms"
 _DEFAULT_HASH_CACHE_FILENAME = "gamehub-hash-cache.sqlite3"
 logger = logging.getLogger(__name__)
 
-SYSTEM_CATALOG = {
+
+class _SystemCatalogEntry(TypedDict):
+    extensions: tuple[str, ...]
+    emulator: str
+    launch_template: str
+    firmware: tuple[str, ...]
+    scan_firmware: NotRequired[bool]
+
+
+SYSTEM_CATALOG: dict[str, _SystemCatalogEntry] = {
     "GB": {
         "extensions": (".gb", ".zip"),
         "emulator": "retroarch",
@@ -211,7 +221,7 @@ def _scan_firmware_specs(
                 continue
             required_name = required_lookup.get(child.name.casefold())
             is_required = required_name is not None
-            if is_required:
+            if required_name is not None:
                 found_required.add(required_name)
             child_stat = child.stat()
             child_rel = _relative_unix(child, data_root)
