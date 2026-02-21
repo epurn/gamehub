@@ -45,19 +45,23 @@ gamehub sync --help
 gamehub sync --dry-run --skip-steam --verbose
 ```
 5. Run first non-`--skip-steam` sync from a desktop session so Steam can relaunch after config mutation.
-6. If RetroArch games do not launch, set `[linux].retroarch_cfg_path` or `[linux].retroarch_cores_dir` explicitly and re-run sync.
-7. For Flatpak PCSX2, sync writes `PCSX2.ini` and mirrors BIOS into `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` by default (unless you set an explicit BIOS override). Verify with:
+6. If you used older preview/branch builds before recent controller profile fixes, run one reseed sync to refresh defaults:
+```bash
+gamehub sync --reseed-profiles
+```
+7. If RetroArch games do not launch, set `[linux].retroarch_cfg_path` or `[linux].retroarch_cores_dir` explicitly and re-run sync.
+8. For Flatpak PCSX2, sync writes `PCSX2.ini` and mirrors BIOS into `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` by default (unless you set an explicit BIOS override). Verify with:
 ```bash
 grep -n "Bios" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ls ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios
 ```
-8. PCSX2 controller bindings and hotkeys are applied at launch via controller profiles when `launch_autoconfig` is enabled. After launching a PS2 title once via Steam, verify with:
+9. PCSX2 controller bindings and hotkeys are applied at launch via controller profiles when `launch_autoconfig` is enabled. After launching a PS2 title once via Steam, verify with:
 ```bash
 grep -nE "^\[Pad1\]|^\[Pad2\]|^Type =|^Cross =|^Start =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 grep -n "^OpenPauseMenu =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ```
    - Use `--reseed-profiles` to overwrite the default profile files if you need to reset them.
-9. Dolphin runtime bootstrap (GC/Wii) writes display/confirm/background input flags in `Dolphin.ini`. Controller profiles apply input + hotkey config at launch. Flatpak example:
+10. Dolphin runtime bootstrap (GC/Wii) writes display/confirm/background input flags in `Dolphin.ini`. Controller profiles apply input + hotkey config at launch. Flatpak example:
 ```bash
 grep -nE "^\[Display\]|^Fullscreen =|^\[Interface\]|^(ConfirmStop|BackgroundInput) =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Config/Dolphin.ini
 ```
@@ -69,15 +73,32 @@ grep -n "^Device =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Confi
    - Controller exit default is `Back+Start` (pad1/pad2) and is applied via controller profiles.
    - On Linux, controller profiles prefer evdev device roots (for example `evdev/0/Xbox Wireless Controller`) and fall back to `SDL/<n>/Gamepad` when evdev cannot be detected.
    - Existing Dolphin input files are preserved once present; controller profile apply reconciles managed stop/exit hotkeys.
-10. RetroArch menu combo bootstrap sets `Start+Select` when a writable RetroArch config file is discovered. Verify with:
+11. RetroArch menu combo bootstrap sets `Start+Select` when a writable RetroArch config file is discovered. Verify with:
 ```bash
 grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg ~/.config/retroarch/retroarch.cfg 2>/dev/null
 ```
-11. N3DS Azahar runtime bootstrap sets `fullscreen=true` and `confirmClose=false` in `qt-config.ini`. Flatpak example:
+12. N3DS Azahar runtime bootstrap sets `fullscreen=true` and `confirmClose=false` in `qt-config.ini`. Flatpak example:
 ```bash
 grep -nE "^(fullscreen|confirmClose)=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
 ```
-12. N3DS Linux native controller mode uses an Azahar wrapper hook by default:
+   - Linux Flatpak GUID handling:
+     - runtime GUID probe is preferred
+     - when runtime GUID is unavailable, GAMEHUB preserves existing GUIDs and otherwise keeps port-only SDL mappings
+   - Optional quick probe:
+```bash
+python - <<'PY'
+from pathlib import Path
+from gamehub_cli import controller_apply as ca
+qt = Path.home()/".var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini"
+if not qt.exists():
+    qt = Path.home()/".var/app/org.azahar_emu.Azahar/config/azahar/qt-config.ini"
+lines = ca.read_ini_lines(qt)
+_guid, port = ca._azahar_detect_sdl_identity(lines)
+print("runtime_guid:", ca._probe_azahar_flatpak_guid(port=port))
+print("host_guid:", ca._discover_linux_sdl_guid(port=port))
+PY
+```
+13. N3DS Linux native controller mode uses an Azahar wrapper hook by default:
 ```bash
 gamehub sync --config ./config.bazzite.toml --verbose --skip-steam
 ```
@@ -92,7 +113,7 @@ export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
 # Optional explicit joystick device:
 # export GAMEHUB_AZAHAR_EXIT_JS_DEVICE=/dev/input/js0
 ```
-13. N3DS Steam Input template limitation (current):
+14. N3DS Steam Input template limitation (current):
    - GAMEHUB does not auto-copy Steam Input layouts for N3DS shortcuts.
    - Configure one shortcut in Steam (`Controller Layout`), export it, then apply the same layout to each N3DS shortcut manually.
 

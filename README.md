@@ -77,6 +77,18 @@ Invoke-WebRequest https://github.com/epurn/gamehub/releases/latest/download/game
 
 More detail: [docs/client-install.md](docs/client-install.md), [docs/config-and-state.md](docs/config-and-state.md), [docs/cli-sync.md](docs/cli-sync.md)
 
+### Controller Autoconfig Quick Start (PCSX2/Dolphin/Azahar)
+- Ensure `[controllers].launch_autoconfig = true` (or `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG=true`).
+- Run one non-dry sync to seed default controller profiles.
+- If you used older preview/branch builds before recent controller profile fixes, run one sync with:
+  - `gamehub sync --reseed-profiles`
+- Launch emulator shortcuts from Steam (not directly from emulator executables) so launch-time profile apply runs.
+- Profile selection is automatic by detected Xbox count:
+  - `0` controllers -> `kbm`
+  - `1` controller -> `xbox_1p`
+  - `2+` controllers -> `xbox_2p`
+- On Linux Flatpak Azahar paths, GUID injection prefers Flatpak runtime detection; if runtime GUID discovery is unavailable, GAMEHUB preserves existing GUIDs and otherwise keeps port-only SDL mappings.
+
 ## 🖥️ Server Deployment (Latest Release)
 Place `docker/.env` next to [`docker/compose.yaml`](docker/compose.yaml).
 

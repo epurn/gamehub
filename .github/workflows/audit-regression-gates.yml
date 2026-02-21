@@ -81,6 +81,13 @@ jobs:
             tests/test_firmware_deploy.py \
             tests/test_retroarch_cores.py
 
+      - name: Controller autoconfig slice
+        run: |
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_controller_profiles.py \
+            tests/test_controller_apply.py \
+            tests/test_controller_launch.py
+
       - name: Steam integration slice
         run: |
           python -m pytest -q -p no:cacheprovider \
