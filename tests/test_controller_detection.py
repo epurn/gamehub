@@ -41,9 +41,44 @@ def test_detect_xbox_controllers_linux_reads_proc_file(monkeypatch, workspace_te
         monkeypatch.setattr(controller_detection.sys, "platform", "linux")
         monkeypatch.setattr(controller_detection, "_PROC_INPUT_DEVICES_PATH", proc_path)
 
+        monkeypatch.setattr(controller_detection, "_is_steam_deck_linux", lambda: False)
         devices = detect_xbox_controllers(max_devices=2)
 
         assert devices == [XboxController(slot=0, name="Xbox Wireless Controller", subtype=None)]
+
+
+def test_linux_parse_xbox_devices_includes_steam_deck_controller_when_enabled() -> None:
+    raw = "\n".join(
+        [
+            'N: Name="Steam Deck Controller"',
+            "H: Handlers=js0 event10",
+            "",
+            'N: Name="Steam Virtual Gamepad"',
+            "H: Handlers=js1 event11",
+            "",
+        ]
+    )
+
+    devices = controller_detection._linux_parse_xbox_devices(raw, max_devices=2, include_steam_deck=True)
+
+    assert devices == [
+        XboxController(slot=0, name="Steam Deck Controller", subtype=None),
+        XboxController(slot=1, name="Steam Virtual Gamepad", subtype=None),
+    ]
+
+
+def test_linux_parse_xbox_devices_ignores_steam_deck_controller_when_disabled() -> None:
+    raw = "\n".join(
+        [
+            'N: Name="Steam Deck Controller"',
+            "H: Handlers=js0 event10",
+            "",
+        ]
+    )
+
+    devices = controller_detection._linux_parse_xbox_devices(raw, max_devices=2, include_steam_deck=False)
+
+    assert devices == []
 
 
 class _Callable:

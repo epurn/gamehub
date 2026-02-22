@@ -93,7 +93,10 @@ Steam mutation behavior notes:
 - Steam reopen requires an active desktop/GUI session; SSH-only sessions may apply file updates successfully but fail to relaunch Steam.
 
 `paths.gamehub_dir` is the local sync root. Derived paths:
-- ROMs/assets root: `<gamehub_dir>/roms/...` (from server index relative paths)
+- ROMs root: `<gamehub_dir>/roms/...` by default
+  - Optional override: `paths.roms_dir` (alias: `paths.output_dir`)
+  - Env override: `GAMEHUB_ROMS_DIR` (alias: `GAMEHUB_OUTPUT_DIR`)
+- Asset root: `<gamehub_dir>/...` (from server asset relative paths)
 - Firmware root: `<gamehub_dir>/firmware/...`
 - State file: `<gamehub_dir>/state.json`
 
