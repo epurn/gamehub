@@ -396,3 +396,34 @@ def test_state_round_trip_with_atomic_save(workspace_tempdir) -> None:
         loaded = load_state(state_path)
 
         assert loaded.to_dict() == state.to_dict()
+
+
+def test_load_config_supports_roms_output_dir_and_alias(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[paths]",
+                    'gamehub_dir = "C:/gamehub"',
+                    'roms_dir = "E:/sdcard/roms"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_config(config_path)
+
+        assert loaded.library_dir == Path("C:/gamehub")
+        assert loaded.roms_dir == Path("E:/sdcard/roms")
+
+
+def test_load_config_prefers_roms_output_env_override(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text('[paths]\noutput_dir = "C:/config/output"\n', encoding="utf-8")
+        monkeypatch.setenv("GAMEHUB_ROMS_DIR", "D:/env/output")
+
+        loaded = load_config(config_path)
+
+        assert loaded.roms_dir == Path("D:/env/output")

@@ -12,7 +12,7 @@ from pathlib import Path
 from gamehub_common.models import LibraryIndex
 
 from ..common.config import GamehubConfig
-from ..common.paths import from_rel_path
+from ..common.paths import from_rel_path, strip_rel_path_root
 from ..common.platform_paths import (
     AZAHAR_FLATPAK_APP_ID,
     DOLPHIN_FLATPAK_APP_ID,
@@ -80,12 +80,15 @@ def _is_windows_style_runtime_path(value: str) -> bool:
     return normalized.casefold().endswith(".exe")
 
 
-def _resolve_rom_path(base: Path, rel_path: str) -> Path:
+def _resolve_rom_path(config: GamehubConfig, rel_path: str) -> Path:
+    base = config.roms_dir if config.roms_dir is not None else config.library_dir
+    preferred_root = "roms" if config.roms_dir is None else None
+    normalized_rel = rel_path if config.roms_dir is None else strip_rel_path_root(rel_path, "roms")
     try:
-        return from_rel_path(base, rel_path, preferred_root="roms")
+        return from_rel_path(base, normalized_rel, preferred_root=preferred_root)
     except TypeError:
         # Compatibility for patched resolvers in tests/extensions that still use the old 2-arg signature.
-        return from_rel_path(base, rel_path)
+        return from_rel_path(base, normalized_rel)
 
 
 def _normalize_linux_retroarch_launch_template(
@@ -300,7 +303,7 @@ def build_shortcut_specs(
 ) -> list[SteamShortcutSpec]:
     specs: list[SteamShortcutSpec] = []
     for title in sorted(index.titles, key=lambda item: (item.system, item.title_name.casefold(), item.title_id)):
-        rom_path = _resolve_rom_path(config.library_dir, title.rom.rel_path)
+        rom_path = _resolve_rom_path(config, title.rom.rel_path)
         emulator_exe = resolve_emulator_executable(title.emulator)
         dolphin_flatpak = (
             sys.platform.startswith("linux")
