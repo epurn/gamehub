@@ -3,7 +3,7 @@
 ## Validation Status
 - Windows: verified
 - Bazzite: tested
-- SteamOS (Deck): untested
+- SteamOS (Deck): in-progress (defaults/path coverage improved)
 - Fedora: untested
 - Ubuntu: untested
 
@@ -16,6 +16,8 @@
   - [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 
 Legacy/general templates are still available:
+- Steam Deck implementation details and research-backed assumptions:
+  - [docs/steamdeck-support-plan.md](steamdeck-support-plan.md)
 - [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
 - [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
 

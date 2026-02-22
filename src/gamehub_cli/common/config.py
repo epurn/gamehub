@@ -41,6 +41,7 @@ class GamehubConfig:
     sgdb_api_key: str | None
     sgdb_cache_dir: Path
     sgdb_enabled_kinds: tuple[str, ...]
+    roms_dir: Path | None = None
     index_timeout_seconds: float | None = None
     index_fetch_attempts: int = 3
     index_retry_backoff_seconds: float = 1.5
@@ -246,6 +247,9 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     config_flatpak_remote = _normalize_optional_text(linux.get("flatpak_remote"))
     env_flatpak_remote = _normalize_optional_text(_first_env_value("GAMEHUB_LINUX_FLATPAK_REMOTE"))
 
+    config_roms_dir = _normalize_optional_path(paths.get("roms_dir", paths.get("output_dir")))
+    env_roms_dir = _normalize_optional_path(_first_env_value("GAMEHUB_ROMS_DIR", "GAMEHUB_OUTPUT_DIR"))
+
     config_retroarch_cfg_path = _normalize_optional_path(linux.get("retroarch_cfg_path"))
     env_retroarch_cfg_path = _normalize_optional_path(_first_env_value("GAMEHUB_RETROARCH_CFG_PATH"))
     config_retroarch_system_dir = _normalize_optional_path(linux.get("retroarch_system_dir"))
@@ -296,6 +300,7 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
         library_dir=library_dir,
         firmware_dir=firmware_dir,
         state_path=state_path,
+        roms_dir=env_roms_dir if env_roms_dir is not None else config_roms_dir,
         steam_userdata_dir=steam_userdata_dir,
         steam_id=steam_id,
         steam_exe=steam_exe,

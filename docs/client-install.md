@@ -121,11 +121,16 @@ export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
 - Start from template [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml).
 - Steam Deck installs may use `~/.steam/steam/userdata` or `~/.local/share/Steam/userdata`.
 - Keep config explicit with `steam.userdata_dir` and optional `steam.steam_id` to avoid profile ambiguity on shared devices.
-- If emulators are Flatpak-based, prefer:
+- If you keep ROMs on microSD, set `paths.roms_dir` (or `paths.output_dir`) to `/run/media/deck/<SD_CARD_LABEL>/...`.
+- Steam Deck should use Flatpak emulator management by default:
 ```toml
 [linux]
 emulator_install_backend = "flatpak"
+flatpak_remote = "flathub"
 ```
+- Launch autoconfig now treats the built-in Steam Deck controller as a controller-first default (Xbox controllers remain supported).
+- Game Mode note: Steam relaunch/foreground behavior can differ from Desktop Mode; if relaunch is flaky during validation, run with `--skip-steam-relaunch` and reopen Steam manually.
+- Detailed implementation notes: [docs/steamdeck-support-plan.md](steamdeck-support-plan.md).
 
 ## Windows standalone EXE
 

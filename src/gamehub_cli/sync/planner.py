@@ -7,7 +7,7 @@ from gamehub_common.ids import sha256_file
 from gamehub_common.models import LibraryIndex
 
 from ..common.config import GamehubConfig
-from ..common.paths import from_rel_path
+from ..common.paths import from_rel_path, strip_rel_path_root
 from .state import SyncState
 
 
@@ -45,6 +45,14 @@ def _is_file_valid(path: Path, expected_sha256: str, verify: bool, expected_size
     return True
 
 
+
+
+def _resolve_rom_destination(config: GamehubConfig, rel_path: str) -> Path:
+    if config.roms_dir is None:
+        return from_rel_path(config.library_dir, rel_path, preferred_root="roms")
+    normalized_rel = strip_rel_path_root(rel_path, "roms")
+    return from_rel_path(config.roms_dir, normalized_rel)
+
 def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncState, verify: bool = False) -> SyncPlan:
     plan = SyncPlan()
     system_map = {system.name: system for system in index.systems}
@@ -78,7 +86,7 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
             plan.skipped_titles += 1
             continue
 
-        rom_path = from_rel_path(config.library_dir, title.rom.rel_path, preferred_root="roms")
+        rom_path = _resolve_rom_destination(config, title.rom.rel_path)
         known_sha = state.downloaded_checksums.get(title.rom.file_id)
         rom_ok = _is_file_valid(rom_path, title.rom.sha256, verify, expected_size_bytes=title.rom.size_bytes) and (
             known_sha is None or known_sha == title.rom.sha256
