@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from pathlib import Path
-import shutil
-from uuid import uuid4
-
-from gamehub_cli import controller_detection
-from gamehub_cli.controller_detection import XboxController, detect_xbox_controllers
+from gamehub_cli.controllers import detection as controller_detection
+from gamehub_cli.controllers.detection import XboxController, detect_xbox_controllers
 
 
 def test_linux_parse_xbox_devices_filters_and_orders_by_js() -> None:
@@ -32,8 +27,8 @@ def test_linux_parse_xbox_devices_filters_and_orders_by_js() -> None:
     ]
 
 
-def test_detect_xbox_controllers_linux_reads_proc_file(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-detection-") as temp_root:
+def test_detect_xbox_controllers_linux_reads_proc_file(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-detection-") as temp_root:
         raw = "\n".join(
             [
                 'N: Name="Xbox Wireless Controller"',
@@ -88,13 +83,3 @@ def test_detect_xbox_controllers_windows_uses_xinput_slots_and_subtypes(monkeypa
         XboxController(slot=0, name="XInput/0", subtype=7),
         XboxController(slot=2, name="XInput/2", subtype=9),
     ]
-
-
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    temp_root = Path(".pytest_tmp_local") / f"{prefix}{uuid4().hex}"
-    temp_root.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_root
-    finally:
-        shutil.rmtree(temp_root, ignore_errors=True)

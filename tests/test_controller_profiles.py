@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from pathlib import Path
-import shutil
 import sys
-from uuid import uuid4
+from pathlib import Path
 
-from gamehub_cli.config import ControllersConfig, GamehubConfig
-from gamehub_cli.controller_profiles import (
+from gamehub_cli.common.config import ControllersConfig, GamehubConfig
+from gamehub_cli.controllers.profiles import (
     PROFILE_KBM,
     PROFILE_XBOX_1P,
     PROFILE_XBOX_2P,
@@ -41,8 +38,8 @@ def test_profile_name_for_controller_count() -> None:
     assert profile_name_for_controller_count(99) == PROFILE_XBOX_2P
 
 
-def test_seed_default_profiles_creates_profile_tree() -> None:
-    with _workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+def test_seed_default_profiles_creates_profile_tree(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
         config = _config(temp_root)
 
         created = seed_default_profiles(config)
@@ -76,8 +73,8 @@ def test_seed_default_profiles_creates_profile_tree() -> None:
             assert "Device = XInput2/0/Virtual core pointer" in dolphin_kbm_hotkeys
 
 
-def test_seed_default_profiles_skips_custom_profiles_dir() -> None:
-    with _workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+def test_seed_default_profiles_skips_custom_profiles_dir(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
         config = GamehubConfig(
             server_url="http://localhost:8000",
             library_dir=temp_root / "library",
@@ -99,8 +96,8 @@ def test_seed_default_profiles_skips_custom_profiles_dir() -> None:
         assert not (root / "pcsx2" / "kbm" / "PCSX2.ini").exists()
 
 
-def test_load_profile_file_prefers_user_override() -> None:
-    with _workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+def test_load_profile_file_prefers_user_override(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         root = resolve_profiles_root(config)
@@ -115,14 +112,3 @@ def test_load_profile_file_prefers_user_override() -> None:
         )
 
         assert "OpenPauseMenu = Keyboard/F1" in "\n".join(lines)
-
-
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    temp_root = Path(".pytest_tmp_local") / f"{prefix}{uuid4().hex}"
-    temp_root.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_root
-    finally:
-        shutil.rmtree(temp_root, ignore_errors=True)
-

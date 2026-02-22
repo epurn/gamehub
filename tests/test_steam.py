@@ -1,29 +1,26 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import json
 import os
-from pathlib import Path
 import re
-import shutil
-from uuid import uuid4
+from pathlib import Path
 
 import vdf
 
 from gamehub_cli.steam import (
     LINUX_STEAM_PROCESS_NAMES,
-    SteamContext,
     SteamArtworkAssignment,
+    SteamContext,
     SteamShortcutSpec,
-    close_steam_best_effort,
-    discover_userdata_dir,
-    is_steam_running,
-    reopen_steam,
-    steam_id64_from_userdata_id,
     backup_steam_configs,
+    close_steam_best_effort,
     copy_grid_art,
     discover_steam_id,
+    discover_userdata_dir,
+    is_steam_running,
     prune_grid_noncanonical_variants,
+    reopen_steam,
+    steam_id64_from_userdata_id,
     update_cloud_collections,
     update_collections,
     upsert_shortcuts,
@@ -31,10 +28,8 @@ from gamehub_cli.steam import (
 )
 
 
-
-
-def test_discover_steam_id_uses_lowest_numeric_dir() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_discover_steam_id_uses_lowest_numeric_dir(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         (temp_root / "not-a-steamid").mkdir()
         (temp_root / "76561198000000010").mkdir()
         (temp_root / "76561198000000002").mkdir()
@@ -44,20 +39,20 @@ def test_discover_steam_id_uses_lowest_numeric_dir() -> None:
         assert steam_id == "76561198000000002"
 
 
-def test_discover_userdata_dir_does_not_fallback_when_explicit_missing(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_discover_userdata_dir_does_not_fallback_when_explicit_missing(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         existing = temp_root / "detected" / "userdata"
         existing.mkdir(parents=True, exist_ok=True)
         missing = temp_root / "missing" / "userdata"
-        monkeypatch.setattr("gamehub_cli.steam._candidate_userdata_dirs", lambda: [existing])
+        monkeypatch.setattr("gamehub_cli.steam.lifecycle._candidate_userdata_dirs", lambda: [existing])
 
         resolved = discover_userdata_dir(missing)
 
         assert resolved is None
 
 
-def test_discover_userdata_dir_uses_explicit_path(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_discover_userdata_dir_uses_explicit_path(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         env_path = temp_root / "env" / "userdata"
         env_path.mkdir(parents=True, exist_ok=True)
         explicit = temp_root / "explicit" / "userdata"
@@ -69,8 +64,8 @@ def test_discover_userdata_dir_uses_explicit_path(monkeypatch) -> None:
         assert resolved == explicit
 
 
-def test_discover_steam_id_prefers_most_recent_profile() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_discover_steam_id_prefers_most_recent_profile(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         older = temp_root / "76561198000000002"
         newer = temp_root / "76561198000000010"
         (older / "config").mkdir(parents=True, exist_ok=True)
@@ -87,8 +82,8 @@ def test_discover_steam_id_prefers_most_recent_profile() -> None:
         assert steam_id == "76561198000000010"
 
 
-def test_discover_steam_id_uses_preferred_when_present() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_discover_steam_id_uses_preferred_when_present(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         (temp_root / "76561198000000010").mkdir()
         (temp_root / "76561198000000002").mkdir()
 
@@ -97,8 +92,8 @@ def test_discover_steam_id_uses_preferred_when_present() -> None:
         assert steam_id == "76561198000000010"
 
 
-def test_discover_steam_id_accepts_preferred_steamid64() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_discover_steam_id_accepts_preferred_steamid64(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         account_id = "37747392"
         (temp_root / account_id).mkdir()
 
@@ -107,8 +102,8 @@ def test_discover_steam_id_accepts_preferred_steamid64() -> None:
         assert steam_id == account_id
 
 
-def test_discover_steam_id_raises_for_missing_preferred() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_discover_steam_id_raises_for_missing_preferred(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         (temp_root / "76561198000000010").mkdir()
 
         try:
@@ -124,8 +119,8 @@ def test_steam_id64_from_userdata_id_converts_account_id() -> None:
     assert steam_id64_from_userdata_id("76561197998013120") == "76561197998013120"
 
 
-def test_backup_steam_configs_creates_timestamped_files() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_backup_steam_configs_creates_timestamped_files(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         shortcuts = config_dir / "shortcuts.vdf"
@@ -150,8 +145,8 @@ def test_backup_steam_configs_creates_timestamped_files() -> None:
 
 def test_wait_for_steam_exit_returns_true_when_process_stops(monkeypatch) -> None:
     states = iter([True, True, False])
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle.is_steam_running", lambda: next(states))
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.is_steam_running", lambda: next(states))
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.time.sleep", lambda _seconds: None)
 
     assert wait_for_steam_exit(timeout_seconds=2) is True
 
@@ -165,8 +160,8 @@ def test_is_steam_running_linux_checks_exact_process_names(monkeypatch) -> None:
         process_name = cmd[-1]
         return type("Completed", (), {"returncode": 0 if process_name == "steam" else 1, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.subprocess.run", fake_run)
 
     running = is_steam_running()
 
@@ -177,9 +172,9 @@ def test_is_steam_running_linux_checks_exact_process_names(monkeypatch) -> None:
 
 def test_close_steam_best_effort_linux_uses_exact_process_names(monkeypatch) -> None:
     commands: list[list[str]] = []
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
     monkeypatch.setattr(
-        "gamehub_cli.steam_lifecycle._run_process_best_effort",
+        "gamehub_cli.steam.lifecycle._run_process_best_effort",
         lambda cmd, timeout_seconds=10: commands.append(cmd),
     )
 
@@ -191,8 +186,8 @@ def test_close_steam_best_effort_linux_uses_exact_process_names(monkeypatch) -> 
     assert forced == [["pkill", "-9", "-x", name] for name in LINUX_STEAM_PROCESS_NAMES]
 
 
-def test_copy_grid_art_copies_existing_and_skips_missing() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_copy_grid_art_copies_existing_and_skips_missing(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         source_grid = temp_root / "cache" / "grid.png"
@@ -221,8 +216,8 @@ def test_copy_grid_art_copies_existing_and_skips_missing() -> None:
         assert copied_names == ["123456.png", "123456_icon.png", "123456p.png"]
 
 
-def test_copy_grid_art_prefers_dedicated_landscape_grid_when_present() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_copy_grid_art_prefers_dedicated_landscape_grid_when_present(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         source_grid = temp_root / "cache" / "grid.png"
@@ -253,8 +248,8 @@ def test_copy_grid_art_prefers_dedicated_landscape_grid_when_present() -> None:
         assert (grid_dir / "123456.png").read_bytes() == b"landscape"
 
 
-def test_upsert_shortcuts_round_trip_and_idempotent() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_upsert_shortcuts_round_trip_and_idempotent(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -297,8 +292,8 @@ def test_upsert_shortcuts_round_trip_and_idempotent() -> None:
         assert str(managed_entry.get("appid", "")).lstrip("-").isdigit()
 
 
-def test_upsert_shortcuts_migrates_legacy_matching_entry() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_upsert_shortcuts_migrates_legacy_matching_entry(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -340,8 +335,8 @@ def test_upsert_shortcuts_migrates_legacy_matching_entry() -> None:
         assert "NES" in tag_values
 
 
-def test_upsert_shortcuts_migrates_legacy_entry_when_launch_options_changed() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_upsert_shortcuts_migrates_legacy_entry_when_launch_options_changed(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -382,8 +377,8 @@ def test_upsert_shortcuts_migrates_legacy_entry_when_launch_options_changed() ->
         assert "GAMEHUB_TITLE:title_psx_ctr" in tag_values
 
 
-def test_upsert_shortcuts_migrates_legacy_entry_when_emulator_family_changes() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_upsert_shortcuts_migrates_legacy_entry_when_emulator_family_changes(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -424,8 +419,8 @@ def test_upsert_shortcuts_migrates_legacy_entry_when_emulator_family_changes() -
         assert "GAMEHUB_TITLE:title_ps2_torino_2006" in tag_values
 
 
-def test_update_collections_preserves_unmanaged_and_is_idempotent() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_update_collections_preserves_unmanaged_and_is_idempotent(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -455,8 +450,8 @@ def test_update_collections_preserves_unmanaged_and_is_idempotent() -> None:
         assert sorted(item["name"] for item in managed) == ["NES", "PSX"]
 
 
-def test_update_collections_skips_noop_write(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_update_collections_skips_noop_write(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -473,7 +468,9 @@ def test_update_collections_skips_noop_write(monkeypatch) -> None:
         )
 
         writes: list[str] = []
-        monkeypatch.setattr("gamehub_cli.steam_collections._atomic_write_text", lambda path, payload: writes.append(payload))
+        monkeypatch.setattr(
+            "gamehub_cli.steam.collections._atomic_write_text", lambda path, payload: writes.append(payload)
+        )
 
         changed = update_collections(context, {"NES": ["100"]})
 
@@ -481,8 +478,8 @@ def test_update_collections_skips_noop_write(monkeypatch) -> None:
         assert writes == []
 
 
-def test_upsert_shortcuts_uses_persisted_appid_for_mapping() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_upsert_shortcuts_uses_persisted_appid_for_mapping(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -524,8 +521,8 @@ def test_upsert_shortcuts_uses_persisted_appid_for_mapping() -> None:
         assert result.app_ids_by_system["PSX"] == ["-602952253"]
 
 
-def test_update_collections_creates_canonical_webstorage_path_when_missing() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_update_collections_creates_canonical_webstorage_path_when_missing(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -547,8 +544,8 @@ def test_update_collections_creates_canonical_webstorage_path_when_missing() -> 
         assert names == ["PSX"]
 
 
-def test_update_collections_normalizes_added_appids_to_unsigned() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_update_collections_normalizes_added_appids_to_unsigned(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -570,8 +567,8 @@ def test_update_collections_normalizes_added_appids_to_unsigned() -> None:
         assert psx["added"] == [3692015043]
 
 
-def test_update_collections_preserves_list_json_shape() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_update_collections_preserves_list_json_shape(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -598,8 +595,8 @@ def test_update_collections_preserves_list_json_shape() -> None:
         assert names == ["Manual", "NES"]
 
 
-def test_update_cloud_collections_preserves_unmanaged_and_is_idempotent() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_update_cloud_collections_preserves_unmanaged_and_is_idempotent(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         cloud_path = config_dir / "cloudstorage" / "cloud-storage-namespace-1.json"
         cloud_path.parent.mkdir(parents=True, exist_ok=True)
@@ -652,8 +649,8 @@ def test_update_cloud_collections_preserves_unmanaged_and_is_idempotent() -> Non
         assert psx_value["added"] == [300]
 
 
-def test_update_cloud_collections_returns_zero_without_path() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_update_cloud_collections_returns_zero_without_path(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         context = SteamContext(
@@ -670,8 +667,8 @@ def test_update_cloud_collections_returns_zero_without_path() -> None:
         assert changed == 0
 
 
-def test_prune_grid_noncanonical_variants_removes_signed_when_unsigned_exists() -> None:
-    with _workspace_tempdir("gamehub-steam-") as temp_root:
+def test_prune_grid_noncanonical_variants_removes_signed_when_unsigned_exists(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         grid_dir = config_dir / "grid"
         grid_dir.mkdir(parents=True, exist_ok=True)
@@ -693,14 +690,14 @@ def test_prune_grid_noncanonical_variants_removes_signed_when_unsigned_exists() 
 
 def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
     launched: list[tuple[list[str], dict]] = []
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: True)
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: True)
     monkeypatch.setattr(
-        "gamehub_cli.steam_lifecycle.shutil.which",
+        "gamehub_cli.steam.lifecycle.shutil.which",
         lambda command: "/usr/bin/steam" if command == "steam" else None,
     )
     monkeypatch.setattr(
-        "gamehub_cli.steam_lifecycle.subprocess.Popen",
+        "gamehub_cli.steam.lifecycle.subprocess.Popen",
         lambda command, **kwargs: launched.append((command, kwargs)),
     )
     context = SteamContext(
@@ -720,9 +717,9 @@ def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
 
 
 def test_reopen_steam_linux_returns_false_when_no_launcher_available(monkeypatch) -> None:
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: False)
-    monkeypatch.setattr("gamehub_cli.steam_lifecycle.shutil.which", lambda command: None)
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: False)
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.shutil.which", lambda command: None)
     context = SteamContext(
         userdata_dir=Path("userdata"),
         steam_id="76561198000000001",

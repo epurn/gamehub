@@ -2,7 +2,7 @@ services:
   gamehub-server:
     build:
       context: ..
-      dockerfile: apps/server/Dockerfile
+      dockerfile: docker/Dockerfile
     image: ${GAMEHUB_SERVER_IMAGE:-ghcr.io/epurn/gamehub-server}:${GAMEHUB_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:

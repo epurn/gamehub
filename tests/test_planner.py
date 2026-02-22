@@ -1,27 +1,12 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import hashlib
 from pathlib import Path
-import shutil
-from uuid import uuid4
 
-from gamehub_cli.config import GamehubConfig
-from gamehub_cli.planner import create_sync_plan
-from gamehub_cli.state import SyncState
+from gamehub_cli.common.config import GamehubConfig
+from gamehub_cli.sync.planner import create_sync_plan
+from gamehub_cli.sync.state import SyncState
 from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SystemSpec, TitleEntry
-
-
-@contextmanager
-def _workspace_plan_dir(prefix: str):
-    root = Path(__file__).resolve().parents[1] / ".pytest_tmp_local"
-    root.mkdir(parents=True, exist_ok=True)
-    temp_dir = root / f"{prefix}{uuid4().hex}"
-    temp_dir.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_dir
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -73,8 +58,8 @@ def test_planner_blocks_titles_when_firmware_missing() -> None:
     assert plan.blocked_systems["PS2"] == "Missing required firmware"
 
 
-def test_planner_n3ds_without_firmware_metadata_does_not_block_titles() -> None:
-    with _workspace_plan_dir("gamehub-plan-") as temp_root:
+def test_planner_n3ds_without_firmware_metadata_does_not_block_titles(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-plan-") as temp_root:
         system = SystemSpec(
             name="N3DS",
             rom_extensions=(".3ds", ".cci", ".cxi"),
@@ -121,8 +106,8 @@ def test_planner_n3ds_without_firmware_metadata_does_not_block_titles() -> None:
         assert not plan.blocked_systems
 
 
-def test_planner_includes_rom_when_required_firmware_present() -> None:
-    with _workspace_plan_dir("gamehub-plan-") as temp_root:
+def test_planner_includes_rom_when_required_firmware_present(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-plan-") as temp_root:
         system = SystemSpec(
             name="PSX",
             rom_extensions=(".bin",),
@@ -172,8 +157,8 @@ def test_planner_includes_rom_when_required_firmware_present() -> None:
         assert not plan.blocked_systems
 
 
-def test_planner_verify_hash_detects_local_rom_drift() -> None:
-    with _workspace_plan_dir("gamehub-plan-") as temp_root:
+def test_planner_verify_hash_detects_local_rom_drift(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-plan-") as temp_root:
         system = SystemSpec(
             name="NES",
             rom_extensions=(".nes",),
@@ -224,8 +209,8 @@ def test_planner_verify_hash_detects_local_rom_drift() -> None:
         assert plan_verify.content_actions[0].content_id == "file_mario"
 
 
-def test_planner_without_verify_still_redownloads_on_size_mismatch() -> None:
-    with _workspace_plan_dir("gamehub-plan-") as temp_root:
+def test_planner_without_verify_still_redownloads_on_size_mismatch(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-plan-") as temp_root:
         system = SystemSpec(
             name="NES",
             rom_extensions=(".nes",),
@@ -274,8 +259,8 @@ def test_planner_without_verify_still_redownloads_on_size_mismatch() -> None:
         assert plan.content_actions[0].content_id == "file_size_mismatch"
 
 
-def test_planner_missing_optional_firmware_does_not_block_titles() -> None:
-    with _workspace_plan_dir("gamehub-plan-") as temp_root:
+def test_planner_missing_optional_firmware_does_not_block_titles(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-plan-") as temp_root:
         system = SystemSpec(
             name="Wii",
             rom_extensions=(".iso",),

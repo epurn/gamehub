@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from pathlib import Path
-import shutil
-from uuid import uuid4
 
 import pytest
 
 from gamehub_cli.emulators import ensure_emulators, resolve_emulator_executable
 from gamehub_common.models import LibraryIndex, SystemSpec
-
-
 
 
 def _index_with_emulators(*names: str) -> LibraryIndex:
@@ -29,8 +24,8 @@ def _index_with_emulators(*names: str) -> LibraryIndex:
 
 def test_ensure_emulators_dry_run_reports_missing(monkeypatch, capsys) -> None:
     index = _index_with_emulators("retroarch")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda name: None)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", lambda name: None)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
 
     ensure_emulators(index=index, dry_run=True, verbose=False)
 
@@ -60,11 +55,11 @@ def test_ensure_emulators_uses_winget_for_missing(monkeypatch, capsys) -> None:
         state["retroarch_installed"] = True
         return FakeCompleted()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "win32")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "win32")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(index=index, dry_run=False, verbose=False)
 
@@ -103,13 +98,13 @@ def test_ensure_emulators_uses_fedora_dnf_for_missing(monkeypatch, capsys) -> No
         state["installed"] = True
         return FakeCompleted()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "fedora")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.os.geteuid", lambda: 1000, raising=False)
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "fedora")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.os.geteuid", lambda: 1000, raising=False)
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(index=index, dry_run=False, verbose=False)
 
@@ -141,13 +136,13 @@ def test_ensure_emulators_linux_auto_uses_apt_on_ubuntu(monkeypatch, capsys) -> 
         state["installed"] = True
         return FakeCompleted()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "ubuntu debian")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.os.geteuid", lambda: 1000, raising=False)
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "ubuntu debian")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.os.geteuid", lambda: 1000, raising=False)
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(index=index, dry_run=False, verbose=False)
 
@@ -158,11 +153,11 @@ def test_ensure_emulators_linux_auto_uses_apt_on_ubuntu(monkeypatch, capsys) -> 
 
 def test_ensure_emulators_linux_apt_backend_requires_apt(monkeypatch, capsys) -> None:
     index = _index_with_emulators("retroarch")
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "ubuntu")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda name: None)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "ubuntu")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", lambda name: None)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
 
     ensure_emulators(index=index, dry_run=False, verbose=False, linux_install_backend="apt")
 
@@ -172,11 +167,11 @@ def test_ensure_emulators_linux_apt_backend_requires_apt(monkeypatch, capsys) ->
 
 def test_ensure_emulators_linux_non_fedora_reports_unsupported(monkeypatch, capsys) -> None:
     index = _index_with_emulators("retroarch")
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "ubuntu")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda name: None)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "ubuntu")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", lambda name: None)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
 
     ensure_emulators(index=index, dry_run=False, verbose=False)
 
@@ -205,12 +200,12 @@ def test_ensure_emulators_linux_auto_uses_flatpak_when_available(monkeypatch, ca
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
         return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(index=index, dry_run=False, verbose=False)
 
@@ -246,16 +241,16 @@ def test_ensure_emulators_linux_flatpak_backend_forces_dolphin_flatpak_when_nati
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
         return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite fedora")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "bazzite fedora")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
     monkeypatch.setattr(
-        "gamehub_cli.emulators.emulator_install._flatpak_app_export_candidates",
+        "gamehub_cli.emulators.installer._flatpak_app_export_candidates",
         lambda app_id: (),
     )
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(index=index, dry_run=False, verbose=False, linux_install_backend="flatpak")
 
@@ -283,16 +278,16 @@ def test_ensure_emulators_linux_flatpak_backend_raises_when_forced_dolphin_still
             return type("Completed", (), {"returncode": 1, "stdout": ""})()
         return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite fedora")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "bazzite fedora")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
     monkeypatch.setattr(
-        "gamehub_cli.emulators.emulator_install._flatpak_app_export_candidates",
+        "gamehub_cli.emulators.installer._flatpak_app_export_candidates",
         lambda app_id: (),
     )
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError, match="Required Flatpak emulator\\(s\\) are unavailable"):
         ensure_emulators(index=index, dry_run=False, verbose=False, linux_install_backend="flatpak")
@@ -326,12 +321,12 @@ def test_ensure_emulators_linux_auto_prefers_flatpak_for_bazzite_even_with_dnf(m
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
         return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite fedora")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "bazzite fedora")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(index=index, dry_run=False, verbose=False)
 
@@ -364,12 +359,12 @@ def test_ensure_emulators_linux_flatpak_remote_override(monkeypatch, capsys) -> 
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
         return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(
         index=index,
@@ -411,12 +406,12 @@ def test_ensure_emulators_linux_flatpak_installs_azahar(monkeypatch, capsys) -> 
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
         return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(
         index=index,
@@ -457,12 +452,12 @@ def test_ensure_emulators_linux_flatpak_maps_azahar_qt_alias(monkeypatch, capsys
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
         return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(
         index=index,
@@ -501,12 +496,12 @@ def test_ensure_emulators_linux_flatpak_remote_fallbacks_to_unpinned(monkeypatch
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
         return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "bazzite")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "bazzite")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(
         index=index,
@@ -542,12 +537,12 @@ def test_ensure_emulators_linux_command_backend(monkeypatch, capsys) -> None:
         state["installed"] = True
         return FakeCompleted()
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.emulators._linux_dist_id", lambda: "ubuntu")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "linux")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._linux_dist_id", lambda: "ubuntu")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(
         index=index,
@@ -562,13 +557,13 @@ def test_ensure_emulators_linux_command_backend(monkeypatch, capsys) -> None:
     assert "Installed emulator: dolphin" in capsys.readouterr().out
 
 
-def test_ensure_emulators_detects_known_install_without_winget(monkeypatch, capsys) -> None:
+def test_ensure_emulators_detects_known_install_without_winget(monkeypatch, capsys, workspace_tempdir) -> None:
     index = _index_with_emulators("retroarch")
-    with _workspace_tempdir("gamehub-emulator-detect-") as temp_root:
+    with workspace_tempdir("gamehub-emulator-detect-") as temp_root:
         exe = temp_root / "retroarch.exe"
         exe.write_bytes(b"exe")
-        monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda name: None)
-        monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: (exe,))
+        monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", lambda name: None)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: (exe,))
 
         ensure_emulators(index=index, dry_run=False, verbose=False)
 
@@ -600,12 +595,12 @@ def test_ensure_emulators_windows_dolphin_uses_official_release_without_winget(m
         state["installed"] = True
         return True
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
     monkeypatch.setattr(
-        "gamehub_cli.emulators.emulator_install._install_dolphin_from_official_release_archive",
+        "gamehub_cli.emulators.installer._install_dolphin_from_official_release_archive",
         fake_release_install,
     )
 
@@ -628,14 +623,18 @@ def test_ensure_emulators_windows_azahar_uses_github_release_installer(monkeypat
 
     def fake_azahar_install(*, verbose: bool):
         state["installed"] = True
-        return True, Path("C:/Temp/azahar-installer.exe"), "https://github.com/azahar-emu/azahar/releases/download/2124.3/example.exe"
+        return (
+            True,
+            Path("C:/Temp/azahar-installer.exe"),
+            "https://github.com/azahar-emu/azahar/releases/download/2124.3/example.exe",
+        )
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "win32")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "win32")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
     monkeypatch.setattr(
-        "gamehub_cli.emulators.emulator_install._install_azahar_from_windows_installer",
+        "gamehub_cli.emulators.installer._install_azahar_from_windows_installer",
         fake_azahar_install,
     )
 
@@ -649,12 +648,12 @@ def test_ensure_emulators_windows_azahar_uses_github_release_installer(monkeypat
 def test_ensure_emulators_windows_azahar_installer_failure_warns_manual_fallback(monkeypatch, capsys) -> None:
     index = _index_with_emulators("azahar")
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "win32")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda name: None)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "win32")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", lambda name: None)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
     monkeypatch.setattr(
-        "gamehub_cli.emulators.emulator_install._install_azahar_from_windows_installer",
+        "gamehub_cli.emulators.installer._install_azahar_from_windows_installer",
         lambda *args, **kwargs: (
             False,
             Path("C:/Temp/azahar-2124.3-windows-msys2-installer.exe"),
@@ -667,7 +666,10 @@ def test_ensure_emulators_windows_azahar_installer_failure_warns_manual_fallback
     out = capsys.readouterr().out
     assert "automatic silent Azahar install failed" in out
     assert "run installer manually: C:/Temp/azahar-2124.3-windows-msys2-installer.exe" in out
-    assert "install Azahar manually from https://github.com/azahar-emu/azahar/releases/download/2124.3/azahar-2124.3-windows-msys2-installer.exe and re-run sync" in out
+    assert (
+        "install Azahar manually from https://github.com/azahar-emu/azahar/releases/download/2124.3/azahar-2124.3-windows-msys2-installer.exe and re-run sync"
+        in out
+    )
 
 
 def test_ensure_emulators_windows_azahar_installer_retries_with_uac_elevation(monkeypatch, capsys) -> None:
@@ -699,15 +701,15 @@ def test_ensure_emulators_windows_azahar_installer_retries_with_uac_elevation(mo
             return FakeCompleted(0)
         return FakeCompleted(0)
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
-    monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "win32")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "win32")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
     monkeypatch.setattr(
-        "gamehub_cli.emulators.emulator_install._download_azahar_windows_installer",
+        "gamehub_cli.emulators.installer._download_azahar_windows_installer",
         lambda url: Path("C:/Temp/azahar-2124.3-windows-msys2-installer.exe"),
     )
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
 
     ensure_emulators(index=index, dry_run=False, verbose=False)
 
@@ -723,11 +725,11 @@ def test_ensure_emulators_windows_dolphin_archive_failure_warns(monkeypatch, cap
     def fake_which(name: str) -> str | None:
         return None
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
     monkeypatch.setattr(
-        "gamehub_cli.emulators.emulator_install._install_dolphin_from_official_release_archive",
+        "gamehub_cli.emulators.installer._install_dolphin_from_official_release_archive",
         lambda *args, **kwargs: False,
     )
 
@@ -761,12 +763,12 @@ def test_ensure_emulators_windows_dolphin_uses_official_release_fallback(monkeyp
         state["installed"] = True
         return True
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.subprocess.run", fake_run)
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
     monkeypatch.setattr(
-        "gamehub_cli.emulators.emulator_install._install_dolphin_from_official_release_archive",
+        "gamehub_cli.emulators.installer._install_dolphin_from_official_release_archive",
         fake_manifest_fallback,
     )
 
@@ -790,63 +792,63 @@ def test_ensure_emulators_windows_dolphin_fails_fast_on_legacy_parser_path(monke
             return legacy_path
         return None
 
-    monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "nt")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
 
     with pytest.raises(RuntimeError, match="Unsupported legacy Dolphin build detected"):
         ensure_emulators(index=index, dry_run=False, verbose=False)
 
 
 def test_resolve_emulator_executable_prefers_shutil_which(monkeypatch) -> None:
-    monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda cmd: "C:\\Emulators\\retroarch.exe")
-    monkeypatch.setattr("gamehub_cli.emulators._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.resolution.shutil.which", lambda cmd: "C:\\Emulators\\retroarch.exe")
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
     resolved = resolve_emulator_executable("retroarch")
     assert resolved == "C:\\Emulators\\retroarch.exe"
 
 
-def test_resolve_emulator_executable_falls_back_to_known_paths(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-emulator-resolve-") as temp_root:
+def test_resolve_emulator_executable_falls_back_to_known_paths(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-emulator-resolve-") as temp_root:
         candidate = temp_root / "Programs" / "RetroArch" / "retroarch.exe"
         candidate.parent.mkdir(parents=True, exist_ok=True)
         candidate.write_bytes(b"exe")
-        monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._OS_NAME", "nt")
         monkeypatch.setenv("LOCALAPPDATA", str(temp_root))
         monkeypatch.delenv("ProgramFiles", raising=False)
-        monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda cmd: None)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution.shutil.which", lambda cmd: None)
 
         resolved = resolve_emulator_executable("retroarch")
 
         assert resolved == str(candidate)
 
 
-def test_resolve_emulator_executable_falls_back_to_known_azahar_paths(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-emulator-resolve-") as temp_root:
+def test_resolve_emulator_executable_falls_back_to_known_azahar_paths(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-emulator-resolve-") as temp_root:
         candidate = temp_root / "Programs" / "Azahar" / "azahar.exe"
         candidate.parent.mkdir(parents=True, exist_ok=True)
         candidate.write_bytes(b"exe")
-        monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._OS_NAME", "nt")
         monkeypatch.setenv("LOCALAPPDATA", str(temp_root))
         monkeypatch.delenv("ProgramFiles", raising=False)
         monkeypatch.delenv("ProgramFiles(x86)", raising=False)
-        monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda cmd: None)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution.shutil.which", lambda cmd: None)
 
         resolved = resolve_emulator_executable("azahar")
 
         assert resolved == str(candidate)
 
 
-def test_resolve_emulator_executable_prefers_known_path_over_windowsapps_alias(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-emulator-resolve-") as temp_root:
+def test_resolve_emulator_executable_prefers_known_path_over_windowsapps_alias(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-emulator-resolve-") as temp_root:
         candidate = temp_root / "Programs" / "RetroArch" / "retroarch.exe"
         candidate.parent.mkdir(parents=True, exist_ok=True)
         candidate.write_bytes(b"exe")
-        monkeypatch.setattr("gamehub_cli.emulators.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._OS_NAME", "nt")
         monkeypatch.setenv("LOCALAPPDATA", str(temp_root))
         monkeypatch.delenv("ProgramFiles", raising=False)
         monkeypatch.delenv("ProgramFiles(x86)", raising=False)
         monkeypatch.setattr(
-            "gamehub_cli.emulators.shutil.which",
+            "gamehub_cli.emulators.resolution.shutil.which",
             lambda cmd: "C:\\Users\\evanp\\AppData\\Local\\Microsoft\\WindowsApps\\retroarch.exe",
         )
 
@@ -855,8 +857,8 @@ def test_resolve_emulator_executable_prefers_known_path_over_windowsapps_alias(m
         assert resolved == str(candidate)
 
 
-def test_resolve_emulator_executable_linux_uses_matching_flatpak_export(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-emulator-linux-flatpak-") as temp_root:
+def test_resolve_emulator_executable_linux_uses_matching_flatpak_export(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-emulator-linux-flatpak-") as temp_root:
         export_dir = temp_root / ".local" / "share" / "flatpak" / "exports" / "bin"
         export_dir.mkdir(parents=True, exist_ok=True)
         retroarch_export = export_dir / "org.libretro.RetroArch"
@@ -864,27 +866,27 @@ def test_resolve_emulator_executable_linux_uses_matching_flatpak_export(monkeypa
         retroarch_export.write_bytes(b"exe")
         pcsx2_export.write_bytes(b"exe")
 
-        monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.emulators.Path.home", lambda: temp_root)
-        monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda cmd: None)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._SYS_PLATFORM", "linux")
+        monkeypatch.setattr("gamehub_cli.emulators.resolution.Path.home", lambda: temp_root)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution.shutil.which", lambda cmd: None)
 
         resolved = resolve_emulator_executable("pcsx2")
 
         assert resolved == str(pcsx2_export)
 
 
-def test_resolve_emulator_executable_linux_uses_azahar_flatpak_export(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-emulator-linux-flatpak-") as temp_root:
+def test_resolve_emulator_executable_linux_uses_azahar_flatpak_export(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-emulator-linux-flatpak-") as temp_root:
         export_dir = temp_root / ".local" / "share" / "flatpak" / "exports" / "bin"
         export_dir.mkdir(parents=True, exist_ok=True)
         azahar_export = export_dir / "org.azahar_emu.Azahar"
         azahar_export.write_bytes(b"exe")
 
-        monkeypatch.setattr("gamehub_cli.emulators.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.emulators.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.emulators.Path.home", lambda: temp_root)
-        monkeypatch.setattr("gamehub_cli.emulators.shutil.which", lambda cmd: None)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._SYS_PLATFORM", "linux")
+        monkeypatch.setattr("gamehub_cli.emulators.resolution.Path.home", lambda: temp_root)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution.shutil.which", lambda cmd: None)
 
         resolved = resolve_emulator_executable("azahar")
 

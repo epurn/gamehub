@@ -2,6 +2,7 @@
 
 [![Latest Tag](https://img.shields.io/github/v/tag/epurn/gamehub?sort=semver&label=latest%20tag)](https://github.com/epurn/gamehub/tags)
 [![Audit Regression Gates](https://github.com/epurn/gamehub/actions/workflows/audit-regression-gates.yml/badge.svg)](https://github.com/epurn/gamehub/actions/workflows/audit-regression-gates.yml)
+[![Targeted Regression Matrix](https://github.com/epurn/gamehub/actions/workflows/targeted-regression-matrix.yml/badge.svg)](https://github.com/epurn/gamehub/actions/workflows/targeted-regression-matrix.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![License](https://img.shields.io/github/license/epurn/gamehub?branch=main&label=license)](LICENSE)
 
@@ -121,6 +122,7 @@ More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbo
 - Sync behavior: [docs/cli-sync.md](docs/cli-sync.md)
 - Config + env overrides: [docs/config-and-state.md](docs/config-and-state.md)
 - Platform support + templates: [docs/platform-support.md](docs/platform-support.md)
+- Architecture: [docs/architecture.md](docs/architecture.md)
 - Steam behavior: [docs/steam-integration.md](docs/steam-integration.md)
 - Server API: [docs/server-api.md](docs/server-api.md)
 - Operational runbook: [docs/runbook.md](docs/runbook.md)

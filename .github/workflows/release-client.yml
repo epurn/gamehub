@@ -72,7 +72,7 @@ jobs:
 
       - name: Build exe
         run: |
-          pyinstaller --noconfirm --clean --onefile --name gamehub-windows-amd64 --paths . --paths apps/cli --paths apps/server --paths shared/gamehub_common packaging/windows/entrypoint.py
+          pyinstaller --noconfirm --clean --onefile --name gamehub-windows-amd64 --paths . --paths src packaging/windows/entrypoint.py
 
       - name: Smoke test executable
         run: |

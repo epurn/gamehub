@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
+import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
-import subprocess
-import shutil
-import sys
-from uuid import uuid4
 
-from gamehub_cli.config import ControllersConfig, GamehubConfig
-from gamehub_cli.controller_detection import XboxController
-from gamehub_cli.controller_apply import apply_controller_profile, apply_named_controller_profile
-from gamehub_cli.controller_profiles import seed_default_profiles
+from gamehub_cli.common.config import ControllersConfig, GamehubConfig
+from gamehub_cli.controllers.apply import apply_controller_profile, apply_named_controller_profile
+from gamehub_cli.controllers.detection import XboxController
+from gamehub_cli.controllers.profiles import seed_default_profiles
 
 
 def _config(root: Path) -> GamehubConfig:
@@ -30,8 +27,8 @@ def _config(root: Path) -> GamehubConfig:
     )
 
 
-def test_apply_controller_profile_pcsx2_kbm_preserves_unmanaged_sections() -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_pcsx2_kbm_preserves_unmanaged_sections(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
@@ -49,8 +46,8 @@ def test_apply_controller_profile_pcsx2_kbm_preserves_unmanaged_sections() -> No
         assert "Cross = Keyboard/K" in text
 
 
-def test_apply_controller_profile_pcsx2_xbox_modes() -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_pcsx2_xbox_modes(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
@@ -73,8 +70,8 @@ def test_apply_controller_profile_pcsx2_xbox_modes() -> None:
         assert "ConfirmShutdown = false" in text_2
 
 
-def test_apply_controller_profile_pcsx2_writes_confirm_shutdown_false() -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_pcsx2_writes_confirm_shutdown_false(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
@@ -88,8 +85,8 @@ def test_apply_controller_profile_pcsx2_writes_confirm_shutdown_false() -> None:
         assert "ConfirmShutdown = false" in text
 
 
-def test_apply_controller_profile_accepts_emulator_family_alias() -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_accepts_emulator_family_alias(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
@@ -102,8 +99,8 @@ def test_apply_controller_profile_accepts_emulator_family_alias() -> None:
         assert "Cross = SDL-0/A" in text
 
 
-def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         dolphin_root = temp_root / "dolphin-user"
@@ -111,9 +108,13 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "GCPadNew.ini").write_text("[User]\nFoo = Bar\n", encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.controller_apply.detect_xbox_controllers", lambda max_devices=2: [])
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers", lambda max_devices=2: [])
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
 
         profile = apply_controller_profile(config, emulator_name="dolphin", controller_count=2)
 
@@ -137,26 +138,28 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
             assert "Device = XInput/0/Gamepad" in gcpad_text
             assert "Device = XInput/1/Gamepad" in gcpad_text
         assert (
-            "General/Stop = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & "
-            "(`START` | `Start` | `Button 7`))"
+            "General/Stop = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         ) in hotkeys_text
         assert (
-            "General/Exit = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & "
-            "(`START` | `Start` | `Button 7`))"
+            "General/Exit = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         ) in hotkeys_text
 
 
-def test_apply_controller_profile_dolphin_xbox_1p_uses_kbm_bindings_for_p2_gc(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_dolphin_xbox_1p_uses_kbm_bindings_for_p2_gc(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         dolphin_root = temp_root / "dolphin-user"
         config_dir = dolphin_root / "Config"
         config_dir.mkdir(parents=True, exist_ok=True)
 
-        monkeypatch.setattr("gamehub_cli.controller_apply.detect_xbox_controllers", lambda max_devices=2: [])
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers", lambda max_devices=2: [])
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
 
         apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
@@ -167,17 +170,21 @@ def test_apply_controller_profile_dolphin_xbox_1p_uses_kbm_bindings_for_p2_gc(mo
         assert "Buttons/A = X" in gcpad_text
 
 
-def test_apply_controller_profile_dolphin_xbox_1p_uses_kbm_bindings_for_p2_wii(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_dolphin_xbox_1p_uses_kbm_bindings_for_p2_wii(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         dolphin_root = temp_root / "dolphin-user"
         config_dir = dolphin_root / "Config"
         config_dir.mkdir(parents=True, exist_ok=True)
 
-        monkeypatch.setattr("gamehub_cli.controller_apply.detect_xbox_controllers", lambda max_devices=2: [])
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers", lambda max_devices=2: [])
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
 
         apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
         wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
@@ -188,19 +195,25 @@ def test_apply_controller_profile_dolphin_xbox_1p_uses_kbm_bindings_for_p2_wii(m
         assert "Buttons/A = `Click 0`" in wiimote_text
 
 
-def test_apply_controller_profile_dolphin_linux_prefers_evdev_from_detected_xbox(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_dolphin_linux_prefers_evdev_from_detected_xbox(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         dolphin_root = temp_root / "dolphin-user"
         config_dir = dolphin_root / "Config"
         config_dir.mkdir(parents=True, exist_ok=True)
 
-        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
         monkeypatch.setattr(
-            "gamehub_cli.controller_apply.detect_xbox_controllers",
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
             lambda max_devices=2: [XboxController(slot=0, name="Xbox Wireless Controller", subtype=None)],
         )
 
@@ -212,17 +225,23 @@ def test_apply_controller_profile_dolphin_linux_prefers_evdev_from_detected_xbox
         assert "Device = All Devices" in hotkeys_text
 
 
-def test_apply_controller_profile_dolphin_linux_kbm_uses_virtual_pointer_hotkeys(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_dolphin_linux_kbm_uses_virtual_pointer_hotkeys(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         dolphin_root = temp_root / "dolphin-user"
         config_dir = dolphin_root / "Config"
         config_dir.mkdir(parents=True, exist_ok=True)
 
-        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root)
-        monkeypatch.setattr("gamehub_cli.controller_apply.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
 
         apply_controller_profile(config, emulator_name="dolphin", controller_count=0)
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
@@ -233,14 +252,14 @@ def test_apply_controller_profile_dolphin_linux_kbm_uses_virtual_pointer_hotkeys
         assert "Device = XInput2/0/Virtual core pointer" in hotkeys_text
 
 
-def test_apply_controller_profile_azahar_kbm(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_azahar_kbm(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         qt_config = temp_root / "azahar" / "qt-config.ini"
         qt_config.parent.mkdir(parents=True, exist_ok=True)
         qt_config.write_text("custom_key=keep\n", encoding="utf-8")
-        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
 
         profile = apply_named_controller_profile(config, emulator_name="azahar", profile_name="kbm")
         text = qt_config.read_text(encoding="utf-8")
@@ -250,8 +269,8 @@ def test_apply_controller_profile_azahar_kbm(monkeypatch) -> None:
         assert r'profiles\1\button_a="code:65,engine:keyboard"' in text
 
 
-def test_apply_controller_profile_azahar_updates_all_known_target_paths(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_azahar_updates_all_known_target_paths(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         qt_a = temp_root / "azahar-a" / "qt-config.ini"
@@ -260,7 +279,7 @@ def test_apply_controller_profile_azahar_updates_all_known_target_paths(monkeypa
         qt_b.parent.mkdir(parents=True, exist_ok=True)
         qt_a.write_text("custom_key=keep_a\n", encoding="utf-8")
         qt_b.write_text("custom_key=keep_b\n", encoding="utf-8")
-        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_a, qt_b])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_a, qt_b])
 
         apply_named_controller_profile(config, emulator_name="azahar", profile_name="kbm")
 
@@ -270,8 +289,11 @@ def test_apply_controller_profile_azahar_updates_all_known_target_paths(monkeypa
         assert r'profiles\1\button_a="code:65,engine:keyboard"' in qt_b.read_text(encoding="utf-8")
 
 
-def test_apply_controller_profile_azahar_linux_preserves_existing_sdl_bindings_when_discovery_unavailable(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_azahar_linux_preserves_existing_sdl_bindings_when_discovery_unavailable(
+    monkeypatch,
+    workspace_tempdir,
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         qt_config = temp_root / "azahar" / "qt-config.ini"
@@ -288,12 +310,12 @@ def test_apply_controller_profile_azahar_linux_preserves_existing_sdl_bindings_w
             + "\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
-        monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: True)
-        monkeypatch.setattr("gamehub_cli.controller_apply._probe_azahar_flatpak_guid", lambda port=1: None)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: True)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=1: None)
         monkeypatch.setattr(
-            "gamehub_cli.controller_apply._discover_linux_sdl_guid",
+            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
             lambda port=1: "040018dc5e040000130b000000006800",
         )
 
@@ -305,8 +327,10 @@ def test_apply_controller_profile_azahar_linux_preserves_existing_sdl_bindings_w
         assert r'profiles\1\button_start="button:6,engine:sdl,guid:ABC123,port:1"' in text
 
 
-def test_apply_controller_profile_azahar_linux_prefers_runtime_when_existing_matches_host(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_azahar_linux_prefers_runtime_when_existing_matches_host(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         qt_config = temp_root / "azahar" / "qt-config.ini"
@@ -322,15 +346,15 @@ def test_apply_controller_profile_azahar_linux_prefers_runtime_when_existing_mat
             + "\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
-        monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: True)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: True)
         monkeypatch.setattr(
-            "gamehub_cli.controller_apply._probe_azahar_flatpak_guid",
+            "gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid",
             lambda port=0: "030018dc5e040000130b000000006800",
         )
         monkeypatch.setattr(
-            "gamehub_cli.controller_apply._discover_linux_sdl_guid",
+            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
             lambda port=0: "11111111111111111111111111111111",
         )
 
@@ -341,23 +365,23 @@ def test_apply_controller_profile_azahar_linux_prefers_runtime_when_existing_mat
         assert r'profiles\1\button_select="button:4,engine:sdl,guid:030018dc5e040000130b000000006800,port:0"' in text
 
 
-def test_apply_controller_profile_azahar_linux_injects_runtime_guid(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_azahar_linux_injects_runtime_guid(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         qt_config = temp_root / "azahar" / "qt-config.ini"
         qt_config.parent.mkdir(parents=True, exist_ok=True)
         qt_config.write_text("profile=0\n", encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
-        monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: True)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: True)
         monkeypatch.setattr(
-            "gamehub_cli.controller_apply._probe_azahar_flatpak_guid",
+            "gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid",
             lambda port=0: "030018dc5e040000130b000000006800",
         )
         monkeypatch.setattr(
-            "gamehub_cli.controller_apply._discover_linux_sdl_guid",
+            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
             lambda port=0: "040018dc5e040000130b000000006800",
         )
 
@@ -379,20 +403,21 @@ def test_apply_controller_profile_azahar_linux_injects_runtime_guid(monkeypatch)
 
 def test_apply_controller_profile_azahar_linux_flatpak_runtime_unavailable_keeps_port_only_when_no_existing_guid(
     monkeypatch,
+    workspace_tempdir,
 ) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         qt_config = temp_root / "azahar" / "qt-config.ini"
         qt_config.parent.mkdir(parents=True, exist_ok=True)
         qt_config.write_text("profile=0\n", encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
-        monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: True)
-        monkeypatch.setattr("gamehub_cli.controller_apply._probe_azahar_flatpak_guid", lambda port=0: None)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: True)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
         monkeypatch.setattr(
-            "gamehub_cli.controller_apply._discover_linux_sdl_guid",
+            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
             lambda port=0: "040018dc5e040000130b000000006800",
         )
 
@@ -404,20 +429,22 @@ def test_apply_controller_profile_azahar_linux_flatpak_runtime_unavailable_keeps
         assert "guid$0" not in text
 
 
-def test_apply_controller_profile_azahar_linux_non_flatpak_uses_host_guid_when_runtime_unavailable(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_azahar_linux_non_flatpak_uses_host_guid_when_runtime_unavailable(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         qt_config = temp_root / "azahar" / "qt-config.ini"
         qt_config.parent.mkdir(parents=True, exist_ok=True)
         qt_config.write_text("profile=0\n", encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
-        monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: False)
-        monkeypatch.setattr("gamehub_cli.controller_apply._probe_azahar_flatpak_guid", lambda port=0: None)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: False)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
         monkeypatch.setattr(
-            "gamehub_cli.controller_apply._discover_linux_sdl_guid",
+            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
             lambda port=0: "040018dc5e040000130b000000006800",
         )
 
@@ -427,8 +454,10 @@ def test_apply_controller_profile_azahar_linux_non_flatpak_uses_host_guid_when_r
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
 
 
-def test_apply_controller_profile_azahar_linux_upgrades_existing_sdl_without_guid(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_azahar_linux_upgrades_existing_sdl_without_guid(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         qt_config = temp_root / "azahar" / "qt-config.ini"
@@ -444,11 +473,11 @@ def test_apply_controller_profile_azahar_linux_upgrades_existing_sdl_without_gui
             + "\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
-        monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: True)
-        monkeypatch.setattr("gamehub_cli.controller_apply._probe_azahar_flatpak_guid", lambda port=0: None)
-        monkeypatch.setattr("gamehub_cli.controller_apply._discover_linux_sdl_guid", lambda port=0: None)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: True)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid", lambda port=0: None)
 
         apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
         text = qt_config.read_text(encoding="utf-8")
@@ -457,8 +486,8 @@ def test_apply_controller_profile_azahar_linux_upgrades_existing_sdl_without_gui
         assert r'profiles\1\button_b="button:1,engine:sdl,guid:ABC123,port:0"' in text
 
 
-def test_apply_controller_profile_azahar_linux_dedupes_guid_tokens(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-controller-apply-") as temp_root:
+def test_apply_controller_profile_azahar_linux_dedupes_guid_tokens(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
         qt_config = temp_root / "azahar" / "qt-config.ini"
@@ -473,11 +502,11 @@ def test_apply_controller_profile_azahar_linux_dedupes_guid_tokens(monkeypatch) 
             + "\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr("gamehub_cli.controller_apply.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controller_apply._azahar_target_config_paths", lambda: [qt_config])
-        monkeypatch.setattr("gamehub_cli.controller_apply._is_azahar_flatpak_config_path", lambda path: True)
-        monkeypatch.setattr("gamehub_cli.controller_apply._probe_azahar_flatpak_guid", lambda port=0: None)
-        monkeypatch.setattr("gamehub_cli.controller_apply._discover_linux_sdl_guid", lambda port=0: None)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: True)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid", lambda port=0: None)
 
         apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
         text = qt_config.read_text(encoding="utf-8")
@@ -487,13 +516,15 @@ def test_apply_controller_profile_azahar_linux_dedupes_guid_tokens(monkeypatch) 
 
 
 def test_probe_azahar_flatpak_guid_uses_equals_command_flag(monkeypatch) -> None:
-    import gamehub_cli.controller_apply as controller_apply_mod
+    import gamehub_cli.controllers.sdl_guid as controller_apply_mod
 
     captured: dict[str, list[str]] = {}
 
     def _fake_run(cmd, **kwargs):
         captured["cmd"] = list(cmd)
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="030018dc5e040000130b000000006800\n", stderr="")
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=0, stdout="030018dc5e040000130b000000006800\n", stderr=""
+        )
 
     monkeypatch.setattr(controller_apply_mod.sys, "platform", "linux")
     monkeypatch.setattr(controller_apply_mod.shutil, "which", lambda name: "/usr/bin/flatpak")
@@ -504,16 +535,6 @@ def test_probe_azahar_flatpak_guid_uses_equals_command_flag(monkeypatch) -> None
     assert guid == "030018dc5e040000130b000000006800"
     assert "--command=python3" in captured["cmd"]
     assert "--command" not in captured["cmd"]
-
-
-@contextmanager
-def _workspace_tempdir(prefix: str):
-    temp_root = Path(".pytest_tmp_local") / f"{prefix}{uuid4().hex}"
-    temp_root.mkdir(parents=True, exist_ok=False)
-    try:
-        yield temp_root
-    finally:
-        shutil.rmtree(temp_root, ignore_errors=True)
 
 
 def _line_for_key(text: str, key: str) -> str | None:

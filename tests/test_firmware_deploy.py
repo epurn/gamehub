@@ -1,23 +1,14 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-import shutil
-from uuid import uuid4
 
-from gamehub_cli.config import GamehubConfig
-from gamehub_cli.firmware_deploy import (
-    _default_azahar_qt_config_path,
-    _default_dolphin_ini_path,
-    _default_pcsx2_ini_path,
-    _resolve_retroarch_system_dirs,
-    _target_dirs_for_system,
-    deploy_firmware_to_emulators,
-)
+from gamehub_cli.common.config import GamehubConfig
+from gamehub_cli.firmware.deploy import deploy_firmware_to_emulators
+from gamehub_cli.firmware.runtime_azahar import default_azahar_qt_config_path
+from gamehub_cli.firmware.runtime_dolphin import default_dolphin_ini_path
+from gamehub_cli.firmware.targets import default_pcsx2_ini_path, resolve_retroarch_system_dirs, target_dirs_for_system
 from gamehub_common.models import FirmwareSpec, LibraryIndex, SystemSpec
-
-
 
 
 def _config(root: Path) -> GamehubConfig:
@@ -51,8 +42,8 @@ def _index(system_name: str, firmware_name: str) -> LibraryIndex:
     )
 
 
-def test_deploy_firmware_copies_to_target(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_copies_to_target(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         index = _index("PSX", "scph5501.bin")
         source = config.firmware_dir / "PSX" / "scph5501.bin"
@@ -61,7 +52,9 @@ def test_deploy_firmware_copies_to_target(monkeypatch) -> None:
         target_dir = temp_root / "emulators" / "retroarch" / "system"
         logs: list[str] = []
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir]
+        )
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=True, writer=logs.append)
 
         target = target_dir / "scph5501.bin"
@@ -70,15 +63,17 @@ def test_deploy_firmware_copies_to_target(monkeypatch) -> None:
         assert any("Firmware deployment: targets=1 applied=1" in line for line in logs)
 
 
-def test_deploy_firmware_skips_when_up_to_date(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_skips_when_up_to_date(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         index = _index("PSX", "scph5501.bin")
         source = config.firmware_dir / "PSX" / "scph5501.bin"
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_bytes(b"bios")
         target_dir = temp_root / "emulators" / "retroarch" / "system"
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir]
+        )
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
         logs: list[str] = []
@@ -87,8 +82,8 @@ def test_deploy_firmware_skips_when_up_to_date(monkeypatch) -> None:
         assert any("applied=0 skipped=1" in line for line in logs)
 
 
-def test_deploy_firmware_dry_run_does_not_mutate(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_dry_run_does_not_mutate(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         index = _index("PSX", "scph5501.bin")
         source = config.firmware_dir / "PSX" / "scph5501.bin"
@@ -97,15 +92,17 @@ def test_deploy_firmware_dry_run_does_not_mutate(monkeypatch) -> None:
         target_dir = temp_root / "emulators" / "retroarch" / "system"
         logs: list[str] = []
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir]
+        )
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
 
         assert not (target_dir / "scph5501.bin").exists()
         assert any("Firmware deployment dry-run targets: 1" in line for line in logs)
 
 
-def test_target_dirs_support_env_overrides(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_target_dirs_support_env_overrides(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         base = _config(temp_root)
         config = replace(
             base,
@@ -117,20 +114,20 @@ def test_target_dirs_support_env_overrides(monkeypatch) -> None:
             ),
         )
 
-        psx_dirs = _target_dirs_for_system("PSX", config=config)
-        ps2_dirs = _target_dirs_for_system("PS2", config=config)
-        wii_dirs = _target_dirs_for_system("Wii", config=config)
+        psx_dirs = target_dirs_for_system("PSX", config=config)
+        ps2_dirs = target_dirs_for_system("PS2", config=config)
+        wii_dirs = target_dirs_for_system("Wii", config=config)
 
         assert Path("D:/RetroArch/system") in psx_dirs
         assert Path("D:/PCSX2/bios") in ps2_dirs
         assert Path("D:/Dolphin/User/Wii") in wii_dirs
 
 
-def test_deploy_firmware_n3ds_configures_azahar_fullscreen_without_firmware(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_n3ds_configures_azahar_fullscreen_without_firmware(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         appdata = temp_root / "AppData" / "Roaming"
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "nt")
         monkeypatch.setenv("APPDATA", str(appdata))
         index = LibraryIndex(
             index_version=1,
@@ -158,11 +155,11 @@ def test_deploy_firmware_n3ds_configures_azahar_fullscreen_without_firmware(monk
         assert not (appdata / "Azahar" / "sysdata").exists()
 
 
-def test_deploy_firmware_n3ds_dry_run_does_not_mutate_fullscreen_config(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_n3ds_dry_run_does_not_mutate_fullscreen_config(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         appdata = temp_root / "AppData" / "Roaming"
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "nt")
         monkeypatch.setenv("APPDATA", str(appdata))
         index = LibraryIndex(
             index_version=1,
@@ -186,26 +183,28 @@ def test_deploy_firmware_n3ds_dry_run_does_not_mutate_fullscreen_config(monkeypa
         assert any("azahar\tdry-run\tconfigure" in line for line in logs)
 
 
-def test_default_azahar_qt_config_path_prefers_flatpak_config_root(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-azahar-") as temp_root:
+def test_default_azahar_qt_config_path_prefers_flatpak_config_root(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-azahar-") as temp_root:
         home = temp_root / "home"
         export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.azahar_emu.Azahar"
         export.parent.mkdir(parents=True, exist_ok=True)
         export.write_bytes(b"#!/bin/sh")
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.platform_paths.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.runtime_azahar.resolve_emulator_executable", lambda _name: str(export)
+        )
 
-        qt_config = _default_azahar_qt_config_path()
+        qt_config = default_azahar_qt_config_path()
 
         assert qt_config == home / ".var" / "app" / "org.azahar_emu.Azahar" / "config" / "azahar-emu" / "qt-config.ini"
 
 
-def test_deploy_firmware_n3ds_linux_keeps_controller_bindings(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-azahar-") as temp_root:
+def test_deploy_firmware_n3ds_linux_keeps_controller_bindings(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-azahar-") as temp_root:
         home = temp_root / "home"
         config = _config(temp_root)
         export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.azahar_emu.Azahar"
@@ -250,11 +249,13 @@ def test_deploy_firmware_n3ds_linux_keeps_controller_bindings(monkeypatch) -> No
             titles=(),
         )
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.platform_paths.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.runtime_azahar.resolve_emulator_executable", lambda _name: str(export)
+        )
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -267,8 +268,8 @@ def test_deploy_firmware_n3ds_linux_keeps_controller_bindings(monkeypatch) -> No
         assert "engine:sdl" not in text
 
 
-def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         index = _index("PS2", "scph10000.bin")
         ini_path = temp_root / "Documents" / "PCSX2" / "inis" / "PCSX2.ini"
@@ -277,7 +278,7 @@ def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch) -
             "[UI]\nSetupWizardIncomplete = true\n\n[Folders]\nBios = bios\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._pcsx2_ini_candidates", lambda config=None: [ini_path])
+        monkeypatch.setattr("gamehub_cli.firmware.targets.pcsx2_ini_candidates", lambda config=None: [ini_path])
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -286,12 +287,12 @@ def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch) -
         assert f"Bios = {config.firmware_dir / 'PS2'}" in text
 
 
-def test_deploy_firmware_dry_run_reports_pcsx2_config(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_dry_run_reports_pcsx2_config(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         index = _index("PS2", "scph10000.bin")
         ini_path = temp_root / "Documents" / "PCSX2" / "inis" / "PCSX2.ini"
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._pcsx2_ini_candidates", lambda config=None: [ini_path])
+        monkeypatch.setattr("gamehub_cli.firmware.targets.pcsx2_ini_candidates", lambda config=None: [ini_path])
         logs: list[str] = []
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
@@ -299,8 +300,8 @@ def test_deploy_firmware_dry_run_reports_pcsx2_config(monkeypatch) -> None:
         assert any("pcsx2\tdry-run\tconfigure" in line for line in logs)
 
 
-def test_deploy_firmware_configures_retroarch_menu_combo(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_configures_retroarch_menu_combo(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         index = _index("PSX", "scph5501.bin")
         source = config.firmware_dir / "PSX" / "scph5501.bin"
@@ -309,10 +310,16 @@ def test_deploy_firmware_configures_retroarch_menu_combo(monkeypatch) -> None:
         target_dir = temp_root / "retroarch" / "system"
         cfg_path = temp_root / "retroarch" / "retroarch.cfg"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text('input_menu_toggle_gamepad_combo = "0"\ninput_remapping_directory = "config/remaps"\n', encoding="utf-8")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
+        cfg_path.write_text(
+            'input_menu_toggle_gamepad_combo = "0"\ninput_remapping_directory = "config/remaps"\n', encoding="utf-8"
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
+        )
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -342,8 +349,8 @@ def test_deploy_firmware_configures_retroarch_menu_combo(monkeypatch) -> None:
         assert 'swanstation_Controller2.Type = "AnalogController"' in core_opts
 
 
-def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         index = _index("PSX", "scph5501.bin")
         cfg_path = temp_root / "retroarch" / "retroarch.cfg"
@@ -351,10 +358,12 @@ def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch) -> No
         cfg_path.write_text('input_menu_toggle_gamepad_combo = "0"\n', encoding="utf-8")
         logs: list[str] = []
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
         monkeypatch.setattr(
-            "gamehub_cli.firmware_deploy._target_dirs_for_system",
+            "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
+        )
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.deploy.target_dirs_for_system",
             lambda _name, config=None: [temp_root / "retroarch" / "system"],
         )
 
@@ -368,8 +377,8 @@ def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch) -> No
         assert any("retroarch\tdry-run\tremap" in line for line in logs)
 
 
-def test_deploy_firmware_windows_avoids_psx_cfg_overrides(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_windows_avoids_psx_cfg_overrides(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         index = _index("PSX", "scph5501.bin")
         source = config.firmware_dir / "PSX" / "scph5501.bin"
@@ -378,10 +387,16 @@ def test_deploy_firmware_windows_avoids_psx_cfg_overrides(monkeypatch) -> None:
         target_dir = temp_root / "retroarch" / "system"
         cfg_path = temp_root / "retroarch" / "retroarch.cfg"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text('input_menu_toggle_gamepad_combo = "0"\ninput_remapping_directory = ":/config/remaps"\n', encoding="utf-8")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._target_dirs_for_system", lambda _name, config=None: [target_dir])
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
+        cfg_path.write_text(
+            'input_menu_toggle_gamepad_combo = "0"\ninput_remapping_directory = ":/config/remaps"\n', encoding="utf-8"
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
+        )
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "nt")
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -397,19 +412,20 @@ def test_deploy_firmware_windows_avoids_psx_cfg_overrides(monkeypatch) -> None:
         assert 'input_libretro_device_p1 = "261"' in remap_text
 
 
-def test_default_dolphin_ini_path_prefers_existing_flatpak_ini(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
+def test_default_dolphin_ini_path_prefers_existing_flatpak_ini(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
         flatpak_root = temp_root / ".var" / "app" / "org.DolphinEmu.dolphin-emu" / "data" / "dolphin-emu"
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._resolve_dolphin_runtime_user_dir", lambda config=None: flatpak_root)
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.runtime_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: flatpak_root
+        )
 
-        ini_path = _default_dolphin_ini_path()
+        ini_path = default_dolphin_ini_path()
 
         assert ini_path == flatpak_root / "Config" / "Dolphin.ini"
 
 
-def test_deploy_firmware_configures_dolphin_fullscreen_ini(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "win32")
+def test_deploy_firmware_configures_dolphin_fullscreen_ini(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
         config = _config(temp_root)
         index = LibraryIndex(
             index_version=1,
@@ -426,7 +442,7 @@ def test_deploy_firmware_configures_dolphin_fullscreen_ini(monkeypatch) -> None:
         )
         dolphin_root = temp_root / "dolphin-user"
         monkeypatch.setattr(
-            "gamehub_cli.firmware_deploy._resolve_dolphin_config_dirs",
+            "gamehub_cli.firmware.runtime_dolphin.resolve_dolphin_config_dirs",
             lambda config=None: [dolphin_root],
         )
 
@@ -444,8 +460,8 @@ def test_deploy_firmware_configures_dolphin_fullscreen_ini(monkeypatch) -> None:
         assert not (dolphin_root / "Config" / "Hotkeys.ini").exists()
 
 
-def test_deploy_firmware_dry_run_reports_dolphin_config(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
+def test_deploy_firmware_dry_run_reports_dolphin_config(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
         config = _config(temp_root)
         index = LibraryIndex(
             index_version=1,
@@ -463,7 +479,7 @@ def test_deploy_firmware_dry_run_reports_dolphin_config(monkeypatch) -> None:
         dolphin_root = temp_root / "dolphin-user"
         logs: list[str] = []
         monkeypatch.setattr(
-            "gamehub_cli.firmware_deploy._resolve_dolphin_config_dirs",
+            "gamehub_cli.firmware.runtime_dolphin.resolve_dolphin_config_dirs",
             lambda config=None: [dolphin_root],
         )
 
@@ -476,39 +492,42 @@ def test_deploy_firmware_dry_run_reports_dolphin_config(monkeypatch) -> None:
         assert not (dolphin_root / "Config" / "Hotkeys.ini").exists()
 
 
-def test_resolve_retroarch_system_dirs_includes_portable_exe_system(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_resolve_retroarch_system_dirs_includes_portable_exe_system(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         portable_root = temp_root / "RetroArch-Win64"
         portable_root.mkdir(parents=True, exist_ok=True)
         portable_exe = portable_root / "retroarch.exe"
         portable_exe.write_bytes(b"exe")
         monkeypatch.setattr(
-            "gamehub_cli.firmware_deploy.resolve_emulator_executable",
+            "gamehub_cli.firmware.targets.resolve_emulator_executable",
             lambda _name: str(portable_exe),
         )
 
-        dirs = _resolve_retroarch_system_dirs()
+        dirs = resolve_retroarch_system_dirs()
 
         assert portable_root / "system" in dirs
 
 
-def test_resolve_retroarch_system_dirs_linux_ignores_usr_bin_parent(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_resolve_retroarch_system_dirs_linux_ignores_usr_bin_parent(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         home = temp_root / "home"
         home.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [])
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch"
+        )
+        monkeypatch.setattr("gamehub_cli.firmware.targets.retroarch_cfg_candidates_for_config", lambda config=None: [])
 
-        dirs = _resolve_retroarch_system_dirs()
+        dirs = resolve_retroarch_system_dirs()
 
         assert Path("/usr/bin/system") not in dirs
 
 
-def test_resolve_retroarch_system_dirs_expands_tilde_cfg_values(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_resolve_retroarch_system_dirs_expands_tilde_cfg_values(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         home = temp_root / "home"
         cfg_path = home / ".config" / "retroarch" / "retroarch.cfg"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -516,50 +535,58 @@ def test_resolve_retroarch_system_dirs_expands_tilde_cfg_values(monkeypatch) -> 
             'system_directory = "~/.var/app/org.libretro.RetroArch/config/retroarch/system"\n',
             encoding="utf-8",
         )
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._retroarch_cfg_candidates", lambda config=None: [cfg_path])
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch"
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.targets.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
+        )
 
-        dirs = _resolve_retroarch_system_dirs()
+        dirs = resolve_retroarch_system_dirs()
 
         assert home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "system" in dirs
 
 
-def test_resolve_retroarch_system_dirs_windows_colon_prefix(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-retroarch-colon-") as temp_root:
+def test_resolve_retroarch_system_dirs_windows_colon_prefix(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-retroarch-colon-") as temp_root:
         cfg_path = temp_root / "retroarch.cfg"
         cfg_path.write_text('system_directory = ":/system"\n', encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "nt")
-        monkeypatch.setattr("gamehub_cli.firmware_targets.retroarch_cfg_candidates", lambda explicit_cfg_path=None: [cfg_path])
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "nt")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.targets.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
+        )
 
-        dirs = _resolve_retroarch_system_dirs()
+        dirs = resolve_retroarch_system_dirs()
 
         assert temp_root / "system" in dirs
         assert all("/~/" not in path.as_posix() for path in dirs)
 
 
-def test_default_pcsx2_ini_path_prefers_flatpak_when_detected(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_default_pcsx2_ini_path_prefers_flatpak_when_detected(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         home = temp_root / "home"
         export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "net.pcsx2.PCSX2"
         export.parent.mkdir(parents=True, exist_ok=True)
         export.write_bytes(b"#!/bin/sh")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._pcsx2_ini_candidates", lambda config=None: [])
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.pcsx2_ini_candidates", lambda config=None: [])
 
-        ini_path = _default_pcsx2_ini_path()
+        ini_path = default_pcsx2_ini_path()
 
         assert ini_path == home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
 
 
-def test_default_pcsx2_ini_path_prefers_flatpak_over_existing_native_ini(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_default_pcsx2_ini_path_prefers_flatpak_over_existing_native_ini(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         home = temp_root / "home"
         export = home / ".local" / "share" / "flatpak" / "exports" / "bin" / "net.pcsx2.PCSX2"
         export.parent.mkdir(parents=True, exist_ok=True)
@@ -567,18 +594,19 @@ def test_default_pcsx2_ini_path_prefers_flatpak_over_existing_native_ini(monkeyp
         native_ini = home / ".config" / "PCSX2" / "inis" / "PCSX2.ini"
         native_ini.parent.mkdir(parents=True, exist_ok=True)
         native_ini.write_text("[UI]\nSetupWizardIncomplete = true\n", encoding="utf-8")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: str(export))
 
-        ini_path = _default_pcsx2_ini_path()
+        ini_path = default_pcsx2_ini_path()
 
         assert ini_path == home / ".var" / "app" / "net.pcsx2.PCSX2" / "config" / "PCSX2" / "inis" / "PCSX2.ini"
 
 
-def test_deploy_firmware_dry_run_reports_flatpak_pcsx2_bios_target(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_dry_run_reports_flatpak_pcsx2_bios_target(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         home = Path("/var/home/deck")
         config = GamehubConfig(
             server_url="http://localhost:8000",
@@ -596,12 +624,17 @@ def test_deploy_firmware_dry_run_reports_flatpak_pcsx2_bios_target(monkeypatch) 
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         logs: list[str] = []
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr(
-            "gamehub_cli.firmware_deploy.resolve_emulator_executable",
+            "gamehub_cli.firmware.runtime_pcsx2.resolve_emulator_executable",
             lambda _name: "/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2",
         )
-        monkeypatch.setattr("gamehub_cli.firmware_deploy._default_pcsx2_ini_path", lambda config=None: ini_path)
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.targets.resolve_emulator_executable",
+            lambda _name: "/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2",
+        )
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.default_pcsx2_ini_path", lambda config=None: ini_path)
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=True, writer=logs.append)
 
@@ -609,8 +642,8 @@ def test_deploy_firmware_dry_run_reports_flatpak_pcsx2_bios_target(monkeypatch) 
         assert any("/var/home/deck/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios" in line for line in pcsx2_logs)
 
 
-def test_deploy_firmware_flatpak_pcsx2_mirrors_bios_and_updates_ini(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_flatpak_pcsx2_mirrors_bios_and_updates_ini(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         home = temp_root / "home"
         config = _config(temp_root)
         index = _index("PS2", "scph10000.bin")
@@ -621,10 +654,12 @@ def test_deploy_firmware_flatpak_pcsx2_mirrors_bios_and_updates_ini(monkeypatch)
         export.parent.mkdir(parents=True, exist_ok=True)
         export.write_bytes(b"#!/bin/sh")
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: str(export))
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -638,8 +673,8 @@ def test_deploy_firmware_flatpak_pcsx2_mirrors_bios_and_updates_ini(monkeypatch)
         assert "SetupWizardIncomplete = false" in text
 
 
-def test_deploy_firmware_flatpak_pcsx2_preserves_existing_pad_bindings(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_flatpak_pcsx2_preserves_existing_pad_bindings(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         home = temp_root / "home"
         config = _config(temp_root)
         index = _index("PS2", "scph10000.bin")
@@ -667,10 +702,12 @@ def test_deploy_firmware_flatpak_pcsx2_preserves_existing_pad_bindings(monkeypat
             encoding="utf-8",
         )
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: str(export))
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -680,8 +717,8 @@ def test_deploy_firmware_flatpak_pcsx2_preserves_existing_pad_bindings(monkeypat
         assert "Cross = None" in text
 
 
-def test_deploy_firmware_flatpak_pcsx2_preserves_existing_controller_hotkey(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+def test_deploy_firmware_flatpak_pcsx2_preserves_existing_controller_hotkey(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         home = temp_root / "home"
         config = _config(temp_root)
         index = _index("PS2", "scph10000.bin")
@@ -708,14 +745,14 @@ def test_deploy_firmware_flatpak_pcsx2_preserves_existing_controller_hotkey(monk
             encoding="utf-8",
         )
 
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware_deploy.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.resolve_emulator_executable", lambda _name: str(export))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: str(export))
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
         text = ini_path.read_text(encoding="utf-8")
         assert "OpenPauseMenu = SDL-1/Back & SDL-1/Start" in text
-
-

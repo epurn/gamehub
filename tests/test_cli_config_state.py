@@ -1,23 +1,18 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from pathlib import Path
-import shutil
-from uuid import uuid4
 
-from gamehub_cli.config import ControllersConfig, LinuxConfig, default_config_path, load_config
-from gamehub_cli.state import SyncState, load_state, save_state_atomic
+from gamehub_cli.common.config import ControllersConfig, LinuxConfig, default_config_path, load_config
+from gamehub_cli.sync.state import SyncState, load_state, save_state_atomic
 
 
-
-
-def test_load_config_uses_defaults_when_file_is_missing(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_uses_defaults_when_file_is_missing(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
         config_home = temp_root / "cfg-home"
         state_home = temp_root / "state-home"
-        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(config_home / appname))
-        monkeypatch.setattr("gamehub_cli.config.user_state_dir", lambda appname: str(state_home / appname))
+        monkeypatch.setattr("gamehub_cli.common.config.user_config_dir", lambda appname: str(config_home / appname))
+        monkeypatch.setattr("gamehub_cli.common.config.user_state_dir", lambda appname: str(state_home / appname))
 
         loaded = load_config(temp_root / "missing.toml")
 
@@ -39,13 +34,13 @@ def test_load_config_uses_defaults_when_file_is_missing(monkeypatch) -> None:
         assert loaded.controllers == ControllersConfig()
 
 
-def test_load_config_prefers_workspace_config_when_present(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_prefers_workspace_config_when_present(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
         config_home = temp_root / "cfg-home"
         state_home = temp_root / "state-home"
-        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(config_home / appname))
-        monkeypatch.setattr("gamehub_cli.config.user_state_dir", lambda appname: str(state_home / appname))
+        monkeypatch.setattr("gamehub_cli.common.config.user_config_dir", lambda appname: str(config_home / appname))
+        monkeypatch.setattr("gamehub_cli.common.config.user_state_dir", lambda appname: str(state_home / appname))
         monkeypatch.chdir(temp_root)
         (temp_root / "config.toml").write_text(
             "\n".join(
@@ -72,23 +67,25 @@ def test_load_config_prefers_workspace_config_when_present(monkeypatch) -> None:
         assert loaded.steam_id == "76561198000000001"
 
 
-def test_default_config_path_prefers_home_dot_gamehub(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-home-") as temp_root:
+def test_default_config_path_prefers_home_dot_gamehub(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-home-") as temp_root:
         home = temp_root / "home"
         home_config = home / ".gamehub" / "config.toml"
         home_config.parent.mkdir(parents=True, exist_ok=True)
         home_config.write_text("[server]\nurl='http://example.invalid:8123'\n", encoding="utf-8")
         monkeypatch.chdir(temp_root)
-        monkeypatch.setattr("gamehub_cli.config.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname))
+        monkeypatch.setattr("gamehub_cli.common.config.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.common.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname)
+        )
 
         resolved = default_config_path()
 
         assert resolved == home_config
 
 
-def test_load_config_uses_home_dot_gamehub_default_when_workspace_missing(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-home-load-") as temp_root:
+def test_load_config_uses_home_dot_gamehub_default_when_workspace_missing(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-home-load-") as temp_root:
         home = temp_root / "home"
         home_config = home / ".gamehub" / "config.toml"
         home_config.parent.mkdir(parents=True, exist_ok=True)
@@ -105,8 +102,10 @@ def test_load_config_uses_home_dot_gamehub_default_when_workspace_missing(monkey
             encoding="utf-8",
         )
         monkeypatch.chdir(temp_root)
-        monkeypatch.setattr("gamehub_cli.config.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname))
+        monkeypatch.setattr("gamehub_cli.common.config.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.common.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname)
+        )
 
         loaded = load_config()
 
@@ -116,29 +115,31 @@ def test_load_config_uses_home_dot_gamehub_default_when_workspace_missing(monkey
         assert loaded.state_path == Path("D:/HomeDefaultGamehub/state.json")
 
 
-def test_default_config_path_uses_legacy_when_present(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-legacy-") as temp_root:
+def test_default_config_path_uses_legacy_when_present(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-legacy-") as temp_root:
         home = temp_root / "home"
         legacy_config = temp_root / "legacy-config" / "gamehub" / "config.toml"
         legacy_config.parent.mkdir(parents=True, exist_ok=True)
         legacy_config.write_text("[server]\nurl='http://legacy.invalid:8123'\n", encoding="utf-8")
         monkeypatch.chdir(temp_root)
-        monkeypatch.setattr("gamehub_cli.config.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname))
+        monkeypatch.setattr("gamehub_cli.common.config.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.common.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname)
+        )
 
         resolved = default_config_path()
 
         assert resolved == legacy_config
 
 
-def test_load_config_toml_overrides_defaults(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_toml_overrides_defaults(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
         config_path = temp_root / "config.toml"
         config_path.write_text(
             "\n".join(
                 [
-                    '[server]',
+                    "[server]",
                     'url = "http://example.invalid:9000"',
                     "index_timeout_seconds = 45",
                     "index_fetch_attempts = 4",
@@ -178,8 +179,8 @@ def test_load_config_toml_overrides_defaults(monkeypatch) -> None:
         assert loaded.sgdb_enabled_kinds == ("grid", "icon")
 
 
-def test_load_config_supports_legacy_path_keys(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_supports_legacy_path_keys(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
         config_path = temp_root / "config.toml"
         config_path.write_text(
@@ -201,8 +202,8 @@ def test_load_config_supports_legacy_path_keys(monkeypatch) -> None:
         assert loaded.state_path == Path("C:/legacy/state.json")
 
 
-def test_load_config_prefers_sgdb_api_key_from_env(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_prefers_sgdb_api_key_from_env(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
         config_path.write_text(
             "\n".join(
@@ -220,8 +221,8 @@ def test_load_config_prefers_sgdb_api_key_from_env(monkeypatch) -> None:
         assert loaded.sgdb_api_key == "from-env-key"
 
 
-def test_load_config_supports_server_index_fetch_env_overrides(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_supports_server_index_fetch_env_overrides(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
         config_path.write_text(
             "\n".join(
@@ -246,8 +247,8 @@ def test_load_config_supports_server_index_fetch_env_overrides(monkeypatch) -> N
         assert loaded.index_retry_backoff_seconds == 2.5
 
 
-def test_load_config_supports_controllers_block() -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_supports_controllers_block(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
         config_path.write_text(
             "\n".join(
@@ -266,8 +267,8 @@ def test_load_config_supports_controllers_block() -> None:
         assert loaded.controllers.profiles_dir == Path("D:/GameHub/controller_profiles")
 
 
-def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_supports_linux_overrides_block(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
         config_path.write_text(
             "\n".join(
@@ -304,8 +305,8 @@ def test_load_config_supports_linux_overrides_block(monkeypatch) -> None:
         assert loaded.linux.dolphin_user_path == Path("~/.local/share/dolphin-emu").expanduser()
 
 
-def test_load_config_supports_centralized_env_precedence(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_supports_centralized_env_precedence(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
         config_path.write_text(
             "\n".join(
@@ -362,8 +363,8 @@ def test_load_config_supports_centralized_env_precedence(monkeypatch) -> None:
         assert loaded.controllers.profiles_dir == Path("D:/GameHub/profiles")
 
 
-def test_load_config_normalizes_quoted_sgdb_api_key(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-cli-config-") as temp_root:
+def test_load_config_normalizes_quoted_sgdb_api_key(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
         config_path.write_text(
             "\n".join(
@@ -381,8 +382,8 @@ def test_load_config_normalizes_quoted_sgdb_api_key(monkeypatch) -> None:
         assert loaded.sgdb_api_key == "quoted-config-key"
 
 
-def test_state_round_trip_with_atomic_save() -> None:
-    with _workspace_tempdir("gamehub-cli-state-") as temp_root:
+def test_state_round_trip_with_atomic_save(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-state-") as temp_root:
         state_path = temp_root / "state.json"
         state = SyncState(
             downloaded_checksums={"file_1": "a" * 64},

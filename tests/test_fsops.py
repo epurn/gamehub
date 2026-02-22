@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 from pathlib import Path
-import shutil
-from uuid import uuid4
 
-from gamehub_cli.fsops import replace_file
+from gamehub_cli.common.fsops import replace_file
 
 
-
-
-def test_replace_file_uses_native_replace_when_available() -> None:
-    with _workspace_tempdir("gamehub-fsops-") as temp_root:
+def test_replace_file_uses_native_replace_when_available(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-fsops-") as temp_root:
         source = temp_root / "source.bin"
         destination = temp_root / "destination.bin"
         source.write_bytes(b"new")
@@ -24,8 +19,8 @@ def test_replace_file_uses_native_replace_when_available() -> None:
             assert source.read_bytes() != b"new"
 
 
-def test_replace_file_falls_back_on_windows_cross_drive_error(monkeypatch) -> None:
-    with _workspace_tempdir("gamehub-fsops-") as temp_root:
+def test_replace_file_falls_back_on_windows_cross_drive_error(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-fsops-") as temp_root:
         source = temp_root / "source.bin"
         destination = temp_root / "destination.bin"
         source.write_bytes(b"new")

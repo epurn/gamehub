@@ -34,7 +34,13 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 ```
 4. Audit-critical slices:
 ```powershell
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py tests/test_server_api.py tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py tests/test_steam.py tests/test_steam_integration.py tests/test_sync.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_architecture.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
 5. Runtime literal and secret scan:
 ```powershell
@@ -111,7 +117,13 @@ python3 -m venv venv
 ```
 3. Audit-critical slices:
 ```bash
-./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py tests/test_server_api.py tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py tests/test_steam.py tests/test_steam_integration.py tests/test_sync.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_server_api.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_architecture.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
 4. Build Linux wheel and smoke with pip:
 ```bash
@@ -125,7 +137,7 @@ gamehub sync --dry-run --skip-steam
 5. Server deploy checks:
 ```bash
 docker compose -f docker/compose.yaml --env-file docker/.env config
-docker build -f apps/server/Dockerfile .
+docker build -f docker/Dockerfile .
 ```
 
 ## 3. Bazzite Real Sync Validation
@@ -192,6 +204,7 @@ git push origin <branch>
 2. Open PR to `main`.
 3. Wait for required checks:
 - `Audit Regression Gates`
+- `Targeted Regression Matrix`
 4. Merge PR.
 5. Ensure version in `pyproject.toml` is final; commit if needed and push `main`.
 6. Create and push release tag:

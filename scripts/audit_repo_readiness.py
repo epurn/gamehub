@@ -368,11 +368,15 @@ def _normalized_url_host(url_literal: str) -> str | None:
 
 def _check_config_literals() -> CheckResult:
     result = CheckResult(name="config")
-    runtime_roots = [
-        REPO_ROOT / "apps" / "cli",
-        REPO_ROOT / "apps" / "server",
-        REPO_ROOT / "shared",
-    ]
+    src_root = REPO_ROOT / "src"
+    if src_root.exists():
+        runtime_roots = [src_root]
+    else:
+        runtime_roots = [
+            REPO_ROOT / "apps" / "cli",
+            REPO_ROOT / "apps" / "server",
+            REPO_ROOT / "shared",
+        ]
     for root in runtime_roots:
         for py_path in sorted(root.rglob("*.py")):
             relative = py_path.relative_to(REPO_ROOT).as_posix()

@@ -12,9 +12,7 @@ a = Analysis(
     [str(SPEC_DIR / "entrypoint.py")],
     pathex=[
         str(REPO_ROOT),
-        str(REPO_ROOT / "apps" / "cli"),
-        str(REPO_ROOT / "apps" / "server"),
-        str(REPO_ROOT / "shared" / "gamehub_common"),
+        str(REPO_ROOT / "src"),
     ],
     binaries=[],
     datas=[],
@@ -51,3 +49,4 @@ coll = COLLECT(
     upx=True,
     name="gamehub-windows-amd64",
 )
+

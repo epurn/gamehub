@@ -1,22 +1,18 @@
 from __future__ import annotations
 
-import builtins
-from contextlib import contextmanager
 import gc
 import os
 import shutil
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "apps" / "server"))
-sys.path.insert(0, str(ROOT / "apps" / "cli"))
-sys.path.insert(0, str(ROOT / "shared" / "gamehub_common"))
+sys.path.insert(0, str(ROOT / "src"))
 
 TMP_ROOT = ROOT / ".pytest_tmp_local"
 TMP_PREFIXES = ("gamehub-",)
@@ -28,7 +24,7 @@ def _remove_readonly_and_retry(func, path, _exc_info) -> None:
 
 
 @contextmanager
-def workspace_tempdir(prefix: str):
+def _workspace_tempdir(prefix: str):
     TMP_ROOT.mkdir(parents=True, exist_ok=True)
     temp_dir = TMP_ROOT / f"{prefix}{uuid4().hex}"
     temp_dir.mkdir(parents=True, exist_ok=False)
@@ -46,13 +42,9 @@ def workspace_tempdir(prefix: str):
                 time.sleep(0.05)
 
 
-# Keep compatibility for existing tests that call `_workspace_tempdir(...)` directly.
-builtins._workspace_tempdir = workspace_tempdir
-
-
 @pytest.fixture
-def workspace_tempdir_factory():
-    return workspace_tempdir
+def workspace_tempdir():
+    return _workspace_tempdir
 
 
 def _purge_managed_tempdirs() -> None:

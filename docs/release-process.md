@@ -16,8 +16,11 @@ Detailed end-to-end validation and publishing steps are in:
 ```powershell
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_architecture.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py tests/test_sync.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
 3. Run dependency audit/update checks:
 ```powershell
@@ -38,6 +41,7 @@ git push origin vX.Y.Z
 ```
 8. Verify GitHub Actions:
    - audit regression gates workflow
+   - targeted regression matrix workflow
    - server image release workflow
    - client artifact release workflow
 9. Validate artifacts:
