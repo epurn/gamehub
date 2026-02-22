@@ -32,8 +32,10 @@ def _candidate_userdata_dirs() -> list[Path]:
             candidates.append(Path(pf) / "Steam" / "userdata")
     home = Path.home()
     candidates.append(home / ".steam" / "steam" / "userdata")
+    candidates.append(home / ".steam" / "root" / "userdata")
     candidates.append(home / ".local" / "share" / "Steam" / "userdata")
     candidates.append(home / ".var" / "app" / "com.valvesoftware.Steam" / ".steam" / "steam" / "userdata")
+    candidates.append(home / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam" / "userdata")
     candidates.append(home / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam" / "userdata")
     return candidates
 

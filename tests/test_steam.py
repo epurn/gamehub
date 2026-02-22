@@ -64,6 +64,23 @@ def test_discover_userdata_dir_uses_explicit_path(monkeypatch, workspace_tempdir
         assert resolved == explicit
 
 
+
+
+def test_candidate_userdata_dirs_include_steam_deck_paths(monkeypatch) -> None:
+    from gamehub_cli.steam import lifecycle as steam_lifecycle
+
+    monkeypatch.setattr(steam_lifecycle.os, "name", "posix")
+    monkeypatch.setattr(steam_lifecycle, "Path", Path)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/home/deck")))
+
+    candidates = steam_lifecycle._candidate_userdata_dirs()
+    values = [candidate.as_posix() for candidate in candidates]
+
+    assert "/home/deck/.steam/root/userdata" in values
+    assert "/home/deck/.local/share/Steam/userdata" in values
+    assert "/home/deck/.var/app/com.valvesoftware.Steam/.local/share/Steam/userdata" in values
+
+
 def test_discover_steam_id_prefers_most_recent_profile(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-steam-") as temp_root:
         older = temp_root / "76561198000000002"

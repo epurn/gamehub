@@ -1,5 +1,5 @@
-# Steam Deck template (untested in v1).
-# Verify paths on your SteamOS install before first non-dry-run sync.
+# Steam Deck template (SteamOS + Flatpak focused).
+# SteamOS root is immutable; keep mutable GAMEHUB state under /home/deck.
 [server]
 url = "http://<SERVER_IP>:8000"
 
@@ -14,18 +14,18 @@ url = "http://<SERVER_IP>:8000"
 gamehub_dir = "/home/deck/GameHub"
 
 [steam]
-# Common Steam Deck userdata path.
+# Steam Deck Desktop + Game Mode commonly use this userdata root.
 userdata_dir = "/home/deck/.local/share/Steam/userdata"
-# Alternate Steam Deck path used on some installs.
+# Alternate Steam roots seen on some SteamOS installs.
+# userdata_dir = "/home/deck/.steam/root/userdata"
 # userdata_dir = "/home/deck/.steam/steam/userdata"
 # Optional but recommended for deterministic profile targeting.
 # steam_id = "76561198000000001"
 
 [linux]
-# Keep default distro detection behavior on untested targets.
-emulator_install_backend = "auto"
-# Optional when emulator_install_backend = "flatpak".
-# flatpak_remote = "flathub"
+# SteamOS should prefer Flatpak for emulator lifecycle/config parity.
+emulator_install_backend = "flatpak"
+flatpak_remote = "flathub"
 
 # Optional Dolphin runtime user dir examples:
 # Native:
@@ -38,3 +38,7 @@ emulator_install_backend = "auto"
 # api_key = "<OPTIONAL_SGDB_KEY>"
 cache_dir = "/home/deck/GameHub/artwork-cache/sgdb"
 enabled_kinds = ["grid", "hero", "logo", "icon"]
+
+[controllers]
+# Steam Deck default should favor the built-in controller in launch autoconfig.
+launch_autoconfig = true
