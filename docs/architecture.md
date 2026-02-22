@@ -26,10 +26,11 @@
 - `gamehub_cli` must not depend on `gamehub_server`.
 
 ## Guardrails
-- `tests/test_architecture.py` enforces:
-- an acyclic dependency graph across `sync`, `steam`, `emulators`, `firmware`, `controllers`, and `common`
-- explicit allowed dependency directions for each core package
-- disallowed inter-package imports across `gamehub_cli`, `gamehub_server`, and `gamehub_common`
+- `tests/test_architecture.py` enforces an acyclic dependency graph across `sync`, `steam`, `emulators`, `firmware`, `controllers`, and `common`.
+- `tests/test_architecture.py` enforces explicit allowed dependency directions for each core package.
+- `tests/test_architecture.py` enforces disallowed inter-package imports across `gamehub_cli`, `gamehub_server`, and `gamehub_common`.
+- `.github/workflows/audit-regression-gates.yml` runs the architecture guard test on PRs/pushes whenever `src/`, `tests/`, or architecture/release development docs change.
+- `.github/workflows/targeted-regression-matrix.yml` runs the emulator/firmware, controller, Steam, and sync regression slices on both Linux and Windows.
 
 ## Public package surfaces
 - `gamehub_cli.steam` only re-exports intentional public Steam APIs; internal patch points live in concrete modules (for example `gamehub_cli.steam.lifecycle`).

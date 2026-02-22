@@ -2,6 +2,7 @@
 
 [![Latest Tag](https://img.shields.io/github/v/tag/epurn/gamehub?sort=semver&label=latest%20tag)](https://github.com/epurn/gamehub/tags)
 [![Audit Regression Gates](https://github.com/epurn/gamehub/actions/workflows/audit-regression-gates.yml/badge.svg)](https://github.com/epurn/gamehub/actions/workflows/audit-regression-gates.yml)
+[![Targeted Regression Matrix](https://github.com/epurn/gamehub/actions/workflows/targeted-regression-matrix.yml/badge.svg)](https://github.com/epurn/gamehub/actions/workflows/targeted-regression-matrix.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![License](https://img.shields.io/github/license/epurn/gamehub?branch=main&label=license)](LICENSE)
 

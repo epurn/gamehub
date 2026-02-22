@@ -7,7 +7,9 @@ on:
       - "tests/**"
       - "pyproject.toml"
       - ".github/workflows/audit-regression-gates.yml"
+      - "docs/architecture.md"
       - "docs/development.md"
+      - "docs/release-final-validation-playbook.md"
       - "docs/release-process.md"
   push:
     branches:
@@ -17,12 +19,18 @@ on:
       - "tests/**"
       - "pyproject.toml"
       - ".github/workflows/audit-regression-gates.yml"
+      - "docs/architecture.md"
       - "docs/development.md"
+      - "docs/release-final-validation-playbook.md"
       - "docs/release-process.md"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  audit-regression:
+  quality-guards:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -32,6 +40,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -45,8 +55,7 @@ jobs:
           from pathlib import Path
 
           allowed_paths = {
-              Path("src/gamehub_cli/emulator_install.py").as_posix(),
-              Path("src/gamehub_cli/emulators/installer.py").as_posix(),
+              Path("src/gamehub_cli/emulators/install_flatpak.py").as_posix(),
           }
 
           hits: list[str] = []
@@ -63,36 +72,13 @@ jobs:
           PY
 
       - name: Config precedence slice
-        run: |
-          python -m pytest -q -p no:cacheprovider \
-            tests/test_cli_config_state.py
+        run: python -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py
 
       - name: Server refresh cache slice
-        run: |
-          python -m pytest -q -p no:cacheprovider \
-            tests/test_server_api.py
+        run: python -m pytest -q -p no:cacheprovider tests/test_server_api.py
 
-      - name: Linux portability slice
-        run: |
-          python -m pytest -q -p no:cacheprovider \
-            tests/test_paths.py \
-            tests/test_emulators.py \
-            tests/test_firmware_deploy.py \
-            tests/test_retroarch_cores.py
-
-      - name: Controller autoconfig slice
-        run: |
-          python -m pytest -q -p no:cacheprovider \
-            tests/test_controller_profiles.py \
-            tests/test_controller_apply.py \
-            tests/test_controller_launch.py
-
-      - name: Steam integration slice
-        run: |
-          python -m pytest -q -p no:cacheprovider \
-            tests/test_steam.py \
-            tests/test_steam_integration.py \
-            tests/test_sync.py
+      - name: Architecture guard slice
+        run: python -m pytest -q -p no:cacheprovider tests/test_architecture.py
 
       - name: Ruff format check (src)
         run: |

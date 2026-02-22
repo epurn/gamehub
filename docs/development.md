@@ -72,23 +72,30 @@ Canonical internal patch/import targets:
 
 ## Static checks
 ```powershell
-.\venv\Scripts\python.exe -m ruff format --check src tests
-.\venv\Scripts\python.exe -m ruff check src tests
+.\venv\Scripts\python.exe -m ruff format --check src
+.\venv\Scripts\python.exe -m ruff check src
 .\venv\Scripts\python.exe -m mypy src
 ```
 
 Typing note:
-- `mypy` is configured with incremental strictness via `[[tool.mypy.overrides]]` in `pyproject.toml`.
-- The old wildcard `ignore_errors` override was removed; strictness and temporary suppressions are now explicit per module pattern.
+- `mypy` targets `src/` and enforces strict function annotation rules (`disallow_untyped_defs`, `disallow_incomplete_defs`, `check_untyped_defs`).
+- `ignore_missing_imports = true` is enabled to avoid third-party stub churn.
 
 ## Run audit regression slices (local)
-Use this before opening a PR that touches CLI portability, Steam integration, or config/env precedence logic.
+Use this before opening a PR that touches CLI portability, Steam integration, architecture boundaries, or config/env precedence logic.
+CI is split into:
+- `Audit Regression Gates` (quality/static + architecture + config/server slices, Linux).
+- `Targeted Regression Matrix` (emulator/firmware + controllers + steam + sync slices, Linux/Windows).
+To mirror CI exactly, run the emulator/controller/steam/sync slices on both Windows and Linux hosts.
 
 ```powershell
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_architecture.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py tests/test_sync.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
 
 Pre-public/local readiness audit:
