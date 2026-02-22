@@ -30,3 +30,14 @@ def from_rel_path(base: Path, rel_path: str, *, preferred_root: str | None = Non
     if legacy.exists():
         return legacy
     return canonical
+
+
+
+def strip_rel_path_root(rel_path: str, root: str) -> str:
+    parts = _normalized_posix_parts(rel_path)
+    normalized_root = root.strip().strip("/\\").casefold()
+    if not normalized_root:
+        return '/'.join(parts)
+    if parts and parts[0].casefold() == normalized_root:
+        return '/'.join(parts[1:])
+    return '/'.join(parts)
