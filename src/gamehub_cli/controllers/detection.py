@@ -5,6 +5,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, cast
 
 _PROC_INPUT_DEVICES_PATH = Path("/proc/bus/input/devices")
 _INPUT_DEVICE_NAME_RE = re.compile(r'^N:\s+Name="(?P<name>.*)"$')
@@ -96,9 +97,12 @@ class _XInputCapabilities(ctypes.Structure):
 
 
 def _load_xinput_dll() -> ctypes.CDLL | None:
+    win_dll_loader = cast(Callable[[str], ctypes.CDLL] | None, getattr(ctypes, "WinDLL", None))
+    if win_dll_loader is None:
+        return None
     for dll_name in _XINPUT_DLLS:
         try:
-            return ctypes.WinDLL(dll_name)
+            return win_dll_loader(dll_name)
         except OSError:
             continue
     return None
