@@ -89,8 +89,10 @@ When omitted, sync auto-detects a profile under `steam.userdata_dir` and prefers
 
 Steam mutation behavior notes:
 - GAMEHUB writes managed shortcuts with stable `appid` values so artwork and category membership can be bound on first sync pass.
-- On Linux Steam Deck, GAMEHUB writes managed shortcuts with `AllowDesktopConfig = 0` by default for native-controller launches in Gaming Mode.
-  - Override with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`.
+- On Linux Steam Deck, GAMEHUB writes managed shortcuts with emulator-aware defaults for Gaming Mode:
+  - `PCSX2`: `AllowDesktopConfig = 0` (controller-first)
+  - other emulators (for example `RetroArch`, `Dolphin`, `Azahar`): `AllowDesktopConfig = 1` (preserves pointer/mouse semantics)
+  - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`.
 - GAMEHUB canonicalizes collection membership appids to unsigned numeric values in both `localconfig.vdf` (`user-collections`) and cloud storage collection entries.
 - On Linux Steam Deck, GAMEHUB can repair stale managed app overrides where `UseSteamControllerConfig = 0`.
   - This repair is enabled by default; disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`.

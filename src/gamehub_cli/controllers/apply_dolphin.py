@@ -11,6 +11,12 @@ from .detection import detect_xbox_controllers, is_steam_deck_linux
 from .profiles import PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P, load_profile_file
 
 _DOLPHIN_KBM_FALLBACK_DEVICE_MARKERS = ("virtual core pointer", "keyboard mouse")
+_DOLPHIN_STEAM_DECK_DEVICE_MARKERS = (
+    "steam deck",
+    "steam virtual gamepad",
+    "steam controller",
+    "neptune controller",
+)
 
 
 def _dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
@@ -26,6 +32,16 @@ def _dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
 
 def _dolphin_linux_device_pair() -> tuple[str, str]:
     controllers = detect_xbox_controllers(max_devices=2)
+    if any(any(marker in controller.name.casefold() for marker in _DOLPHIN_STEAM_DECK_DEVICE_MARKERS) for controller in controllers):
+        # Deck gaming mode is most stable with SDL-class device roots.
+        if len(controllers) >= 2:
+            return (
+                f"SDL/{controllers[0].slot}/{controllers[0].name}",
+                f"SDL/{controllers[1].slot}/{controllers[1].name}",
+            )
+        if len(controllers) == 1:
+            return f"SDL/{controllers[0].slot}/{controllers[0].name}", "XInput2/0/Virtual core pointer"
+        return "SDL/0/Gamepad", "SDL/1/Gamepad"
     if len(controllers) >= 2:
         return f"evdev/0/{controllers[0].name}", f"evdev/1/{controllers[1].name}"
     if len(controllers) == 1:

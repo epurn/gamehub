@@ -225,6 +225,38 @@ def test_apply_controller_profile_dolphin_linux_prefers_evdev_from_detected_xbox
         assert "Device = All Devices" in hotkeys_text
 
 
+def test_apply_controller_profile_dolphin_linux_steam_deck_names_use_sdl_roots(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [
+                XboxController(slot=0, name="Steam Deck Controller", subtype=None),
+                XboxController(slot=1, name="Steam Virtual Gamepad", subtype=None),
+            ],
+        )
+
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+
+        assert "Device = SDL/0/Steam Deck Controller" in gcpad_text
+        assert "Device = SDL/1/Steam Virtual Gamepad" in gcpad_text
+
+
 def test_apply_controller_profile_dolphin_linux_kbm_uses_virtual_pointer_hotkeys(
     monkeypatch, workspace_tempdir
 ) -> None:

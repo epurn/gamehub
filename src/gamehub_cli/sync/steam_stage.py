@@ -83,12 +83,17 @@ def _env_optional_bool(name: str) -> bool | None:
     return None
 
 
-def _managed_shortcut_allow_desktop_config(*, steam_deck_linux: bool) -> bool | None:
+def _managed_shortcut_allow_desktop_config(*, steam_deck_linux: bool, emulator_name: str) -> bool | None:
     override = _env_optional_bool(_STEAM_ALLOW_DESKTOP_CONFIG_ENV)
     if override is not None:
         return override
     if steam_deck_linux:
-        return False
+        normalized = emulator_name.casefold()
+        if "pcsx2" in normalized:
+            # Keep controller-first mode for PCSX2 where pointer semantics are not needed.
+            return False
+        # Preserve pointer/mouse semantics for Deck in RetroArch, Dolphin, and Azahar.
+        return True
     return None
 
 
@@ -318,8 +323,11 @@ def build_shortcut_specs(
 ) -> list[SteamShortcutSpec]:
     specs: list[SteamShortcutSpec] = []
     steam_deck_linux = sys.platform.startswith("linux") and is_steam_deck_linux()
-    allow_desktop_config = _managed_shortcut_allow_desktop_config(steam_deck_linux=steam_deck_linux)
     for title in sorted(index.titles, key=lambda item: (item.system, item.title_name.casefold(), item.title_id)):
+        allow_desktop_config = _managed_shortcut_allow_desktop_config(
+            steam_deck_linux=steam_deck_linux,
+            emulator_name=title.emulator,
+        )
         rom_path = resolve_rom_destination(
             library_dir=config.library_dir,
             roms_dir=config.roms_dir,

@@ -27,6 +27,20 @@ def test_linux_parse_xbox_devices_filters_and_orders_by_js() -> None:
     ]
 
 
+def test_linux_parse_xbox_devices_accepts_xbox_hyphenated_name() -> None:
+    raw = "\n".join(
+        [
+            'N: Name="Microsoft X-Box 360 pad"',
+            "H: Handlers=js0 event20",
+            "",
+        ]
+    )
+
+    devices = controller_detection._linux_parse_xbox_devices(raw, max_devices=2)
+
+    assert devices == [XboxController(slot=0, name="Microsoft X-Box 360 pad", subtype=None)]
+
+
 def test_detect_xbox_controllers_linux_reads_proc_file(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-detection-") as temp_root:
         raw = "\n".join(

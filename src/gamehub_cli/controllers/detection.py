@@ -44,7 +44,7 @@ def _is_steam_deck_linux() -> bool:
 
 def _is_supported_linux_controller_name(name: str, *, include_steam_deck: bool) -> bool:
     normalized = name.casefold()
-    if "xbox" in normalized:
+    if any(marker in normalized for marker in ("xbox", "x-box", "xinput")):
         return True
     if not include_steam_deck:
         return False

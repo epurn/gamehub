@@ -74,7 +74,9 @@ Steam close behavior:
      - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
      - launches the original emulator command
    - Linux Steam Deck default shortcut policy:
-     - managed shortcuts set `AllowDesktopConfig = 0` by default (override with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`)
+     - managed `PCSX2` shortcuts set `AllowDesktopConfig = 0` (controller-first)
+     - other managed emulator shortcuts set `AllowDesktopConfig = 1` to preserve pointer/mouse semantics
+     - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`
      - managed app overrides with explicit `UseSteamControllerConfig = 0` are repaired to `1` by default (disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`)
    - Linux Steam Deck zero-controller detection policy in `controller-launch` defaults to `xbox_1p` (`GAMEHUB_DECK_ZERO_DETECT_POLICY=xbox_1p|kbm|abort`)
    - non-Deck platforms keep legacy shortcut/profile behavior unless explicit env overrides are set

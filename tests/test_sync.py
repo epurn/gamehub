@@ -1701,7 +1701,7 @@ def test_build_shortcut_specs_uses_configurable_roms_dir_for_all_titles(monkeypa
         ].launch_options
 
 
-def test_build_shortcut_specs_deck_sets_allow_desktop_config_false(monkeypatch, workspace_tempdir) -> None:
+def test_build_shortcut_specs_deck_sets_allow_desktop_config_true_for_retroarch(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-sync-shortcuts-deck-policy-") as temp_root:
         config = GamehubConfig(
             server_url="http://localhost:8000",
@@ -1742,7 +1742,7 @@ def test_build_shortcut_specs_deck_sets_allow_desktop_config_false(monkeypatch, 
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert specs[0].allow_desktop_config is False
+        assert specs[0].allow_desktop_config is True
 
 
 def test_build_shortcut_specs_non_deck_keeps_allow_desktop_config_unspecified(monkeypatch, workspace_tempdir) -> None:
