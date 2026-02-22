@@ -228,7 +228,6 @@ def test_run_controller_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypa
     assert hook_calls == ["dolphin"]
 
 
-
 def test_run_controller_launch_audit_enables_verbose_profile_logs(monkeypatch) -> None:
     token = encode_controller_payload(
         {
@@ -256,6 +255,7 @@ def test_run_controller_launch_audit_enables_verbose_profile_logs(monkeypatch) -
 
     assert exit_code == 0
     assert observed["verbose"] is True
+
 
 def test_run_controller_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) -> None:
     token = encode_controller_payload(

@@ -176,8 +176,6 @@ def _detect_windows_xbox_controllers(*, max_devices: int) -> list[XboxController
     return controllers
 
 
-
-
 def is_steam_deck_linux() -> bool:
     return _is_steam_deck_linux()
 

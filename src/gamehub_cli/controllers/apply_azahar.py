@@ -107,7 +107,6 @@ def _is_pointer_related_azahar_key(key: str) -> bool:
     return any(marker in lowered for marker in _AZAHAR_POINTER_KEY_MARKERS)
 
 
-
 _DECK_TOUCHPAD_MOUSE_FALLBACKS: dict[str, str] = {
     r"profiles\1\touch_device": '"engine:emu_window"',
     r"profiles\1\use_touch_from_button": "false",
@@ -126,6 +125,7 @@ def _apply_azahar_deck_touchpad_mouse_fallback(lines: list[str]) -> tuple[list[s
         updated, key_changed = upsert_qsettings_key(updated, key, value)
         changed |= key_changed
     return updated, changed
+
 
 def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]:
     profile_lines = load_profile_file(

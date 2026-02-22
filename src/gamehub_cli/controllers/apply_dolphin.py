@@ -130,7 +130,6 @@ def _override_dolphin_hotkey_sections(
     return updated
 
 
-
 _DECK_POINTER_KEYS = ("IR/Up", "IR/Down", "IR/Left", "IR/Right")
 
 
@@ -180,6 +179,7 @@ def _merge_dolphin_deck_pointer_sections(
         _apply_deck_wiimote_pointer_defaults(managed_wiimote)
     return updated
 
+
 def apply_dolphin_profile(config: GamehubConfig, profile_name: str) -> list[Path]:
     touched: list[Path] = []
     device_modes: list[str] = []
@@ -200,7 +200,9 @@ def apply_dolphin_profile(config: GamehubConfig, profile_name: str) -> list[Path
             )
             sections = parse_ini_sections(profile_lines)
             target_path = target_dir / filename
-            existing_sections = parse_ini_sections(target_path.read_text(encoding="utf-8").splitlines()) if target_path.exists() else {}
+            existing_sections = (
+                parse_ini_sections(target_path.read_text(encoding="utf-8").splitlines()) if target_path.exists() else {}
+            )
             sections, device_mode = _override_dolphin_device_sections(
                 sections,
                 profile_name=profile_name,

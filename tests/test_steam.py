@@ -64,8 +64,6 @@ def test_discover_userdata_dir_uses_explicit_path(monkeypatch, workspace_tempdir
         assert resolved == explicit
 
 
-
-
 def test_candidate_userdata_dirs_include_steam_deck_paths(monkeypatch) -> None:
     from gamehub_cli.steam import lifecycle as steam_lifecycle
 

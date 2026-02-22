@@ -537,7 +537,6 @@ def test_probe_azahar_flatpak_guid_uses_equals_command_flag(monkeypatch) -> None
     assert "--command" not in captured["cmd"]
 
 
-
 def test_apply_controller_profile_dolphin_linux_preserves_existing_device_mapping(
     monkeypatch, workspace_tempdir
 ) -> None:
@@ -565,9 +564,7 @@ def test_apply_controller_profile_dolphin_linux_preserves_existing_device_mappin
         assert "Device = SDL/0/Steam Virtual Gamepad" in wiimote_text
 
 
-def test_apply_controller_profile_azahar_preserves_pointer_and_non_sdl_entries(
-    monkeypatch, workspace_tempdir
-) -> None:
+def test_apply_controller_profile_azahar_preserves_pointer_and_non_sdl_entries(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
@@ -601,7 +598,9 @@ def test_apply_controller_profile_azahar_preserves_pointer_and_non_sdl_entries(
         assert r'profiles\1\touch_device="engine:mouse,index:0"' in text
 
 
-def test_apply_controller_profile_dolphin_linux_deck_backfills_mouse_pointer_for_wii(monkeypatch, workspace_tempdir) -> None:
+def test_apply_controller_profile_dolphin_linux_deck_backfills_mouse_pointer_for_wii(
+    monkeypatch, workspace_tempdir
+) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
@@ -650,6 +649,7 @@ def test_apply_controller_profile_azahar_deck_backfills_touchpad_mouse_fallback(
 
         assert r'profiles\1\touch_device="engine:emu_window"' in text
         assert r"profiles\1\use_touch_from_button=false" in text
+
 
 def _line_for_key(text: str, key: str) -> str | None:
     prefix = f"profiles\\1\\{key}="
