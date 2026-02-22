@@ -13,6 +13,14 @@ _INPUT_DEVICE_HANDLERS_RE = re.compile(r"^H:\s+Handlers=(?P<handlers>.+)$")
 _INPUT_JS_HANDLER_RE = re.compile(r"\bjs(?P<index>\d+)\b")
 _STEAMOS_RELEASE_PATH = Path("/etc/os-release")
 _DMI_BOARD_VENDOR_PATH = Path("/sys/devices/virtual/dmi/id/board_vendor")
+_LINUX_NON_GAMEPAD_NAME_MARKERS = (
+    "motion sensor",
+    "motion sensors",
+    "accelerometer",
+    "gyroscope",
+    "gyro",
+    "imu",
+)
 
 _ERROR_SUCCESS = 0
 _XINPUT_FLAG_GAMEPAD = 0x00000001
@@ -44,6 +52,8 @@ def _is_steam_deck_linux() -> bool:
 
 def _is_supported_linux_controller_name(name: str, *, include_steam_deck: bool) -> bool:
     normalized = name.casefold()
+    if any(marker in normalized for marker in _LINUX_NON_GAMEPAD_NAME_MARKERS):
+        return False
     if any(marker in normalized for marker in ("xbox", "x-box", "xinput")):
         return True
     if not include_steam_deck:

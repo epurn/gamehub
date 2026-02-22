@@ -17,6 +17,8 @@ _DOLPHIN_STEAM_DECK_DEVICE_MARKERS = (
     "steam controller",
     "neptune controller",
 )
+_DOLPHIN_NON_GAMEPAD_DEVICE_MARKERS = ("motion sensor", "accelerometer", "gyroscope", "gyro", "imu")
+_DOLPHIN_GENERIC_SDL_DEVICE_NAMES = {"gamepad", "controller", "joystick"}
 
 
 def _dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
@@ -41,7 +43,8 @@ def _dolphin_linux_device_pair() -> tuple[str, str]:
             )
         if len(controllers) == 1:
             return f"SDL/{controllers[0].slot}/{controllers[0].name}", "XInput2/0/Virtual core pointer"
-        return "SDL/0/Gamepad", "SDL/1/Gamepad"
+        # Keep Deck controller-first semantics even when runtime probing is flaky.
+        return "SDL/0/Steam Deck", "XInput2/0/Virtual core pointer"
     if len(controllers) >= 2:
         return f"evdev/0/{controllers[0].name}", f"evdev/1/{controllers[1].name}"
     if len(controllers) == 1:
@@ -99,9 +102,18 @@ def _override_dolphin_device_sections(
     def _should_preserve_linux_controller_device(value: str) -> bool:
         if not _looks_valid_existing_device(value):
             return False
-        lowered = value.casefold()
+        normalized = value.strip()
+        lowered = normalized.casefold()
         if any(marker in lowered for marker in _DOLPHIN_KBM_FALLBACK_DEVICE_MARKERS):
             return False
+        if any(marker in lowered for marker in _DOLPHIN_NON_GAMEPAD_DEVICE_MARKERS):
+            return False
+        if lowered.startswith("sdl/"):
+            parts = normalized.split("/", 2)
+            if len(parts) != 3:
+                return False
+            if parts[2].strip().casefold() in _DOLPHIN_GENERIC_SDL_DEVICE_NAMES:
+                return False
         return True
 
     for section_name, device in (
@@ -173,6 +185,10 @@ def _apply_deck_wiimote_pointer_defaults(section: dict[str, str]) -> None:
     section["IR/Down"] = "`Cursor Y+`"
     section["IR/Left"] = "`Cursor X-`"
     section["IR/Right"] = "`Cursor X+`"
+    _ensure_deck_click_binding(section)
+
+
+def _ensure_deck_click_binding(section: dict[str, str]) -> None:
     existing_b = section.get("Buttons/B", "")
     if "`Click 0`" not in existing_b:
         section["Buttons/B"] = " | ".join(part for part in (existing_b.strip(), "`Click 0`") if part)
@@ -202,6 +218,8 @@ def _merge_dolphin_deck_pointer_sections(
         existing_b = existing_wiimote.get("Buttons/B")
         if existing_b and "`Click 0`" in existing_b:
             managed_wiimote["Buttons/B"] = existing_b
+        else:
+            _ensure_deck_click_binding(managed_wiimote)
     else:
         _apply_deck_wiimote_pointer_defaults(managed_wiimote)
     return updated

@@ -95,6 +95,23 @@ def test_linux_parse_xbox_devices_ignores_steam_deck_controller_when_disabled() 
     assert devices == []
 
 
+def test_linux_parse_xbox_devices_excludes_steam_deck_motion_sensors() -> None:
+    raw = "\n".join(
+        [
+            'N: Name="Steam Deck"',
+            "H: Handlers=event15 js0",
+            "",
+            'N: Name="Steam Deck Motion Sensors"',
+            "H: Handlers=event16 js1",
+            "",
+        ]
+    )
+
+    devices = controller_detection._linux_parse_xbox_devices(raw, max_devices=2, include_steam_deck=True)
+
+    assert devices == [XboxController(slot=0, name="Steam Deck", subtype=None)]
+
+
 class _Callable:
     def __init__(self, func):
         self.func = func

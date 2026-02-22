@@ -596,6 +596,36 @@ def test_apply_controller_profile_dolphin_linux_preserves_existing_device_mappin
         assert "Device = SDL/0/Steam Virtual Gamepad" in wiimote_text
 
 
+def test_apply_controller_profile_dolphin_linux_rebinds_generic_sdl_gamepad_for_controller_mode(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "WiimoteNew.ini").write_text("[Wiimote1]\nDevice = SDL/0/Gamepad\n", encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [XboxController(slot=0, name="Steam Deck", subtype=None)],
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
+
+        wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
+        assert "Device = SDL/0/Gamepad" not in wiimote_text
+        assert "Device = SDL/0/Steam Deck" in wiimote_text
+
+
 def test_apply_controller_profile_dolphin_linux_rebinds_virtual_pointer_for_controller_mode(
     monkeypatch, workspace_tempdir
 ) -> None:
@@ -743,6 +773,54 @@ def test_apply_controller_profile_dolphin_linux_deck_backfills_mouse_pointer_for
 
         monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.is_steam_deck_linux", lambda: True)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
+        wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
+
+        assert "IR/Up = `Cursor Y-`" in wiimote_text
+        assert "IR/Down = `Cursor Y+`" in wiimote_text
+        assert "IR/Left = `Cursor X-`" in wiimote_text
+        assert "IR/Right = `Cursor X+`" in wiimote_text
+        assert "Buttons/B = EAST | `Button B` | `Click 0`" in wiimote_text
+
+
+def test_apply_controller_profile_dolphin_linux_deck_preserved_cursor_mapping_still_backfills_click(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "WiimoteNew.ini").write_text(
+            "\n".join(
+                [
+                    "[Wiimote1]",
+                    "Device = SDL/0/Steam Deck",
+                    "Buttons/B = EAST | `Button B`",
+                    "IR/Up = `Cursor Y-`",
+                    "IR/Down = `Cursor Y+`",
+                    "IR/Left = `Cursor X-`",
+                    "IR/Right = `Cursor X+`",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.is_steam_deck_linux", lambda: True)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [XboxController(slot=0, name="Steam Deck", subtype=None)],
+        )
         monkeypatch.setattr(
             "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
         )

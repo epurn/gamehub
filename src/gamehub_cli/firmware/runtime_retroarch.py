@@ -6,6 +6,7 @@ from typing import Callable
 
 from ..common.config import GamehubConfig
 from ..common.config_edit import read_simple_cfg_key, upsert_simple_cfg_key
+from ..controllers.detection import is_steam_deck_linux
 from .pcsx2_ini import read_ini_lines, write_ini_atomic
 from .targets import retroarch_cfg_candidates_for_config
 
@@ -14,6 +15,8 @@ _RETROARCH_MENU_COMBO_VALUE = "4"
 _RETROARCH_MENU_COMBO_LABEL = "Start+Select"
 _RETROARCH_ALL_USERS_MENU_KEY = "all_users_control_menu"
 _RETROARCH_ALL_USERS_MENU_VALUE = "true"
+_RETROARCH_JOYPAD_DRIVER_KEY = "input_joypad_driver"
+_RETROARCH_JOYPAD_DRIVER_SDL2 = "sdl2"
 _RETROARCH_ANALOG_DPAD_KEYS = tuple(f"input_player{index}_analog_dpad_mode" for index in range(1, 9))
 _RETROARCH_ANALOG_DPAD_VALUE = "0"
 _RETROARCH_LIBRETRO_DEVICE_KEYS = tuple(f"input_libretro_device_p{index}" for index in range(1, 9))
@@ -146,6 +149,8 @@ def configure_retroarch_runtime(
     existing_combo = read_simple_cfg_key(lines, _RETROARCH_MENU_COMBO_KEY)
     existing_all_users = read_simple_cfg_key(lines, _RETROARCH_ALL_USERS_MENU_KEY)
     is_windows = os.name == "nt"
+    is_deck_linux = (not is_windows) and is_steam_deck_linux()
+    existing_joypad_driver = read_simple_cfg_key(lines, _RETROARCH_JOYPAD_DRIVER_KEY) if is_deck_linux else None
     existing_analog = (
         {key: read_simple_cfg_key(lines, key) for key in _RETROARCH_ANALOG_DPAD_KEYS} if not is_windows else {}
     )
@@ -158,6 +163,7 @@ def configure_retroarch_runtime(
     existing_turbo = {key: read_simple_cfg_key(lines, key) for key in _RETROARCH_TURBO_KEYS} if not is_windows else {}
     changed_combo = False
     changed_all_users = False
+    changed_joypad_driver = False
     changed_analog = False
     changed_libretro = False
     changed_remap = False
@@ -170,6 +176,12 @@ def configure_retroarch_runtime(
             _RETROARCH_ALL_USERS_MENU_KEY,
             _RETROARCH_ALL_USERS_MENU_VALUE,
         )
+    if is_deck_linux:
+        normalized_driver = existing_joypad_driver.strip().strip('"').strip("'").casefold() if existing_joypad_driver else ""
+        if normalized_driver != _RETROARCH_JOYPAD_DRIVER_SDL2 or not cfg_path.exists():
+            lines, changed_joypad_driver = upsert_simple_cfg_key(
+                lines, _RETROARCH_JOYPAD_DRIVER_KEY, _RETROARCH_JOYPAD_DRIVER_SDL2
+            )
     if not is_windows:
         for key in _RETROARCH_ANALOG_DPAD_KEYS:
             existing_value = existing_analog.get(key)
@@ -198,6 +210,7 @@ def configure_retroarch_runtime(
     if (
         changed_combo
         or changed_all_users
+        or changed_joypad_driver
         or (not is_windows and (changed_analog or changed_libretro or changed_remap or changed_turbo))
         or not cfg_path.exists()
     ):
