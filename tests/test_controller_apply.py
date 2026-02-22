@@ -564,6 +564,69 @@ def test_apply_controller_profile_dolphin_linux_preserves_existing_device_mappin
         assert "Device = SDL/0/Steam Virtual Gamepad" in wiimote_text
 
 
+def test_apply_controller_profile_dolphin_linux_rebinds_virtual_pointer_for_controller_mode(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "WiimoteNew.ini").write_text(
+            "[Wiimote1]\nDevice = XInput2/0/Virtual core pointer\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers", lambda max_devices=2: [])
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
+
+        wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
+        assert "Device = XInput2/0/Virtual core pointer" not in wiimote_text
+        assert "Device = SDL/0/Gamepad" in wiimote_text
+
+
+def test_apply_controller_profile_dolphin_emits_device_mode_only_in_verbose_flow(
+    monkeypatch, workspace_tempdir, capsys
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers", lambda max_devices=2: [])
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
+        assert "device_identity_mode=" not in capsys.readouterr().out
+
+        audit_lines: list[str] = []
+        apply_named_controller_profile(
+            config,
+            emulator_name="dolphin",
+            profile_name="xbox_1p",
+            verbose=True,
+            writer=audit_lines.append,
+        )
+        assert any("controller-autoconfig\tdevice_identity_mode=" in line for line in audit_lines)
+
+
 def test_apply_controller_profile_azahar_preserves_pointer_and_non_sdl_entries(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
@@ -595,6 +658,44 @@ def test_apply_controller_profile_azahar_preserves_pointer_and_non_sdl_entries(m
 
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
         assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in text
+        assert r'profiles\1\touch_device="engine:mouse,index:0"' in text
+
+
+def test_apply_controller_profile_azahar_rebinds_managed_buttons_from_keyboard_to_sdl(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text(
+            "\n".join(
+                [
+                    "profile=0",
+                    r'profiles\1\button_a="code:65,engine:keyboard"',
+                    r'profiles\1\button_select="code:16777219,engine:keyboard"',
+                    r'profiles\1\touch_device="engine:mouse,index:0"',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: False)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
+            lambda port=0: "040018dc5e040000130b000000006800",
+        )
+
+        apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
+        text = qt_config.read_text(encoding="utf-8")
+
+        assert r'profiles\1\button_a="button:0,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
+        assert (
+            r'profiles\1\button_select="button:4,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
+        )
         assert r'profiles\1\touch_device="engine:mouse,index:0"' in text
 
 

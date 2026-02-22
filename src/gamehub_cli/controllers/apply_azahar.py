@@ -170,7 +170,8 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
         for key, value in pairs.items():
             existing = read_qsettings_key(lines, key)
             desired = value
-            if controller_mode and existing is not None and not _is_managed_azahar_button_key(key):
+            managed_button_key = _is_managed_azahar_button_key(key)
+            if controller_mode and existing is not None and not managed_button_key:
                 continue
             if controller_mode and key.startswith("profiles\\1\\"):
                 desired = _inject_azahar_sdl_identity(
@@ -180,10 +181,6 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
                     strip_guid=False,
                 )
                 if existing is not None and _is_pointer_related_azahar_key(key):
-                    continue
-                if existing is not None and (
-                    "engine:sdl" not in existing.casefold() and "engine$0sdl" not in existing.casefold()
-                ):
                     continue
                 if existing is not None and (
                     "engine:sdl" in existing.casefold() or "engine$0sdl" in existing.casefold()

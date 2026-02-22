@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Callable
 
 from ..common.config import GamehubConfig
 from ..firmware.targets import resolve_dolphin_config_dirs, resolve_dolphin_runtime_user_dir
 from .apply_ini import apply_managed_ini_sections, parse_ini_sections
 from .detection import detect_xbox_controllers, is_steam_deck_linux
 from .profiles import PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P, load_profile_file
+
+_DOLPHIN_KBM_FALLBACK_DEVICE_MARKERS = ("virtual core pointer", "keyboard mouse")
 
 
 def _dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
@@ -77,6 +80,14 @@ def _override_dolphin_device_sections(
             return False
         return normalized.startswith(("evdev/", "SDL/", "XInput2/", "XInput/", "DInput/"))
 
+    def _should_preserve_linux_controller_device(value: str) -> bool:
+        if not _looks_valid_existing_device(value):
+            return False
+        lowered = value.casefold()
+        if any(marker in lowered for marker in _DOLPHIN_KBM_FALLBACK_DEVICE_MARKERS):
+            return False
+        return True
+
     for section_name, device in (
         ("GCPad1", pad_device0),
         ("GCPad2", pad_device1),
@@ -89,7 +100,7 @@ def _override_dolphin_device_sections(
         if existing_sections is not None:
             existing_device = existing_sections.get(section_name, {}).get("Device")
         if sys.platform.startswith("linux") and profile_name != PROFILE_KBM and existing_device is not None:
-            if _looks_valid_existing_device(existing_device):
+            if _should_preserve_linux_controller_device(existing_device):
                 updated[section_name]["Device"] = existing_device
                 continue
         updated[section_name]["Device"] = device
@@ -180,7 +191,12 @@ def _merge_dolphin_deck_pointer_sections(
     return updated
 
 
-def apply_dolphin_profile(config: GamehubConfig, profile_name: str) -> list[Path]:
+def apply_dolphin_profile(
+    config: GamehubConfig,
+    profile_name: str,
+    *,
+    audit_writer: Callable[[str], None] | None = None,
+) -> list[Path]:
     touched: list[Path] = []
     device_modes: list[str] = []
     for target_dir in _dolphin_target_config_dirs(config):
@@ -219,5 +235,6 @@ def apply_dolphin_profile(config: GamehubConfig, profile_name: str) -> list[Path
             device_modes.append(device_mode)
     if device_modes:
         overall_mode = "preserve" if all(mode == "preserve" for mode in device_modes) else "rebind"
-        print(f"controller-autoconfig\tdevice_identity_mode={overall_mode}")
+        if audit_writer is not None:
+            audit_writer(f"controller-autoconfig\tdevice_identity_mode={overall_mode}")
     return touched

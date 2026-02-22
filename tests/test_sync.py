@@ -1083,8 +1083,8 @@ def test_build_shortcut_specs_linux_flatpak_pcsx2_uses_file_forwarding(monkeypat
         )
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
         monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.from_rel_path",
-            lambda base, rel_path: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
+            "gamehub_cli.sync.steam_stage.resolve_rom_destination",
+            lambda **kwargs: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
         )
 
         specs = _build_shortcut_specs(index=index, config=config)
@@ -1135,8 +1135,8 @@ def test_build_shortcut_specs_wraps_pcsx2_when_controller_autoconfig_enabled(mon
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "/usr/bin/python3")
         monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.from_rel_path",
-            lambda base, rel_path: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
+            "gamehub_cli.sync.steam_stage.resolve_rom_destination",
+            lambda **kwargs: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
         )
 
         specs = _build_shortcut_specs(index=index, config=config)
@@ -1328,8 +1328,8 @@ def test_build_shortcut_specs_linux_flatpak_azahar_uses_file_forwarding(monkeypa
         )
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
         monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.from_rel_path",
-            lambda base, rel_path: Path("/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds"),
+            "gamehub_cli.sync.steam_stage.resolve_rom_destination",
+            lambda **kwargs: Path("/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds"),
         )
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "/usr/bin/python3")
 
@@ -1380,8 +1380,8 @@ def test_build_shortcut_specs_linux_flatpak_azahar_can_disable_exit_hook(monkeyp
         )
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
         monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.from_rel_path",
-            lambda base, rel_path: Path("/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds"),
+            "gamehub_cli.sync.steam_stage.resolve_rom_destination",
+            lambda **kwargs: Path("/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds"),
         )
         monkeypatch.setenv("GAMEHUB_AZAHAR_LINUX_EXIT_HOOK", "false")
 
@@ -1499,6 +1499,71 @@ def test_build_shortcut_specs_uses_title_rom_path_for_all_titles(monkeypatch, wo
             str(temp_root / "library" / "roms" / "PS2" / "Gran Turismo 4.bin")
             in by_title["Gran Turismo 4"].launch_options
         )
+
+
+def test_build_shortcut_specs_uses_configurable_roms_dir_for_all_titles(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-roms-dir-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            roms_dir=temp_root / "sdcard" / "roms",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
+        title_psx = TitleEntry(
+            title_id="title_psx",
+            system="PSX",
+            title_name="Crash Team Racing",
+            title_rel_dir="PSX/Crash Team Racing.cue",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/swanstation_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_psx",
+                rel_path="roms/PSX/Crash Team Racing.cue",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".cue",
+            ),
+            assets=(),
+        )
+        title_nes = TitleEntry(
+            title_id="title_nes",
+            system="NES",
+            title_name="Super Mario Bros",
+            title_rel_dir="NES/Super Mario Bros.nes",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/fceumm_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_nes",
+                rel_path="roms/NES/Super Mario Bros.nes",
+                sha256="b" * 64,
+                size_bytes=3,
+                extension=".nes",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title_psx, title_nes))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
+        )
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 2
+        by_title = {spec.title_name: spec for spec in specs}
+        assert str(temp_root / "sdcard" / "roms" / "PSX" / "Crash Team Racing.cue") in by_title[
+            "Crash Team Racing"
+        ].launch_options
+        assert str(temp_root / "sdcard" / "roms" / "NES" / "Super Mario Bros.nes") in by_title[
+            "Super Mario Bros"
+        ].launch_options
 
 
 def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkeypatch, workspace_tempdir) -> None:
@@ -1635,8 +1700,8 @@ def test_build_shortcut_specs_linux_flatpak_dolphin_uses_file_forwarding_and_dev
         )
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
         monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.from_rel_path",
-            lambda base, rel_path, preferred_root="roms": Path(
+            "gamehub_cli.sync.steam_stage.resolve_rom_destination",
+            lambda **kwargs: Path(
                 "/var/home/deck/GameHub/roms/Wii/Super Mario Galaxy.rvz"
             ),
         )

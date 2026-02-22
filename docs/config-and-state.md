@@ -96,6 +96,7 @@ Steam mutation behavior notes:
 - ROMs root: `<gamehub_dir>/roms/...` by default
   - Optional override: `paths.roms_dir` (alias: `paths.output_dir`)
   - Env override: `GAMEHUB_ROMS_DIR` (alias: `GAMEHUB_OUTPUT_DIR`)
+  - This ROM root is used consistently for both sync download destinations and Steam shortcut ROM launch targets.
 - Asset root: `<gamehub_dir>/...` (from server asset relative paths)
 - Firmware root: `<gamehub_dir>/firmware/...`
 - State file: `<gamehub_dir>/state.json`
@@ -163,6 +164,8 @@ Controller launch autoconfig:
 - Applies to Steam shortcut launches for `PCSX2`, `Dolphin`, and `Azahar`.
 - Does not wrap `RetroArch` launches.
 - Runtime flow: detect Xbox controller count (`0`, `1`, `2+`) -> choose profile (`kbm`, `xbox_1p`, `xbox_2p`) -> apply managed keys -> launch emulator.
+- Azahar controller-mode apply keeps pointer/touch keys preservation-first, while managed button keys are always normalized from profile mappings.
+- Dolphin Linux controller-mode apply preserves existing controller-class device identities but rebinds keyboard/mouse fallback devices (for example `XInput2/0/Virtual core pointer` and `DInput/0/Keyboard Mouse`).
 - Default profile root is `<gamehub_dir>/controller_profiles` and includes seeded defaults:
   - `<root>/pcsx2/<profile>/PCSX2.ini`
   - `<root>/dolphin/<profile>/GCPadNew.ini`
