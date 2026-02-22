@@ -272,3 +272,19 @@ Approve implementation of:
 Defer Steam Input template/profile automation entirely unless post-rollout evidence shows a hard native limitation with no realistic alternative.
 
 This matches your priorities: preserve Deck-specific functionality, avoid Steam-profile dependence, and keep existing cross-platform sync/profile policy intact for this change.
+
+
+## Additional implementation notes (touchpad-as-mouse hardening)
+
+To improve the practical Deck experience without Steam template automation, the implementation now applies two Deck-aware native defaults when safe:
+
+1. **Dolphin Wii (Deck + controller profile on Linux):**
+   - If an existing `Wiimote1` pointer mapping already uses `Cursor X/Y` expressions, preserve it.
+   - Otherwise, backfill Wii IR to mouse cursor axes (`Cursor X/Y`) and add `Click 0` to `Buttons/B` so a mapped click button can drive pointer interactions.
+   - This keeps right-stick mappings out of the critical path for titles that expect Wii pointer behavior while still allowing user customization.
+
+2. **Azahar (Deck + controller profile on Linux):**
+   - Backfill `profiles\1\touch_device="engine:emu_window"` when absent so host mouse input remains accepted for touchscreen interaction.
+   - Backfill `profiles\1\use_touch_from_button=false` when absent to avoid unintentionally replacing pointer-style workflows.
+
+These defaults are grounded in Azahar config behavior from upstream source (`touch_device`, `use_touch_from_button`, and touch-from-button map handling in `citra_qt/configuration/config.cpp`) and Dolphin's documented native controller mapping model.

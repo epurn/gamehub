@@ -228,6 +228,35 @@ def test_run_controller_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypa
     assert hook_calls == ["dolphin"]
 
 
+def test_run_controller_launch_audit_enables_verbose_profile_logs(monkeypatch) -> None:
+    token = encode_controller_payload(
+        {
+            "v": 1,
+            "emulator": "dolphin",
+            "target_exe": "dolphin",
+            "target_args": ["-b", "-e", "rom.iso"],
+        }
+    )
+    config = _config()
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+
+    def _fake_apply(*args, **kwargs):
+        observed["verbose"] = kwargs.get("verbose")
+        return "kbm"
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.apply_controller_profile", _fake_apply)
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
+
+    exit_code = run_controller_launch(payload_token=token, audit=True)
+
+    assert exit_code == 0
+    assert observed["verbose"] is True
+
+
 def test_run_controller_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) -> None:
     token = encode_controller_payload(
         {

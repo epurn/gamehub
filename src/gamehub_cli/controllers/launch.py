@@ -363,7 +363,7 @@ def _detect_controller_count_with_retry(*, max_devices: int = 2) -> tuple[int, E
     return 0, last_error
 
 
-def run_controller_launch(*, payload_token: str, config_path: Path | None = None) -> int:
+def run_controller_launch(*, payload_token: str, config_path: Path | None = None, audit: bool = False) -> int:
     payload = parse_controller_payload(payload_token)
     resolved_config = _resolve_config_path(config_path, payload)
     config = load_config(resolved_config)
@@ -391,22 +391,38 @@ def run_controller_launch(*, payload_token: str, config_path: Path | None = None
                 f"(emulator={payload.emulator}, error={exc}); using keyboard/mouse fallback profile selection"
             )
         try:
-            apply_controller_profile(
-                config,
-                emulator_name=payload.emulator,
-                controller_count=controller_count,
-            )
+            if audit:
+                apply_controller_profile(
+                    config,
+                    emulator_name=payload.emulator,
+                    controller_count=controller_count,
+                    verbose=True,
+                )
+            else:
+                apply_controller_profile(
+                    config,
+                    emulator_name=payload.emulator,
+                    controller_count=controller_count,
+                )
         except Exception as exc:
             print(
                 "Warning: controller autoconfig failed "
                 f"(emulator={payload.emulator}, profile={PROFILE_KBM}, error={exc}); using keyboard/mouse fallback"
             )
             try:
-                apply_named_controller_profile(
-                    config,
-                    emulator_name=payload.emulator,
-                    profile_name=PROFILE_KBM,
-                )
+                if audit:
+                    apply_named_controller_profile(
+                        config,
+                        emulator_name=payload.emulator,
+                        profile_name=PROFILE_KBM,
+                        verbose=True,
+                    )
+                else:
+                    apply_named_controller_profile(
+                        config,
+                        emulator_name=payload.emulator,
+                        profile_name=PROFILE_KBM,
+                    )
             except Exception as fallback_exc:
                 print(
                     "Warning: keyboard/mouse fallback profile application failed "
