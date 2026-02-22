@@ -276,8 +276,8 @@ def _check_secrets() -> CheckResult:
 
     allowlisted = _load_revoked_secret_allowlist(ALLOWLIST_PATH)
     seen_history_signatures: set[tuple[str, str, str]] = set()
-    for commit, path, line_no, value in _extract_history_api_key_assignments():
-        normalized_path = path.replace("\\", "/")
+    for commit, history_path, line_no, value in _extract_history_api_key_assignments():
+        normalized_path = history_path.replace("\\", "/")
         if normalized_path.startswith("tests/"):
             continue
         if _looks_like_placeholder(value):

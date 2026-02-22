@@ -391,26 +391,38 @@ def run_controller_launch(*, payload_token: str, config_path: Path | None = None
                 f"(emulator={payload.emulator}, error={exc}); using keyboard/mouse fallback profile selection"
             )
         try:
-            apply_kwargs: dict[str, object] = {
-                "emulator_name": payload.emulator,
-                "controller_count": controller_count,
-            }
             if audit:
-                apply_kwargs["verbose"] = True
-            apply_controller_profile(config, **apply_kwargs)
+                apply_controller_profile(
+                    config,
+                    emulator_name=payload.emulator,
+                    controller_count=controller_count,
+                    verbose=True,
+                )
+            else:
+                apply_controller_profile(
+                    config,
+                    emulator_name=payload.emulator,
+                    controller_count=controller_count,
+                )
         except Exception as exc:
             print(
                 "Warning: controller autoconfig failed "
                 f"(emulator={payload.emulator}, profile={PROFILE_KBM}, error={exc}); using keyboard/mouse fallback"
             )
             try:
-                fallback_kwargs: dict[str, object] = {
-                    "emulator_name": payload.emulator,
-                    "profile_name": PROFILE_KBM,
-                }
                 if audit:
-                    fallback_kwargs["verbose"] = True
-                apply_named_controller_profile(config, **fallback_kwargs)
+                    apply_named_controller_profile(
+                        config,
+                        emulator_name=payload.emulator,
+                        profile_name=PROFILE_KBM,
+                        verbose=True,
+                    )
+                else:
+                    apply_named_controller_profile(
+                        config,
+                        emulator_name=payload.emulator,
+                        profile_name=PROFILE_KBM,
+                    )
             except Exception as fallback_exc:
                 print(
                     "Warning: keyboard/mouse fallback profile application failed "
