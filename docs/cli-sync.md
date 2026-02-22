@@ -73,6 +73,11 @@ Steam close behavior:
      - detects attached Xbox controllers
      - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
      - launches the original emulator command
+   - Linux Steam Deck default shortcut policy:
+     - managed shortcuts set `AllowDesktopConfig = 0` by default (override with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`)
+     - managed app overrides with explicit `UseSteamControllerConfig = 0` are repaired to `1` by default (disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`)
+   - Linux Steam Deck zero-controller detection policy in `controller-launch` defaults to `xbox_1p` (`GAMEHUB_DECK_ZERO_DETECT_POLICY=xbox_1p|kbm|abort`)
+   - non-Deck platforms keep legacy shortcut/profile behavior unless explicit env overrides are set
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 11. Save `state.json`
 
@@ -182,8 +187,74 @@ Environment overrides:
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`
+- `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`
+- `GAMEHUB_DECK_REPAIR_STEAM_INPUT`
 - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`
 - `GAMEHUB_CONTROLLER_PROFILES_DIR`
+- `GAMEHUB_DECK_ZERO_DETECT_POLICY`
+
+## Deck Controller Triage
+Use these commands on Steam Deck Desktop Mode to inspect managed shortcut flags, app overrides, and visible input devices.
+
+```bash
+./venv/bin/python - <<'PY'
+from pathlib import Path
+import json, vdf
+from gamehub_cli.common.config import load_config
+from gamehub_cli.steam.lifecycle import discover_userdata_dir, discover_steam_id, build_context
+from gamehub_cli.steam.shortcuts import _canonical_unsigned_app_id
+cfg = load_config(Path("config.toml"))
+userdata = discover_userdata_dir(cfg.steam_userdata_dir)
+steam_id = discover_steam_id(userdata, preferred_steam_id=cfg.steam_id)
+ctx = build_context(userdata, steam_id, cfg.steam_exe)
+table = vdf.binary_load(ctx.shortcuts_path.open("rb")).get("shortcuts", {})
+rows = []
+for e in table.values():
+    tags = e.get("tags", {})
+    vals = [tags[k] for k in sorted(tags, key=lambda k: int(str(k)) if str(k).isdigit() else str(k))]
+    if "GAMEHUB" not in vals:
+        continue
+    appid = str(e.get("appid", "")).strip()
+    rows.append({
+        "AppName": e.get("AppName"),
+        "appid": appid,
+        "appid_unsigned": _canonical_unsigned_app_id(appid) if appid else "",
+        "AllowDesktopConfig": e.get("AllowDesktopConfig"),
+        "AllowOverlay": e.get("AllowOverlay"),
+        "LaunchOptions": e.get("LaunchOptions"),
+    })
+print(json.dumps(rows, indent=2))
+PY
+```
+
+```bash
+./venv/bin/python - <<'PY'
+from pathlib import Path
+import vdf
+from gamehub_cli.common.config import load_config
+from gamehub_cli.steam.lifecycle import discover_userdata_dir, discover_steam_id, build_context
+from gamehub_cli.steam.shortcuts import _canonical_unsigned_app_id
+cfg = load_config(Path("config.toml"))
+userdata = discover_userdata_dir(cfg.steam_userdata_dir)
+steam_id = discover_steam_id(userdata, preferred_steam_id=cfg.steam_id)
+ctx = build_context(userdata, steam_id, cfg.steam_exe)
+shortcuts = vdf.binary_load(ctx.shortcuts_path.open("rb")).get("shortcuts", {})
+apps = vdf.loads(ctx.localconfig_path.read_text(encoding="utf-8")).get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {})
+for e in shortcuts.values():
+    tags = e.get("tags", {})
+    vals = [tags[k] for k in sorted(tags, key=lambda k: int(str(k)) if str(k).isdigit() else str(k))]
+    if "GAMEHUB" not in vals:
+        continue
+    appid = _canonical_unsigned_app_id(str(e.get("appid", "")))
+    use = apps.get(appid, {}).get("UseSteamControllerConfig") if isinstance(apps, dict) else None
+    print(f"{e.get('AppName')}\tappid={appid}\tUseSteamControllerConfig={use}")
+PY
+```
+
+```bash
+grep -E 'Name=|Handlers=' /proc/bus/input/devices | sed -n '/Steam Deck Controller/,+3p;/Steam Virtual Gamepad/,+3p;/Xbox/,+3p'
+ls -l /dev/input/js*
+```
 
 ## RetroArch Core Defaults
 For systems that launch via RetroArch, GAMEHUB uses these general-purpose core defaults when a core cannot be parsed from the index launch template:

@@ -23,6 +23,7 @@ class SteamShortcutSpec:
     launch_options: str
     start_dir: str = ""
     icon_path: str = ""
+    allow_desktop_config: bool | None = None
 
 
 @dataclass(frozen=True)

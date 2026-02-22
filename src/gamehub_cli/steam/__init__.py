@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .artwork import backup_steam_configs, copy_grid_art, prune_grid_noncanonical_variants
-from .collections import update_cloud_collections, update_collections
+from .collections import repair_managed_steam_input_overrides, update_cloud_collections, update_collections
 from .lifecycle import (
     build_context,
     close_steam_best_effort,
@@ -47,6 +47,7 @@ __all__ = [
     "discover_userdata_dir",
     "is_steam_running",
     "prune_grid_noncanonical_variants",
+    "repair_managed_steam_input_overrides",
     "reopen_steam",
     "steam_id64_from_userdata_id",
     "update_cloud_collections",

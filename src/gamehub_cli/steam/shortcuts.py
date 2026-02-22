@@ -176,12 +176,32 @@ def _extract_persisted_app_id(entry: dict) -> str | None:
     return None
 
 
+def _normalize_existing_shortcut_bool(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().casefold()
+    if normalized in {"1", "true", "yes", "on"}:
+        return "1"
+    if normalized in {"0", "false", "no", "off"}:
+        return "0"
+    return None
+
+
+def _shortcut_bool_to_vdf(value: bool) -> str:
+    return "1" if value else "0"
+
+
 def _build_shortcut_entry(spec: SteamShortcutSpec, existing: dict | None = None) -> dict:
     entry = dict(existing) if existing is not None else {}
     persisted_app_id = _extract_persisted_app_id(entry)
     if persisted_app_id is None:
         unsigned = _compute_shortcut_app_id(spec.exe, spec.title_name)
         persisted_app_id = _canonical_signed_app_id_from_unsigned(unsigned) or unsigned
+    allow_desktop_config = (
+        _shortcut_bool_to_vdf(spec.allow_desktop_config)
+        if spec.allow_desktop_config is not None
+        else (_normalize_existing_shortcut_bool(entry.get("AllowDesktopConfig")) or "1")
+    )
     tags = [GAMEHUB_TAG, f"{GAMEHUB_TITLE_PREFIX}{spec.title_id}", f"{GAMEHUB_SYSTEM_PREFIX}{spec.system}", spec.system]
     entry.update(
         {
@@ -192,7 +212,7 @@ def _build_shortcut_entry(spec: SteamShortcutSpec, existing: dict | None = None)
             "ShortcutPath": "",
             "LaunchOptions": spec.launch_options,
             "IsHidden": "0",
-            "AllowDesktopConfig": "1",
+            "AllowDesktopConfig": allow_desktop_config,
             "AllowOverlay": "1",
             "OpenVR": "0",
             "Devkit": "0",

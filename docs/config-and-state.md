@@ -89,7 +89,11 @@ When omitted, sync auto-detects a profile under `steam.userdata_dir` and prefers
 
 Steam mutation behavior notes:
 - GAMEHUB writes managed shortcuts with stable `appid` values so artwork and category membership can be bound on first sync pass.
+- On Linux Steam Deck, GAMEHUB writes managed shortcuts with `AllowDesktopConfig = 0` by default for native-controller launches in Gaming Mode.
+  - Override with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`.
 - GAMEHUB canonicalizes collection membership appids to unsigned numeric values in both `localconfig.vdf` (`user-collections`) and cloud storage collection entries.
+- On Linux Steam Deck, GAMEHUB can repair stale managed app overrides where `UseSteamControllerConfig = 0`.
+  - This repair is enabled by default; disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`.
 - Steam reopen requires an active desktop/GUI session; SSH-only sessions may apply file updates successfully but fail to relaunch Steam.
 
 `paths.gamehub_dir` is the local sync root. Derived paths:
@@ -132,11 +136,14 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
+- `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`: force managed shortcut `AllowDesktopConfig` (`true`/`false`).
+- `GAMEHUB_DECK_REPAIR_STEAM_INPUT`: enables/disables Deck-only managed app override repair for `UseSteamControllerConfig` (`true`/`false`, default `true`).
 - Linux Azahar exit hook input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
 - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`: overrides `[controllers].launch_autoconfig` (`true`/`false`).
 - `GAMEHUB_CONTROLLER_PROFILES_DIR`: overrides `[controllers].profiles_dir`.
+- `GAMEHUB_DECK_ZERO_DETECT_POLICY`: Deck-only zero-controller policy in `controller-launch` (`xbox_1p` default, `kbm`, or `abort`).
 - `GAMEHUB_INDEX_TIMEOUT_SECONDS`: overrides `[server].index_timeout_seconds`.
 - `GAMEHUB_INDEX_FETCH_ATTEMPTS`: overrides `[server].index_fetch_attempts`.
 - `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
@@ -164,6 +171,8 @@ Controller launch autoconfig:
 - Applies to Steam shortcut launches for `PCSX2`, `Dolphin`, and `Azahar`.
 - Does not wrap `RetroArch` launches.
 - Runtime flow: detect Xbox controller count (`0`, `1`, `2+`) -> choose profile (`kbm`, `xbox_1p`, `xbox_2p`) -> apply managed keys -> launch emulator.
+- Linux Steam Deck default keeps controller-first launch behavior when detection returns zero by applying `xbox_1p` fallback (`GAMEHUB_DECK_ZERO_DETECT_POLICY`).
+- Non-Deck platforms keep standard behavior (`0 -> kbm`).
 - Azahar controller-mode apply keeps pointer/touch keys preservation-first, while managed button keys are always normalized from profile mappings.
 - Dolphin Linux controller-mode apply preserves existing controller-class device identities but rebinds keyboard/mouse fallback devices (for example `XInput2/0/Virtual core pointer` and `DInput/0/Keyboard Mouse`).
 - Default profile root is `<gamehub_dir>/controller_profiles` and includes seeded defaults:

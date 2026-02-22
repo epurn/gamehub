@@ -20,6 +20,7 @@ from gamehub_cli.steam import (
     is_steam_running,
     prune_grid_noncanonical_variants,
     reopen_steam,
+    repair_managed_steam_input_overrides,
     steam_id64_from_userdata_id,
     update_cloud_collections,
     update_collections,
@@ -308,6 +309,99 @@ def test_upsert_shortcuts_round_trip_and_idempotent(workspace_tempdir) -> None:
         assert str(managed_entry.get("appid", "")).lstrip("-").isdigit()
 
 
+def test_upsert_shortcuts_applies_allow_desktop_config_override(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+        desired = [
+            SteamShortcutSpec(
+                title_id="title_wii_mario",
+                system="Wii",
+                title_name="Super Mario Galaxy",
+                exe="flatpak",
+                launch_options='run --file-forwarding org.DolphinEmu.dolphin-emu -e "@@" "rom.rvz" "@@"',
+                start_dir="",
+                icon_path="",
+                allow_desktop_config=False,
+            )
+        ]
+
+        upsert_shortcuts(context, desired)
+
+        payload = vdf.binary_loads(context.shortcuts_path.read_bytes())
+        entry = next(iter(payload["shortcuts"].values()))
+        assert entry.get("AllowDesktopConfig") == "0"
+
+
+def test_upsert_shortcuts_preserves_existing_allow_desktop_config_when_unspecified(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+        managed_existing = {
+            "AppName": "Super Mario Galaxy",
+            "Exe": "flatpak",
+            "LaunchOptions": 'run --file-forwarding org.DolphinEmu.dolphin-emu -e "@@" "rom.rvz" "@@"',
+            "AllowDesktopConfig": "0",
+            "tags": {
+                "0": "GAMEHUB",
+                "1": "GAMEHUB_TITLE:title_wii_mario",
+                "2": "GAMEHUB_SYSTEM:Wii",
+                "3": "Wii",
+            },
+        }
+        unmanaged_existing = {
+            "AppName": "Manual Shortcut",
+            "Exe": "manual.exe",
+            "LaunchOptions": "",
+            "AllowDesktopConfig": "0",
+            "tags": {"0": "Manual"},
+        }
+        context.shortcuts_path.write_bytes(
+            vdf.binary_dumps(
+                {
+                    "shortcuts": {
+                        "0": unmanaged_existing,
+                        "1": managed_existing,
+                    }
+                }
+            )
+        )
+        desired = [
+            SteamShortcutSpec(
+                title_id="title_wii_mario",
+                system="Wii",
+                title_name="Super Mario Galaxy",
+                exe="flatpak",
+                launch_options='run --file-forwarding org.DolphinEmu.dolphin-emu -e "@@" "rom.rvz" "@@"',
+                start_dir="",
+                icon_path="",
+            )
+        ]
+
+        upsert_shortcuts(context, desired)
+
+        payload = vdf.binary_loads(context.shortcuts_path.read_bytes())
+        table = payload["shortcuts"]
+        managed = next(entry for entry in table.values() if entry.get("AppName") == "Super Mario Galaxy")
+        unmanaged = next(entry for entry in table.values() if entry.get("AppName") == "Manual Shortcut")
+        assert managed.get("AllowDesktopConfig") == "0"
+        assert unmanaged.get("AllowDesktopConfig") == "0"
+
+
 def test_upsert_shortcuts_migrates_legacy_matching_entry(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
@@ -492,6 +586,44 @@ def test_update_collections_skips_noop_write(monkeypatch, workspace_tempdir) -> 
 
         assert changed == 0
         assert writes == []
+
+
+def test_repair_managed_steam_input_overrides_flips_only_explicit_zero(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+        payload = {
+            "UserLocalConfigStore": {
+                "Software": {
+                    "Valve": {
+                        "Steam": {
+                            "apps": {
+                                "100": {"UseSteamControllerConfig": "0"},
+                                "200": {"UseSteamControllerConfig": "1"},
+                                "300": {},
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        context.localconfig_path.write_text(vdf.dumps(payload), encoding="utf-8")
+
+        updates = repair_managed_steam_input_overrides(context, ["100", "200", "300", "999"])
+
+        assert updates == 1
+        updated = vdf.loads(context.localconfig_path.read_text(encoding="utf-8"))
+        apps = updated["UserLocalConfigStore"]["Software"]["Valve"]["Steam"]["apps"]
+        assert apps["100"]["UseSteamControllerConfig"] == "1"
+        assert apps["200"]["UseSteamControllerConfig"] == "1"
+        assert "UseSteamControllerConfig" not in apps["300"]
 
 
 def test_upsert_shortcuts_uses_persisted_appid_for_mapping(workspace_tempdir) -> None:

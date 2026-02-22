@@ -147,6 +147,7 @@ def test_run_controller_launch_detection_failure_falls_back_to_kbm_profile_selec
 
     monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
     monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr(
         "gamehub_cli.controllers.launch.detect_xbox_controllers",
         lambda max_devices=2: (_ for _ in ()).throw(RuntimeError("detect failed")),
@@ -283,3 +284,145 @@ def test_run_controller_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) 
     exit_code = run_controller_launch(payload_token=token)
 
     assert exit_code == 4
+
+
+def test_run_controller_launch_deck_zero_detect_defaults_to_xbox_1p(monkeypatch, capsys) -> None:
+    token = encode_controller_payload(
+        {
+            "v": 1,
+            "emulator": "dolphin",
+            "target_exe": "dolphin",
+            "target_args": ["-b", "-e", "rom.iso"],
+        }
+    )
+    config = _config()
+    observed: dict[str, int] = {}
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.controllers.launch.is_steam_deck_linux", lambda: True)
+    monkeypatch.delenv("GAMEHUB_DECK_ZERO_DETECT_POLICY", raising=False)
+
+    def _apply(cfg, emulator_name, controller_count, verbose=False):
+        observed["count"] = controller_count
+        return "xbox_1p"
+
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch.apply_controller_profile",
+        _apply,
+    )
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
+
+    exit_code = run_controller_launch(payload_token=token, audit=True)
+
+    assert exit_code == 0
+    assert observed["count"] == 1
+    out = capsys.readouterr().out
+    assert "zero_detect_policy=xbox_1p" in out
+    assert "effective_controller_count=1" in out
+
+
+def test_run_controller_launch_deck_zero_detect_kbm_policy_keeps_zero(monkeypatch, capsys) -> None:
+    token = encode_controller_payload(
+        {
+            "v": 1,
+            "emulator": "dolphin",
+            "target_exe": "dolphin",
+            "target_args": ["-b", "-e", "rom.iso"],
+        }
+    )
+    config = _config()
+    observed: dict[str, int] = {}
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.controllers.launch.is_steam_deck_linux", lambda: True)
+    monkeypatch.setenv("GAMEHUB_DECK_ZERO_DETECT_POLICY", "kbm")
+
+    def _apply(cfg, emulator_name, controller_count, verbose=False):
+        observed["count"] = controller_count
+        return "kbm"
+
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch.apply_controller_profile",
+        _apply,
+    )
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
+
+    exit_code = run_controller_launch(payload_token=token, audit=True)
+
+    assert exit_code == 0
+    assert observed["count"] == 0
+    out = capsys.readouterr().out
+    assert "zero_detect_policy=kbm" in out
+    assert "effective_controller_count=0" in out
+
+
+def test_run_controller_launch_deck_zero_detect_abort_policy_stops_launch(monkeypatch) -> None:
+    token = encode_controller_payload(
+        {
+            "v": 1,
+            "emulator": "dolphin",
+            "target_exe": "dolphin",
+            "target_args": ["-b", "-e", "rom.iso"],
+        }
+    )
+    config = _config()
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.controllers.launch.is_steam_deck_linux", lambda: True)
+    monkeypatch.setenv("GAMEHUB_DECK_ZERO_DETECT_POLICY", "abort")
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch.apply_controller_profile",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("profile apply should not run")),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch._run_target",
+        lambda payload: (_ for _ in ()).throw(AssertionError("target launch should not run")),
+    )
+
+    exit_code = run_controller_launch(payload_token=token, audit=True)
+
+    assert exit_code == 2
+
+
+def test_run_controller_launch_non_deck_zero_detect_behavior_unchanged(monkeypatch) -> None:
+    token = encode_controller_payload(
+        {
+            "v": 1,
+            "emulator": "dolphin",
+            "target_exe": "dolphin",
+            "target_args": ["-b", "-e", "rom.iso"],
+        }
+    )
+    config = _config()
+    observed: dict[str, int] = {}
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.controllers.launch.is_steam_deck_linux", lambda: False)
+    monkeypatch.delenv("GAMEHUB_DECK_ZERO_DETECT_POLICY", raising=False)
+
+    def _apply(cfg, emulator_name, controller_count, verbose=False):
+        observed["count"] = controller_count
+        return "kbm"
+
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch.apply_controller_profile",
+        _apply,
+    )
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
+
+    exit_code = run_controller_launch(payload_token=token)
+
+    assert exit_code == 0
+    assert observed["count"] == 0

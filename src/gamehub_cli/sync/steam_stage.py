@@ -19,6 +19,7 @@ from ..common.platform_paths import (
     PCSX2_FLATPAK_APP_ID,
     is_flatpak_command,
 )
+from ..controllers.detection import is_steam_deck_linux
 from ..controllers.launch import encode_controller_payload
 from ..emulators import resolve_emulator_executable
 from ..firmware.retroarch_cores import resolve_retroarch_paths
@@ -36,6 +37,7 @@ from ..steam import (
     is_steam_running,
     prune_grid_noncanonical_variants,
     reopen_steam,
+    repair_managed_steam_input_overrides,
     update_cloud_collections,
     update_collections,
     upsert_shortcuts,
@@ -52,6 +54,8 @@ _DOLPHIN_FULLSCREEN_CONFIG_ARG_RE = re.compile(r"\s-C\s+Dolphin\.Display\.Fullsc
 _DOLPHIN_EXEC_TOKEN_RE = re.compile(r"\s(-e|--exec)(\s|=)")
 _DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
 _AZAHAR_LINUX_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_LINUX_EXIT_HOOK"
+_STEAM_ALLOW_DESKTOP_CONFIG_ENV = "GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG"
+_DECK_REPAIR_STEAM_INPUT_ENV = "GAMEHUB_DECK_REPAIR_STEAM_INPUT"
 _WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar"}
 
 
@@ -65,6 +69,27 @@ def _env_enabled(name: str, *, default: bool = True) -> bool:
     if normalized in {"1", "true", "yes", "on"}:
         return True
     return default
+
+
+def _env_optional_bool(name: str) -> bool | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    normalized = raw.strip().casefold()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _managed_shortcut_allow_desktop_config(*, steam_deck_linux: bool) -> bool | None:
+    override = _env_optional_bool(_STEAM_ALLOW_DESKTOP_CONFIG_ENV)
+    if override is not None:
+        return override
+    if steam_deck_linux:
+        return False
+    return None
 
 
 def _is_windows_style_runtime_path(value: str) -> bool:
@@ -283,6 +308,7 @@ def _wrap_shortcut_for_controller_launch(
         launch_options=_join_launch_options(launch_args),
         start_dir=start_dir,
         icon_path=spec.icon_path,
+        allow_desktop_config=spec.allow_desktop_config,
     )
 
 
@@ -291,6 +317,8 @@ def build_shortcut_specs(
     config: GamehubConfig,
 ) -> list[SteamShortcutSpec]:
     specs: list[SteamShortcutSpec] = []
+    steam_deck_linux = sys.platform.startswith("linux") and is_steam_deck_linux()
+    allow_desktop_config = _managed_shortcut_allow_desktop_config(steam_deck_linux=steam_deck_linux)
     for title in sorted(index.titles, key=lambda item: (item.system, item.title_name.casefold(), item.title_id)):
         rom_path = resolve_rom_destination(
             library_dir=config.library_dir,
@@ -327,6 +355,7 @@ def build_shortcut_specs(
                 ),
                 start_dir="",
                 icon_path="",
+                allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
                 spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
@@ -344,6 +373,7 @@ def build_shortcut_specs(
                 ),
                 start_dir="",
                 icon_path="",
+                allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
                 spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
@@ -365,6 +395,7 @@ def build_shortcut_specs(
                     ),
                     start_dir="",
                     icon_path="",
+                    allow_desktop_config=allow_desktop_config,
                 )
                 if _should_wrap_shortcut(title.emulator, config):
                     spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
@@ -380,6 +411,7 @@ def build_shortcut_specs(
                 ),
                 start_dir="",
                 icon_path="",
+                allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
                 spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
@@ -415,6 +447,7 @@ def build_shortcut_specs(
             launch_options=launch_options,
             start_dir=start_dir,
             icon_path="",
+            allow_desktop_config=allow_desktop_config,
         )
         if _should_wrap_shortcut(title.emulator, config):
             spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
@@ -470,13 +503,25 @@ def apply_steam_updates(
         print("Warning: no GAMEHUB appids were derived from persisted shortcuts")
     local_update_count = update_collections(context, shortcut_result.app_ids_by_system)
     cloud_update_count = update_cloud_collections(context, shortcut_result.app_ids_by_system)
-    update_count = local_update_count + cloud_update_count
+    deck_repair_count = 0
+    if (
+        sys.platform.startswith("linux")
+        and is_steam_deck_linux()
+        and _env_enabled(_DECK_REPAIR_STEAM_INPUT_ENV, default=True)
+    ):
+        deck_repair_count = repair_managed_steam_input_overrides(
+            context,
+            list(shortcut_result.app_ids_by_title.values()),
+        )
+    update_count = local_update_count + cloud_update_count + deck_repair_count
     if update_count:
         details: list[str] = []
         if local_update_count:
             details.append(f"localconfig={local_update_count}")
         if cloud_update_count:
             details.append(f"cloud={cloud_update_count}")
+        if deck_repair_count:
+            details.append(f"steam-input={deck_repair_count}")
         suffix = f" ({', '.join(details)})" if details else ""
         print(f"Updated {update_count} Steam collections{suffix}")
     else:

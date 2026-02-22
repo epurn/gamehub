@@ -321,3 +321,37 @@ def update_collections(context: SteamContext, app_ids_by_system: dict[str, list[
         return updates
     _atomic_write_text(context.localconfig_path, after_dump)
     return updates
+
+
+def repair_managed_steam_input_overrides(context: SteamContext, managed_app_ids: list[str]) -> int:
+    if not managed_app_ids:
+        return 0
+    payload = _load_localconfig(context.localconfig_path)
+    apps = _resolve_path(payload, ["UserLocalConfigStore", "Software", "Valve", "Steam", "apps"])
+    if not isinstance(apps, dict):
+        return 0
+
+    before_dump = _dump_localconfig(payload)
+    updates = 0
+    for app_id in sorted({_canonical_unsigned_app_id(str(value)) for value in managed_app_ids}):
+        if not app_id:
+            continue
+        app_entry = apps.get(app_id)
+        if not isinstance(app_entry, dict):
+            continue
+        existing = app_entry.get("UseSteamControllerConfig")
+        if existing is None:
+            continue
+        normalized = str(existing).strip().casefold()
+        if normalized not in {"0", "false", "no", "off"}:
+            continue
+        app_entry["UseSteamControllerConfig"] = "1"
+        updates += 1
+
+    if updates == 0:
+        return 0
+    after_dump = _dump_localconfig(payload)
+    if after_dump == before_dump:
+        return 0
+    _atomic_write_text(context.localconfig_path, after_dump)
+    return updates

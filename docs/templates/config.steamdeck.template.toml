@@ -45,3 +45,7 @@ enabled_kinds = ["grid", "hero", "logo", "icon"]
 [controllers]
 # Steam Deck default should favor the built-in controller in launch autoconfig.
 launch_autoconfig = true
+# Deck launcher defaults (env overrides):
+# GAMEHUB_DECK_ZERO_DETECT_POLICY=xbox_1p|kbm|abort  (default xbox_1p)
+# GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false      (default false on Deck)
+# GAMEHUB_DECK_REPAIR_STEAM_INPUT=true|false         (default true)

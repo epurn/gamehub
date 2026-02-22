@@ -80,6 +80,7 @@ def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:
         "gamehub_cli.sync.steam_stage.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
     )
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: True)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.close_steam_best_effort", lambda: order.append("close"))
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.wait_for_steam_exit", lambda: order.append("wait") or True)
@@ -130,6 +131,137 @@ def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:
     ]
 
 
+def test_apply_steam_updates_deck_repairs_steam_input_overrides(monkeypatch) -> None:
+    order: list[str] = []
+    index = LibraryIndex(index_version=1, systems=(), titles=())
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path("state.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.discover_userdata_dir", lambda explicit: Path("userdata"))
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.upsert_shortcuts",
+        lambda context, desired_shortcuts: type(
+            "Result",
+            (),
+            {
+                "app_ids_by_title": {"title_wii_mario": "-602952253"},
+                "app_ids_by_system": {"Wii": ["-602952253"]},
+                "total_shortcuts": 1,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.update_collections",
+        lambda context, app_ids_by_system: order.append("collections") or 0,
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.update_cloud_collections",
+        lambda context, app_ids_by_system: order.append("collections-cloud") or 0,
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.repair_managed_steam_input_overrides",
+        lambda context, app_ids: order.append(f"repair:{','.join(app_ids)}") or 1,
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.copy_grid_art",
+        lambda context, assignments: order.append("art") or [],
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.prune_grid_noncanonical_variants",
+        lambda context, app_ids: order.append("prune") or 0,
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.reopen_steam", lambda context: order.append("reopen") or True)
+
+    _apply_steam_updates(
+        config,
+        index=index,
+        require_steam_closed=False,
+        artwork_by_title={},
+    )
+
+    assert "collections" in order
+    assert "collections-cloud" in order
+    assert "repair:-602952253" in order
+
+
+def test_apply_steam_updates_deck_can_disable_steam_input_repairs(monkeypatch) -> None:
+    index = LibraryIndex(index_version=1, systems=(), titles=())
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path("state.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.discover_userdata_dir", lambda explicit: Path("userdata"))
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
+    monkeypatch.setenv("GAMEHUB_DECK_REPAIR_STEAM_INPUT", "false")
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.upsert_shortcuts",
+        lambda context, desired_shortcuts: type(
+            "Result",
+            (),
+            {
+                "app_ids_by_title": {"title_wii_mario": "-602952253"},
+                "app_ids_by_system": {"Wii": ["-602952253"]},
+                "total_shortcuts": 1,
+            },
+        )(),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.update_collections", lambda context, app_ids_by_system: 0)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.update_cloud_collections", lambda context, app_ids_by_system: 0)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.repair_managed_steam_input_overrides",
+        lambda context, app_ids: (_ for _ in ()).throw(AssertionError("repair should be disabled")),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.copy_grid_art", lambda context, assignments: [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.prune_grid_noncanonical_variants",
+        lambda context, app_ids: 0,
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.reopen_steam", lambda context: True)
+
+    _apply_steam_updates(
+        config,
+        index=index,
+        require_steam_closed=False,
+        artwork_by_title={},
+    )
+
+
 def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) -> None:
     order: list[str] = []
     index = LibraryIndex(index_version=1, systems=(), titles=())
@@ -152,6 +284,7 @@ def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) 
         "gamehub_cli.sync.steam_stage.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
     )
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: True)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.close_steam_best_effort", lambda: order.append("close"))
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.wait_for_steam_exit", lambda: order.append("wait") or False)
@@ -215,6 +348,7 @@ def test_apply_steam_updates_reopens_even_if_steam_was_not_running(monkeypatch) 
         "gamehub_cli.sync.steam_stage.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
     )
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: order.append("backup") or []
@@ -275,6 +409,7 @@ def test_apply_steam_updates_skip_relaunch_still_updates_steam(monkeypatch, caps
         "gamehub_cli.sync.steam_stage.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
     )
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: order.append("backup") or []
@@ -1564,6 +1699,182 @@ def test_build_shortcut_specs_uses_configurable_roms_dir_for_all_titles(monkeypa
         assert str(temp_root / "sdcard" / "roms" / "NES" / "Super Mario Bros.nes") in by_title[
             "Super Mario Bros"
         ].launch_options
+
+
+def test_build_shortcut_specs_deck_sets_allow_desktop_config_false(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-deck-policy-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
+        title = TitleEntry(
+            title_id="title_nes_mario",
+            system="NES",
+            title_name="Super Mario Bros",
+            title_rel_dir="NES/Super Mario Bros.nes",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/fceumm_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_nes",
+                rel_path="roms/NES/Super Mario Bros.nes",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".nes",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "/usr/bin/retroarch"
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert specs[0].allow_desktop_config is False
+
+
+def test_build_shortcut_specs_non_deck_keeps_allow_desktop_config_unspecified(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-nondeck-policy-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
+        title = TitleEntry(
+            title_id="title_nes_mario",
+            system="NES",
+            title_name="Super Mario Bros",
+            title_rel_dir="NES/Super Mario Bros.nes",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/fceumm_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_nes",
+                rel_path="roms/NES/Super Mario Bros.nes",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".nes",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "/usr/bin/retroarch"
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: False)
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert specs[0].allow_desktop_config is None
+
+
+def test_build_shortcut_specs_deck_wrapped_shortcuts_preserve_allow_desktop_config(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-deck-wrapped-policy-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=True),
+        )
+        title = TitleEntry(
+            title_id="title_ps2_gt4",
+            system="PS2",
+            title_name="Gran Turismo 4",
+            title_rel_dir="PS2/Gran Turismo 4.iso",
+            emulator="pcsx2",
+            launch_template='"{emulator}" "{rom}"',
+            rom=RomSpec(
+                file_id="rom_ps2_gt4",
+                rel_path="roms/PS2/Gran Turismo 4.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "/usr/bin/pcsx2")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert "controller-launch --payload" in specs[0].launch_options
+        assert specs[0].allow_desktop_config is False
+
+
+def test_build_shortcut_specs_allow_desktop_config_env_override(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-allow-desktop-override-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
+        title = TitleEntry(
+            title_id="title_nes_mario",
+            system="NES",
+            title_name="Super Mario Bros",
+            title_rel_dir="NES/Super Mario Bros.nes",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/fceumm_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_nes",
+                rel_path="roms/NES/Super Mario Bros.nes",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".nes",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "/usr/bin/retroarch"
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
+        monkeypatch.setenv("GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG", "true")
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert specs[0].allow_desktop_config is True
 
 
 def test_build_shortcut_specs_dolphin_uses_batch_exec_and_quoted_rvz_path(monkeypatch, workspace_tempdir) -> None:
