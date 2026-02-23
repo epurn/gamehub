@@ -144,14 +144,31 @@ def _discover_steam_input_cloud_roots(context: SteamContext) -> list[Path]:
     steam_id64 = steam_id64_from_userdata_id(context.steam_id)
     if steam_id64 is not None and steam_id64 not in steam_ids:
         steam_ids.append(steam_id64)
-    return [*(base / steam_id / "config" for steam_id in steam_ids), base / "config"]
+    roots: list[Path] = []
+    for steam_id in steam_ids:
+        roots.append(base / steam_id / "config")
+        roots.append(base / steam_id)
+    roots.append(base / "config")
+    roots.append(base)
+    return roots
+
+
+def _expand_steam_input_root_variants(candidates: list[Path]) -> list[Path]:
+    expanded: list[Path] = []
+    for candidate in candidates:
+        expanded.append(candidate)
+        if candidate.name.casefold() == "config":
+            expanded.append(candidate.parent)
+    return expanded
 
 
 def _resolve_deck_steam_input_roots(context: SteamContext, *, strict: bool) -> list[Path]:
-    candidates = [
-        *discover_deck_steam_input_roots(context.steam_id),
-        *_discover_steam_input_cloud_roots(context),
-    ]
+    candidates = _expand_steam_input_root_variants(
+        [
+            *discover_deck_steam_input_roots(context.steam_id),
+            *_discover_steam_input_cloud_roots(context),
+        ]
+    )
     unique_candidates: list[Path] = []
     seen_candidates: set[_PathIdentity] = set()
     for candidate in candidates:

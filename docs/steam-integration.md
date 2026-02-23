@@ -63,9 +63,9 @@
 - Managed per-title template files are also mirrored to present app-remote roots under `userdata/<steamid>/241100/remote/*/config/<normalized_title>/`.
 - Deck app override repair also sets `UseSteamControllerConfig=1` for managed `Wii`/`N3DS` app entries and (by default) `DisableCloud=1` for those appids plus Steam Input app `241100` to reduce cloud/local startup conflicts.
 - Root resolution precedence:
-  - `~/.local/share/Steam/steamapps/common/Steam Controller Configs/<steamid>/config`
-  - `~/.steam/steam/steamapps/common/Steam Controller Configs/<steamid>/config`
-  - `~/.steam/root/steamapps/common/Steam Controller Configs/<steamid>/config`
+  - `~/.local/share/Steam/steamapps/common/Steam Controller Configs/<steamid>/config` and `.../<steamid>/`
+  - `~/.steam/steam/steamapps/common/Steam Controller Configs/<steamid>/config` and `.../<steamid>/`
+  - `~/.steam/root/steamapps/common/Steam Controller Configs/<steamid>/config` and `.../<steamid>/`
 - GAMEHUB deduplicates equivalent roots by resolved identity.
 - Seed source files are committed in:
   - `src/gamehub_cli/steam/template_seeds/steamdeck/wii_gc/wii_0.vdf`

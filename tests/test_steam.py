@@ -853,6 +853,86 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert second.errors == 0
 
 
+def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_missing(
+    monkeypatch,
+    workspace_tempdir,
+) -> None:
+    from gamehub_cli.steam import input_templates as steam_input_templates
+
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "95402412" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="95402412",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+
+        seed_wii = temp_root / "seeds" / "wii_gc.vdf"
+        seed_wii.parent.mkdir(parents=True, exist_ok=True)
+        seed_wii.write_bytes(b"WII_GC_TEMPLATE")
+        monkeypatch.setattr(
+            steam_input_templates,
+            "_seed_path_for_system",
+            lambda system_name: {"Wii": seed_wii}.get(system_name),
+        )
+        monkeypatch.setattr(steam_input_templates.Path, "home", staticmethod(lambda: temp_root))
+
+        index = LibraryIndex(
+            index_version=1,
+            systems=(),
+            titles=(
+                TitleEntry(
+                    title_id="title_wii",
+                    system="Wii",
+                    title_name="Super Mario Galaxy",
+                    title_rel_dir="Wii/Super Mario Galaxy.rvz",
+                    emulator="dolphin",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="rom_wii",
+                        rel_path="roms/Wii/Super Mario Galaxy.rvz",
+                        sha256="a" * 64,
+                        size_bytes=1,
+                        extension=".rvz",
+                    ),
+                    assets=(),
+                ),
+            ),
+        )
+        shortcut_result = ShortcutSyncResult(
+            app_ids_by_title={"title_wii": "3366254221"},
+            app_ids_by_system={"Wii": ["3366254221"]},
+            total_shortcuts=1,
+        )
+
+        root_parent = (
+            temp_root
+            / ".local"
+            / "share"
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Steam Controller Configs"
+            / "95402412"
+        )
+        root_parent.mkdir(parents=True, exist_ok=True)
+
+        result = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
+
+        title_dir = root_parent / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
+        assert result.targets == 1
+        assert result.written == 1
+        assert result.errors == 0
+        assert (title_dir / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        configset_payload = vdf.loads((root_parent / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
+        controller_config = configset_payload.get("controller_config", {})
+        assert controller_config["3366254221"]["template"] == "gamehub_wii"
+        assert controller_config["3366254221"]["autosave"] == "1"
+
+
 def test_apply_deck_steam_input_templates_strict_fails_when_required_seed_missing(
     monkeypatch,
     workspace_tempdir,
