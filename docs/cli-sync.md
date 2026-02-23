@@ -85,6 +85,7 @@ Steam close behavior:
       - enabled by default (`GAMEHUB_DECK_TEMPLATE_SYNC=true|false`)
       - strict mode is enabled by default (`GAMEHUB_DECK_TEMPLATE_STRICT=true|false`) and fails sync when required seeds/roots are missing
       - managed app overrides are repaired so `UseSteamControllerConfig = 1` for managed app entries by default (disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`)
+      - by default, those managed Deck input app entries also set `DisableCloud = 1` to reduce first-launch Steam cloud template resets (disable with `GAMEHUB_DECK_DISABLE_STEAM_CLOUD_INPUT=false`)
    - Linux Steam Deck zero-controller detection policy in `controller-launch` defaults to `xbox_1p` (`GAMEHUB_DECK_ZERO_DETECT_POLICY=xbox_1p|kbm|abort`)
    - non-Deck platforms keep legacy shortcut/profile behavior unless explicit env overrides are set
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run

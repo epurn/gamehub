@@ -323,7 +323,12 @@ def update_collections(context: SteamContext, app_ids_by_system: dict[str, list[
     return updates
 
 
-def repair_managed_steam_input_overrides(context: SteamContext, managed_app_ids: list[str]) -> int:
+def repair_managed_steam_input_overrides(
+    context: SteamContext,
+    managed_app_ids: list[str],
+    *,
+    disable_cloud: bool = False,
+) -> int:
     if not managed_app_ids:
         return 0
     payload = _load_localconfig(context.localconfig_path)
@@ -343,12 +348,19 @@ def repair_managed_steam_input_overrides(context: SteamContext, managed_app_ids:
         if existing is None:
             app_entry["UseSteamControllerConfig"] = "1"
             updates += 1
-            continue
-        normalized = str(existing).strip().casefold()
-        if normalized in {"1", "true", "yes", "on"}:
-            continue
-        app_entry["UseSteamControllerConfig"] = "1"
-        updates += 1
+        else:
+            normalized = str(existing).strip().casefold()
+            if normalized in {"1", "true", "yes", "on"}:
+                pass
+            else:
+                app_entry["UseSteamControllerConfig"] = "1"
+                updates += 1
+        if disable_cloud:
+            existing_cloud = app_entry.get("DisableCloud")
+            normalized_cloud = str(existing_cloud).strip().casefold() if existing_cloud is not None else ""
+            if normalized_cloud not in {"1", "true", "yes", "on"}:
+                app_entry["DisableCloud"] = "1"
+                updates += 1
 
     if updates == 0:
         return 0

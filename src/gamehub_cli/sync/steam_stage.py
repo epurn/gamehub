@@ -57,6 +57,7 @@ _DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
 _AZAHAR_LINUX_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_LINUX_EXIT_HOOK"
 _STEAM_ALLOW_DESKTOP_CONFIG_ENV = "GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG"
 _DECK_REPAIR_STEAM_INPUT_ENV = "GAMEHUB_DECK_REPAIR_STEAM_INPUT"
+_DECK_DISABLE_STEAM_CLOUD_INPUT_ENV = "GAMEHUB_DECK_DISABLE_STEAM_CLOUD_INPUT"
 _DECK_TEMPLATE_SYNC_ENV = "GAMEHUB_DECK_TEMPLATE_SYNC"
 _DECK_TEMPLATE_STRICT_ENV = "GAMEHUB_DECK_TEMPLATE_STRICT"
 _WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar"}
@@ -539,9 +540,17 @@ def apply_steam_updates(
         and is_steam_deck_linux()
         and _env_enabled(_DECK_REPAIR_STEAM_INPUT_ENV, default=True)
     ):
+        template_managed_app_ids = [
+            *shortcut_result.app_ids_by_system.get("Wii", []),
+            *shortcut_result.app_ids_by_system.get("N3DS", []),
+        ]
+        if not template_managed_app_ids:
+            template_managed_app_ids = list(shortcut_result.app_ids_by_title.values())
+        disable_cloud_input = _env_enabled(_DECK_DISABLE_STEAM_CLOUD_INPUT_ENV, default=True)
         deck_repair_count = repair_managed_steam_input_overrides(
             context,
-            list(shortcut_result.app_ids_by_title.values()),
+            template_managed_app_ids,
+            disable_cloud=disable_cloud_input,
         )
     update_count = local_update_count + cloud_update_count + deck_repair_count
     if update_count:

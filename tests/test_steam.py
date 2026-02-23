@@ -619,14 +619,21 @@ def test_repair_managed_steam_input_overrides_sets_enabled_for_managed_apps(work
         }
         context.localconfig_path.write_text(vdf.dumps(payload), encoding="utf-8")
 
-        updates = repair_managed_steam_input_overrides(context, ["100", "200", "300", "999"])
+        updates = repair_managed_steam_input_overrides(
+            context,
+            ["100", "200", "300", "999"],
+            disable_cloud=True,
+        )
 
-        assert updates == 2
+        assert updates == 5
         updated = vdf.loads(context.localconfig_path.read_text(encoding="utf-8"))
         apps = updated["UserLocalConfigStore"]["Software"]["Valve"]["Steam"]["apps"]
         assert apps["100"]["UseSteamControllerConfig"] == "1"
         assert apps["200"]["UseSteamControllerConfig"] == "1"
         assert apps["300"]["UseSteamControllerConfig"] == "1"
+        assert apps["100"]["DisableCloud"] == "1"
+        assert apps["200"]["DisableCloud"] == "1"
+        assert apps["300"]["DisableCloud"] == "1"
 
 
 def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
@@ -917,6 +924,39 @@ def test_render_managed_template_payload_preserves_duplicate_group_blocks() -> N
     assert '"url"\t\t"template://gamehub_wii.vdf"' in rendered
     assert rendered.count('"title"\t\t"GameHub Wii"') >= 2
     assert rendered.count('"description"\t\t"GameHub managed Wii pointer template"') >= 2
+
+
+def test_deck_template_seeds_axis_inversion_matches_wii_and_n3ds_targets() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    wii_seed = (
+        repo_root
+        / "src"
+        / "gamehub_cli"
+        / "steam"
+        / "template_seeds"
+        / "steamdeck"
+        / "wii_gc"
+        / "wii_0.vdf"
+    )
+    n3ds_seed = (
+        repo_root
+        / "src"
+        / "gamehub_cli"
+        / "steam"
+        / "template_seeds"
+        / "steamdeck"
+        / "n3ds"
+        / "3ds_0.vdf"
+    )
+
+    wii_text = wii_seed.read_text(encoding="utf-8")
+    n3ds_text = n3ds_seed.read_text(encoding="utf-8")
+
+    assert '"invert_x"\t\t"1"' in n3ds_text
+    assert '"invert_x"\t\t"0"' in wii_text
+    assert '"invert_y"\t\t"1"' in wii_text
+    assert '"invert_x"\t\t"1"' not in wii_text
+    assert '"invert_y"\t\t"1"' not in n3ds_text
 
 
 def test_upsert_shortcuts_uses_persisted_appid_for_mapping(workspace_tempdir) -> None:
