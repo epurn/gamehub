@@ -95,15 +95,15 @@ Steam mutation behavior notes:
   - per-title destinations:
     - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
     - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
+  - existing managed per-title template files are preserved unless `--reseed-profiles` is used
   - sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files (`controller_config`) so normalized title keys and companion aliases (`appid`/signed/title variants) select `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
   - when present, those per-title/configset writes are mirrored to `userdata/<steamid>/241100/remote/*/config/` to keep Deck startup Steam Input cloud/local roots aligned
   - seed source: `src/gamehub_cli/steam/template_seeds/steamdeck/`
-  - GAMEHUB normalizes non-functional seed metadata fields (`title`, `description`, `url`, `creator`, `progenitor`, `Timestamp`) during render/write as a defensive guardrail while preserving mapping blocks.
-  - toggle with `GAMEHUB_DECK_TEMPLATE_SYNC=true|false` (default `true`)
-  - strict mode with `GAMEHUB_DECK_TEMPLATE_STRICT=true|false` (default `true`)
+  - GAMEHUB writes raw seed bytes without runtime metadata rewriting.
+  - template sync is deterministic fail-fast when required Deck roots/seeds are unavailable.
 - GAMEHUB canonicalizes collection membership appids to unsigned numeric values in both `localconfig.vdf` (`user-collections`) and cloud storage collection entries.
-- On Linux Steam Deck, GAMEHUB repairs managed app overrides so `UseSteamControllerConfig = 1` for managed app entries.
-  - This repair is enabled by default; disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`.
+- On Linux Steam Deck, GAMEHUB always repairs managed app overrides so `UseSteamControllerConfig = 1` for managed app entries.
+- Managed `Wii`/`N3DS` app entries are written with `DisableCloud = 1`; Steam Input app `241100` remains cloud-enabled to keep `CLOUD_<title>/...` resolution intact.
 - Steam reopen requires an active desktop/GUI session; SSH-only sessions may apply file updates successfully but fail to relaunch Steam.
 
 `paths.gamehub_dir` is the local sync root. Derived paths:
@@ -146,18 +146,12 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
-- `GAMEHUB_DOLPHIN_DECK_DEVICE_MODE`: Deck Dolphin device mode (`auto`, `evdev`, `steamdeck`; default `auto` with `evdev` priority).
 - `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`: force managed shortcut `AllowDesktopConfig` (`true`/`false`).
-- `GAMEHUB_DECK_REPAIR_STEAM_INPUT`: enables/disables Deck-only managed app override repair for `UseSteamControllerConfig=1` (`true`/`false`, default `true`).
-- `GAMEHUB_DECK_DISABLE_STEAM_CLOUD_INPUT`: when Deck app override repair runs, also sets `DisableCloud=1` on managed `Wii`/`N3DS` app entries (`true`/`false`, default `true`). Steam Input app `241100` is kept cloud-enabled for `CLOUD_<title>/...` template resolution.
-- `GAMEHUB_DECK_TEMPLATE_SYNC`: enables/disables Deck-only Steam template sync for managed `Wii`/`N3DS` shortcuts (`true`/`false`, default `true`).
-- `GAMEHUB_DECK_TEMPLATE_STRICT`: strict mode for Deck template sync (`true`/`false`, default `true`).
 - Linux Azahar exit hook input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
 - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`: overrides `[controllers].launch_autoconfig` (`true`/`false`).
 - `GAMEHUB_CONTROLLER_PROFILES_DIR`: overrides `[controllers].profiles_dir`.
-- `GAMEHUB_DECK_ZERO_DETECT_POLICY`: Deck-only zero-controller policy in `controller-launch` (`xbox_1p` default, `kbm`, or `abort`).
 - `GAMEHUB_INDEX_TIMEOUT_SECONDS`: overrides `[server].index_timeout_seconds`.
 - `GAMEHUB_INDEX_FETCH_ATTEMPTS`: overrides `[server].index_fetch_attempts`.
 - `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
@@ -185,10 +179,10 @@ Controller launch autoconfig:
 - Applies to Steam shortcut launches for `PCSX2`, `Dolphin`, and `Azahar`.
 - Does not wrap `RetroArch` launches.
 - Runtime flow: detect Xbox controller count (`0`, `1`, `2+`) -> choose profile (`kbm`, `xbox_1p`, `xbox_2p`) -> apply managed keys -> launch emulator.
-- Linux Steam Deck default keeps controller-first launch behavior when detection returns zero by applying `xbox_1p` fallback (`GAMEHUB_DECK_ZERO_DETECT_POLICY`).
+- Linux Steam Deck controller-launch uses a single detect pass and applies `xbox_1p` when detection returns zero.
 - Non-Deck platforms keep standard behavior (`0 -> kbm`).
 - Azahar controller-mode apply keeps pointer/touch keys preservation-first, while managed button keys are always normalized from profile mappings.
-- Dolphin Linux controller-mode preserves existing controller-class device identities on non-Deck, while Deck controller-mode uses deterministic device rebinding (`evdev` priority by default).
+- Dolphin Linux controller-mode preserves existing controller-class device identities on non-Deck, while Deck controller-mode uses deterministic `evdev` rebinding.
 - Default profile root is `<gamehub_dir>/controller_profiles` and includes seeded defaults:
   - `<root>/pcsx2/<profile>/PCSX2.ini`
   - `<root>/dolphin/<profile>/GCPadNew.ini`
@@ -196,9 +190,11 @@ Controller launch autoconfig:
   - `<root>/dolphin/<profile>/Hotkeys.ini`
   - `<root>/azahar/<profile>/qt-config.ini`
 - Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
-- Use `--reseed-profiles` to overwrite defaults on demand.
+- Use `--reseed-profiles` to overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
 - If you used older branch builds before these controller profile changes, run one non-dry sync with `--reseed-profiles` before retesting.
-- To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`) so GAMEHUB will not overwrite them; missing files still fall back to bundled defaults.
+- To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
+  - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
+  - existing files are left unchanged unless `--reseed-profiles` is used
 - If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
 Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.

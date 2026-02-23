@@ -74,12 +74,11 @@ def test_seed_default_profiles_creates_profile_tree(workspace_tempdir) -> None:
             assert "Device = XInput2/0/Virtual core pointer" in dolphin_kbm_hotkeys
 
 
-def test_seed_default_profiles_deck_uses_steamdeck_dolphin_defaults(monkeypatch, workspace_tempdir) -> None:
+def test_seed_default_profiles_linux_uses_platform_neutral_dolphin_defaults(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
         config = _config(temp_root)
 
         monkeypatch.setattr(controller_profiles.sys, "platform", "linux")
-        monkeypatch.setattr(controller_profiles, "is_steam_deck_linux", lambda: True)
         monkeypatch.setattr(controller_profiles, "DEFAULT_PROFILE_TEXTS", controller_profiles._default_profile_texts())
 
         seed_default_profiles(config)
@@ -88,13 +87,12 @@ def test_seed_default_profiles_deck_uses_steamdeck_dolphin_defaults(monkeypatch,
         dolphin_gc_xbox_1p = (root / "dolphin" / "xbox_1p" / "GCPadNew.ini").read_text(encoding="utf-8")
         dolphin_wii_xbox_1p = (root / "dolphin" / "xbox_1p" / "WiimoteNew.ini").read_text(encoding="utf-8")
 
-        assert "Device = SteamDeck/0/Steam Deck" in dolphin_gc_xbox_1p
-        assert "Triggers/L = `R1`" in dolphin_gc_xbox_1p
-        assert "Triggers/R = `R2`" in dolphin_gc_xbox_1p
-        assert "Device = SteamDeck/0/Steam Deck" in dolphin_wii_xbox_1p
-        assert "Buttons/A = A | SOUTH | `Button A`" in dolphin_wii_xbox_1p
-        assert "Buttons/B = B | EAST | `Button B`" in dolphin_wii_xbox_1p
-        assert "IR/Up = `XInput2/0/Virtual core pointer:Cursor Y-`" in dolphin_wii_xbox_1p
+        assert "Device = SDL/0/Gamepad" in dolphin_gc_xbox_1p
+        assert "Device = DInput/0/Keyboard Mouse" in dolphin_gc_xbox_1p
+        assert "Buttons/A = SOUTH | `Button A`" in dolphin_wii_xbox_1p
+        assert "Buttons/B = EAST | `Button B`" in dolphin_wii_xbox_1p
+        assert "Device = SteamDeck/0/Steam Deck" not in dolphin_gc_xbox_1p
+        assert "Device = SteamDeck/0/Steam Deck" not in dolphin_wii_xbox_1p
 
 
 def test_seed_default_profiles_skips_custom_profiles_dir(workspace_tempdir) -> None:

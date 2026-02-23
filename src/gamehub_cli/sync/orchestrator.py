@@ -133,6 +133,7 @@ def _apply_steam_updates(
     require_steam_closed: bool,
     artwork_by_title: dict[str, dict[str, Path]],
     reopen_steam_after_update: bool = True,
+    reseed_profiles: bool = False,
 ) -> None:
     _DEPS.apply_steam_updates(
         config,
@@ -140,6 +141,7 @@ def _apply_steam_updates(
         require_steam_closed=require_steam_closed,
         artwork_by_title=artwork_by_title,
         reopen_steam_after_update=reopen_steam_after_update,
+        reseed_profiles=reseed_profiles,
     )
 
 
@@ -236,12 +238,15 @@ def run_sync(
         return 0
 
     if config.controllers.launch_autoconfig:
-        seeded_profiles = seed_default_profiles(config=config, verbose=verbose, force=reseed_profiles)
+        seeded_profiles = seed_default_profiles(
+            config=config,
+            verbose=verbose,
+            force=reseed_profiles,
+            allow_custom=True,
+        )
         if verbose:
             if seeded_profiles:
                 print(f"Seeded controller profile defaults: {len(seeded_profiles)}")
-            elif config.controllers.profiles_dir is not None:
-                print("Controller profiles: custom profiles_dir set; default seeding skipped")
 
     _apply_downloads(
         config.server_url,
@@ -263,6 +268,7 @@ def run_sync(
             require_steam_closed=require_steam_closed,
             artwork_by_title=artwork_assignments,
             reopen_steam_after_update=not skip_steam_relaunch,
+            reseed_profiles=reseed_profiles,
         )
     mark_synced(state)
     save_state_atomic(config.state_path, state)

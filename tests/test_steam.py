@@ -686,6 +686,8 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
     workspace_tempdir,
 ) -> None:
     from gamehub_cli.steam import input_templates as steam_input_templates
+    from gamehub_cli.steam.deck_templates import roots as deck_template_roots
+    from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
 
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "95402412" / "config"
@@ -704,11 +706,11 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         seed_wii_gc.write_bytes(b"WII_GC_TEMPLATE")
         seed_n3ds.write_bytes(b"N3DS_TEMPLATE")
         monkeypatch.setattr(
-            steam_input_templates,
-            "_seed_path_for_system",
+            deck_template_seeds,
+            "seed_path_for_system",
             lambda system_name: {"Wii": seed_wii_gc, "N3DS": seed_n3ds}.get(system_name),
         )
-        monkeypatch.setattr(steam_input_templates.Path, "home", staticmethod(lambda: temp_root))
+        monkeypatch.setattr(deck_template_roots.Path, "home", staticmethod(lambda: temp_root))
 
         index = LibraryIndex(
             index_version=1,
@@ -790,15 +792,7 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
             / "config"
         )
         template_root.mkdir(parents=True, exist_ok=True)
-        remote_template_root = (
-            temp_root
-            / "userdata"
-            / "95402412"
-            / "241100"
-            / "remote"
-            / "95402412"
-            / "config"
-        )
+        remote_template_root = temp_root / "userdata" / "95402412" / "241100" / "remote" / "95402412" / "config"
         remote_template_root.mkdir(parents=True, exist_ok=True)
         (template_root / "steam_autocloud.vdf").write_text('"steam_autocloud.vdf"\n{\n}\n', encoding="utf-8")
         (remote_template_root / "steam_autocloud.vdf").write_text(
@@ -840,23 +834,22 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
             encoding="utf-8",
         )
 
-        first = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
-        second = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
+        first = apply_deck_steam_input_templates(context, index, shortcut_result)
+        second = apply_deck_steam_input_templates(context, index, shortcut_result)
 
         assert first.targets == 2
         assert first.written == 2
         assert first.unchanged == 0
-        assert first.errors == 0
         assert first.systems_applied == ("Wii", "N3DS")
         assert (wii_template / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
         assert (n3ds_template / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
-        assert not (gc_template / "wii_0.vdf").exists()
-        assert not (wii_template / "wii_0.vdf").exists()
-        assert not (n3ds_template / "3ds_1.vdf").exists()
+        assert (gc_template / "wii_0.vdf").read_bytes() == b"STALE_GC_TEMPLATE"
+        assert (wii_template / "wii_0.vdf").read_bytes() == b"STALE_WII_TEMPLATE"
+        assert (n3ds_template / "3ds_1.vdf").read_bytes() == b"STALE_3DS_TEMPLATE"
         assert not (gc_template / "gamehub_wii.vdf").exists()
-        assert not (wii_template / "controller_neptune.vdf").exists()
+        assert (wii_template / "controller_neptune.vdf").read_bytes() == b"STALE_WII_CONTROLLER_TEMPLATE"
         assert not (gc_template / "controller_neptune.vdf").exists()
-        assert not (n3ds_template / "controller_neptune.vdf").exists()
+        assert (n3ds_template / "controller_neptune.vdf").read_bytes() == b"STALE_3DS_CONTROLLER_TEMPLATE"
         configset_payload = vdf.loads((template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
         controller_config = configset_payload.get("controller_config", {})
         assert controller_config["super mario galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
@@ -881,9 +874,18 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert device_controller_config["-928713075"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert device_controller_config["Super Mario Galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert "custom" not in device_controller_config["-928713075"]
-        for key in ("super mario galaxy", "tomodachi life", "3366254221", "4290272364", "-928713075", "Super Mario Galaxy"):
+        for key in (
+            "super mario galaxy",
+            "tomodachi life",
+            "3366254221",
+            "4290272364",
+            "-928713075",
+            "Super Mario Galaxy",
+        ):
             assert "autosave" not in device_controller_config[key]
-        controller_type_payload = vdf.loads((template_root / "configset_controller_xboxone.vdf").read_text(encoding="utf-8"))
+        controller_type_payload = vdf.loads(
+            (template_root / "configset_controller_xboxone.vdf").read_text(encoding="utf-8")
+        )
         controller_type_config = controller_type_payload.get("controller_config", {})
         assert controller_type_config["super mario galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert controller_type_config["tomodachi life"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
@@ -891,17 +893,23 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert controller_type_config["4290272364"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
         for key in ("super mario galaxy", "tomodachi life", "3366254221", "4290272364"):
             assert "autosave" not in controller_type_config[key]
-        assert "CLOUD_super mario galaxy/gamehub_wii" in (
-            template_root / "configset_controller_neptune.vdf"
-        ).read_text(encoding="utf-8")
-        assert "CLOUD_tomodachi life/gamehub_3ds" in (
-            template_root / "configset_controller_neptune.vdf"
-        ).read_text(encoding="utf-8")
-        remote_wii_template = remote_template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
-        remote_n3ds_template = remote_template_root / steam_input_templates.normalize_steam_input_title_dir("Tomodachi Life")
+        assert "CLOUD_super mario galaxy/gamehub_wii" in (template_root / "configset_controller_neptune.vdf").read_text(
+            encoding="utf-8"
+        )
+        assert "CLOUD_tomodachi life/gamehub_3ds" in (template_root / "configset_controller_neptune.vdf").read_text(
+            encoding="utf-8"
+        )
+        remote_wii_template = remote_template_root / steam_input_templates.normalize_steam_input_title_dir(
+            "Super Mario Galaxy"
+        )
+        remote_n3ds_template = remote_template_root / steam_input_templates.normalize_steam_input_title_dir(
+            "Tomodachi Life"
+        )
         assert (remote_wii_template / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
         assert (remote_n3ds_template / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
-        remote_configset_payload = vdf.loads((remote_template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
+        remote_configset_payload = vdf.loads(
+            (remote_template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8")
+        )
         remote_controller_config = remote_configset_payload.get("controller_config", {})
         assert remote_controller_config["super mario galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert remote_controller_config["tomodachi life"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
@@ -911,7 +919,6 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert second.targets == 2
         assert second.written == 0
         assert second.unchanged == 2
-        assert second.errors == 0
         assert not (template_root / "steam_autocloud.vdf").exists()
         assert not (remote_template_root / "steam_autocloud.vdf").exists()
 
@@ -921,6 +928,8 @@ def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_
     workspace_tempdir,
 ) -> None:
     from gamehub_cli.steam import input_templates as steam_input_templates
+    from gamehub_cli.steam.deck_templates import roots as deck_template_roots
+    from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
 
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "95402412" / "config"
@@ -937,11 +946,11 @@ def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_
         seed_wii.parent.mkdir(parents=True, exist_ok=True)
         seed_wii.write_bytes(b"WII_GC_TEMPLATE")
         monkeypatch.setattr(
-            steam_input_templates,
-            "_seed_path_for_system",
+            deck_template_seeds,
+            "seed_path_for_system",
             lambda system_name: {"Wii": seed_wii}.get(system_name),
         )
-        monkeypatch.setattr(steam_input_templates.Path, "home", staticmethod(lambda: temp_root))
+        monkeypatch.setattr(deck_template_roots.Path, "home", staticmethod(lambda: temp_root))
 
         index = LibraryIndex(
             index_version=1,
@@ -972,23 +981,15 @@ def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_
         )
 
         root_parent = (
-            temp_root
-            / ".local"
-            / "share"
-            / "Steam"
-            / "steamapps"
-            / "common"
-            / "Steam Controller Configs"
-            / "95402412"
+            temp_root / ".local" / "share" / "Steam" / "steamapps" / "common" / "Steam Controller Configs" / "95402412"
         )
         root_parent.mkdir(parents=True, exist_ok=True)
 
-        result = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
+        result = apply_deck_steam_input_templates(context, index, shortcut_result)
 
         title_dir = root_parent / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
         assert result.targets == 1
         assert result.written == 1
-        assert result.errors == 0
         assert (title_dir / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
         configset_payload = vdf.loads((root_parent / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
         controller_config = configset_payload.get("controller_config", {})
@@ -996,11 +997,12 @@ def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_
         assert controller_config["3366254221"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
 
 
-def test_apply_deck_steam_input_templates_strict_fails_when_required_seed_missing(
+def test_apply_deck_steam_input_templates_fails_when_required_seed_missing(
     monkeypatch,
     workspace_tempdir,
 ) -> None:
-    from gamehub_cli.steam import input_templates as steam_input_templates
+    from gamehub_cli.steam.deck_templates import roots as deck_template_roots
+    from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
 
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "95402412" / "config"
@@ -1013,13 +1015,13 @@ def test_apply_deck_steam_input_templates_strict_fails_when_required_seed_missin
             steam_exe=None,
         )
         monkeypatch.setattr(
-            steam_input_templates,
-            "_seed_path_for_system",
+            deck_template_seeds,
+            "seed_path_for_system",
             lambda system_name: (
                 temp_root / "missing-wii.vdf" if system_name == "Wii" else temp_root / f"seed-{system_name}.vdf"
             ),
         )
-        monkeypatch.setattr(steam_input_templates.Path, "home", staticmethod(lambda: temp_root))
+        monkeypatch.setattr(deck_template_roots.Path, "home", staticmethod(lambda: temp_root))
 
         index = LibraryIndex(
             index_version=1,
@@ -1050,88 +1052,179 @@ def test_apply_deck_steam_input_templates_strict_fails_when_required_seed_missin
         )
 
         try:
-            apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
+            apply_deck_steam_input_templates(context, index, shortcut_result)
         except RuntimeError as exc:
             assert "missing template seed for Wii" in str(exc)
         else:
-            raise AssertionError("Expected strict template sync to fail when required seed is missing")
+            raise AssertionError("Expected template sync to fail when required seed is missing")
 
 
-def test_render_managed_template_payload_preserves_duplicate_group_blocks() -> None:
+def test_apply_deck_steam_input_templates_preserves_seed_payload_bytes(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.steam.deck_templates import roots as deck_template_roots
+    from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
+
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "95402412" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="95402412",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+
+        payload = (
+            '"controller_mappings"\n'
+            "{\n"
+            '\t"title"\t\t"Manual Seed Title"\n'
+            '\t"description"\t\t"Manual Seed Description"\n'
+            '\t"creator"\t\t"76561199036238022"\n'
+            '\t"url"\t\t"template://manual_seed.vdf"\n'
+            "}\n"
+        ).encode("utf-8")
+        seed_wii = temp_root / "seeds" / "wii_gc.vdf"
+        seed_wii.parent.mkdir(parents=True, exist_ok=True)
+        seed_wii.write_bytes(payload)
+        monkeypatch.setattr(
+            deck_template_seeds,
+            "seed_path_for_system",
+            lambda system_name: {"Wii": seed_wii}.get(system_name),
+        )
+        monkeypatch.setattr(deck_template_roots.Path, "home", staticmethod(lambda: temp_root))
+
+        index = LibraryIndex(
+            index_version=1,
+            systems=(),
+            titles=(
+                TitleEntry(
+                    title_id="title_wii",
+                    system="Wii",
+                    title_name="Super Mario Galaxy",
+                    title_rel_dir="Wii/Super Mario Galaxy.rvz",
+                    emulator="dolphin",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="rom_wii",
+                        rel_path="roms/Wii/Super Mario Galaxy.rvz",
+                        sha256="a" * 64,
+                        size_bytes=1,
+                        extension=".rvz",
+                    ),
+                    assets=(),
+                ),
+            ),
+        )
+        shortcut_result = ShortcutSyncResult(
+            app_ids_by_title={"title_wii": "3366254221"},
+            app_ids_by_system={"Wii": ["3366254221"]},
+            total_shortcuts=1,
+        )
+        template_root = (
+            temp_root
+            / ".local"
+            / "share"
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Steam Controller Configs"
+            / "95402412"
+            / "config"
+        )
+        template_root.mkdir(parents=True, exist_ok=True)
+
+        apply_deck_steam_input_templates(context, index, shortcut_result)
+
+        target = template_root / "super mario galaxy" / "gamehub_wii.vdf"
+        written = target.read_bytes()
+        assert written == payload
+        assert b"Manual Seed Title" in written
+        assert b"template://manual_seed.vdf" in written
+
+
+def test_apply_deck_steam_input_templates_preserves_existing_managed_file_without_reseed(
+    monkeypatch, workspace_tempdir
+) -> None:
     from gamehub_cli.steam import input_templates as steam_input_templates
+    from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
+    from gamehub_cli.steam.deck_templates import sync as deck_template_sync
 
-    payload = (
-        '"controller_mappings"\n'
-        "{\n"
-        '\t"title"\t\t"Old Title"\n'
-        '\t"description"\t\t"Old Description"\n'
-        '\t"creator"\t\t"76561199036238022"\n'
-        '\t"progenitor"\t\t"legacy-template"\n'
-        '\t"Timestamp"\t\t"-822800272"\n'
-        '\t"url"\t\t"template://old_template.vdf"\n'
-        '\t"localization"\n'
-        "\t{\n"
-        '\t\t"english"\n'
-        "\t\t{\n"
-        '\t\t\t"title"\t\t"Old English Title"\n'
-        '\t\t\t"description"\t\t"Old English Description"\n'
-        "\t\t}\n"
-        "\t}\n"
-        '\t"group"\n'
-        "\t{\n"
-        '\t\t"id"\t\t"0"\n'
-        "\t}\n"
-        '\t"group"\n'
-        "\t{\n"
-        '\t\t"id"\t\t"1"\n'
-        "\t}\n"
-        '\t"preset"\n'
-        "\t{\n"
-        '\t\t"group_source_bindings"\n'
-        "\t\t{\n"
-        '\t\t\t"binding"\t\t"mouse_button LEFT, , "\n'
-        "\t\t}\n"
-        "\t}\n"
-        "}\n"
-    ).encode("utf-8")
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "95402412" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="95402412",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
 
-    rendered = steam_input_templates._render_managed_template_payload("Wii", payload).decode("utf-8")
+        seed_payload = b"SEED_WII_TEMPLATE_PAYLOAD"
+        seed_wii = temp_root / "seeds" / "wii_gc.vdf"
+        seed_wii.parent.mkdir(parents=True, exist_ok=True)
+        seed_wii.write_bytes(seed_payload)
+        monkeypatch.setattr(
+            deck_template_seeds,
+            "seed_path_for_system",
+            lambda system_name: {"Wii": seed_wii}.get(system_name),
+        )
 
-    assert rendered.count('"group"') == 2
-    assert '"url"\t\t"template://gamehub_wii.vdf"' in rendered
-    assert rendered.count('"title"\t\t"GameHub Wii"') >= 2
-    assert rendered.count('"description"\t\t"GameHub managed Wii pointer template"') >= 2
-    assert '"creator"\t\t"0"' in rendered
-    assert '"progenitor"\t\t""' in rendered
-    assert '"Timestamp"\t\t"0"' in rendered
-    assert "76561199036238022" not in rendered
-    assert "legacy-template" not in rendered
-    assert "old_template.vdf" not in rendered
-    assert '"binding"\t\t"mouse_button LEFT, , "' in rendered
+        template_root = temp_root / "steam-config-root"
+        template_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(deck_template_sync, "resolve_deck_steam_input_roots", lambda context: [template_root])
+
+        index = LibraryIndex(
+            index_version=1,
+            systems=(),
+            titles=(
+                TitleEntry(
+                    title_id="title_wii",
+                    system="Wii",
+                    title_name="Super Mario Galaxy",
+                    title_rel_dir="Wii/Super Mario Galaxy.rvz",
+                    emulator="dolphin",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="rom_wii",
+                        rel_path="roms/Wii/Super Mario Galaxy.rvz",
+                        sha256="a" * 64,
+                        size_bytes=1,
+                        extension=".rvz",
+                    ),
+                    assets=(),
+                ),
+            ),
+        )
+        shortcut_result = ShortcutSyncResult(
+            app_ids_by_title={"title_wii": "3366254221"},
+            app_ids_by_system={"Wii": ["3366254221"]},
+            total_shortcuts=1,
+        )
+
+        title_dir = template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
+        title_dir.mkdir(parents=True, exist_ok=True)
+        target = title_dir / "gamehub_wii.vdf"
+        target.write_bytes(b"USER_CUSTOMIZED_TEMPLATE")
+
+        first = apply_deck_steam_input_templates(context, index, shortcut_result)
+
+        assert first.targets == 1
+        assert first.written == 0
+        assert first.unchanged == 1
+        assert target.read_bytes() == b"USER_CUSTOMIZED_TEMPLATE"
+
+        second = apply_deck_steam_input_templates(context, index, shortcut_result, overwrite_existing=True)
+        assert second.targets == 1
+        assert second.written == 1
+        assert second.unchanged == 0
+        assert target.read_bytes() == seed_payload
 
 
 def test_deck_template_seeds_axis_inversion_matches_wii_and_n3ds_targets() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    wii_seed = (
-        repo_root
-        / "src"
-        / "gamehub_cli"
-        / "steam"
-        / "template_seeds"
-        / "steamdeck"
-        / "wii_gc"
-        / "wii_0.vdf"
-    )
-    n3ds_seed = (
-        repo_root
-        / "src"
-        / "gamehub_cli"
-        / "steam"
-        / "template_seeds"
-        / "steamdeck"
-        / "n3ds"
-        / "3ds_0.vdf"
-    )
+    wii_seed = repo_root / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "wii_gc" / "wii_0.vdf"
+    n3ds_seed = repo_root / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "n3ds" / "3ds_0.vdf"
 
     wii_text = wii_seed.read_text(encoding="utf-8")
     n3ds_text = n3ds_seed.read_text(encoding="utf-8")

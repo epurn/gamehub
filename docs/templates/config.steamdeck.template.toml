@@ -46,9 +46,6 @@ enabled_kinds = ["grid", "hero", "logo", "icon"]
 # Steam Deck default should favor the built-in controller in launch autoconfig.
 launch_autoconfig = true
 # Deck launcher defaults (env overrides):
-# GAMEHUB_DECK_ZERO_DETECT_POLICY=xbox_1p|kbm|abort  (default xbox_1p)
 # GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false      (default false on Deck)
-# GAMEHUB_DECK_REPAIR_STEAM_INPUT=true|false         (default true)
-# GAMEHUB_DECK_TEMPLATE_SYNC=true|false              (default true)
-# GAMEHUB_DECK_TEMPLATE_STRICT=true|false            (default true)
-# GAMEHUB_DOLPHIN_DECK_DEVICE_MODE=auto|evdev|steamdeck (default auto)
+# Steam Deck template sync + managed app override repair are always on for managed Wii/N3DS titles.
+# Steam Deck zero-detect policy is fixed to xbox_1p fallback after a single detect pass.

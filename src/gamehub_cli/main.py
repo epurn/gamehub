@@ -48,7 +48,7 @@ if typer is not None:
         reseed_profiles: bool = typer.Option(
             False,
             "--reseed-profiles",
-            help="Overwrite default controller profiles during sync",
+            help="Overwrite managed profile/template files during sync",
         ),
     ) -> None:
         loaded = load_config(config)
@@ -100,7 +100,9 @@ def main() -> None:
     sync_parser.add_argument("--skip-steam", action="store_true")
     sync_parser.add_argument("--skip-steam-relaunch", action="store_true")
     sync_parser.add_argument("--require-steam-closed", action="store_true")
-    sync_parser.add_argument("--reseed-profiles", action="store_true")
+    sync_parser.add_argument(
+        "--reseed-profiles", action="store_true", help="Overwrite managed profile/template files during sync"
+    )
     controller_launch_parser = subparsers.add_parser("controller-launch", help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
