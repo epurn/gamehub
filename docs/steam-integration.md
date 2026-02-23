@@ -55,6 +55,7 @@
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/3ds_0.vdf` (`N3DS`)
 - Selection metadata is updated in:
   - `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`
+  - active `Steam Controller Configs/<steamid>/config/configset_*.vdf` files (except other `configset_controller_*.vdf` variants)
   - `controller_config` entries are set to `template=wii_0` (`Wii`/`GC`) or `template=3ds_0` (`N3DS`) with `autosave=1`
 - Root resolution precedence:
   - `~/.local/share/Steam/steamapps/common/Steam Controller Configs/<steamid>/config`

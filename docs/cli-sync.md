@@ -80,7 +80,7 @@ Steam close behavior:
       - writes per-title Steam Input files under:
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/wii_0.vdf` (`Wii`/`GC`)
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/3ds_0.vdf` (`N3DS`)
-      - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` so managed entries point to `template=wii_0` or `template=3ds_0` with `autosave=1`
+      - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files so managed entries point to `template=wii_0` or `template=3ds_0` with `autosave=1`
       - uses repo seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/`
       - enabled by default (`GAMEHUB_DECK_TEMPLATE_SYNC=true|false`)
       - strict mode is enabled by default (`GAMEHUB_DECK_TEMPLATE_STRICT=true|false`) and fails sync when required seeds/roots are missing

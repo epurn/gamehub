@@ -18,6 +18,7 @@ _DECK_TEMPLATE_WII_FILENAME = "wii_0.vdf"
 _DECK_TEMPLATE_N3DS_FILENAME = "3ds_0.vdf"
 _DECK_TEMPLATE_CONFIGSET_FILENAME = "configset_controller_neptune.vdf"
 _DECK_TEMPLATE_CONFIGSET_AUTOSAVE = "1"
+_DECK_TEMPLATE_CONFIGSET_GLOB = "configset_*.vdf"
 _DECK_TEMPLATE_SYSTEM_ORDER = ("Wii", "GC", "N3DS")
 _DECK_TEMPLATE_SEED_ROOT = Path(__file__).resolve().parent / "template_seeds" / "steamdeck"
 _DECK_TEMPLATE_SEED_BY_SYSTEM = {
@@ -187,12 +188,11 @@ def _configset_entry_keys(title_name: str, app_id: str | None) -> tuple[str, ...
 
 def _sync_deck_template_selection_configset(
     *,
-    root: Path,
+    configset_path: Path,
     managed_titles: list[TitleEntry],
     shortcut_result: ShortcutSyncResult,
     strict: bool,
 ) -> int:
-    configset_path = root / _DECK_TEMPLATE_CONFIGSET_FILENAME
     try:
         if configset_path.exists():
             payload_raw = vdf.loads(configset_path.read_text(encoding="utf-8"))
@@ -240,6 +240,49 @@ def _sync_deck_template_selection_configset(
             ) from exc
         return 1
     return 0
+
+
+def _iter_target_configset_paths(root: Path) -> list[Path]:
+    required = root / _DECK_TEMPLATE_CONFIGSET_FILENAME
+    paths: list[Path] = [required]
+    for candidate in sorted(root.glob(_DECK_TEMPLATE_CONFIGSET_GLOB), key=lambda p: p.name.casefold()):
+        if not candidate.is_file():
+            continue
+        name = candidate.name.casefold()
+        if name == _DECK_TEMPLATE_CONFIGSET_FILENAME:
+            continue
+        if name.startswith("configset_controller_"):
+            continue
+        if name == "configset_awaiting_logon.vdf":
+            continue
+        paths.append(candidate)
+    unique: list[Path] = []
+    seen: set[_PathIdentity] = set()
+    for path in paths:
+        identity = _path_identity(path)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(path)
+    return unique
+
+
+def _sync_deck_template_selection_configsets(
+    *,
+    root: Path,
+    managed_titles: list[TitleEntry],
+    shortcut_result: ShortcutSyncResult,
+    strict: bool,
+) -> int:
+    errors = 0
+    for configset_path in _iter_target_configset_paths(root):
+        errors += _sync_deck_template_selection_configset(
+            configset_path=configset_path,
+            managed_titles=managed_titles,
+            shortcut_result=shortcut_result,
+            strict=strict,
+        )
+    return errors
 
 
 def apply_deck_steam_input_templates(
@@ -309,7 +352,7 @@ def apply_deck_steam_input_templates(
         else:
             unchanged += 1
 
-    errors += _sync_deck_template_selection_configset(
+    errors += _sync_deck_template_selection_configsets(
         root=root,
         managed_titles=managed_titles,
         shortcut_result=shortcut_result,

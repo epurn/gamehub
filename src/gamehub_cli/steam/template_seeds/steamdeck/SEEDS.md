@@ -23,4 +23,5 @@ Notes:
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/3ds_0.vdf` (`N3DS`)
 - GAMEHUB sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`:
   - `controller_config` managed entries are set to `template=wii_0` (`Wii`/`GC`) or `template=3ds_0` (`N3DS`) with `autosave=1`
+- GAMEHUB also mirrors those `controller_config` selections to active `configset_*.vdf` files (excluding other `configset_controller_*.vdf` variants).
 - Title normalization uses lower-case (`casefold`), replaces `/` and `\` with space, and collapses whitespace.

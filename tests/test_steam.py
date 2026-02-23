@@ -738,6 +738,7 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
             / "config"
         )
         template_root.mkdir(parents=True, exist_ok=True)
+        (template_root / "configset_FXAA30102486.vdf").write_text(vdf.dumps({}), encoding="utf-8")
 
         first = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
         second = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
@@ -765,6 +766,14 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert controller_config["3366254221"]["autosave"] == "1"
         assert controller_config["3242237453"]["autosave"] == "1"
         assert controller_config["4290272364"]["autosave"] == "1"
+        device_configset_payload = vdf.loads((template_root / "configset_FXAA30102486.vdf").read_text(encoding="utf-8"))
+        device_controller_config = device_configset_payload.get("controller_config", {})
+        assert device_controller_config["3366254221"]["template"] == "wii_0"
+        assert device_controller_config["3242237453"]["template"] == "wii_0"
+        assert device_controller_config["4290272364"]["template"] == "3ds_0"
+        assert device_controller_config["3366254221"]["autosave"] == "1"
+        assert device_controller_config["3242237453"]["autosave"] == "1"
+        assert device_controller_config["4290272364"]["autosave"] == "1"
 
         assert second.targets == 3
         assert second.written == 0
