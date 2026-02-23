@@ -57,7 +57,7 @@
   - `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`
   - active `Steam Controller Configs/<steamid>/config/configset_*.vdf` files (including `configset_controller_*.vdf` variants)
   - when present, mirrored app-remote roots under `userdata/<steamid>/241100/remote/*/config/` receive the same `configset_*.vdf` updates
-  - `controller_config` entries are set to `template=gamehub_wii` (`Wii`) or `template=gamehub_3ds` (`N3DS`) with `autosave=1`
+  - `controller_config` entries use normalized title keys for template pointer (`template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`) and companion alias keys (`appid`/signed/title variants) are set to `autosave=1`
 - Managed template sync force-overwrites per-title selection aliases (appid/title variants) for `Wii` and `N3DS`.
 - Managed template sync also removes legacy per-title Deck template variants (`controller_*.vdf`, `wii_*.vdf`, `3ds_*.vdf`) so stale custom selections do not persist.
 - Managed per-title template files are also mirrored to present app-remote roots under `userdata/<steamid>/241100/remote/*/config/<normalized_title>/`.

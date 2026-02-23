@@ -229,8 +229,16 @@ def _template_selection_name_for_system(system_name: str) -> str:
 
 
 def _template_reference_for_title(title: TitleEntry) -> str:
-    # Deck startup resolves local template selections from the alias name.
-    return _template_selection_name_for_system(title.system)
+    selection_name = _template_selection_name_for_system(title.system)
+    title_key = normalize_steam_input_title_dir(title.title_name)
+    return f"CLOUD_{title_key}/{selection_name}"
+
+
+def _forced_controller_config_entry(*, title: TitleEntry, key: str) -> dict[str, str]:
+    normalized_title = normalize_steam_input_title_dir(title.title_name)
+    if str(key) == normalized_title:
+        return {"template": _template_reference_for_title(title)}
+    return {"autosave": _DECK_TEMPLATE_CONFIGSET_AUTOSAVE}
 
 
 def _is_managed_template_name(value: str) -> bool:
@@ -397,14 +405,10 @@ def _sync_deck_template_selection_configset(
         changed = True
 
     for title in managed_titles:
-        template_reference = _template_reference_for_title(title)
         app_id = shortcut_result.app_ids_by_title.get(title.title_id)
-        forced_entry = {
-            "template": template_reference,
-            "autosave": _DECK_TEMPLATE_CONFIGSET_AUTOSAVE,
-        }
         title_keys = set(_configset_entry_keys(title.title_name, app_id))
         for key in title_keys:
+            forced_entry = _forced_controller_config_entry(title=title, key=key)
             existing_entry = controller_config.get(key)
             if not isinstance(existing_entry, dict) or existing_entry != forced_entry:
                 controller_config[key] = dict(forced_entry)
@@ -427,7 +431,8 @@ def _sync_deck_template_selection_configset(
             if not isinstance(existing_entry, dict):
                 continue
             template_name = str(existing_entry.get("template", ""))
-            if not _is_managed_template_name(template_name):
+            autosave = str(existing_entry.get("autosave", "")).strip()
+            if not _is_managed_template_name(template_name) and autosave != _DECK_TEMPLATE_CONFIGSET_AUTOSAVE:
                 continue
             del controller_config[key]
             changed = True
