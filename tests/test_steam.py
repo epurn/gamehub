@@ -751,9 +751,20 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert first.unchanged == 0
         assert first.errors == 0
         assert first.systems_applied == ("Wii", "GC", "N3DS")
-        assert (wii_template / "controller_neptune.vdf").read_bytes() == b"WII_GC_TEMPLATE"
-        assert (gc_template / "controller_neptune.vdf").read_bytes() == b"WII_GC_TEMPLATE"
-        assert (n3ds_template / "controller_neptune.vdf").read_bytes() == b"N3DS_TEMPLATE"
+        assert (wii_template / "wii_0.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        assert (gc_template / "wii_0.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        assert (n3ds_template / "3ds_0.vdf").read_bytes() == b"N3DS_TEMPLATE"
+        assert not (wii_template / "controller_neptune.vdf").exists()
+        assert not (gc_template / "controller_neptune.vdf").exists()
+        assert not (n3ds_template / "controller_neptune.vdf").exists()
+        configset_payload = vdf.loads((template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
+        controller_config = configset_payload.get("controller_config", {})
+        assert controller_config["3366254221"]["template"] == "wii_0"
+        assert controller_config["3242237453"]["template"] == "wii_0"
+        assert controller_config["4290272364"]["template"] == "3ds_0"
+        assert controller_config["3366254221"]["autosave"] == "1"
+        assert controller_config["3242237453"]["autosave"] == "1"
+        assert controller_config["4290272364"]["autosave"] == "1"
 
         assert second.targets == 3
         assert second.written == 0

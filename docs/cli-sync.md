@@ -76,12 +76,15 @@ Steam close behavior:
    - Linux Steam Deck default shortcut policy:
      - managed shortcuts default to `AllowDesktopConfig = 0` (native-first controller path)
      - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`
-   - Linux Steam Deck template sync for managed `Wii`, `GC`, and `N3DS` shortcuts:
-     - writes per-title Steam Input files under `Steam Controller Configs/<steamid>/config/<normalized_title>/controller_neptune.vdf`
-     - uses repo seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/`
-     - enabled by default (`GAMEHUB_DECK_TEMPLATE_SYNC=true|false`)
-     - strict mode is enabled by default (`GAMEHUB_DECK_TEMPLATE_STRICT=true|false`) and fails sync when required seeds/roots are missing
-     - managed app overrides with explicit `UseSteamControllerConfig = 0` are repaired to `1` by default (disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`)
+    - Linux Steam Deck template sync for managed `Wii`, `GC`, and `N3DS` shortcuts:
+      - writes per-title Steam Input files under:
+        - `Steam Controller Configs/<steamid>/config/<normalized_title>/wii_0.vdf` (`Wii`/`GC`)
+        - `Steam Controller Configs/<steamid>/config/<normalized_title>/3ds_0.vdf` (`N3DS`)
+      - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` so managed entries point to `template=wii_0` or `template=3ds_0` with `autosave=1`
+      - uses repo seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/`
+      - enabled by default (`GAMEHUB_DECK_TEMPLATE_SYNC=true|false`)
+      - strict mode is enabled by default (`GAMEHUB_DECK_TEMPLATE_STRICT=true|false`) and fails sync when required seeds/roots are missing
+      - managed app overrides with explicit `UseSteamControllerConfig = 0` are repaired to `1` by default (disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`)
    - Linux Steam Deck zero-controller detection policy in `controller-launch` defaults to `xbox_1p` (`GAMEHUB_DECK_ZERO_DETECT_POLICY=xbox_1p|kbm|abort`)
    - non-Deck platforms keep legacy shortcut/profile behavior unless explicit env overrides are set
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
@@ -263,7 +266,7 @@ ls -l /dev/input/js*
 
 ```bash
 STEAM_ID=95402412
-find "$HOME/.local/share/Steam/steamapps/common/Steam Controller Configs/$STEAM_ID/config" -maxdepth 2 -name controller_neptune.vdf | sort
+find "$HOME/.local/share/Steam/steamapps/common/Steam Controller Configs/$STEAM_ID/config" -maxdepth 2 -name '*.vdf' | sort
 ```
 
 ## RetroArch Core Defaults

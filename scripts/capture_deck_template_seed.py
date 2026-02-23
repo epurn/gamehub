@@ -12,15 +12,21 @@ from gamehub_cli.steam.io import _atomic_write_bytes
 from gamehub_cli.steam.lifecycle import discover_steam_id, discover_userdata_dir
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+_WII_CONTROLLER_FILE = "wii_0.vdf"
+_N3DS_CONTROLLER_FILE = "3ds_0.vdf"
 _SYSTEM_TO_SEED_PATH = {
-    "wii_gc": _REPO_ROOT / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "wii_gc" / "controller_neptune.vdf",
-    "n3ds": _REPO_ROOT / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "n3ds" / "controller_neptune.vdf",
+    "wii_gc": _REPO_ROOT / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "wii_gc" / _WII_CONTROLLER_FILE,
+    "n3ds": _REPO_ROOT / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "n3ds" / _N3DS_CONTROLLER_FILE,
+}
+_SYSTEM_TO_SOURCE_FILE = {
+    "wii_gc": _WII_CONTROLLER_FILE,
+    "n3ds": _N3DS_CONTROLLER_FILE,
 }
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Capture a Steam Deck per-title controller_neptune.vdf file into GAMEHUB repo seed files."
+        description="Capture a Steam Deck per-title controller template file into GAMEHUB repo seed files."
     )
     parser.add_argument(
         "--system",
@@ -37,6 +43,15 @@ def _parse_args() -> argparse.Namespace:
         "--steam-id",
         default=None,
         help="Optional Steam userdata id or SteamID64 to target. Defaults to config + auto discovery.",
+    )
+    parser.add_argument(
+        "--controller-file",
+        default=None,
+        help=(
+            "Optional controller VDF filename inside the title directory "
+            "(must be wii_0.vdf or 3ds_0.vdf). "
+            "When omitted, GAMEHUB uses the expected file for --system."
+        ),
     )
     parser.add_argument(
         "--config",
@@ -56,6 +71,31 @@ def _resolve_existing_template_root(steam_id: str) -> Path:
     raise RuntimeError(f"No Steam Controller Configs root found for steam_id={steam_id} (tried: {tried})")
 
 
+def _resolve_title_controller_template(
+    template_root: Path,
+    *,
+    title: str,
+    expected_file: str,
+) -> Path:
+    title_dir = template_root / normalize_steam_input_title_dir(title)
+    if not title_dir.exists() or not title_dir.is_dir():
+        raise RuntimeError(
+            "Title template directory not found. "
+            f"Expected: {title_dir}. Save a per-game Steam Input layout for this title first."
+        )
+
+    if expected_file:
+        target = title_dir / expected_file
+        if target.exists():
+            return target
+        available = sorted(path.name for path in title_dir.glob("*.vdf"))
+        raise RuntimeError(
+            f"Required controller file not found: {target}. "
+            f"Available in title dir: {available if available else '<none>'}"
+        )
+    raise RuntimeError(f"Expected controller file is empty for title directory: {title_dir}")
+
+
 def main() -> int:
     args = _parse_args()
     config_path: Path = args.config.expanduser().resolve()
@@ -69,14 +109,28 @@ def main() -> int:
     if steam_id is None:
         raise SystemExit("Steam id could not be discovered")
 
-    template_root = _resolve_existing_template_root(steam_id)
-    normalized_title = normalize_steam_input_title_dir(args.title)
-    source_path = template_root / normalized_title / "controller_neptune.vdf"
-    if not source_path.exists():
+    requested_file = args.controller_file
+    if requested_file is not None and requested_file.startswith("controller_"):
         raise SystemExit(
-            "Source template file not found. "
-            f"Expected: {source_path}. Ensure the title has a saved Steam Input template."
+            "controller_*.vdf is no longer supported for seed capture. "
+            "Use wii_0.vdf or 3ds_0.vdf."
         )
+    if requested_file is not None and requested_file not in {_WII_CONTROLLER_FILE, _N3DS_CONTROLLER_FILE}:
+        raise SystemExit(
+            "Unsupported --controller-file value. "
+            "Allowed values: wii_0.vdf, 3ds_0.vdf."
+        )
+    expected_file = requested_file or _SYSTEM_TO_SOURCE_FILE[args.system]
+
+    template_root = _resolve_existing_template_root(steam_id)
+    try:
+        source_path = _resolve_title_controller_template(
+            template_root,
+            title=args.title,
+            expected_file=expected_file,
+        )
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
 
     destination = _SYSTEM_TO_SEED_PATH[args.system]
     payload = source_path.read_bytes()

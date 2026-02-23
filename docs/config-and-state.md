@@ -92,7 +92,10 @@ Steam mutation behavior notes:
 - On Linux Steam Deck, GAMEHUB writes managed shortcuts with `AllowDesktopConfig = 0` by default (native-first controller path).
   - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`.
 - On Linux Steam Deck, GAMEHUB syncs seeded Steam Input templates for managed `Wii`, `GC`, and `N3DS` shortcuts.
-  - per-title destination: `Steam Controller Configs/<steamid>/config/<normalized_title>/controller_neptune.vdf`
+  - per-title destinations:
+    - `Steam Controller Configs/<steamid>/config/<normalized_title>/wii_0.vdf` (`Wii`/`GC`)
+    - `Steam Controller Configs/<steamid>/config/<normalized_title>/3ds_0.vdf` (`N3DS`)
+  - sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` (`controller_config`) so managed entries select `template=wii_0`/`template=3ds_0` with `autosave=1`
   - seed source: `src/gamehub_cli/steam/template_seeds/steamdeck/`
   - toggle with `GAMEHUB_DECK_TEMPLATE_SYNC=true|false` (default `true`)
   - strict mode with `GAMEHUB_DECK_TEMPLATE_STRICT=true|false` (default `true`)

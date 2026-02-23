@@ -51,15 +51,19 @@
 ## Steam Input Templates (Steam Deck)
 - On Linux Steam Deck, GAMEHUB syncs seeded Steam Input templates for managed `Wii`, `GC`, and `N3DS` shortcuts.
 - Files are written by normalized title path, not appid path:
-  - `Steam Controller Configs/<steamid>/config/<normalized_title>/controller_neptune.vdf`
+  - `Steam Controller Configs/<steamid>/config/<normalized_title>/wii_0.vdf` (`Wii`, `GC`)
+  - `Steam Controller Configs/<steamid>/config/<normalized_title>/3ds_0.vdf` (`N3DS`)
+- Selection metadata is updated in:
+  - `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`
+  - `controller_config` entries are set to `template=wii_0` (`Wii`/`GC`) or `template=3ds_0` (`N3DS`) with `autosave=1`
 - Root resolution precedence:
   - `~/.local/share/Steam/steamapps/common/Steam Controller Configs/<steamid>/config`
   - `~/.steam/steam/steamapps/common/Steam Controller Configs/<steamid>/config`
   - `~/.steam/root/steamapps/common/Steam Controller Configs/<steamid>/config`
 - GAMEHUB deduplicates equivalent roots by resolved identity.
 - Seed source files are committed in:
-  - `src/gamehub_cli/steam/template_seeds/steamdeck/wii_gc/controller_neptune.vdf`
-  - `src/gamehub_cli/steam/template_seeds/steamdeck/n3ds/controller_neptune.vdf`
+  - `src/gamehub_cli/steam/template_seeds/steamdeck/wii_gc/wii_0.vdf`
+  - `src/gamehub_cli/steam/template_seeds/steamdeck/n3ds/3ds_0.vdf`
 - Seed refresh helper:
   - `./venv/bin/python scripts/capture_deck_template_seed.py --system wii_gc --title "<TITLE>"`
   - `./venv/bin/python scripts/capture_deck_template_seed.py --system n3ds --title "<TITLE>"`
