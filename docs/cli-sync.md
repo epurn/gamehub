@@ -80,7 +80,7 @@ Steam close behavior:
       - writes per-title Steam Input files under:
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
-      - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files so managed normalized title keys point to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds` and companion alias keys use `autosave=1`
+      - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files so managed normalized title keys and companion aliases (`appid`/signed/title variants) all point to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
       - when present, mirrors the same template/configset writes into `userdata/<steamid>/241100/remote/*/config/` to align Deck startup local+cloud Steam Input sources
       - uses repo seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/`
       - enabled by default (`GAMEHUB_DECK_TEMPLATE_SYNC=true|false`)

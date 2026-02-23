@@ -236,10 +236,8 @@ def _template_reference_for_title(title: TitleEntry) -> str:
 
 
 def _forced_controller_config_entry(*, title: TitleEntry, key: str) -> dict[str, str]:
-    normalized_title = normalize_steam_input_title_dir(title.title_name)
-    if str(key) == normalized_title:
-        return {"template": _template_reference_for_title(title)}
-    return {"autosave": _DECK_TEMPLATE_CONFIGSET_AUTOSAVE}
+    del key
+    return {"template": _template_reference_for_title(title)}
 
 
 def _is_managed_template_name(value: str) -> bool:
