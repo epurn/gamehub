@@ -60,6 +60,7 @@ _DECK_REPAIR_STEAM_INPUT_ENV = "GAMEHUB_DECK_REPAIR_STEAM_INPUT"
 _DECK_DISABLE_STEAM_CLOUD_INPUT_ENV = "GAMEHUB_DECK_DISABLE_STEAM_CLOUD_INPUT"
 _DECK_TEMPLATE_SYNC_ENV = "GAMEHUB_DECK_TEMPLATE_SYNC"
 _DECK_TEMPLATE_STRICT_ENV = "GAMEHUB_DECK_TEMPLATE_STRICT"
+_STEAM_INPUT_CONFIG_APP_ID = "241100"
 _WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar"}
 
 
@@ -547,6 +548,12 @@ def apply_steam_updates(
         if not template_managed_app_ids:
             template_managed_app_ids = list(shortcut_result.app_ids_by_title.values())
         disable_cloud_input = _env_enabled(_DECK_DISABLE_STEAM_CLOUD_INPUT_ENV, default=True)
+        if disable_cloud_input:
+            # Steam Input template cloud conflicts are tracked under app 241100.
+            template_managed_app_ids.append(_STEAM_INPUT_CONFIG_APP_ID)
+        template_managed_app_ids = list(
+            dict.fromkeys(str(app_id).strip() for app_id in template_managed_app_ids if str(app_id).strip())
+        )
         deck_repair_count = repair_managed_steam_input_overrides(
             context,
             template_managed_app_ids,

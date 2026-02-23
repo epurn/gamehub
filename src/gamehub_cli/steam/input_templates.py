@@ -179,20 +179,20 @@ def _template_selection_name_for_system(system_name: str) -> str:
 
 
 def _template_reference_for_title(title: TitleEntry) -> str:
-    selection_name = _template_selection_name_for_system(title.system)
-    title_key = normalize_steam_input_title_dir(title.title_name)
-    return f"CLOUD_{title_key}/{selection_name}"
+    # Deck startup resolves local template selections from the alias name.
+    return _template_selection_name_for_system(title.system)
 
 
 def _is_managed_template_name(value: str) -> bool:
     normalized = str(value).strip().casefold()
     if not normalized:
         return False
-    if normalized in _DECK_MANAGED_TEMPLATE_SELECTIONS:
+    base = normalized[:-4] if normalized.endswith(".vdf") else normalized
+    if base in _DECK_MANAGED_TEMPLATE_SELECTIONS:
         return True
     if normalized.startswith("cloud_"):
         for selection in _DECK_MANAGED_TEMPLATE_SELECTIONS:
-            if normalized.endswith(f"/{selection}"):
+            if normalized.endswith(f"/{selection}") or normalized.endswith(f"/{selection}.vdf"):
                 return True
     return False
 
