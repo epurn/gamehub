@@ -110,6 +110,7 @@ def _is_pointer_related_azahar_key(key: str) -> bool:
 _DECK_TOUCHPAD_MOUSE_FALLBACKS: dict[str, str] = {
     r"profiles\1\touch_device": '"engine:emu_window"',
     r"profiles\1\use_touch_from_button": "false",
+    "hideInactiveMouse": "false",
 }
 
 

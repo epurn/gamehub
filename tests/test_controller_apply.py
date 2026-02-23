@@ -206,6 +206,7 @@ def test_apply_controller_profile_dolphin_linux_prefers_evdev_from_detected_xbox
         config_dir.mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.is_steam_deck_linux", lambda: False)
         monkeypatch.setattr(
             "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
         )
@@ -236,6 +237,7 @@ def test_apply_controller_profile_dolphin_linux_steam_deck_names_use_sdl_roots(
         config_dir.mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.is_steam_deck_linux", lambda: True)
         monkeypatch.setattr(
             "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
         )
@@ -255,6 +257,35 @@ def test_apply_controller_profile_dolphin_linux_steam_deck_names_use_sdl_roots(
 
         assert "Device = SDL/0/Steam Deck Controller" in gcpad_text
         assert "Device = SDL/1/Steam Virtual Gamepad" in gcpad_text
+
+
+def test_apply_controller_profile_dolphin_linux_steam_deck_with_xbox_alias_uses_sdl_roots(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.is_steam_deck_linux", lambda: True)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [XboxController(slot=0, name="Microsoft X-Box 360 pad 0", subtype=None)],
+        )
+
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+
+        assert "Device = SDL/0/Microsoft X-Box 360 pad 0" in gcpad_text
 
 
 def test_apply_controller_profile_dolphin_linux_kbm_uses_virtual_pointer_hotkeys(
@@ -860,6 +891,7 @@ def test_apply_controller_profile_azahar_deck_backfills_touchpad_mouse_fallback(
 
         assert r'profiles\1\touch_device="engine:emu_window"' in text
         assert r"profiles\1\use_touch_from_button=false" in text
+        assert "hideInactiveMouse=false" in text
 
 
 def _line_for_key(text: str, key: str) -> str | None:

@@ -34,7 +34,10 @@ def _dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
 
 def _dolphin_linux_device_pair() -> tuple[str, str]:
     controllers = detect_xbox_controllers(max_devices=2)
-    if any(any(marker in controller.name.casefold() for marker in _DOLPHIN_STEAM_DECK_DEVICE_MARKERS) for controller in controllers):
+    if is_steam_deck_linux() or any(
+        any(marker in controller.name.casefold() for marker in _DOLPHIN_STEAM_DECK_DEVICE_MARKERS)
+        for controller in controllers
+    ):
         # Deck gaming mode is most stable with SDL-class device roots.
         if len(controllers) >= 2:
             return (
