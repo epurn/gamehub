@@ -349,6 +349,54 @@ def test_deploy_firmware_configures_retroarch_menu_combo(monkeypatch, workspace_
         assert 'swanstation_Controller2.Type = "AnalogController"' in core_opts
 
 
+def test_deploy_firmware_configures_retroarch_steam_deck_joypad_driver(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = _config(temp_root)
+        index = _index("PSX", "scph5501.bin")
+        source = config.firmware_dir / "PSX" / "scph5501.bin"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"bios")
+        target_dir = temp_root / "retroarch" / "system"
+        cfg_path = temp_root / "retroarch" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text('input_joypad_driver = "udev"\n', encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir])
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
+        )
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.is_steam_deck_linux", lambda: True)
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        text = cfg_path.read_text(encoding="utf-8")
+        assert 'input_joypad_driver = "sdl2"' in text
+
+
+def test_deploy_firmware_retroarch_non_deck_keeps_existing_joypad_driver(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
+        config = _config(temp_root)
+        index = _index("PSX", "scph5501.bin")
+        source = config.firmware_dir / "PSX" / "scph5501.bin"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"bios")
+        target_dir = temp_root / "retroarch" / "system"
+        cfg_path = temp_root / "retroarch" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text('input_joypad_driver = "udev"\n', encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir])
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
+        )
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.is_steam_deck_linux", lambda: False)
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        text = cfg_path.read_text(encoding="utf-8")
+        assert 'input_joypad_driver = "udev"' in text
+
+
 def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
@@ -455,6 +503,9 @@ def test_deploy_firmware_configures_dolphin_fullscreen_ini(monkeypatch, workspac
         assert "[Interface]" in text
         assert "ConfirmStop = False" in text
         assert "BackgroundInput = True" in text
+        assert "[Analytics]" in text
+        assert "Enabled = False" in text
+        assert "PermissionAsked = True" in text
         assert not (dolphin_root / "Config" / "GCPadNew.ini").exists()
         assert not (dolphin_root / "Config" / "WiimoteNew.ini").exists()
         assert not (dolphin_root / "Config" / "Hotkeys.ini").exists()

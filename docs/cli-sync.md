@@ -73,6 +73,23 @@ Steam close behavior:
      - detects attached Xbox controllers
      - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
      - launches the original emulator command
+   - Linux Steam Deck default shortcut policy:
+     - managed shortcuts default to `AllowDesktopConfig = 0` (native-first controller path)
+     - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`
+    - Linux Steam Deck template sync for managed `Wii` and `N3DS` shortcuts (`GC` is intentionally excluded):
+      - writes per-title Steam Input files under:
+        - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
+        - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
+      - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files so managed normalized title keys and companion aliases (`appid`/signed/title variants) all point to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
+      - when present, mirrors the same template/configset writes into `userdata/<steamid>/241100/remote/*/config/` to align Deck startup local+cloud Steam Input sources
+      - uses repo seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/`
+      - normalizes non-functional seed metadata (`title`, `description`, `url`, `creator`, `progenitor`, `Timestamp`) during render/write as a defensive guardrail while preserving mapping blocks
+      - enabled by default (`GAMEHUB_DECK_TEMPLATE_SYNC=true|false`)
+      - strict mode is enabled by default (`GAMEHUB_DECK_TEMPLATE_STRICT=true|false`) and fails sync when required seeds/roots are missing
+      - managed app overrides are repaired so `UseSteamControllerConfig = 1` for managed app entries by default (disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`)
+      - by default, those managed Deck input app entries also set `DisableCloud = 1` (disable with `GAMEHUB_DECK_DISABLE_STEAM_CLOUD_INPUT=false`), while Steam Input app `241100` is explicitly kept cloud-enabled so `CLOUD_<title>/...` template pointers can resolve
+   - Linux Steam Deck zero-controller detection policy in `controller-launch` defaults to `xbox_1p` (`GAMEHUB_DECK_ZERO_DETECT_POLICY=xbox_1p|kbm|abort`)
+   - non-Deck platforms keep legacy shortcut/profile behavior unless explicit env overrides are set
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 11. Save `state.json`
 
@@ -141,10 +158,6 @@ Windows path notes:
 - Otherwise, Dolphin user dir detection prefers a portable `<dolphin-install>/User` folder when present, then `%USERPROFILE%/Documents/Dolphin Emulator`, then `%APPDATA%/Dolphin Emulator`.
 - Override with `DOLPHIN_EMU_USERPATH` / `GAMEHUB_DOLPHIN_EMU_USERPATH` (or `dolphin_user_path` in `config.toml`).
   - can be disabled by setting `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false`
-- N3DS Steam Input limitation (current):
-  - GAMEHUB does not auto-apply Steam Input templates for N3DS.
-  - If you use Steam Input template mode, configure one shortcut manually and copy that layout to other N3DS shortcuts in Steam UI.
-
 Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
 - Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
@@ -182,8 +195,82 @@ Environment overrides:
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`
+- `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`
+- `GAMEHUB_DECK_REPAIR_STEAM_INPUT`
+- `GAMEHUB_DECK_TEMPLATE_SYNC`
+- `GAMEHUB_DECK_TEMPLATE_STRICT`
+- `GAMEHUB_DOLPHIN_DECK_DEVICE_MODE`
 - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`
 - `GAMEHUB_CONTROLLER_PROFILES_DIR`
+- `GAMEHUB_DECK_ZERO_DETECT_POLICY`
+
+## Deck Controller Triage
+Use these commands on Steam Deck Desktop Mode to inspect managed shortcut flags, app overrides, and visible input devices.
+
+```bash
+./venv/bin/python - <<'PY'
+from pathlib import Path
+import json, vdf
+from gamehub_cli.common.config import load_config
+from gamehub_cli.steam.lifecycle import discover_userdata_dir, discover_steam_id, build_context
+from gamehub_cli.steam.shortcuts import _canonical_unsigned_app_id
+cfg = load_config(Path("config.toml"))
+userdata = discover_userdata_dir(cfg.steam_userdata_dir)
+steam_id = discover_steam_id(userdata, preferred_steam_id=cfg.steam_id)
+ctx = build_context(userdata, steam_id, cfg.steam_exe)
+table = vdf.binary_load(ctx.shortcuts_path.open("rb")).get("shortcuts", {})
+rows = []
+for e in table.values():
+    tags = e.get("tags", {})
+    vals = [tags[k] for k in sorted(tags, key=lambda k: int(str(k)) if str(k).isdigit() else str(k))]
+    if "GAMEHUB" not in vals:
+        continue
+    appid = str(e.get("appid", "")).strip()
+    rows.append({
+        "AppName": e.get("AppName"),
+        "appid": appid,
+        "appid_unsigned": _canonical_unsigned_app_id(appid) if appid else "",
+        "AllowDesktopConfig": e.get("AllowDesktopConfig"),
+        "AllowOverlay": e.get("AllowOverlay"),
+        "LaunchOptions": e.get("LaunchOptions"),
+    })
+print(json.dumps(rows, indent=2))
+PY
+```
+
+```bash
+./venv/bin/python - <<'PY'
+from pathlib import Path
+import vdf
+from gamehub_cli.common.config import load_config
+from gamehub_cli.steam.lifecycle import discover_userdata_dir, discover_steam_id, build_context
+from gamehub_cli.steam.shortcuts import _canonical_unsigned_app_id
+cfg = load_config(Path("config.toml"))
+userdata = discover_userdata_dir(cfg.steam_userdata_dir)
+steam_id = discover_steam_id(userdata, preferred_steam_id=cfg.steam_id)
+ctx = build_context(userdata, steam_id, cfg.steam_exe)
+shortcuts = vdf.binary_load(ctx.shortcuts_path.open("rb")).get("shortcuts", {})
+apps = vdf.loads(ctx.localconfig_path.read_text(encoding="utf-8")).get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {})
+for e in shortcuts.values():
+    tags = e.get("tags", {})
+    vals = [tags[k] for k in sorted(tags, key=lambda k: int(str(k)) if str(k).isdigit() else str(k))]
+    if "GAMEHUB" not in vals:
+        continue
+    appid = _canonical_unsigned_app_id(str(e.get("appid", "")))
+    use = apps.get(appid, {}).get("UseSteamControllerConfig") if isinstance(apps, dict) else None
+    print(f"{e.get('AppName')}\tappid={appid}\tUseSteamControllerConfig={use}")
+PY
+```
+
+```bash
+grep -E 'Name=|Handlers=' /proc/bus/input/devices | sed -n '/Steam Deck Controller/,+3p;/Steam Virtual Gamepad/,+3p;/Xbox/,+3p'
+ls -l /dev/input/js*
+```
+
+```bash
+STEAM_ID=95402412
+find "$HOME/.local/share/Steam/steamapps/common/Steam Controller Configs/$STEAM_ID/config" -maxdepth 2 -name '*.vdf' | sort
+```
 
 ## RetroArch Core Defaults
 For systems that launch via RetroArch, GAMEHUB uses these general-purpose core defaults when a core cannot be parsed from the index launch template:

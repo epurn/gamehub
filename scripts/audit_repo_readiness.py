@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import argparse
 import ast
-from dataclasses import dataclass, field
 import hashlib
 import json
-from pathlib import Path
 import re
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable, Sequence
 from urllib.parse import urlparse
 
@@ -19,9 +19,7 @@ ALLOWLIST_PATH = REPO_ROOT / "scripts" / "audit_secret_allowlist.toml"
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 RAW_DOC_REF_RE = re.compile(r"\bdocs/[A-Za-z0-9._/\-]+\.(?:md|toml)\b")
 API_KEY_ASSIGN_RE = re.compile(r'api_key\s*=\s*"([^"]+)"')
-HISTORY_GREP_LINE_RE = re.compile(
-    r"^(?P<commit>[0-9a-f]{40}):(?P<path>[^:]+):(?P<line>\d+):(?P<text>.*)$"
-)
+HISTORY_GREP_LINE_RE = re.compile(r"^(?P<commit>[0-9a-f]{40}):(?P<path>[^:]+):(?P<line>\d+):(?P<text>.*)$")
 URL_LITERAL_RE = re.compile(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%\\\-]+")
 
 HIGH_CONF_SECRET_PATTERNS: dict[str, str] = {
@@ -172,9 +170,7 @@ def _load_revoked_secret_allowlist(path: Path) -> dict[str, dict[str, str]]:
         if not isinstance(fingerprint, str):
             continue
         entries[fingerprint.lower()] = {
-            key: str(value)
-            for key, value in raw.items()
-            if isinstance(value, (str, int, float, bool))
+            key: str(value) for key, value in raw.items() if isinstance(value, (str, int, float, bool))
         }
     return entries
 
@@ -276,14 +272,12 @@ def _check_secrets() -> CheckResult:
             commit_list = sorted(matched_commits)
             preview = ", ".join(commit_list[:5])
             suffix = " ..." if len(commit_list) > 5 else ""
-            result.add_fail(
-                f"History contains potential secret pattern '{name}' in commit diff(s): {preview}{suffix}"
-            )
+            result.add_fail(f"History contains potential secret pattern '{name}' in commit diff(s): {preview}{suffix}")
 
     allowlisted = _load_revoked_secret_allowlist(ALLOWLIST_PATH)
     seen_history_signatures: set[tuple[str, str, str]] = set()
-    for commit, path, line_no, value in _extract_history_api_key_assignments():
-        normalized_path = path.replace("\\", "/")
+    for commit, history_path, line_no, value in _extract_history_api_key_assignments():
+        normalized_path = history_path.replace("\\", "/")
         if normalized_path.startswith("tests/"):
             continue
         if _looks_like_placeholder(value):
@@ -312,10 +306,7 @@ def _check_secrets() -> CheckResult:
         result.add_fail("Failed to enumerate tracked files for secret scan")
         return result
 
-    high_conf_regexes = [
-        re.compile(pattern)
-        for pattern in HIGH_CONF_SECRET_PATTERNS.values()
-    ]
+    high_conf_regexes = [re.compile(pattern) for pattern in HIGH_CONF_SECRET_PATTERNS.values()]
 
     for raw_path in tracked.stdout.splitlines():
         if not raw_path.strip():

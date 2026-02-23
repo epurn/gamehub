@@ -11,6 +11,16 @@ _PROC_INPUT_DEVICES_PATH = Path("/proc/bus/input/devices")
 _INPUT_DEVICE_NAME_RE = re.compile(r'^N:\s+Name="(?P<name>.*)"$')
 _INPUT_DEVICE_HANDLERS_RE = re.compile(r"^H:\s+Handlers=(?P<handlers>.+)$")
 _INPUT_JS_HANDLER_RE = re.compile(r"\bjs(?P<index>\d+)\b")
+_STEAMOS_RELEASE_PATH = Path("/etc/os-release")
+_DMI_BOARD_VENDOR_PATH = Path("/sys/devices/virtual/dmi/id/board_vendor")
+_LINUX_NON_GAMEPAD_NAME_MARKERS = (
+    "motion sensor",
+    "motion sensors",
+    "accelerometer",
+    "gyroscope",
+    "gyro",
+    "imu",
+)
 
 _ERROR_SUCCESS = 0
 _XINPUT_FLAG_GAMEPAD = 0x00000001
@@ -24,7 +34,43 @@ class XboxController:
     subtype: int | None = None
 
 
-def _linux_parse_xbox_devices(raw: str, *, max_devices: int) -> list[XboxController]:
+def _is_steam_deck_linux() -> bool:
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        os_release = _STEAMOS_RELEASE_PATH.read_text(encoding="utf-8", errors="ignore").casefold()
+    except OSError:
+        os_release = ""
+    if "id=steamos" in os_release or "steamdeck" in os_release or "holo" in os_release:
+        return True
+    try:
+        vendor = _DMI_BOARD_VENDOR_PATH.read_text(encoding="utf-8", errors="ignore").strip().casefold()
+    except OSError:
+        vendor = ""
+    return "valve" in vendor
+
+
+def _is_supported_linux_controller_name(name: str, *, include_steam_deck: bool) -> bool:
+    normalized = name.casefold()
+    if any(marker in normalized for marker in _LINUX_NON_GAMEPAD_NAME_MARKERS):
+        return False
+    if any(marker in normalized for marker in ("xbox", "x-box", "xinput")):
+        return True
+    if not include_steam_deck:
+        return False
+    return any(
+        marker in normalized
+        for marker in (
+            "steam deck",
+            "steam virtual gamepad",
+            "steam controller",
+            "valve software",
+            "neptune controller",
+        )
+    )
+
+
+def _linux_parse_xbox_devices(raw: str, *, max_devices: int, include_steam_deck: bool = False) -> list[XboxController]:
     by_js_index: dict[int, str] = {}
     current_name: str | None = None
     current_handlers: str | None = None
@@ -32,7 +78,7 @@ def _linux_parse_xbox_devices(raw: str, *, max_devices: int) -> list[XboxControl
     def _flush_entry() -> None:
         if not current_name or not current_handlers:
             return
-        if "xbox" not in current_name.casefold():
+        if not _is_supported_linux_controller_name(current_name, include_steam_deck=include_steam_deck):
             return
         for match in _INPUT_JS_HANDLER_RE.finditer(current_handlers):
             js_index = int(match.group("index"))
@@ -66,7 +112,7 @@ def _detect_linux_xbox_controllers(*, max_devices: int) -> list[XboxController]:
         raw = _PROC_INPUT_DEVICES_PATH.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return []
-    return _linux_parse_xbox_devices(raw, max_devices=max_devices)
+    return _linux_parse_xbox_devices(raw, max_devices=max_devices, include_steam_deck=_is_steam_deck_linux())
 
 
 class _XInputGamepad(ctypes.Structure):
@@ -138,6 +184,10 @@ def _detect_windows_xbox_controllers(*, max_devices: int) -> list[XboxController
         if len(controllers) >= max_devices:
             break
     return controllers
+
+
+def is_steam_deck_linux() -> bool:
+    return _is_steam_deck_linux()
 
 
 def detect_xbox_controllers(*, max_devices: int = 2) -> list[XboxController]:

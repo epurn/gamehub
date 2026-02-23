@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import gamehub_cli.controllers.profiles as controller_profiles
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig
 from gamehub_cli.controllers.profiles import (
     PROFILE_KBM,
@@ -71,6 +72,29 @@ def test_seed_default_profiles_creates_profile_tree(workspace_tempdir) -> None:
         dolphin_kbm_hotkeys = (root / "dolphin" / "kbm" / "Hotkeys.ini").read_text(encoding="utf-8")
         if sys.platform.startswith("linux"):
             assert "Device = XInput2/0/Virtual core pointer" in dolphin_kbm_hotkeys
+
+
+def test_seed_default_profiles_deck_uses_steamdeck_dolphin_defaults(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+        config = _config(temp_root)
+
+        monkeypatch.setattr(controller_profiles.sys, "platform", "linux")
+        monkeypatch.setattr(controller_profiles, "is_steam_deck_linux", lambda: True)
+        monkeypatch.setattr(controller_profiles, "DEFAULT_PROFILE_TEXTS", controller_profiles._default_profile_texts())
+
+        seed_default_profiles(config)
+        root = resolve_profiles_root(config)
+
+        dolphin_gc_xbox_1p = (root / "dolphin" / "xbox_1p" / "GCPadNew.ini").read_text(encoding="utf-8")
+        dolphin_wii_xbox_1p = (root / "dolphin" / "xbox_1p" / "WiimoteNew.ini").read_text(encoding="utf-8")
+
+        assert "Device = SteamDeck/0/Steam Deck" in dolphin_gc_xbox_1p
+        assert "Triggers/L = `R1`" in dolphin_gc_xbox_1p
+        assert "Triggers/R = `R2`" in dolphin_gc_xbox_1p
+        assert "Device = SteamDeck/0/Steam Deck" in dolphin_wii_xbox_1p
+        assert "Buttons/A = A | SOUTH | `Button A`" in dolphin_wii_xbox_1p
+        assert "Buttons/B = B | EAST | `Button B`" in dolphin_wii_xbox_1p
+        assert "IR/Up = `XInput2/0/Virtual core pointer:Cursor Y-`" in dolphin_wii_xbox_1p
 
 
 def test_seed_default_profiles_skips_custom_profiles_dir(workspace_tempdir) -> None:

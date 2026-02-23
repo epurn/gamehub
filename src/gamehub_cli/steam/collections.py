@@ -321,3 +321,66 @@ def update_collections(context: SteamContext, app_ids_by_system: dict[str, list[
         return updates
     _atomic_write_text(context.localconfig_path, after_dump)
     return updates
+
+
+def repair_managed_steam_input_overrides(
+    context: SteamContext,
+    managed_app_ids: list[str],
+    *,
+    disable_cloud: bool = False,
+    disable_cloud_exclude_app_ids: set[str] | None = None,
+) -> int:
+    if not managed_app_ids:
+        return 0
+    payload = _load_localconfig(context.localconfig_path)
+    apps = _resolve_path(payload, ["UserLocalConfigStore", "Software", "Valve", "Steam", "apps"])
+    if not isinstance(apps, dict):
+        return 0
+
+    disable_cloud_exclusions: set[str] = set()
+    if disable_cloud_exclude_app_ids:
+        for value in disable_cloud_exclude_app_ids:
+            app_id = _canonical_unsigned_app_id(str(value))
+            if app_id:
+                disable_cloud_exclusions.add(app_id)
+
+    before_dump = _dump_localconfig(payload)
+    updates = 0
+    for app_id in sorted({_canonical_unsigned_app_id(str(value)) for value in managed_app_ids}):
+        if not app_id:
+            continue
+        app_entry = apps.get(app_id)
+        if not isinstance(app_entry, dict):
+            app_entry = {}
+            apps[app_id] = app_entry
+            updates += 1
+        existing = app_entry.get("UseSteamControllerConfig")
+        if existing is None:
+            app_entry["UseSteamControllerConfig"] = "1"
+            updates += 1
+        else:
+            normalized = str(existing).strip().casefold()
+            if normalized in {"1", "true", "yes", "on"}:
+                pass
+            else:
+                app_entry["UseSteamControllerConfig"] = "1"
+                updates += 1
+        if disable_cloud:
+            if app_id in disable_cloud_exclusions:
+                if "DisableCloud" in app_entry:
+                    del app_entry["DisableCloud"]
+                    updates += 1
+                continue
+            existing_cloud = app_entry.get("DisableCloud")
+            normalized_cloud = str(existing_cloud).strip().casefold() if existing_cloud is not None else ""
+            if normalized_cloud not in {"1", "true", "yes", "on"}:
+                app_entry["DisableCloud"] = "1"
+                updates += 1
+
+    if updates == 0:
+        return 0
+    after_dump = _dump_localconfig(payload)
+    if after_dump == before_dump:
+        return 0
+    _atomic_write_text(context.localconfig_path, after_dump)
+    return updates

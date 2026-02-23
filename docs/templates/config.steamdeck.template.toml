@@ -1,5 +1,5 @@
-# Steam Deck template (untested in v1).
-# Verify paths on your SteamOS install before first non-dry-run sync.
+# Steam Deck template (SteamOS + Flatpak focused).
+# SteamOS root is immutable; keep mutable GAMEHUB state under /home/deck.
 [server]
 url = "http://<SERVER_IP>:8000"
 
@@ -12,20 +12,23 @@ url = "http://<SERVER_IP>:8000"
 
 [paths]
 gamehub_dir = "/home/deck/GameHub"
+# Optional: store ROM output on microSD while keeping firmware/state on internal storage.
+# Typical Steam Deck mount format: /run/media/deck/<SD_CARD_LABEL>/GameHub/roms
+# roms_dir = "/run/media/deck/<SD_CARD_LABEL>/GameHub/roms"
 
 [steam]
-# Common Steam Deck userdata path.
+# Steam Deck Desktop + Game Mode commonly use this userdata root.
 userdata_dir = "/home/deck/.local/share/Steam/userdata"
-# Alternate Steam Deck path used on some installs.
+# Alternate Steam roots seen on some SteamOS installs.
+# userdata_dir = "/home/deck/.steam/root/userdata"
 # userdata_dir = "/home/deck/.steam/steam/userdata"
 # Optional but recommended for deterministic profile targeting.
 # steam_id = "76561198000000001"
 
 [linux]
-# Keep default distro detection behavior on untested targets.
-emulator_install_backend = "auto"
-# Optional when emulator_install_backend = "flatpak".
-# flatpak_remote = "flathub"
+# SteamOS should prefer Flatpak for emulator lifecycle/config parity.
+emulator_install_backend = "flatpak"
+flatpak_remote = "flathub"
 
 # Optional Dolphin runtime user dir examples:
 # Native:
@@ -38,3 +41,14 @@ emulator_install_backend = "auto"
 # api_key = "<OPTIONAL_SGDB_KEY>"
 cache_dir = "/home/deck/GameHub/artwork-cache/sgdb"
 enabled_kinds = ["grid", "hero", "logo", "icon"]
+
+[controllers]
+# Steam Deck default should favor the built-in controller in launch autoconfig.
+launch_autoconfig = true
+# Deck launcher defaults (env overrides):
+# GAMEHUB_DECK_ZERO_DETECT_POLICY=xbox_1p|kbm|abort  (default xbox_1p)
+# GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false      (default false on Deck)
+# GAMEHUB_DECK_REPAIR_STEAM_INPUT=true|false         (default true)
+# GAMEHUB_DECK_TEMPLATE_SYNC=true|false              (default true)
+# GAMEHUB_DECK_TEMPLATE_STRICT=true|false            (default true)
+# GAMEHUB_DOLPHIN_DECK_DEVICE_MODE=auto|evdev|steamdeck (default auto)

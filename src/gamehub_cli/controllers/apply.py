@@ -41,7 +41,11 @@ def apply_named_controller_profile(
     if "pcsx2" in normalized_name:
         targets = apply_pcsx2_profile(config, selected_profile)
     elif "dolphin" in normalized_name:
-        targets = apply_dolphin_profile(config, selected_profile)
+        targets = apply_dolphin_profile(
+            config,
+            selected_profile,
+            audit_writer=writer if verbose else None,
+        )
     elif "azahar" in normalized_name:
         targets = apply_azahar_profile(config, selected_profile)
     else:

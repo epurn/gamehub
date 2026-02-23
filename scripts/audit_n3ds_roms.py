@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 SUPPORTED_EXTENSIONS = {".3ds", ".cci", ".cxi"}
@@ -100,10 +100,7 @@ def _audit_file(path: Path, rom_root: Path) -> AuditRow:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Audit N3DS ROM files for GAMEHUB/Azahar compatibility. "
-            "This script does not decrypt files."
-        )
+        description=("Audit N3DS ROM files for GAMEHUB/Azahar compatibility. This script does not decrypt files.")
     )
     parser.add_argument(
         "--rom-root",
@@ -133,7 +130,11 @@ def main() -> int:
     if not rom_root.is_dir():
         raise SystemExit(f"ROM root is not a directory: {rom_root}")
 
-    rows = [_audit_file(path, rom_root) for path in sorted(rom_root.iterdir(), key=lambda item: item.name.lower()) if path.is_file()]
+    rows = [
+        _audit_file(path, rom_root)
+        for path in sorted(rom_root.iterdir(), key=lambda item: item.name.lower())
+        if path.is_file()
+    ]
     if args.json:
         print(json.dumps([row.__dict__ for row in rows], indent=2))
     else:

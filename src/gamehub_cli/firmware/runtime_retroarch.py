@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -14,6 +15,8 @@ _RETROARCH_MENU_COMBO_VALUE = "4"
 _RETROARCH_MENU_COMBO_LABEL = "Start+Select"
 _RETROARCH_ALL_USERS_MENU_KEY = "all_users_control_menu"
 _RETROARCH_ALL_USERS_MENU_VALUE = "true"
+_RETROARCH_JOYPAD_DRIVER_KEY = "input_joypad_driver"
+_RETROARCH_JOYPAD_DRIVER_SDL2 = "sdl2"
 _RETROARCH_ANALOG_DPAD_KEYS = tuple(f"input_player{index}_analog_dpad_mode" for index in range(1, 9))
 _RETROARCH_ANALOG_DPAD_VALUE = "0"
 _RETROARCH_LIBRETRO_DEVICE_KEYS = tuple(f"input_libretro_device_p{index}" for index in range(1, 9))
@@ -37,6 +40,28 @@ _RETROARCH_PSX_CORE_OPTIONS = {
     "swanstation_Controller1.Type": "AnalogController",
     "swanstation_Controller2.Type": "AnalogController",
 }
+_STEAMOS_RELEASE_PATH = Path("/etc/os-release")
+_DMI_BOARD_VENDOR_PATH = Path("/sys/devices/virtual/dmi/id/board_vendor")
+
+
+def _is_steam_deck_linux() -> bool:
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        os_release = _STEAMOS_RELEASE_PATH.read_text(encoding="utf-8", errors="ignore").casefold()
+    except OSError:
+        os_release = ""
+    if "id=steamos" in os_release or "steamdeck" in os_release or "holo" in os_release:
+        return True
+    try:
+        vendor = _DMI_BOARD_VENDOR_PATH.read_text(encoding="utf-8", errors="ignore").strip().casefold()
+    except OSError:
+        vendor = ""
+    return "valve" in vendor
+
+
+def is_steam_deck_linux() -> bool:
+    return _is_steam_deck_linux()
 
 
 def _path_with_tilde_expanded(raw: str) -> Path:
@@ -146,6 +171,8 @@ def configure_retroarch_runtime(
     existing_combo = read_simple_cfg_key(lines, _RETROARCH_MENU_COMBO_KEY)
     existing_all_users = read_simple_cfg_key(lines, _RETROARCH_ALL_USERS_MENU_KEY)
     is_windows = os.name == "nt"
+    is_deck_linux = (not is_windows) and is_steam_deck_linux()
+    existing_joypad_driver = read_simple_cfg_key(lines, _RETROARCH_JOYPAD_DRIVER_KEY) if is_deck_linux else None
     existing_analog = (
         {key: read_simple_cfg_key(lines, key) for key in _RETROARCH_ANALOG_DPAD_KEYS} if not is_windows else {}
     )
@@ -158,6 +185,7 @@ def configure_retroarch_runtime(
     existing_turbo = {key: read_simple_cfg_key(lines, key) for key in _RETROARCH_TURBO_KEYS} if not is_windows else {}
     changed_combo = False
     changed_all_users = False
+    changed_joypad_driver = False
     changed_analog = False
     changed_libretro = False
     changed_remap = False
@@ -170,6 +198,14 @@ def configure_retroarch_runtime(
             _RETROARCH_ALL_USERS_MENU_KEY,
             _RETROARCH_ALL_USERS_MENU_VALUE,
         )
+    if is_deck_linux:
+        normalized_driver = (
+            existing_joypad_driver.strip().strip('"').strip("'").casefold() if existing_joypad_driver else ""
+        )
+        if normalized_driver != _RETROARCH_JOYPAD_DRIVER_SDL2 or not cfg_path.exists():
+            lines, changed_joypad_driver = upsert_simple_cfg_key(
+                lines, _RETROARCH_JOYPAD_DRIVER_KEY, _RETROARCH_JOYPAD_DRIVER_SDL2
+            )
     if not is_windows:
         for key in _RETROARCH_ANALOG_DPAD_KEYS:
             existing_value = existing_analog.get(key)
@@ -198,6 +234,7 @@ def configure_retroarch_runtime(
     if (
         changed_combo
         or changed_all_users
+        or changed_joypad_driver
         or (not is_windows and (changed_analog or changed_libretro or changed_remap or changed_turbo))
         or not cfg_path.exists()
     ):

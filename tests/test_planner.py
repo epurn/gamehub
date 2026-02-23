@@ -308,3 +308,49 @@ def test_planner_missing_optional_firmware_does_not_block_titles(workspace_tempd
         assert len(plan.firmware_actions) == 1
         assert plan.firmware_actions[0].content_id == "Wii/keys.md"
         assert len(plan.content_actions) == 0
+
+
+def test_planner_uses_configurable_roms_output_dir(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-plan-") as temp_root:
+        system = SystemSpec(
+            name="NES",
+            rom_extensions=(".nes",),
+            default_emulator="retroarch",
+            launch_template='"{emulator}" "{rom}"',
+            firmware=(),
+        )
+        title = TitleEntry(
+            title_id="title_nes_smb",
+            system="NES",
+            title_name="Super Mario Bros",
+            title_rel_dir="NES/Super Mario Bros",
+            emulator="retroarch",
+            launch_template='"{emulator}" "{rom}"',
+            rom=RomSpec(
+                file_id="file_smb",
+                rel_path="roms/NES/SuperMarioBros.nes",
+                sha256="a" * 64,
+                size_bytes=40,
+                extension=".nes",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(system,), titles=(title,))
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            roms_dir=temp_root / "sdcard" / "roms",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        )
+
+        plan = create_sync_plan(index=index, config=config, state=SyncState(), verify=False)
+
+        assert len(plan.content_actions) == 1
+        assert plan.content_actions[0].destination == temp_root / "sdcard" / "roms" / "NES" / "SuperMarioBros.nes"

@@ -73,8 +73,9 @@ if typer is not None:
             "--config",
             help="Optional config TOML path override for controller launch.",
         ),
+        audit: bool = typer.Option(False, "--audit", help="Print controller profile apply diagnostics."),
     ) -> None:
-        raise typer.Exit(code=run_controller_launch(payload_token=payload, config_path=config))
+        raise typer.Exit(code=run_controller_launch(payload_token=payload, config_path=config, audit=audit))
 else:
     app = None
 
@@ -103,6 +104,7 @@ def main() -> None:
     controller_launch_parser = subparsers.add_parser("controller-launch", help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
+    controller_launch_parser.add_argument("--audit", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.command == "sync":
         loaded = load_config(args.config)
@@ -119,7 +121,7 @@ def main() -> None:
             )
         )
     if args.command == "controller-launch":
-        raise SystemExit(run_controller_launch(payload_token=args.payload, config_path=args.config))
+        raise SystemExit(run_controller_launch(payload_token=args.payload, config_path=args.config, audit=args.audit))
 
 
 if __name__ == "__main__":

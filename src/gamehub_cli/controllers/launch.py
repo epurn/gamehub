@@ -16,8 +16,8 @@ from pathlib import Path
 from ..common.config import load_config
 from . import azahar_exit_hook
 from .apply import apply_controller_profile, apply_named_controller_profile
-from .detection import detect_xbox_controllers
-from .profiles import PROFILE_KBM, seed_default_profiles
+from .detection import detect_xbox_controllers, is_steam_deck_linux
+from .profiles import PROFILE_KBM, profile_name_for_controller_count, seed_default_profiles
 from .sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
 
 _DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
@@ -26,6 +26,7 @@ _DOLPHIN_EXIT_BUTTON_SELECT_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT"
 _DOLPHIN_EXIT_BUTTON_START_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_START"
 _DOLPHIN_EXIT_JS_DEVICE_ENV = "GAMEHUB_DOLPHIN_EXIT_JS_DEVICE"
 _AZAHAR_WINDOWS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK"
+_DECK_ZERO_DETECT_POLICY_ENV = "GAMEHUB_DECK_ZERO_DETECT_POLICY"
 _CONTROLLER_DETECT_RETRIES = 2
 _CONTROLLER_DETECT_DELAY_SEC = 0.25
 _XINPUT_GAMEPAD_START = 0x0010
@@ -242,6 +243,22 @@ def _int_env_optional(name: str) -> int | None:
         return None
 
 
+def _deck_zero_detect_policy() -> str:
+    raw = os.environ.get(_DECK_ZERO_DETECT_POLICY_ENV)
+    if raw is None:
+        return "xbox_1p"
+    normalized = raw.strip().casefold()
+    if normalized in {"xbox_1p", "kbm", "abort"}:
+        return normalized
+    if normalized in {"xbox1p", "xbox"}:
+        return "xbox_1p"
+    if normalized in {"keyboard", "keyboard_mouse", "keyboard-mouse"}:
+        return "kbm"
+    if normalized in {"fail", "error"}:
+        return "abort"
+    return "xbox_1p"
+
+
 def _discover_js_devices(env_name: str) -> list[str]:
     env_device = os.environ.get(env_name)
     if env_device:
@@ -363,7 +380,7 @@ def _detect_controller_count_with_retry(*, max_devices: int = 2) -> tuple[int, E
     return 0, last_error
 
 
-def run_controller_launch(*, payload_token: str, config_path: Path | None = None) -> int:
+def run_controller_launch(*, payload_token: str, config_path: Path | None = None, audit: bool = False) -> int:
     payload = parse_controller_payload(payload_token)
     resolved_config = _resolve_config_path(config_path, payload)
     config = load_config(resolved_config)
@@ -381,8 +398,11 @@ def run_controller_launch(*, payload_token: str, config_path: Path | None = None
         except Exception as exc:
             print(f"Warning: failed to seed controller profile defaults (error={exc})")
         controller_count = 0
+        detected_controller_count = 0
+        detect_error: Exception | None = None
         try:
             controller_count, detect_error = _detect_controller_count_with_retry(max_devices=2)
+            detected_controller_count = controller_count
             if controller_count == 0 and detect_error is not None:
                 raise detect_error
         except Exception as exc:
@@ -390,23 +410,85 @@ def run_controller_launch(*, payload_token: str, config_path: Path | None = None
                 "Warning: controller detection failed "
                 f"(emulator={payload.emulator}, error={exc}); using keyboard/mouse fallback profile selection"
             )
-        try:
-            apply_controller_profile(
-                config,
-                emulator_name=payload.emulator,
-                controller_count=controller_count,
+            detect_error = exc
+            controller_count = 0
+            detected_controller_count = 0
+
+        zero_detect_policy = "none"
+        native_shortcut_policy = "native-first"
+        if sys.platform.startswith("linux") and is_steam_deck_linux() and controller_count == 0:
+            zero_detect_policy = _deck_zero_detect_policy()
+            if zero_detect_policy == "xbox_1p":
+                controller_count = 1
+                print(
+                    "Warning: Steam Deck controller detection returned 0 controllers; forcing xbox_1p profile fallback"
+                )
+            elif zero_detect_policy == "abort":
+                print(
+                    "Error: Steam Deck controller detection returned 0 controllers and "
+                    "GAMEHUB_DECK_ZERO_DETECT_POLICY=abort; aborting launch"
+                )
+                if audit:
+                    print(
+                        "controller-autoconfig\t"
+                        f"detected_controller_count={detected_controller_count}\t"
+                        f"effective_controller_count={controller_count}\t"
+                        f"zero_detect_policy={zero_detect_policy}\t"
+                        f"native_shortcut_policy={native_shortcut_policy}\t"
+                        f"selected_profile={profile_name_for_controller_count(controller_count)}\t"
+                        "launch_result=aborted"
+                    )
+                return 2
+        effective_controller_count = controller_count
+        if audit:
+            detect_status = "ok" if detect_error is None else "error"
+            print(
+                "controller-autoconfig\t"
+                f"detected_controller_count={detected_controller_count}\t"
+                f"effective_controller_count={effective_controller_count}\t"
+                f"detect_status={detect_status}\t"
+                f"zero_detect_policy={zero_detect_policy}\t"
+                f"native_shortcut_policy={native_shortcut_policy}"
             )
+
+        selected_profile = profile_name_for_controller_count(controller_count)
+        try:
+            if audit:
+                selected_profile = apply_controller_profile(
+                    config,
+                    emulator_name=payload.emulator,
+                    controller_count=controller_count,
+                    verbose=True,
+                )
+            else:
+                selected_profile = apply_controller_profile(
+                    config,
+                    emulator_name=payload.emulator,
+                    controller_count=controller_count,
+                )
+            if audit:
+                print(f"controller-autoconfig\tselected_profile={selected_profile}")
         except Exception as exc:
             print(
                 "Warning: controller autoconfig failed "
                 f"(emulator={payload.emulator}, profile={PROFILE_KBM}, error={exc}); using keyboard/mouse fallback"
             )
             try:
-                apply_named_controller_profile(
-                    config,
-                    emulator_name=payload.emulator,
-                    profile_name=PROFILE_KBM,
-                )
+                if audit:
+                    selected_profile = apply_named_controller_profile(
+                        config,
+                        emulator_name=payload.emulator,
+                        profile_name=PROFILE_KBM,
+                        verbose=True,
+                    )
+                else:
+                    selected_profile = apply_named_controller_profile(
+                        config,
+                        emulator_name=payload.emulator,
+                        profile_name=PROFILE_KBM,
+                    )
+                if audit:
+                    print(f"controller-autoconfig\tselected_profile={selected_profile}\tfallback=true")
             except Exception as fallback_exc:
                 print(
                     "Warning: keyboard/mouse fallback profile application failed "
