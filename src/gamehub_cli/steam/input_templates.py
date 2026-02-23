@@ -11,6 +11,7 @@ import vdf
 from gamehub_common.models import LibraryIndex, TitleEntry
 
 from .io import _atomic_write_bytes, _atomic_write_text
+from .lifecycle import steam_id64_from_userdata_id
 from .shortcuts import _canonical_unsigned_app_id
 from .types import ShortcutSyncResult, SteamContext
 
@@ -33,6 +34,7 @@ _DECK_TEMPLATE_FILENAMES_BY_SYSTEM = {
     "N3DS": (_DECK_TEMPLATE_N3DS_FILENAME,),
 }
 _DECK_TEMPLATE_DISABLED_SYSTEMS = {"GC"}
+_STEAM_INPUT_CLOUD_APP_ID = "241100"
 _DECK_TEMPLATE_UI_TITLE_BY_SYSTEM = {
     "Wii": "GameHub Wii",
     "N3DS": "GameHub 3DS",
@@ -136,28 +138,59 @@ def _path_identity(path: Path) -> _PathIdentity:
     return ("inode", int(stat.st_dev), int(stat.st_ino))
 
 
-def _resolve_deck_steam_input_root(steam_id: str, *, strict: bool) -> Path | None:
-    candidates = discover_deck_steam_input_roots(steam_id)
-    existing = [candidate for candidate in candidates if candidate.exists()]
+def _discover_steam_input_cloud_roots(context: SteamContext) -> list[Path]:
+    base = context.userdata_dir / context.steam_id / _STEAM_INPUT_CLOUD_APP_ID / "remote"
+    steam_ids = [context.steam_id]
+    steam_id64 = steam_id64_from_userdata_id(context.steam_id)
+    if steam_id64 is not None and steam_id64 not in steam_ids:
+        steam_ids.append(steam_id64)
+    return [*(base / steam_id / "config" for steam_id in steam_ids), base / "config"]
+
+
+def _resolve_deck_steam_input_roots(context: SteamContext, *, strict: bool) -> list[Path]:
+    candidates = [
+        *discover_deck_steam_input_roots(context.steam_id),
+        *_discover_steam_input_cloud_roots(context),
+    ]
+    unique_candidates: list[Path] = []
+    seen_candidates: set[_PathIdentity] = set()
+    for candidate in candidates:
+        identity = _path_identity(candidate)
+        if identity in seen_candidates:
+            continue
+        seen_candidates.add(identity)
+        unique_candidates.append(candidate)
+
+    existing = [candidate for candidate in unique_candidates if candidate.exists()]
     writable = [candidate for candidate in existing if candidate.is_dir() and os.access(candidate, os.W_OK)]
     if writable:
-        return writable[0]
+        unique_writable: list[Path] = []
+        seen_writable: set[_PathIdentity] = set()
+        for path in writable:
+            identity = _path_identity(path)
+            if identity in seen_writable:
+                continue
+            seen_writable.add(identity)
+            unique_writable.append(path)
+        return unique_writable
 
     if strict:
-        tried = ", ".join(str(path) for path in candidates) or "<none>"
+        tried = ", ".join(str(path) for path in unique_candidates) or "<none>"
         raise RuntimeError(
-            "Steam Deck template sync strict mode: no writable Steam Controller Configs root was found "
+            "Steam Deck template sync strict mode: no writable Steam input config root was found "
             f"(tried: {tried})"
         )
 
-    if not candidates:
-        return None
-    target = candidates[0]
+    if not unique_candidates:
+        return []
+    target = unique_candidates[0]
     try:
         target.mkdir(parents=True, exist_ok=True)
     except OSError:
-        return None
-    return target if os.access(target, os.W_OK) else None
+        return []
+    if not os.access(target, os.W_OK):
+        return []
+    return [target]
 
 
 def _seed_path_for_system(system_name: str) -> Path | None:
@@ -523,8 +556,8 @@ def apply_deck_steam_input_templates(
     if managed_titles and not seed_payloads:
         return TemplateSyncResult(targets=0, written=0, unchanged=0, errors=errors, systems_applied=applied_systems)
 
-    root = _resolve_deck_steam_input_root(context.steam_id, strict=strict)
-    if root is None:
+    roots = _resolve_deck_steam_input_roots(context, strict=strict)
+    if not roots:
         return TemplateSyncResult(targets=0, written=0, unchanged=0, errors=errors + 1, systems_applied=applied_systems)
 
     targets = 0
@@ -535,26 +568,27 @@ def apply_deck_steam_input_templates(
         payload = seed_payloads.get(title.system)
         if payload is None:
             continue
-        title_dir = root / normalize_steam_input_title_dir(title.title_name)
         filenames = _template_filenames_for_system(title.system)
         targets += 1
         title_changed = False
         title_had_error = False
-        try:
+        for root in roots:
+            title_dir = root / normalize_steam_input_title_dir(title.title_name)
             for filename in filenames:
                 target_path = title_dir / filename
-                if target_path.exists() and target_path.read_bytes() == payload:
-                    continue
-                _atomic_write_bytes(target_path, payload)
-                title_changed = True
-        except OSError as exc:
-            if strict:
-                raise RuntimeError(
-                    "Steam Deck template sync strict mode: failed writing template file "
-                    f"for title '{title.title_name}' ({target_path}): {exc}"
-                ) from exc
-            errors += 1
-            title_had_error = True
+                try:
+                    if target_path.exists() and target_path.read_bytes() == payload:
+                        continue
+                    _atomic_write_bytes(target_path, payload)
+                    title_changed = True
+                except OSError as exc:
+                    if strict:
+                        raise RuntimeError(
+                            "Steam Deck template sync strict mode: failed writing template file "
+                            f"for title '{title.title_name}' ({target_path}): {exc}"
+                        ) from exc
+                    errors += 1
+                    title_had_error = True
 
         if title_had_error:
             continue
@@ -563,23 +597,24 @@ def apply_deck_steam_input_templates(
         else:
             unchanged += 1
 
-    errors += _cleanup_managed_title_template_files(
-        root=root,
-        managed_titles=managed_titles,
-        strict=strict,
-    )
-    errors += _sync_deck_template_selection_configsets(
-        root=root,
-        managed_titles=managed_titles,
-        removed_titles=removed_titles,
-        shortcut_result=shortcut_result,
-        strict=strict,
-    )
-    errors += _cleanup_disabled_title_template_files(
-        root=root,
-        removed_titles=removed_titles,
-        strict=strict,
-    )
+    for root in roots:
+        errors += _cleanup_managed_title_template_files(
+            root=root,
+            managed_titles=managed_titles,
+            strict=strict,
+        )
+        errors += _sync_deck_template_selection_configsets(
+            root=root,
+            managed_titles=managed_titles,
+            removed_titles=removed_titles,
+            shortcut_result=shortcut_result,
+            strict=strict,
+        )
+        errors += _cleanup_disabled_title_template_files(
+            root=root,
+            removed_titles=removed_titles,
+            strict=strict,
+        )
 
     return TemplateSyncResult(
         targets=targets,

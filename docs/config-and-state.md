@@ -96,6 +96,7 @@ Steam mutation behavior notes:
     - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
     - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
   - sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files (`controller_config`) so managed entries select `template=gamehub_wii`/`template=gamehub_3ds` with `autosave=1`
+  - when present, those per-title/configset writes are mirrored to `userdata/<steamid>/241100/remote/*/config/` to keep Deck startup Steam Input cloud/local roots aligned
   - seed source: `src/gamehub_cli/steam/template_seeds/steamdeck/`
   - toggle with `GAMEHUB_DECK_TEMPLATE_SYNC=true|false` (default `true`)
   - strict mode with `GAMEHUB_DECK_TEMPLATE_STRICT=true|false` (default `true`)

@@ -747,6 +747,16 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
             / "config"
         )
         template_root.mkdir(parents=True, exist_ok=True)
+        remote_template_root = (
+            temp_root
+            / "userdata"
+            / "95402412"
+            / "241100"
+            / "remote"
+            / "95402412"
+            / "config"
+        )
+        remote_template_root.mkdir(parents=True, exist_ok=True)
         gc_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Luigi's Mansion")
         wii_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
         n3ds_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Tomodachi Life")
@@ -827,6 +837,15 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert "CLOUD_" not in (template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8")
         assert "CLOUD_" not in (template_root / "configset_FXAA30102486.vdf").read_text(encoding="utf-8")
         assert "CLOUD_" not in (template_root / "configset_controller_xboxone.vdf").read_text(encoding="utf-8")
+        remote_wii_template = remote_template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
+        remote_n3ds_template = remote_template_root / steam_input_templates.normalize_steam_input_title_dir("Tomodachi Life")
+        assert (remote_wii_template / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        assert (remote_n3ds_template / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
+        remote_configset_payload = vdf.loads((remote_template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
+        remote_controller_config = remote_configset_payload.get("controller_config", {})
+        assert remote_controller_config["3366254221"]["template"] == "gamehub_wii"
+        assert remote_controller_config["4290272364"]["template"] == "gamehub_3ds"
+        assert "CLOUD_" not in (remote_template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8")
 
         assert second.targets == 2
         assert second.written == 0

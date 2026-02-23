@@ -81,6 +81,7 @@ Steam close behavior:
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
       - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files so managed entries point to `template=gamehub_wii` or `template=gamehub_3ds` with `autosave=1`
+      - when present, mirrors the same template/configset writes into `userdata/<steamid>/241100/remote/*/config/` to align Deck startup local+cloud Steam Input sources
       - uses repo seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/`
       - enabled by default (`GAMEHUB_DECK_TEMPLATE_SYNC=true|false`)
       - strict mode is enabled by default (`GAMEHUB_DECK_TEMPLATE_STRICT=true|false`) and fails sync when required seeds/roots are missing
