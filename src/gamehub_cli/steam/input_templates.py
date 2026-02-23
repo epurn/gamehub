@@ -22,6 +22,7 @@ _DECK_TEMPLATE_N3DS_FILENAME = "gamehub_3ds.vdf"
 _DECK_TEMPLATE_CONFIGSET_FILENAME = "configset_controller_neptune.vdf"
 _DECK_TEMPLATE_CONFIGSET_AUTOSAVE = "1"
 _DECK_TEMPLATE_CONFIGSET_GLOB = "configset_*.vdf"
+_DECK_TEMPLATE_LEGACY_AUTOCLOUD_FILENAME = "steam_autocloud.vdf"
 _DECK_TEMPLATE_SYSTEM_ORDER = ("Wii", "N3DS")
 _DECK_TEMPLATE_SEED_ROOT = Path(__file__).resolve().parent / "template_seeds" / "steamdeck"
 _DECK_TEMPLATE_SEED_BY_SYSTEM = {
@@ -494,6 +495,38 @@ def _sync_deck_template_selection_configsets(
     return errors
 
 
+def _legacy_steam_autocloud_paths(root: Path) -> list[Path]:
+    candidates = [root / _DECK_TEMPLATE_LEGACY_AUTOCLOUD_FILENAME]
+    if root.name.casefold() != "config":
+        candidates.append(root / "config" / _DECK_TEMPLATE_LEGACY_AUTOCLOUD_FILENAME)
+    unique: list[Path] = []
+    seen: set[_PathIdentity] = set()
+    for path in candidates:
+        identity = _path_identity(path)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(path)
+    return unique
+
+
+def _cleanup_legacy_steam_autocloud_files(*, root: Path, strict: bool) -> int:
+    errors = 0
+    for candidate in _legacy_steam_autocloud_paths(root):
+        if not candidate.exists() or not candidate.is_file():
+            continue
+        try:
+            candidate.unlink()
+        except OSError as exc:
+            if strict:
+                raise RuntimeError(
+                    "Steam Deck template sync strict mode: failed removing legacy steam autocloud config "
+                    f"({candidate}): {exc}"
+                ) from exc
+            errors += 1
+    return errors
+
+
 def _cleanup_managed_title_template_files(
     *,
     root: Path,
@@ -620,6 +653,7 @@ def apply_deck_steam_input_templates(
             unchanged += 1
 
     for root in roots:
+        errors += _cleanup_legacy_steam_autocloud_files(root=root, strict=strict)
         errors += _cleanup_managed_title_template_files(
             root=root,
             managed_titles=managed_titles,

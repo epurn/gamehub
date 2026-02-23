@@ -549,7 +549,7 @@ def apply_steam_updates(
             template_managed_app_ids = list(shortcut_result.app_ids_by_title.values())
         disable_cloud_input = _env_enabled(_DECK_DISABLE_STEAM_CLOUD_INPUT_ENV, default=True)
         if disable_cloud_input:
-            # Steam Input template cloud conflicts are tracked under app 241100.
+            # Always include Steam Input app metadata so stale DisableCloud can be removed.
             template_managed_app_ids.append(_STEAM_INPUT_CONFIG_APP_ID)
         template_managed_app_ids = list(
             dict.fromkeys(str(app_id).strip() for app_id in template_managed_app_ids if str(app_id).strip())
@@ -558,6 +558,7 @@ def apply_steam_updates(
             context,
             template_managed_app_ids,
             disable_cloud=disable_cloud_input,
+            disable_cloud_exclude_app_ids={_STEAM_INPUT_CONFIG_APP_ID},
         )
     update_count = local_update_count + cloud_update_count + deck_repair_count
     if update_count:

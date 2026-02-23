@@ -328,6 +328,7 @@ def repair_managed_steam_input_overrides(
     managed_app_ids: list[str],
     *,
     disable_cloud: bool = False,
+    disable_cloud_exclude_app_ids: set[str] | None = None,
 ) -> int:
     if not managed_app_ids:
         return 0
@@ -335,6 +336,13 @@ def repair_managed_steam_input_overrides(
     apps = _resolve_path(payload, ["UserLocalConfigStore", "Software", "Valve", "Steam", "apps"])
     if not isinstance(apps, dict):
         return 0
+
+    disable_cloud_exclusions: set[str] = set()
+    if disable_cloud_exclude_app_ids:
+        for value in disable_cloud_exclude_app_ids:
+            app_id = _canonical_unsigned_app_id(str(value))
+            if app_id:
+                disable_cloud_exclusions.add(app_id)
 
     before_dump = _dump_localconfig(payload)
     updates = 0
@@ -358,6 +366,11 @@ def repair_managed_steam_input_overrides(
                 app_entry["UseSteamControllerConfig"] = "1"
                 updates += 1
         if disable_cloud:
+            if app_id in disable_cloud_exclusions:
+                if "DisableCloud" in app_entry:
+                    del app_entry["DisableCloud"]
+                    updates += 1
+                continue
             existing_cloud = app_entry.get("DisableCloud")
             normalized_cloud = str(existing_cloud).strip().casefold() if existing_cloud is not None else ""
             if normalized_cloud not in {"1", "true", "yes", "on"}:

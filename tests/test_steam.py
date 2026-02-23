@@ -638,6 +638,49 @@ def test_repair_managed_steam_input_overrides_sets_enabled_for_managed_apps(work
         assert apps["999"]["DisableCloud"] == "1"
 
 
+def test_repair_managed_steam_input_overrides_keeps_steam_input_cloud_enabled(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+        payload = {
+            "UserLocalConfigStore": {
+                "Software": {
+                    "Valve": {
+                        "Steam": {
+                            "apps": {
+                                "241100": {"UseSteamControllerConfig": "0", "DisableCloud": "1"},
+                                "3366254221": {"UseSteamControllerConfig": "0"},
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        context.localconfig_path.write_text(vdf.dumps(payload), encoding="utf-8")
+
+        updates = repair_managed_steam_input_overrides(
+            context,
+            ["241100", "3366254221"],
+            disable_cloud=True,
+            disable_cloud_exclude_app_ids={"241100"},
+        )
+
+        assert updates == 4
+        updated = vdf.loads(context.localconfig_path.read_text(encoding="utf-8"))
+        apps = updated["UserLocalConfigStore"]["Software"]["Valve"]["Steam"]["apps"]
+        assert apps["241100"]["UseSteamControllerConfig"] == "1"
+        assert "DisableCloud" not in apps["241100"]
+        assert apps["3366254221"]["UseSteamControllerConfig"] == "1"
+        assert apps["3366254221"]["DisableCloud"] == "1"
+
+
 def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
     monkeypatch,
     workspace_tempdir,
@@ -757,6 +800,11 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
             / "config"
         )
         remote_template_root.mkdir(parents=True, exist_ok=True)
+        (template_root / "steam_autocloud.vdf").write_text('"steam_autocloud.vdf"\n{\n}\n', encoding="utf-8")
+        (remote_template_root / "steam_autocloud.vdf").write_text(
+            '"steam_autocloud.vdf"\n{\n}\n',
+            encoding="utf-8",
+        )
         gc_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Luigi's Mansion")
         wii_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
         n3ds_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Tomodachi Life")
@@ -864,6 +912,8 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert second.written == 0
         assert second.unchanged == 2
         assert second.errors == 0
+        assert not (template_root / "steam_autocloud.vdf").exists()
+        assert not (remote_template_root / "steam_autocloud.vdf").exists()
 
 
 def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_missing(

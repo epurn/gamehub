@@ -187,8 +187,13 @@ def test_apply_steam_updates_deck_repairs_steam_input_overrides(monkeypatch) -> 
     )
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.repair_managed_steam_input_overrides",
-        lambda context, app_ids, disable_cloud=False: (
-            order.append(f"repair:{','.join(app_ids)}:disable_cloud={disable_cloud}") or 1
+        lambda context, app_ids, disable_cloud=False, disable_cloud_exclude_app_ids=None: (
+            order.append(
+                "repair:"
+                f"{','.join(app_ids)}:disable_cloud={disable_cloud}:"
+                f"exclude={','.join(sorted(disable_cloud_exclude_app_ids or []))}"
+            )
+            or 1
         ),
     )
     monkeypatch.setattr(
@@ -210,7 +215,7 @@ def test_apply_steam_updates_deck_repairs_steam_input_overrides(monkeypatch) -> 
 
     assert "collections" in order
     assert "collections-cloud" in order
-    assert "repair:-602952253,241100:disable_cloud=True" in order
+    assert "repair:-602952253,241100:disable_cloud=True:exclude=241100" in order
 
 
 def test_apply_steam_updates_deck_can_disable_steam_input_repairs(monkeypatch) -> None:
@@ -263,7 +268,7 @@ def test_apply_steam_updates_deck_can_disable_steam_input_repairs(monkeypatch) -
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.update_cloud_collections", lambda context, app_ids_by_system: 0)
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.repair_managed_steam_input_overrides",
-        lambda context, app_ids, disable_cloud=False: (_ for _ in ()).throw(
+        lambda context, app_ids, disable_cloud=False, disable_cloud_exclude_app_ids=None: (_ for _ in ()).throw(
             AssertionError("repair should be disabled")
         ),
     )
@@ -335,7 +340,7 @@ def test_apply_steam_updates_deck_runs_template_sync_pass(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.update_cloud_collections", lambda context, app_ids_by_system: 0)
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.repair_managed_steam_input_overrides",
-        lambda context, app_ids, disable_cloud=False: 0,
+        lambda context, app_ids, disable_cloud=False, disable_cloud_exclude_app_ids=None: 0,
     )
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.copy_grid_art", lambda context, assignments: [])
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.prune_grid_noncanonical_variants", lambda context, app_ids: 0)
@@ -399,7 +404,7 @@ def test_apply_steam_updates_deck_can_disable_template_sync(monkeypatch) -> None
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.update_cloud_collections", lambda context, app_ids_by_system: 0)
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.repair_managed_steam_input_overrides",
-        lambda context, app_ids, disable_cloud=False: 0,
+        lambda context, app_ids, disable_cloud=False, disable_cloud_exclude_app_ids=None: 0,
     )
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.copy_grid_art", lambda context, assignments: [])
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.prune_grid_noncanonical_variants", lambda context, app_ids: 0)

@@ -148,7 +148,7 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_DOLPHIN_DECK_DEVICE_MODE`: Deck Dolphin device mode (`auto`, `evdev`, `steamdeck`; default `auto` with `evdev` priority).
 - `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`: force managed shortcut `AllowDesktopConfig` (`true`/`false`).
 - `GAMEHUB_DECK_REPAIR_STEAM_INPUT`: enables/disables Deck-only managed app override repair for `UseSteamControllerConfig=1` (`true`/`false`, default `true`).
-- `GAMEHUB_DECK_DISABLE_STEAM_CLOUD_INPUT`: when Deck app override repair runs, also sets `DisableCloud=1` on managed `Wii`/`N3DS` app entries and Steam Input app `241100` (`true`/`false`, default `true`).
+- `GAMEHUB_DECK_DISABLE_STEAM_CLOUD_INPUT`: when Deck app override repair runs, also sets `DisableCloud=1` on managed `Wii`/`N3DS` app entries (`true`/`false`, default `true`). Steam Input app `241100` is kept cloud-enabled for `CLOUD_<title>/...` template resolution.
 - `GAMEHUB_DECK_TEMPLATE_SYNC`: enables/disables Deck-only Steam template sync for managed `Wii`/`N3DS` shortcuts (`true`/`false`, default `true`).
 - `GAMEHUB_DECK_TEMPLATE_STRICT`: strict mode for Deck template sync (`true`/`false`, default `true`).
 - Linux Azahar exit hook input sources:
