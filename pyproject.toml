@@ -39,6 +39,9 @@ package-dir = { "" = "src" }
 where = ["src"]
 include = ["gamehub_cli*", "gamehub_server*", "gamehub_common*"]
 
+[tool.setuptools.package-data]
+gamehub_cli = ["steam/template_seeds/**/*.vdf", "steam/template_seeds/**/*.md"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 120

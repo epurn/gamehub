@@ -89,10 +89,13 @@ When omitted, sync auto-detects a profile under `steam.userdata_dir` and prefers
 
 Steam mutation behavior notes:
 - GAMEHUB writes managed shortcuts with stable `appid` values so artwork and category membership can be bound on first sync pass.
-- On Linux Steam Deck, GAMEHUB writes managed shortcuts with emulator-aware defaults for Gaming Mode:
-  - `PCSX2`: `AllowDesktopConfig = 0` (controller-first)
-  - other emulators (for example `RetroArch`, `Dolphin`, `Azahar`): `AllowDesktopConfig = 1` (preserves pointer/mouse semantics)
+- On Linux Steam Deck, GAMEHUB writes managed shortcuts with `AllowDesktopConfig = 0` by default (native-first controller path).
   - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`.
+- On Linux Steam Deck, GAMEHUB syncs seeded Steam Input templates for managed `Wii`, `GC`, and `N3DS` shortcuts.
+  - per-title destination: `Steam Controller Configs/<steamid>/config/<normalized_title>/controller_neptune.vdf`
+  - seed source: `src/gamehub_cli/steam/template_seeds/steamdeck/`
+  - toggle with `GAMEHUB_DECK_TEMPLATE_SYNC=true|false` (default `true`)
+  - strict mode with `GAMEHUB_DECK_TEMPLATE_STRICT=true|false` (default `true`)
 - GAMEHUB canonicalizes collection membership appids to unsigned numeric values in both `localconfig.vdf` (`user-collections`) and cloud storage collection entries.
 - On Linux Steam Deck, GAMEHUB can repair stale managed app overrides where `UseSteamControllerConfig = 0`.
   - This repair is enabled by default; disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`.
@@ -138,8 +141,11 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
+- `GAMEHUB_DOLPHIN_DECK_DEVICE_MODE`: Deck Dolphin device mode (`auto`, `evdev`, `steamdeck`; default `auto` with `evdev` priority).
 - `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`: force managed shortcut `AllowDesktopConfig` (`true`/`false`).
 - `GAMEHUB_DECK_REPAIR_STEAM_INPUT`: enables/disables Deck-only managed app override repair for `UseSteamControllerConfig` (`true`/`false`, default `true`).
+- `GAMEHUB_DECK_TEMPLATE_SYNC`: enables/disables Deck-only Steam template sync for managed `Wii`/`GC`/`N3DS` shortcuts (`true`/`false`, default `true`).
+- `GAMEHUB_DECK_TEMPLATE_STRICT`: strict mode for Deck template sync (`true`/`false`, default `true`).
 - Linux Azahar exit hook input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
@@ -176,7 +182,7 @@ Controller launch autoconfig:
 - Linux Steam Deck default keeps controller-first launch behavior when detection returns zero by applying `xbox_1p` fallback (`GAMEHUB_DECK_ZERO_DETECT_POLICY`).
 - Non-Deck platforms keep standard behavior (`0 -> kbm`).
 - Azahar controller-mode apply keeps pointer/touch keys preservation-first, while managed button keys are always normalized from profile mappings.
-- Dolphin Linux controller-mode apply preserves existing controller-class device identities but rebinds keyboard/mouse fallback devices (for example `XInput2/0/Virtual core pointer` and `DInput/0/Keyboard Mouse`).
+- Dolphin Linux controller-mode preserves existing controller-class device identities on non-Deck, while Deck controller-mode uses deterministic device rebinding (`evdev` priority by default).
 - Default profile root is `<gamehub_dir>/controller_profiles` and includes seeded defaults:
   - `<root>/pcsx2/<profile>/PCSX2.ini`
   - `<root>/dolphin/<profile>/GCPadNew.ini`
@@ -217,7 +223,6 @@ N3DS Azahar defaults:
 - On Linux, GAMEHUB uses a wrapper launch hook by default to close Azahar when `Select+Start` is pressed (native-controller mode).
 - On Windows, GAMEHUB uses a controller-launch XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
 - On Linux Flatpak Dolphin launches wrapped by `controller-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
-- Steam Input layout/template copy for N3DS remains manual in this pass.
 
 ## State file
 - Format: JSON

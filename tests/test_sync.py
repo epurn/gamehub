@@ -158,6 +158,14 @@ def test_apply_steam_updates_deck_repairs_steam_input_overrides(monkeypatch) -> 
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
     monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
+        lambda context, index, shortcut_result, strict: type(
+            "TemplateSyncResult",
+            (),
+            {"targets": 1, "written": 1, "unchanged": 0, "errors": 0, "systems_applied": ("Wii",)},
+        )(),
+    )
+    monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.upsert_shortcuts",
         lambda context, desired_shortcuts: type(
             "Result",
@@ -230,6 +238,14 @@ def test_apply_steam_updates_deck_can_disable_steam_input_repairs(monkeypatch) -
     monkeypatch.setenv("GAMEHUB_DECK_REPAIR_STEAM_INPUT", "false")
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
     monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
+        lambda context, index, shortcut_result, strict: type(
+            "TemplateSyncResult",
+            (),
+            {"targets": 1, "written": 0, "unchanged": 1, "errors": 0, "systems_applied": ("Wii",)},
+        )(),
+    )
+    monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.upsert_shortcuts",
         lambda context, desired_shortcuts: type(
             "Result",
@@ -252,6 +268,131 @@ def test_apply_steam_updates_deck_can_disable_steam_input_repairs(monkeypatch) -
         "gamehub_cli.sync.steam_stage.prune_grid_noncanonical_variants",
         lambda context, app_ids: 0,
     )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.reopen_steam", lambda context: True)
+
+    _apply_steam_updates(
+        config,
+        index=index,
+        require_steam_closed=False,
+        artwork_by_title={},
+    )
+
+
+def test_apply_steam_updates_deck_runs_template_sync_pass(monkeypatch) -> None:
+    order: list[str] = []
+    index = LibraryIndex(index_version=1, systems=(), titles=())
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path("state.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.discover_userdata_dir", lambda explicit: Path("userdata"))
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.upsert_shortcuts",
+        lambda context, desired_shortcuts: type(
+            "Result",
+            (),
+            {
+                "app_ids_by_title": {"title_wii_mario": "-602952253"},
+                "app_ids_by_system": {"Wii": ["-602952253"]},
+                "total_shortcuts": 1,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
+        lambda context, index, shortcut_result, strict: (
+            order.append(f"template-sync:strict={strict}")
+            or type(
+                "TemplateSyncResult",
+                (),
+                {"targets": 1, "written": 1, "unchanged": 0, "errors": 0, "systems_applied": ("Wii",)},
+            )()
+        ),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.update_collections", lambda context, app_ids_by_system: 0)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.update_cloud_collections", lambda context, app_ids_by_system: 0)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.repair_managed_steam_input_overrides", lambda context, app_ids: 0)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.copy_grid_art", lambda context, assignments: [])
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.prune_grid_noncanonical_variants", lambda context, app_ids: 0)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.reopen_steam", lambda context: True)
+
+    _apply_steam_updates(
+        config,
+        index=index,
+        require_steam_closed=False,
+        artwork_by_title={},
+    )
+
+    assert "template-sync:strict=True" in order
+
+
+def test_apply_steam_updates_deck_can_disable_template_sync(monkeypatch) -> None:
+    index = LibraryIndex(index_version=1, systems=(), titles=())
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path("state.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.discover_userdata_dir", lambda explicit: Path("userdata"))
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.discover_steam_id", lambda userdata, preferred_steam_id=None: "76561198000000001"
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
+    monkeypatch.setenv("GAMEHUB_DECK_TEMPLATE_SYNC", "false")
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.upsert_shortcuts",
+        lambda context, desired_shortcuts: type(
+            "Result",
+            (),
+            {
+                "app_ids_by_title": {"title_wii_mario": "-602952253"},
+                "app_ids_by_system": {"Wii": ["-602952253"]},
+                "total_shortcuts": 1,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
+        lambda context, index, shortcut_result, strict: (_ for _ in ()).throw(
+            AssertionError("template sync should be disabled")
+        ),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.update_collections", lambda context, app_ids_by_system: 0)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.update_cloud_collections", lambda context, app_ids_by_system: 0)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.repair_managed_steam_input_overrides", lambda context, app_ids: 0)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.copy_grid_art", lambda context, assignments: [])
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.prune_grid_noncanonical_variants", lambda context, app_ids: 0)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.reopen_steam", lambda context: True)
 
     _apply_steam_updates(
@@ -1701,7 +1842,7 @@ def test_build_shortcut_specs_uses_configurable_roms_dir_for_all_titles(monkeypa
         ].launch_options
 
 
-def test_build_shortcut_specs_deck_sets_allow_desktop_config_true_for_retroarch(monkeypatch, workspace_tempdir) -> None:
+def test_build_shortcut_specs_deck_sets_allow_desktop_config_false_by_default(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-sync-shortcuts-deck-policy-") as temp_root:
         config = GamehubConfig(
             server_url="http://localhost:8000",
@@ -1742,7 +1883,7 @@ def test_build_shortcut_specs_deck_sets_allow_desktop_config_true_for_retroarch(
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert specs[0].allow_desktop_config is True
+        assert specs[0].allow_desktop_config is False
 
 
 def test_build_shortcut_specs_non_deck_keeps_allow_desktop_config_unspecified(monkeypatch, workspace_tempdir) -> None:

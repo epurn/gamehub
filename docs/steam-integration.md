@@ -48,6 +48,25 @@
 - GAMEHUB writes grid filenames using unsigned appid values only.
 - During Steam update, GAMEHUB prunes duplicate signed-variant grid files when matching unsigned files exist.
 
+## Steam Input Templates (Steam Deck)
+- On Linux Steam Deck, GAMEHUB syncs seeded Steam Input templates for managed `Wii`, `GC`, and `N3DS` shortcuts.
+- Files are written by normalized title path, not appid path:
+  - `Steam Controller Configs/<steamid>/config/<normalized_title>/controller_neptune.vdf`
+- Root resolution precedence:
+  - `~/.local/share/Steam/steamapps/common/Steam Controller Configs/<steamid>/config`
+  - `~/.steam/steam/steamapps/common/Steam Controller Configs/<steamid>/config`
+  - `~/.steam/root/steamapps/common/Steam Controller Configs/<steamid>/config`
+- GAMEHUB deduplicates equivalent roots by resolved identity.
+- Seed source files are committed in:
+  - `src/gamehub_cli/steam/template_seeds/steamdeck/wii_gc/controller_neptune.vdf`
+  - `src/gamehub_cli/steam/template_seeds/steamdeck/n3ds/controller_neptune.vdf`
+- Seed refresh helper:
+  - `./venv/bin/python scripts/capture_deck_template_seed.py --system wii_gc --title "<TITLE>"`
+  - `./venv/bin/python scripts/capture_deck_template_seed.py --system n3ds --title "<TITLE>"`
+- Behavior toggles:
+  - `GAMEHUB_DECK_TEMPLATE_SYNC=true|false` (default `true`)
+  - `GAMEHUB_DECK_TEMPLATE_STRICT=true|false` (default `true`)
+
 ## Safety behavior
 - If Steam is running, sync attempts close + wait.
 - If Steam remains running:
@@ -58,7 +77,3 @@
   - atomic write of mutated files
   - copy artwork
   - reopen Steam if it was running at start
-
-## N3DS Limitation
-- GAMEHUB currently does not auto-copy Steam Input templates/layouts for N3DS shortcuts.
-- For template workflows, configure one N3DS shortcut in Steam and apply/export that layout manually to other N3DS shortcuts.

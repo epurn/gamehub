@@ -194,8 +194,8 @@ _DOLPHIN_XBOX_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
 )
 
 _DOLPHIN_STEAM_DECK_GCPAD_BINDINGS: tuple[tuple[str, str], ...] = (
-    ("Buttons/A", "A"),
-    ("Buttons/B", "B"),
+    ("Buttons/A", "A | SOUTH | `Button A`"),
+    ("Buttons/B", "B | EAST | `Button B`"),
     ("Buttons/X", "X"),
     ("Buttons/Y", "Y"),
     ("Buttons/Z", "`R1`"),
@@ -223,8 +223,8 @@ _DOLPHIN_STEAM_DECK_GCPAD_BINDINGS: tuple[tuple[str, str], ...] = (
 )
 
 _DOLPHIN_STEAM_DECK_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
-    ("Buttons/A", "A"),
-    ("Buttons/B", "`R2`"),
+    ("Buttons/A", "A | SOUTH | `Button A`"),
+    ("Buttons/B", "B | EAST | `Button B`"),
     ("Buttons/1", "X"),
     ("Buttons/2", "Y"),
     ("Buttons/-", "View"),

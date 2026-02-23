@@ -28,6 +28,7 @@ from ..steam import (
     SteamArtworkAssignment,
     SteamContext,
     SteamShortcutSpec,
+    apply_deck_steam_input_templates,
     backup_steam_configs,
     build_context,
     close_steam_best_effort,
@@ -56,6 +57,8 @@ _DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
 _AZAHAR_LINUX_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_LINUX_EXIT_HOOK"
 _STEAM_ALLOW_DESKTOP_CONFIG_ENV = "GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG"
 _DECK_REPAIR_STEAM_INPUT_ENV = "GAMEHUB_DECK_REPAIR_STEAM_INPUT"
+_DECK_TEMPLATE_SYNC_ENV = "GAMEHUB_DECK_TEMPLATE_SYNC"
+_DECK_TEMPLATE_STRICT_ENV = "GAMEHUB_DECK_TEMPLATE_STRICT"
 _WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar"}
 
 
@@ -88,12 +91,9 @@ def _managed_shortcut_allow_desktop_config(*, steam_deck_linux: bool, emulator_n
     if override is not None:
         return override
     if steam_deck_linux:
-        normalized = emulator_name.casefold()
-        if "pcsx2" in normalized:
-            # Keep controller-first mode for PCSX2 where pointer semantics are not needed.
-            return False
-        # Preserve pointer/mouse semantics for Deck in RetroArch, Dolphin, and Azahar.
-        return True
+        del emulator_name
+        # Deck-managed shortcuts default to native-first controller behavior.
+        return False
     return None
 
 
@@ -507,6 +507,28 @@ def apply_steam_updates(
         "Steam shortcuts synced: "
         f"managed_titles={len(shortcut_result.app_ids_by_title)} total_shortcuts={shortcut_result.total_shortcuts}"
     )
+    if (
+        sys.platform.startswith("linux")
+        and is_steam_deck_linux()
+        and _env_enabled(_DECK_TEMPLATE_SYNC_ENV, default=True)
+    ):
+        strict_template_sync = _env_enabled(_DECK_TEMPLATE_STRICT_ENV, default=True)
+        template_sync = apply_deck_steam_input_templates(
+            context,
+            index,
+            shortcut_result,
+            strict=strict_template_sync,
+        )
+        systems = ",".join(template_sync.systems_applied) if template_sync.systems_applied else "-"
+        print(
+            "steam-input-template-sync "
+            f"systems={systems} "
+            f"written={template_sync.written} "
+            f"unchanged={template_sync.unchanged} "
+            f"strict={strict_template_sync}"
+        )
+        if template_sync.errors:
+            print(f"Warning: steam-input-template-sync encountered errors={template_sync.errors}")
     if not shortcut_result.app_ids_by_system:
         print("Warning: no GAMEHUB appids were derived from persisted shortcuts")
     local_update_count = update_collections(context, shortcut_result.app_ids_by_system)

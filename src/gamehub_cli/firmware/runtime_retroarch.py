@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Callable
 
 from ..common.config import GamehubConfig
 from ..common.config_edit import read_simple_cfg_key, upsert_simple_cfg_key
-from ..controllers.detection import is_steam_deck_linux
 from .pcsx2_ini import read_ini_lines, write_ini_atomic
 from .targets import retroarch_cfg_candidates_for_config
 
@@ -40,6 +40,28 @@ _RETROARCH_PSX_CORE_OPTIONS = {
     "swanstation_Controller1.Type": "AnalogController",
     "swanstation_Controller2.Type": "AnalogController",
 }
+_STEAMOS_RELEASE_PATH = Path("/etc/os-release")
+_DMI_BOARD_VENDOR_PATH = Path("/sys/devices/virtual/dmi/id/board_vendor")
+
+
+def _is_steam_deck_linux() -> bool:
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        os_release = _STEAMOS_RELEASE_PATH.read_text(encoding="utf-8", errors="ignore").casefold()
+    except OSError:
+        os_release = ""
+    if "id=steamos" in os_release or "steamdeck" in os_release or "holo" in os_release:
+        return True
+    try:
+        vendor = _DMI_BOARD_VENDOR_PATH.read_text(encoding="utf-8", errors="ignore").strip().casefold()
+    except OSError:
+        vendor = ""
+    return "valve" in vendor
+
+
+def is_steam_deck_linux() -> bool:
+    return _is_steam_deck_linux()
 
 
 def _path_with_tilde_expanded(raw: str) -> Path:

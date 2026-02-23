@@ -74,9 +74,13 @@ Steam close behavior:
      - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
      - launches the original emulator command
    - Linux Steam Deck default shortcut policy:
-     - managed `PCSX2` shortcuts set `AllowDesktopConfig = 0` (controller-first)
-     - other managed emulator shortcuts set `AllowDesktopConfig = 1` to preserve pointer/mouse semantics
-     - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`
+     - managed shortcuts default to `AllowDesktopConfig = 0` (native-first controller path)
+     - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`
+   - Linux Steam Deck template sync for managed `Wii`, `GC`, and `N3DS` shortcuts:
+     - writes per-title Steam Input files under `Steam Controller Configs/<steamid>/config/<normalized_title>/controller_neptune.vdf`
+     - uses repo seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/`
+     - enabled by default (`GAMEHUB_DECK_TEMPLATE_SYNC=true|false`)
+     - strict mode is enabled by default (`GAMEHUB_DECK_TEMPLATE_STRICT=true|false`) and fails sync when required seeds/roots are missing
      - managed app overrides with explicit `UseSteamControllerConfig = 0` are repaired to `1` by default (disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`)
    - Linux Steam Deck zero-controller detection policy in `controller-launch` defaults to `xbox_1p` (`GAMEHUB_DECK_ZERO_DETECT_POLICY=xbox_1p|kbm|abort`)
    - non-Deck platforms keep legacy shortcut/profile behavior unless explicit env overrides are set
@@ -148,10 +152,6 @@ Windows path notes:
 - Otherwise, Dolphin user dir detection prefers a portable `<dolphin-install>/User` folder when present, then `%USERPROFILE%/Documents/Dolphin Emulator`, then `%APPDATA%/Dolphin Emulator`.
 - Override with `DOLPHIN_EMU_USERPATH` / `GAMEHUB_DOLPHIN_EMU_USERPATH` (or `dolphin_user_path` in `config.toml`).
   - can be disabled by setting `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false`
-- N3DS Steam Input limitation (current):
-  - GAMEHUB does not auto-apply Steam Input templates for N3DS.
-  - If you use Steam Input template mode, configure one shortcut manually and copy that layout to other N3DS shortcuts in Steam UI.
-
 Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
 - Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
@@ -191,6 +191,9 @@ Environment overrides:
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`
 - `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`
 - `GAMEHUB_DECK_REPAIR_STEAM_INPUT`
+- `GAMEHUB_DECK_TEMPLATE_SYNC`
+- `GAMEHUB_DECK_TEMPLATE_STRICT`
+- `GAMEHUB_DOLPHIN_DECK_DEVICE_MODE`
 - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`
 - `GAMEHUB_CONTROLLER_PROFILES_DIR`
 - `GAMEHUB_DECK_ZERO_DETECT_POLICY`
@@ -256,6 +259,11 @@ PY
 ```bash
 grep -E 'Name=|Handlers=' /proc/bus/input/devices | sed -n '/Steam Deck Controller/,+3p;/Steam Virtual Gamepad/,+3p;/Xbox/,+3p'
 ls -l /dev/input/js*
+```
+
+```bash
+STEAM_ID=95402412
+find "$HOME/.local/share/Steam/steamapps/common/Steam Controller Configs/$STEAM_ID/config" -maxdepth 2 -name controller_neptune.vdf | sort
 ```
 
 ## RetroArch Core Defaults

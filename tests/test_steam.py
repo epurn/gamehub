@@ -9,9 +9,11 @@ import vdf
 
 from gamehub_cli.steam import (
     LINUX_STEAM_PROCESS_NAMES,
+    ShortcutSyncResult,
     SteamArtworkAssignment,
     SteamContext,
     SteamShortcutSpec,
+    apply_deck_steam_input_templates,
     backup_steam_configs,
     close_steam_best_effort,
     copy_grid_art,
@@ -27,6 +29,7 @@ from gamehub_cli.steam import (
     upsert_shortcuts,
     wait_for_steam_exit,
 )
+from gamehub_common.models import LibraryIndex, RomSpec, TitleEntry
 
 
 def test_discover_steam_id_uses_lowest_numeric_dir(workspace_tempdir) -> None:
@@ -624,6 +627,199 @@ def test_repair_managed_steam_input_overrides_flips_only_explicit_zero(workspace
         assert apps["100"]["UseSteamControllerConfig"] == "1"
         assert apps["200"]["UseSteamControllerConfig"] == "1"
         assert "UseSteamControllerConfig" not in apps["300"]
+
+
+def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
+    monkeypatch,
+    workspace_tempdir,
+) -> None:
+    from gamehub_cli.steam import input_templates as steam_input_templates
+
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "95402412" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="95402412",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+
+        seed_wii_gc = temp_root / "seeds" / "wii_gc.vdf"
+        seed_n3ds = temp_root / "seeds" / "n3ds.vdf"
+        seed_wii_gc.parent.mkdir(parents=True, exist_ok=True)
+        seed_wii_gc.write_bytes(b"WII_GC_TEMPLATE")
+        seed_n3ds.write_bytes(b"N3DS_TEMPLATE")
+        monkeypatch.setattr(
+            steam_input_templates,
+            "_seed_path_for_system",
+            lambda system_name: {"Wii": seed_wii_gc, "GC": seed_wii_gc, "N3DS": seed_n3ds}.get(system_name),
+        )
+        monkeypatch.setattr(steam_input_templates.Path, "home", staticmethod(lambda: temp_root))
+
+        index = LibraryIndex(
+            index_version=1,
+            systems=(),
+            titles=(
+                TitleEntry(
+                    title_id="title_wii",
+                    system="Wii",
+                    title_name="Super Mario Galaxy",
+                    title_rel_dir="Wii/Super Mario Galaxy.rvz",
+                    emulator="dolphin",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="rom_wii",
+                        rel_path="roms/Wii/Super Mario Galaxy.rvz",
+                        sha256="a" * 64,
+                        size_bytes=1,
+                        extension=".rvz",
+                    ),
+                    assets=(),
+                ),
+                TitleEntry(
+                    title_id="title_gc",
+                    system="GC",
+                    title_name="Luigi's Mansion",
+                    title_rel_dir="GC/Luigi's Mansion.ciso",
+                    emulator="dolphin",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="rom_gc",
+                        rel_path="roms/GC/Luigi's Mansion.ciso",
+                        sha256="b" * 64,
+                        size_bytes=1,
+                        extension=".ciso",
+                    ),
+                    assets=(),
+                ),
+                TitleEntry(
+                    title_id="title_n3ds",
+                    system="N3DS",
+                    title_name="Tomodachi Life",
+                    title_rel_dir="N3DS/Tomodachi Life.cci",
+                    emulator="azahar",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="rom_n3ds",
+                        rel_path="roms/N3DS/Tomodachi Life.cci",
+                        sha256="c" * 64,
+                        size_bytes=1,
+                        extension=".cci",
+                    ),
+                    assets=(),
+                ),
+            ),
+        )
+        shortcut_result = ShortcutSyncResult(
+            app_ids_by_title={
+                "title_wii": "3366254221",
+                "title_gc": "3242237453",
+                "title_n3ds": "4290272364",
+            },
+            app_ids_by_system={
+                "Wii": ["3366254221"],
+                "GC": ["3242237453"],
+                "N3DS": ["4290272364"],
+            },
+            total_shortcuts=3,
+        )
+
+        template_root = (
+            temp_root
+            / ".local"
+            / "share"
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Steam Controller Configs"
+            / "95402412"
+            / "config"
+        )
+        template_root.mkdir(parents=True, exist_ok=True)
+
+        first = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
+        second = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
+
+        wii_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
+        gc_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Luigi's Mansion")
+        n3ds_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Tomodachi Life")
+
+        assert first.targets == 3
+        assert first.written == 3
+        assert first.unchanged == 0
+        assert first.errors == 0
+        assert first.systems_applied == ("Wii", "GC", "N3DS")
+        assert (wii_template / "controller_neptune.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        assert (gc_template / "controller_neptune.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        assert (n3ds_template / "controller_neptune.vdf").read_bytes() == b"N3DS_TEMPLATE"
+
+        assert second.targets == 3
+        assert second.written == 0
+        assert second.unchanged == 3
+        assert second.errors == 0
+
+
+def test_apply_deck_steam_input_templates_strict_fails_when_required_seed_missing(
+    monkeypatch,
+    workspace_tempdir,
+) -> None:
+    from gamehub_cli.steam import input_templates as steam_input_templates
+
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "95402412" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="95402412",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+        monkeypatch.setattr(
+            steam_input_templates,
+            "_seed_path_for_system",
+            lambda system_name: (
+                temp_root / "missing-wii.vdf" if system_name == "Wii" else temp_root / f"seed-{system_name}.vdf"
+            ),
+        )
+        monkeypatch.setattr(steam_input_templates.Path, "home", staticmethod(lambda: temp_root))
+
+        index = LibraryIndex(
+            index_version=1,
+            systems=(),
+            titles=(
+                TitleEntry(
+                    title_id="title_wii",
+                    system="Wii",
+                    title_name="Super Mario Galaxy",
+                    title_rel_dir="Wii/Super Mario Galaxy.rvz",
+                    emulator="dolphin",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="rom_wii",
+                        rel_path="roms/Wii/Super Mario Galaxy.rvz",
+                        sha256="a" * 64,
+                        size_bytes=1,
+                        extension=".rvz",
+                    ),
+                    assets=(),
+                ),
+            ),
+        )
+        shortcut_result = ShortcutSyncResult(
+            app_ids_by_title={"title_wii": "3366254221"},
+            app_ids_by_system={"Wii": ["3366254221"]},
+            total_shortcuts=1,
+        )
+
+        try:
+            apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
+        except RuntimeError as exc:
+            assert "missing template seed for Wii" in str(exc)
+        else:
+            raise AssertionError("Expected strict template sync to fail when required seed is missing")
 
 
 def test_upsert_shortcuts_uses_persisted_appid_for_mapping(workspace_tempdir) -> None:

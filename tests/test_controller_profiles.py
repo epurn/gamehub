@@ -92,7 +92,8 @@ def test_seed_default_profiles_deck_uses_steamdeck_dolphin_defaults(monkeypatch,
         assert "Triggers/L = `R1`" in dolphin_gc_xbox_1p
         assert "Triggers/R = `R2`" in dolphin_gc_xbox_1p
         assert "Device = SteamDeck/0/Steam Deck" in dolphin_wii_xbox_1p
-        assert "Buttons/B = `R2`" in dolphin_wii_xbox_1p
+        assert "Buttons/A = A | SOUTH | `Button A`" in dolphin_wii_xbox_1p
+        assert "Buttons/B = B | EAST | `Button B`" in dolphin_wii_xbox_1p
         assert "IR/Up = `XInput2/0/Virtual core pointer:Cursor Y-`" in dolphin_wii_xbox_1p
 
 
