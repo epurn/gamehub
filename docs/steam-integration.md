@@ -55,7 +55,7 @@
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
 - Selection metadata is updated in:
   - `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`
-  - active `Steam Controller Configs/<steamid>/config/configset_*.vdf` files (except other `configset_controller_*.vdf` variants)
+  - active `Steam Controller Configs/<steamid>/config/configset_*.vdf` files (including `configset_controller_*.vdf` variants)
   - `controller_config` entries are set to `template=gamehub_wii` (`Wii`) or `template=gamehub_3ds` (`N3DS`) with `autosave=1`
 - Managed template sync force-overwrites per-title selection aliases (appid/title variants) for `Wii` and `N3DS`.
 - Managed template sync also removes legacy per-title Deck template variants (`controller_*.vdf`, `wii_*.vdf`, `3ds_*.vdf`) so stale custom selections do not persist.

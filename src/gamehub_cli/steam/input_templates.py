@@ -365,8 +365,6 @@ def _iter_target_configset_paths(root: Path) -> list[Path]:
         name = candidate.name.casefold()
         if name == _DECK_TEMPLATE_CONFIGSET_FILENAME:
             continue
-        if name.startswith("configset_controller_"):
-            continue
         if name == "configset_awaiting_logon.vdf":
             continue
         paths.append(candidate)

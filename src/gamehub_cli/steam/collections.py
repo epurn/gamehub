@@ -341,9 +341,11 @@ def repair_managed_steam_input_overrides(context: SteamContext, managed_app_ids:
             continue
         existing = app_entry.get("UseSteamControllerConfig")
         if existing is None:
+            app_entry["UseSteamControllerConfig"] = "1"
+            updates += 1
             continue
         normalized = str(existing).strip().casefold()
-        if normalized not in {"0", "false", "no", "off"}:
+        if normalized in {"1", "true", "yes", "on"}:
             continue
         app_entry["UseSteamControllerConfig"] = "1"
         updates += 1

@@ -100,7 +100,7 @@ Steam mutation behavior notes:
   - toggle with `GAMEHUB_DECK_TEMPLATE_SYNC=true|false` (default `true`)
   - strict mode with `GAMEHUB_DECK_TEMPLATE_STRICT=true|false` (default `true`)
 - GAMEHUB canonicalizes collection membership appids to unsigned numeric values in both `localconfig.vdf` (`user-collections`) and cloud storage collection entries.
-- On Linux Steam Deck, GAMEHUB can repair stale managed app overrides where `UseSteamControllerConfig = 0`.
+- On Linux Steam Deck, GAMEHUB repairs managed app overrides so `UseSteamControllerConfig = 1` for managed app entries.
   - This repair is enabled by default; disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`.
 - Steam reopen requires an active desktop/GUI session; SSH-only sessions may apply file updates successfully but fail to relaunch Steam.
 
@@ -146,7 +146,7 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
 - `GAMEHUB_DOLPHIN_DECK_DEVICE_MODE`: Deck Dolphin device mode (`auto`, `evdev`, `steamdeck`; default `auto` with `evdev` priority).
 - `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`: force managed shortcut `AllowDesktopConfig` (`true`/`false`).
-- `GAMEHUB_DECK_REPAIR_STEAM_INPUT`: enables/disables Deck-only managed app override repair for `UseSteamControllerConfig` (`true`/`false`, default `true`).
+- `GAMEHUB_DECK_REPAIR_STEAM_INPUT`: enables/disables Deck-only managed app override repair for `UseSteamControllerConfig=1` (`true`/`false`, default `true`).
 - `GAMEHUB_DECK_TEMPLATE_SYNC`: enables/disables Deck-only Steam template sync for managed `Wii`/`GC`/`N3DS` shortcuts (`true`/`false`, default `true`).
 - `GAMEHUB_DECK_TEMPLATE_STRICT`: strict mode for Deck template sync (`true`/`false`, default `true`).
 - Linux Azahar exit hook input sources:

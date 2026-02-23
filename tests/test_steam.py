@@ -591,7 +591,7 @@ def test_update_collections_skips_noop_write(monkeypatch, workspace_tempdir) -> 
         assert writes == []
 
 
-def test_repair_managed_steam_input_overrides_flips_only_explicit_zero(workspace_tempdir) -> None:
+def test_repair_managed_steam_input_overrides_sets_enabled_for_managed_apps(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -621,12 +621,12 @@ def test_repair_managed_steam_input_overrides_flips_only_explicit_zero(workspace
 
         updates = repair_managed_steam_input_overrides(context, ["100", "200", "300", "999"])
 
-        assert updates == 1
+        assert updates == 2
         updated = vdf.loads(context.localconfig_path.read_text(encoding="utf-8"))
         apps = updated["UserLocalConfigStore"]["Software"]["Valve"]["Steam"]["apps"]
         assert apps["100"]["UseSteamControllerConfig"] == "1"
         assert apps["200"]["UseSteamControllerConfig"] == "1"
-        assert "UseSteamControllerConfig" not in apps["300"]
+        assert apps["300"]["UseSteamControllerConfig"] == "1"
 
 
 def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
@@ -761,6 +761,17 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
             ),
             encoding="utf-8",
         )
+        (template_root / "configset_controller_xboxone.vdf").write_text(
+            vdf.dumps(
+                {
+                    "controller_config": {
+                        "3366254221": {"template": "legacy_template", "autosave": "0"},
+                        "4290272364": {"template": "legacy_template", "autosave": "0"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
 
         first = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
         second = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
@@ -798,6 +809,12 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert device_controller_config["-928713075"]["autosave"] == "1"
         assert device_controller_config["Super Mario Galaxy"]["autosave"] == "1"
         assert "custom" not in device_controller_config["-928713075"]
+        controller_type_payload = vdf.loads((template_root / "configset_controller_xboxone.vdf").read_text(encoding="utf-8"))
+        controller_type_config = controller_type_payload.get("controller_config", {})
+        assert controller_type_config["3366254221"]["template"] == "gamehub_wii"
+        assert controller_type_config["4290272364"]["template"] == "gamehub_3ds"
+        assert controller_type_config["3366254221"]["autosave"] == "1"
+        assert controller_type_config["4290272364"]["autosave"] == "1"
 
         assert second.targets == 2
         assert second.written == 0
