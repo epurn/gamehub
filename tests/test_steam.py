@@ -883,6 +883,42 @@ def test_apply_deck_steam_input_templates_strict_fails_when_required_seed_missin
             raise AssertionError("Expected strict template sync to fail when required seed is missing")
 
 
+def test_render_managed_template_payload_preserves_duplicate_group_blocks() -> None:
+    from gamehub_cli.steam import input_templates as steam_input_templates
+
+    payload = (
+        '"controller_mappings"\n'
+        "{\n"
+        '\t"title"\t\t"Old Title"\n'
+        '\t"description"\t\t"Old Description"\n'
+        '\t"url"\t\t"template://old_template.vdf"\n'
+        '\t"localization"\n'
+        "\t{\n"
+        '\t\t"english"\n'
+        "\t\t{\n"
+        '\t\t\t"title"\t\t"Old English Title"\n'
+        '\t\t\t"description"\t\t"Old English Description"\n'
+        "\t\t}\n"
+        "\t}\n"
+        '\t"group"\n'
+        "\t{\n"
+        '\t\t"id"\t\t"0"\n'
+        "\t}\n"
+        '\t"group"\n'
+        "\t{\n"
+        '\t\t"id"\t\t"1"\n'
+        "\t}\n"
+        "}\n"
+    ).encode("utf-8")
+
+    rendered = steam_input_templates._render_managed_template_payload("Wii", payload).decode("utf-8")
+
+    assert rendered.count('"group"') == 2
+    assert '"url"\t\t"template://gamehub_wii.vdf"' in rendered
+    assert rendered.count('"title"\t\t"GameHub Wii"') >= 2
+    assert rendered.count('"description"\t\t"GameHub managed Wii pointer template"') >= 2
+
+
 def test_upsert_shortcuts_uses_persisted_appid_for_mapping(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"

@@ -64,6 +64,7 @@ _DECK_MANAGED_TEMPLATE_GLOBS = (
     "gamehub_*.vdf",
 )
 _WHITESPACE_RE = re.compile(r"\s+")
+_KV_SINGLE_VALUE_PATTERN = re.compile(r'(?P<prefix>"(?P<key>[^"]+)"\s+)"(?P<value>[^"\n]*)"')
 
 _PathIdentity: TypeAlias = tuple[str, int, int] | tuple[str, str]
 
@@ -177,40 +178,60 @@ def _template_selection_name_for_system(system_name: str) -> str:
     return first_name
 
 
+def _replace_first_key_value(text: str, *, key: str, value: str) -> str:
+    target_key = key.casefold()
+    for match in _KV_SINGLE_VALUE_PATTERN.finditer(text):
+        if match.group("key").casefold() != target_key:
+            continue
+        return f'{text[: match.start("value")]}{value}{text[match.end("value") :]}'
+    return text
+
+
+def _replace_english_localization_values(text: str, *, title: str, description: str) -> str:
+    marker = '"english"'
+    english_index = text.find(marker)
+    if english_index < 0:
+        return text
+
+    brace_open = text.find("{", english_index)
+    if brace_open < 0:
+        return text
+
+    depth = 0
+    brace_close = -1
+    for index in range(brace_open, len(text)):
+        char = text[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                brace_close = index
+                break
+    if brace_close < 0:
+        return text
+
+    english_block = text[brace_open : brace_close + 1]
+    english_block = _replace_first_key_value(english_block, key="title", value=title)
+    english_block = _replace_first_key_value(english_block, key="description", value=description)
+    return f"{text[:brace_open]}{english_block}{text[brace_close + 1:]}"
+
+
 def _render_managed_template_payload(system_name: str, payload: bytes) -> bytes:
     try:
         text = payload.decode("utf-8")
     except UnicodeDecodeError:
         return payload
-    try:
-        parsed = vdf.loads(text)
-    except Exception:
-        return payload
-    if not isinstance(parsed, dict):
-        return payload
-    mappings = parsed.get("controller_mappings")
-    if not isinstance(mappings, dict):
-        return payload
 
     ui_title = _DECK_TEMPLATE_UI_TITLE_BY_SYSTEM.get(system_name, f"GameHub {system_name}")
     ui_description = _DECK_TEMPLATE_UI_DESCRIPTION_BY_SYSTEM.get(system_name, "GameHub managed controller template")
     selection_name = _template_selection_name_for_system(system_name)
-    mappings["title"] = ui_title
-    mappings["description"] = ui_description
-    mappings["url"] = f"template://{selection_name}.vdf"
-
-    localization = mappings.get("localization")
-    if not isinstance(localization, dict):
-        localization = {}
-        mappings["localization"] = localization
-    english = localization.get("english")
-    if not isinstance(english, dict):
-        english = {}
-        localization["english"] = english
-    english["title"] = ui_title
-    english["description"] = ui_description
-
-    return str(vdf.dumps(parsed, pretty=True)).encode("utf-8")
+    updated = text
+    updated = _replace_first_key_value(updated, key="title", value=ui_title)
+    updated = _replace_first_key_value(updated, key="description", value=ui_description)
+    updated = _replace_first_key_value(updated, key="url", value=f"template://{selection_name}.vdf")
+    updated = _replace_english_localization_values(updated, title=ui_title, description=ui_description)
+    return updated.encode("utf-8")
 
 
 def _load_seed_payloads(required_systems: list[str], *, strict: bool) -> tuple[dict[str, bytes], int]:
