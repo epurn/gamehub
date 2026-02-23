@@ -503,6 +503,9 @@ def test_deploy_firmware_configures_dolphin_fullscreen_ini(monkeypatch, workspac
         assert "[Interface]" in text
         assert "ConfirmStop = False" in text
         assert "BackgroundInput = True" in text
+        assert "[Analytics]" in text
+        assert "Enabled = False" in text
+        assert "PermissionAsked = True" in text
         assert not (dolphin_root / "Config" / "GCPadNew.ini").exists()
         assert not (dolphin_root / "Config" / "WiimoteNew.ini").exists()
         assert not (dolphin_root / "Config" / "Hotkeys.ini").exists()

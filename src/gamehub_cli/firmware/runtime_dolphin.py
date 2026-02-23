@@ -29,7 +29,8 @@ def configure_dolphin_runtime(
             for ini_path in ini_paths:
                 writer(
                     f"dolphin\tdry-run\tconfigure\t{ini_path}\t"
-                    "fullscreen=true\tconfirm_stop=false\tbackground_input=true"
+                    "fullscreen=true\tconfirm_stop=false\tbackground_input=true\t"
+                    "analytics_enabled=false\tanalytics_permission_asked=true"
                 )
         return runtime_user_dir / "Config" / "Dolphin.ini"
 
@@ -38,9 +39,22 @@ def configure_dolphin_runtime(
         lines, changed_fullscreen = upsert_ini_key(lines, "Display", "Fullscreen", "True")
         lines, changed_confirm_stop = upsert_ini_key(lines, "Interface", "ConfirmStop", "False")
         lines, changed_background_input = upsert_ini_key(lines, "Interface", "BackgroundInput", "True")
-        if changed_fullscreen or changed_confirm_stop or changed_background_input or not ini_path.exists():
+        lines, changed_analytics_enabled = upsert_ini_key(lines, "Analytics", "Enabled", "False")
+        lines, changed_analytics_prompt = upsert_ini_key(lines, "Analytics", "PermissionAsked", "True")
+        if (
+            changed_fullscreen
+            or changed_confirm_stop
+            or changed_background_input
+            or changed_analytics_enabled
+            or changed_analytics_prompt
+            or not ini_path.exists()
+        ):
             write_ini_atomic(ini_path, lines)
 
         if verbose:
-            writer(f"dolphin\tconfigured\t{ini_path}\tfullscreen=true\tconfirm_stop=false\tbackground_input=true")
+            writer(
+                f"dolphin\tconfigured\t{ini_path}\t"
+                "fullscreen=true\tconfirm_stop=false\tbackground_input=true\t"
+                "analytics_enabled=false\tanalytics_permission_asked=true"
+            )
     return runtime_user_dir / "Config" / "Dolphin.ini"
