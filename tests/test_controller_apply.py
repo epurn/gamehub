@@ -255,8 +255,8 @@ def test_apply_controller_profile_dolphin_linux_steam_deck_names_use_sdl_roots(
         apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
 
-        assert "Device = SDL/0/Steam Deck Controller" in gcpad_text
-        assert "Device = SDL/1/Steam Virtual Gamepad" in gcpad_text
+        assert "Device = SteamDeck/0/Steam Deck" in gcpad_text
+        assert "Device = None" in gcpad_text
 
 
 def test_apply_controller_profile_dolphin_linux_steam_deck_with_xbox_alias_uses_sdl_roots(
@@ -285,7 +285,7 @@ def test_apply_controller_profile_dolphin_linux_steam_deck_with_xbox_alias_uses_
         apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
 
-        assert "Device = SDL/0/Microsoft X-Box 360 pad 0" in gcpad_text
+        assert "Device = SteamDeck/0/Steam Deck" in gcpad_text
 
 
 def test_apply_controller_profile_dolphin_linux_kbm_uses_virtual_pointer_hotkeys(
@@ -654,7 +654,7 @@ def test_apply_controller_profile_dolphin_linux_rebinds_generic_sdl_gamepad_for_
 
         wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
         assert "Device = SDL/0/Gamepad" not in wiimote_text
-        assert "Device = SDL/0/Steam Deck" in wiimote_text
+        assert "Device = SteamDeck/0/Steam Deck" in wiimote_text
 
 
 def test_apply_controller_profile_dolphin_linux_rebinds_virtual_pointer_for_controller_mode(
@@ -814,14 +814,14 @@ def test_apply_controller_profile_dolphin_linux_deck_backfills_mouse_pointer_for
         apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
         wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
 
-        assert "IR/Up = `Cursor Y-`" in wiimote_text
-        assert "IR/Down = `Cursor Y+`" in wiimote_text
-        assert "IR/Left = `Cursor X-`" in wiimote_text
-        assert "IR/Right = `Cursor X+`" in wiimote_text
-        assert "Buttons/B = EAST | `Button B` | `Click 0`" in wiimote_text
+        assert "IR/Up = `XInput2/0/Virtual core pointer:Cursor Y-`" in wiimote_text
+        assert "IR/Down = `XInput2/0/Virtual core pointer:Cursor Y+`" in wiimote_text
+        assert "IR/Left = `XInput2/0/Virtual core pointer:Cursor X-`" in wiimote_text
+        assert "IR/Right = `XInput2/0/Virtual core pointer:Cursor X+`" in wiimote_text
+        assert "Buttons/B = `R2`" in wiimote_text or "Buttons/B = EAST | `Button B`" in wiimote_text
 
 
-def test_apply_controller_profile_dolphin_linux_deck_preserved_cursor_mapping_still_backfills_click(
+def test_apply_controller_profile_dolphin_linux_deck_preserves_existing_mouse_pointer_mapping(
     monkeypatch, workspace_tempdir
 ) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
@@ -834,12 +834,12 @@ def test_apply_controller_profile_dolphin_linux_deck_preserved_cursor_mapping_st
             "\n".join(
                 [
                     "[Wiimote1]",
-                    "Device = SDL/0/Steam Deck",
+                    "Device = SteamDeck/0/Steam Deck",
                     "Buttons/B = EAST | `Button B`",
-                    "IR/Up = `Cursor Y-`",
-                    "IR/Down = `Cursor Y+`",
-                    "IR/Left = `Cursor X-`",
-                    "IR/Right = `Cursor X+`",
+                    "IR/Up = `Mouse:Cursor Y-`",
+                    "IR/Down = `Mouse:Cursor Y+`",
+                    "IR/Left = `Mouse:Cursor X-`",
+                    "IR/Right = `Mouse:Cursor X+`",
                 ]
             )
             + "\n",
@@ -862,11 +862,10 @@ def test_apply_controller_profile_dolphin_linux_deck_preserved_cursor_mapping_st
         apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
         wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
 
-        assert "IR/Up = `Cursor Y-`" in wiimote_text
-        assert "IR/Down = `Cursor Y+`" in wiimote_text
-        assert "IR/Left = `Cursor X-`" in wiimote_text
-        assert "IR/Right = `Cursor X+`" in wiimote_text
-        assert "Buttons/B = EAST | `Button B` | `Click 0`" in wiimote_text
+        assert "IR/Up = `Mouse:Cursor Y-`" in wiimote_text
+        assert "IR/Down = `Mouse:Cursor Y+`" in wiimote_text
+        assert "IR/Left = `Mouse:Cursor X-`" in wiimote_text
+        assert "IR/Right = `Mouse:Cursor X+`" in wiimote_text
 
 
 def test_apply_controller_profile_azahar_deck_backfills_touchpad_mouse_fallback(monkeypatch, workspace_tempdir) -> None:

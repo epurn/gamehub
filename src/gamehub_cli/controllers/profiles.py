@@ -9,6 +9,7 @@ from typing import Callable
 from ..common.config import GamehubConfig
 from ..common.fsops import replace_file
 from ..firmware.pcsx2_ini import pcsx2_pad_bindings
+from .detection import is_steam_deck_linux
 
 PROFILE_KBM = "kbm"
 PROFILE_XBOX_1P = "xbox_1p"
@@ -192,6 +193,93 @@ _DOLPHIN_XBOX_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
     ("Rumble/Motor", "`Motor L` | `Motor R`"),
 )
 
+_DOLPHIN_STEAM_DECK_GCPAD_BINDINGS: tuple[tuple[str, str], ...] = (
+    ("Buttons/A", "A"),
+    ("Buttons/B", "B"),
+    ("Buttons/X", "X"),
+    ("Buttons/Y", "Y"),
+    ("Buttons/Z", "`R1`"),
+    ("Buttons/Start", "Menu"),
+    ("Main Stick/Up", "`Left Stick Y+`"),
+    ("Main Stick/Down", "`Left Stick Y-`"),
+    ("Main Stick/Left", "`Left Stick X-`"),
+    ("Main Stick/Right", "`Left Stick X+`"),
+    ("Main Stick/Modifier", "`L3`"),
+    ("Main Stick/Calibration", "100.00 141.42 100.00 141.42 100.00 141.42 100.00 141.42"),
+    ("C-Stick/Up", "`Right Stick Y+`"),
+    ("C-Stick/Down", "`Right Stick Y-`"),
+    ("C-Stick/Left", "`Right Stick X-`"),
+    ("C-Stick/Right", "`Right Stick X+`"),
+    ("C-Stick/Modifier", "`Right Stick Touch`"),
+    ("C-Stick/Calibration", "100.00 141.42 100.00 141.42 100.00 141.42 100.00 141.42"),
+    ("Triggers/L", "`R1`"),
+    ("Triggers/R", "`R2`"),
+    ("Triggers/L-Analog", "`R1`"),
+    ("Triggers/R-Analog", "`R2 Full Pull`&`R2`"),
+    ("D-Pad/Up", "`D-Pad Up`"),
+    ("D-Pad/Down", "`D-Pad Down`"),
+    ("D-Pad/Left", "`D-Pad Left`"),
+    ("D-Pad/Right", "`D-Pad Right`"),
+)
+
+_DOLPHIN_STEAM_DECK_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
+    ("Buttons/A", "A"),
+    ("Buttons/B", "`R2`"),
+    ("Buttons/1", "X"),
+    ("Buttons/2", "Y"),
+    ("Buttons/-", "View"),
+    ("Buttons/+", "Menu"),
+    ("Buttons/Home", "Return"),
+    ("D-Pad/Up", "`D-Pad Up`"),
+    ("D-Pad/Down", "`D-Pad Down`"),
+    ("D-Pad/Left", "`D-Pad Left`"),
+    ("D-Pad/Right", "`D-Pad Right`"),
+    ("IR/Up", "`XInput2/0/Virtual core pointer:Cursor Y-`"),
+    ("IR/Down", "`XInput2/0/Virtual core pointer:Cursor Y+`"),
+    ("IR/Left", "`XInput2/0/Virtual core pointer:Cursor X-`"),
+    ("IR/Right", "`XInput2/0/Virtual core pointer:Cursor X+`"),
+    ("Shake/Intensity", "15."),
+    ("Shake/X", "`R4`"),
+    ("Shake/Y", "`R4`"),
+    ("Shake/Z", "`R4`"),
+    ("IRPassthrough/Object 1 X", "`IR Object 1 X`"),
+    ("IRPassthrough/Object 1 Y", "`IR Object 1 Y`"),
+    ("IRPassthrough/Object 1 Size", "`IR Object 1 Size`"),
+    ("IRPassthrough/Object 2 X", "`IR Object 2 X`"),
+    ("IRPassthrough/Object 2 Y", "`IR Object 2 Y`"),
+    ("IRPassthrough/Object 2 Size", "`IR Object 2 Size`"),
+    ("IRPassthrough/Object 3 X", "`IR Object 3 X`"),
+    ("IRPassthrough/Object 3 Y", "`IR Object 3 Y`"),
+    ("IRPassthrough/Object 3 Size", "`IR Object 3 Size`"),
+    ("IRPassthrough/Object 4 X", "`IR Object 4 X`"),
+    ("IRPassthrough/Object 4 Y", "`IR Object 4 Y`"),
+    ("IRPassthrough/Object 4 Size", "`IR Object 4 Size`"),
+    ("IMUAccelerometer/Up", "`Accel Up`"),
+    ("IMUAccelerometer/Down", "`Accel Down`"),
+    ("IMUAccelerometer/Left", "`Accel Left`"),
+    ("IMUAccelerometer/Right", "`Accel Right`"),
+    ("IMUAccelerometer/Forward", "`Accel Forward`"),
+    ("IMUAccelerometer/Backward", "`Accel Backward`"),
+    ("IMUGyroscope/Pitch Up", "`Gyro Pitch Up`"),
+    ("IMUGyroscope/Pitch Down", "`Gyro Pitch Down`"),
+    ("IMUGyroscope/Roll Left", "`Gyro Roll Left`"),
+    ("IMUGyroscope/Roll Right", "`Gyro Roll Right`"),
+    ("IMUGyroscope/Yaw Left", "`Gyro Yaw Left`"),
+    ("IMUGyroscope/Yaw Right", "`Gyro Yaw Right`"),
+    ("Extension", "Nunchuk"),
+    ("Nunchuk/Buttons/C", "`L1`"),
+    ("Nunchuk/Buttons/Z", "`L2`"),
+    ("Nunchuk/Stick/Up", "`Left Stick Y+`"),
+    ("Nunchuk/Stick/Down", "`Left Stick Y-`"),
+    ("Nunchuk/Stick/Left", "`Left Stick X-`"),
+    ("Nunchuk/Stick/Right", "`Left Stick X+`"),
+    ("Nunchuk/Stick/Calibration", "100.00 141.42 100.00 141.42 100.00 141.42 100.00 141.42"),
+    ("Nunchuk/Shake/Intensity", "-15."),
+    ("Nunchuk/Shake/X", "`L4`"),
+    ("Nunchuk/Shake/Y", "`L4`"),
+    ("Nunchuk/Shake/Z", "`L4`"),
+)
+
 _DOLPHIN_KBM_GCPAD_BINDINGS: tuple[tuple[str, str], ...] = (
     ("Buttons/A", "X"),
     ("Buttons/B", "`Z`"),
@@ -282,6 +370,10 @@ def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
             return "XInput2/0/Virtual core pointer", "None"
         return "DInput/0/Keyboard Mouse", "None"
     if sys.platform.startswith("linux"):
+        if is_steam_deck_linux():
+            if profile_name == PROFILE_XBOX_1P:
+                return "SteamDeck/0/Steam Deck", "None"
+            return "SteamDeck/0/Steam Deck", "SDL/1/Gamepad"
         # Linux Dolphin controller device roots are SDL/evdev-style, not XInput.
         if profile_name == PROFILE_XBOX_1P:
             return "SDL/0/Gamepad", "DInput/0/Keyboard Mouse"
@@ -313,18 +405,34 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
         else:
             hotkey_device0, hotkey_device1 = device0, device1
     elif profile_name == PROFILE_XBOX_1P:
-        gcpad_bindings_1 = _DOLPHIN_XBOX_GCPAD_BINDINGS
+        gcpad_bindings_1 = (
+            _DOLPHIN_STEAM_DECK_GCPAD_BINDINGS
+            if sys.platform.startswith("linux") and is_steam_deck_linux()
+            else _DOLPHIN_XBOX_GCPAD_BINDINGS
+        )
         gcpad_bindings_2 = _DOLPHIN_KBM_GCPAD_BINDINGS
-        wiimote_bindings_1 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
+        wiimote_bindings_1 = (
+            _DOLPHIN_STEAM_DECK_WIIMOTE_BINDINGS
+            if sys.platform.startswith("linux") and is_steam_deck_linux()
+            else _DOLPHIN_XBOX_WIIMOTE_BINDINGS
+        )
         wiimote_bindings_2 = _DOLPHIN_KBM_WIIMOTE_BINDINGS
         hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         general_stop = "@(SELECT+START)"
         general_exit = "@(SELECT+START)"
         hotkey_device0, hotkey_device1 = device0, device1
     else:
-        gcpad_bindings_1 = _DOLPHIN_XBOX_GCPAD_BINDINGS
+        gcpad_bindings_1 = (
+            _DOLPHIN_STEAM_DECK_GCPAD_BINDINGS
+            if sys.platform.startswith("linux") and is_steam_deck_linux()
+            else _DOLPHIN_XBOX_GCPAD_BINDINGS
+        )
         gcpad_bindings_2 = _DOLPHIN_XBOX_GCPAD_BINDINGS
-        wiimote_bindings_1 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
+        wiimote_bindings_1 = (
+            _DOLPHIN_STEAM_DECK_WIIMOTE_BINDINGS
+            if sys.platform.startswith("linux") and is_steam_deck_linux()
+            else _DOLPHIN_XBOX_WIIMOTE_BINDINGS
+        )
         wiimote_bindings_2 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
         hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         general_stop = "@(SELECT+START)"

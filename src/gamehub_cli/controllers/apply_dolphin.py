@@ -19,6 +19,8 @@ _DOLPHIN_STEAM_DECK_DEVICE_MARKERS = (
 )
 _DOLPHIN_NON_GAMEPAD_DEVICE_MARKERS = ("motion sensor", "accelerometer", "gyroscope", "gyro", "imu")
 _DOLPHIN_GENERIC_SDL_DEVICE_NAMES = {"gamepad", "controller", "joystick"}
+_DOLPHIN_STEAM_DECK_DEVICE = "SteamDeck/0/Steam Deck"
+_DOLPHIN_STEAM_DECK_POINTER_DEVICE = "XInput2/0/Virtual core pointer"
 
 
 def _dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
@@ -38,16 +40,10 @@ def _dolphin_linux_device_pair() -> tuple[str, str]:
         any(marker in controller.name.casefold() for marker in _DOLPHIN_STEAM_DECK_DEVICE_MARKERS)
         for controller in controllers
     ):
-        # Deck gaming mode is most stable with SDL-class device roots.
+        # Deck gaming mode is most stable with SteamDeck-native device roots.
         if len(controllers) >= 2:
-            return (
-                f"SDL/{controllers[0].slot}/{controllers[0].name}",
-                f"SDL/{controllers[1].slot}/{controllers[1].name}",
-            )
-        if len(controllers) == 1:
-            return f"SDL/{controllers[0].slot}/{controllers[0].name}", "XInput2/0/Virtual core pointer"
-        # Keep Deck controller-first semantics even when runtime probing is flaky.
-        return "SDL/0/Steam Deck", "XInput2/0/Virtual core pointer"
+            return _DOLPHIN_STEAM_DECK_DEVICE, f"SDL/{controllers[1].slot}/{controllers[1].name}"
+        return _DOLPHIN_STEAM_DECK_DEVICE, _DOLPHIN_STEAM_DECK_POINTER_DEVICE
     if len(controllers) >= 2:
         return f"evdev/0/{controllers[0].name}", f"evdev/1/{controllers[1].name}"
     if len(controllers) == 1:
@@ -85,6 +81,8 @@ def _override_dolphin_device_sections(
             hotkey_device0, hotkey_device1 = "XInput2/0/Virtual core pointer", "XInput2/0/Virtual core pointer"
         else:
             pad_device0, pad_device1 = _dolphin_linux_device_pair()
+            if is_steam_deck_linux() and profile_name == PROFILE_XBOX_1P:
+                pad_device1 = "None"
             hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
     elif sys.platform.startswith("win"):
         pad_device0, pad_device1 = _dolphin_windows_device_pair(profile_name)
@@ -100,7 +98,7 @@ def _override_dolphin_device_sections(
             return False
         if normalized.casefold() == "none":
             return False
-        return normalized.startswith(("evdev/", "SDL/", "XInput2/", "XInput/", "DInput/"))
+        return normalized.startswith(("evdev/", "SDL/", "SteamDeck/", "XInput2/", "XInput/", "DInput/"))
 
     def _should_preserve_linux_controller_device(value: str) -> bool:
         if not _looks_valid_existing_device(value):
@@ -184,17 +182,10 @@ def _has_cursor_pointer_mapping(section: dict[str, str]) -> bool:
 
 
 def _apply_deck_wiimote_pointer_defaults(section: dict[str, str]) -> None:
-    section["IR/Up"] = "`Cursor Y-`"
-    section["IR/Down"] = "`Cursor Y+`"
-    section["IR/Left"] = "`Cursor X-`"
-    section["IR/Right"] = "`Cursor X+`"
-    _ensure_deck_click_binding(section)
-
-
-def _ensure_deck_click_binding(section: dict[str, str]) -> None:
-    existing_b = section.get("Buttons/B", "")
-    if "`Click 0`" not in existing_b:
-        section["Buttons/B"] = " | ".join(part for part in (existing_b.strip(), "`Click 0`") if part)
+    section["IR/Up"] = "`XInput2/0/Virtual core pointer:Cursor Y-`"
+    section["IR/Down"] = "`XInput2/0/Virtual core pointer:Cursor Y+`"
+    section["IR/Left"] = "`XInput2/0/Virtual core pointer:Cursor X-`"
+    section["IR/Right"] = "`XInput2/0/Virtual core pointer:Cursor X+`"
 
 
 def _merge_dolphin_deck_pointer_sections(
@@ -218,11 +209,6 @@ def _merge_dolphin_deck_pointer_sections(
         for key in _DECK_POINTER_KEYS:
             if key in existing_wiimote:
                 managed_wiimote[key] = existing_wiimote[key]
-        existing_b = existing_wiimote.get("Buttons/B")
-        if existing_b and "`Click 0`" in existing_b:
-            managed_wiimote["Buttons/B"] = existing_b
-        else:
-            _ensure_deck_click_binding(managed_wiimote)
     else:
         _apply_deck_wiimote_pointer_defaults(managed_wiimote)
     return updated
