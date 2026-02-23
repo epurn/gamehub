@@ -657,6 +657,40 @@ def test_apply_controller_profile_dolphin_linux_rebinds_generic_sdl_gamepad_for_
         assert "Device = SteamDeck/0/Steam Deck" in wiimote_text
 
 
+def test_apply_controller_profile_dolphin_linux_deck_rebinds_sdl_xbox_alias_to_steamdeck_device(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "WiimoteNew.ini").write_text(
+            "[Wiimote1]\nDevice = SDL/0/Microsoft X-Box 360 pad 0\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.is_steam_deck_linux", lambda: True)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [XboxController(slot=0, name="Microsoft X-Box 360 pad 0", subtype=None)],
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+
+        apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
+        wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
+
+        assert "Device = SDL/0/Microsoft X-Box 360 pad 0" not in wiimote_text
+        assert "Device = SteamDeck/0/Steam Deck" in wiimote_text
+
+
 def test_apply_controller_profile_dolphin_linux_rebinds_virtual_pointer_for_controller_mode(
     monkeypatch, workspace_tempdir
 ) -> None:
@@ -821,7 +855,7 @@ def test_apply_controller_profile_dolphin_linux_deck_backfills_mouse_pointer_for
         assert "Buttons/B = `R2`" in wiimote_text or "Buttons/B = EAST | `Button B`" in wiimote_text
 
 
-def test_apply_controller_profile_dolphin_linux_deck_preserves_existing_mouse_pointer_mapping(
+def test_apply_controller_profile_dolphin_linux_deck_seeds_mouse_pointer_mapping(
     monkeypatch, workspace_tempdir
 ) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
@@ -862,10 +896,10 @@ def test_apply_controller_profile_dolphin_linux_deck_preserves_existing_mouse_po
         apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
         wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
 
-        assert "IR/Up = `Mouse:Cursor Y-`" in wiimote_text
-        assert "IR/Down = `Mouse:Cursor Y+`" in wiimote_text
-        assert "IR/Left = `Mouse:Cursor X-`" in wiimote_text
-        assert "IR/Right = `Mouse:Cursor X+`" in wiimote_text
+        assert "IR/Up = `XInput2/0/Virtual core pointer:Cursor Y-`" in wiimote_text
+        assert "IR/Down = `XInput2/0/Virtual core pointer:Cursor Y+`" in wiimote_text
+        assert "IR/Left = `XInput2/0/Virtual core pointer:Cursor X-`" in wiimote_text
+        assert "IR/Right = `XInput2/0/Virtual core pointer:Cursor X+`" in wiimote_text
 
 
 def test_apply_controller_profile_azahar_deck_backfills_touchpad_mouse_fallback(monkeypatch, workspace_tempdir) -> None:

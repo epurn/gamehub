@@ -105,6 +105,9 @@ def _override_dolphin_device_sections(
             return False
         normalized = value.strip()
         lowered = normalized.casefold()
+        if is_steam_deck_linux() and profile_name != PROFILE_KBM:
+            # On Deck, always normalize stale SDL/evdev aliases to the SteamDeck root.
+            return lowered.startswith("steamdeck/")
         if any(marker in lowered for marker in _DOLPHIN_KBM_FALLBACK_DEVICE_MARKERS):
             return False
         if any(marker in lowered for marker in _DOLPHIN_NON_GAMEPAD_DEVICE_MARKERS):
@@ -194,6 +197,7 @@ def _merge_dolphin_deck_pointer_sections(
     existing_sections: dict[str, dict[str, str]],
     profile_name: str,
 ) -> dict[str, dict[str, str]]:
+    del existing_sections
     if not sys.platform.startswith("linux"):
         return managed_sections
     if profile_name == PROFILE_KBM:
@@ -204,13 +208,8 @@ def _merge_dolphin_deck_pointer_sections(
     managed_wiimote = updated.get("Wiimote1")
     if managed_wiimote is None:
         return updated
-    existing_wiimote = existing_sections.get("Wiimote1", {})
-    if _has_cursor_pointer_mapping(existing_wiimote):
-        for key in _DECK_POINTER_KEYS:
-            if key in existing_wiimote:
-                managed_wiimote[key] = existing_wiimote[key]
-    else:
-        _apply_deck_wiimote_pointer_defaults(managed_wiimote)
+    # Deck behavior is deterministic here: always seed Wii IR to mouse pointer mapping.
+    _apply_deck_wiimote_pointer_defaults(managed_wiimote)
     return updated
 
 
