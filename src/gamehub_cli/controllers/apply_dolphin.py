@@ -177,10 +177,10 @@ def _override_dolphin_device_sections(
         if existing_sections is not None:
             existing_device = existing_sections.get(section_name, {}).get("Device")
         if sys.platform.startswith("linux") and profile_name != PROFILE_KBM and existing_device is not None:
-            if is_steam_deck_linux():
-                # Deck controller-mode always rebinds to deterministic runtime-selected devices.
-                pass
-            elif _should_preserve_linux_controller_device(existing_device):
+            preserve_existing = (not is_steam_deck_linux()) and _should_preserve_linux_controller_device(
+                existing_device
+            )
+            if preserve_existing:
                 updated[section_name]["Device"] = existing_device
                 continue
         updated[section_name]["Device"] = device
@@ -221,17 +221,6 @@ def _override_dolphin_hotkey_sections(
     return updated
 
 
-_DECK_POINTER_KEYS = ("IR/Up", "IR/Down", "IR/Left", "IR/Right")
-
-
-def _has_cursor_pointer_mapping(section: dict[str, str]) -> bool:
-    for key in _DECK_POINTER_KEYS:
-        value = section.get(key, "")
-        if "Cursor " in value:
-            return True
-    return False
-
-
 def _apply_deck_wiimote_pointer_defaults(section: dict[str, str]) -> None:
     section["IR/Up"] = "`XInput2/0/Virtual core pointer:Cursor Y-`"
     section["IR/Down"] = "`XInput2/0/Virtual core pointer:Cursor Y+`"
@@ -242,10 +231,8 @@ def _apply_deck_wiimote_pointer_defaults(section: dict[str, str]) -> None:
 def _merge_dolphin_deck_pointer_sections(
     managed_sections: dict[str, dict[str, str]],
     *,
-    existing_sections: dict[str, dict[str, str]],
     profile_name: str,
 ) -> dict[str, dict[str, str]]:
-    del existing_sections
     if not sys.platform.startswith("linux"):
         return managed_sections
     if profile_name == PROFILE_KBM:
@@ -298,7 +285,6 @@ def apply_dolphin_profile(
             )
             sections = _merge_dolphin_deck_pointer_sections(
                 sections,
-                existing_sections=existing_sections,
                 profile_name=profile_name,
             )
             sections = _override_dolphin_hotkey_sections(sections, profile_name=profile_name)

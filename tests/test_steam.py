@@ -864,6 +864,8 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert "3242237453" not in controller_config
         assert controller_config["3366254221"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert controller_config["4290272364"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
+        for key in ("super mario galaxy", "tomodachi life", "3366254221", "4290272364"):
+            assert "autosave" not in controller_config[key]
         device_configset_payload = vdf.loads((template_root / "configset_FXAA30102486.vdf").read_text(encoding="utf-8"))
         device_controller_config = device_configset_payload.get("controller_config", {})
         assert device_controller_config["super mario galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
@@ -879,12 +881,16 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert device_controller_config["-928713075"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert device_controller_config["Super Mario Galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert "custom" not in device_controller_config["-928713075"]
+        for key in ("super mario galaxy", "tomodachi life", "3366254221", "4290272364", "-928713075", "Super Mario Galaxy"):
+            assert "autosave" not in device_controller_config[key]
         controller_type_payload = vdf.loads((template_root / "configset_controller_xboxone.vdf").read_text(encoding="utf-8"))
         controller_type_config = controller_type_payload.get("controller_config", {})
         assert controller_type_config["super mario galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert controller_type_config["tomodachi life"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
         assert controller_type_config["3366254221"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert controller_type_config["4290272364"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
+        for key in ("super mario galaxy", "tomodachi life", "3366254221", "4290272364"):
+            assert "autosave" not in controller_type_config[key]
         assert "CLOUD_super mario galaxy/gamehub_wii" in (
             template_root / "configset_controller_neptune.vdf"
         ).read_text(encoding="utf-8")
@@ -1059,6 +1065,9 @@ def test_render_managed_template_payload_preserves_duplicate_group_blocks() -> N
         "{\n"
         '\t"title"\t\t"Old Title"\n'
         '\t"description"\t\t"Old Description"\n'
+        '\t"creator"\t\t"76561199036238022"\n'
+        '\t"progenitor"\t\t"legacy-template"\n'
+        '\t"Timestamp"\t\t"-822800272"\n'
         '\t"url"\t\t"template://old_template.vdf"\n'
         '\t"localization"\n'
         "\t{\n"
@@ -1076,6 +1085,13 @@ def test_render_managed_template_payload_preserves_duplicate_group_blocks() -> N
         "\t{\n"
         '\t\t"id"\t\t"1"\n'
         "\t}\n"
+        '\t"preset"\n'
+        "\t{\n"
+        '\t\t"group_source_bindings"\n'
+        "\t\t{\n"
+        '\t\t\t"binding"\t\t"mouse_button LEFT, , "\n'
+        "\t\t}\n"
+        "\t}\n"
         "}\n"
     ).encode("utf-8")
 
@@ -1085,6 +1101,13 @@ def test_render_managed_template_payload_preserves_duplicate_group_blocks() -> N
     assert '"url"\t\t"template://gamehub_wii.vdf"' in rendered
     assert rendered.count('"title"\t\t"GameHub Wii"') >= 2
     assert rendered.count('"description"\t\t"GameHub managed Wii pointer template"') >= 2
+    assert '"creator"\t\t"0"' in rendered
+    assert '"progenitor"\t\t""' in rendered
+    assert '"Timestamp"\t\t"0"' in rendered
+    assert "76561199036238022" not in rendered
+    assert "legacy-template" not in rendered
+    assert "old_template.vdf" not in rendered
+    assert '"binding"\t\t"mouse_button LEFT, , "' in rendered
 
 
 def test_deck_template_seeds_axis_inversion_matches_wii_and_n3ds_targets() -> None:
@@ -1112,6 +1135,23 @@ def test_deck_template_seeds_axis_inversion_matches_wii_and_n3ds_targets() -> No
 
     wii_text = wii_seed.read_text(encoding="utf-8")
     n3ds_text = n3ds_seed.read_text(encoding="utf-8")
+
+    assert '"title"\t\t"GameHub Wii Seed"' in wii_text
+    assert '"description"\t\t"GameHub managed Wii seed template baseline"' in wii_text
+    assert '"url"\t\t"template://gamehub_wii.vdf"' in wii_text
+    assert '"creator"\t\t"0"' in wii_text
+    assert '"Timestamp"\t\t"0"' in wii_text
+    assert '"title"\t\t"GameHub 3DS Seed"' in n3ds_text
+    assert '"description"\t\t"GameHub managed 3DS seed template baseline"' in n3ds_text
+    assert '"url"\t\t"template://gamehub_3ds.vdf"' in n3ds_text
+    assert '"creator"\t\t"0"' in n3ds_text
+    assert '"Timestamp"\t\t"0"' in n3ds_text
+    assert "My SMG" not in wii_text
+    assert "My SMG" not in n3ds_text
+    assert "mysmg.vdf" not in wii_text
+    assert "mysmg.vdf" not in n3ds_text
+    assert "76561197968502773" not in wii_text
+    assert "76561197968502773" not in n3ds_text
 
     assert '"invert_x"\t\t"0"' in n3ds_text
     assert '"invert_x"\t\t"0"' in wii_text

@@ -44,6 +44,9 @@ _DECK_TEMPLATE_UI_DESCRIPTION_BY_SYSTEM = {
     "Wii": "GameHub managed Wii pointer template",
     "N3DS": "GameHub managed 3DS touch template",
 }
+_DECK_TEMPLATE_METADATA_CREATOR = "0"
+_DECK_TEMPLATE_METADATA_PROGENITOR = ""
+_DECK_TEMPLATE_METADATA_TIMESTAMP = "0"
 _DECK_MANAGED_TEMPLATE_SELECTIONS = frozenset(
     {
         "controller_neptune",
@@ -235,8 +238,7 @@ def _template_reference_for_title(title: TitleEntry) -> str:
     return f"CLOUD_{title_key}/{selection_name}"
 
 
-def _forced_controller_config_entry(*, title: TitleEntry, key: str) -> dict[str, str]:
-    del key
+def _forced_controller_config_entry(*, title: TitleEntry) -> dict[str, str]:
     return {"template": _template_reference_for_title(title)}
 
 
@@ -306,6 +308,9 @@ def _render_managed_template_payload(system_name: str, payload: bytes) -> bytes:
     updated = _replace_first_key_value(updated, key="title", value=ui_title)
     updated = _replace_first_key_value(updated, key="description", value=ui_description)
     updated = _replace_first_key_value(updated, key="url", value=f"template://{selection_name}.vdf")
+    updated = _replace_first_key_value(updated, key="creator", value=_DECK_TEMPLATE_METADATA_CREATOR)
+    updated = _replace_first_key_value(updated, key="progenitor", value=_DECK_TEMPLATE_METADATA_PROGENITOR)
+    updated = _replace_first_key_value(updated, key="timestamp", value=_DECK_TEMPLATE_METADATA_TIMESTAMP)
     updated = _replace_english_localization_values(updated, title=ui_title, description=ui_description)
     return updated.encode("utf-8")
 
@@ -407,7 +412,7 @@ def _sync_deck_template_selection_configset(
         app_id = shortcut_result.app_ids_by_title.get(title.title_id)
         title_keys = set(_configset_entry_keys(title.title_name, app_id))
         for key in title_keys:
-            forced_entry = _forced_controller_config_entry(title=title, key=key)
+            forced_entry = _forced_controller_config_entry(title=title)
             existing_entry = controller_config.get(key)
             if not isinstance(existing_entry, dict) or existing_entry != forced_entry:
                 controller_config[key] = dict(forced_entry)

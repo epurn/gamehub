@@ -83,6 +83,7 @@ Steam close behavior:
       - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files so managed normalized title keys and companion aliases (`appid`/signed/title variants) all point to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
       - when present, mirrors the same template/configset writes into `userdata/<steamid>/241100/remote/*/config/` to align Deck startup local+cloud Steam Input sources
       - uses repo seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/`
+      - normalizes non-functional seed metadata (`title`, `description`, `url`, `creator`, `progenitor`, `Timestamp`) during render/write as a defensive guardrail while preserving mapping blocks
       - enabled by default (`GAMEHUB_DECK_TEMPLATE_SYNC=true|false`)
       - strict mode is enabled by default (`GAMEHUB_DECK_TEMPLATE_STRICT=true|false`) and fails sync when required seeds/roots are missing
       - managed app overrides are repaired so `UseSteamControllerConfig = 1` for managed app entries by default (disable with `GAMEHUB_DECK_REPAIR_STEAM_INPUT=false`)

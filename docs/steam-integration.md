@@ -71,6 +71,8 @@
 - Seed source files are committed in:
   - `src/gamehub_cli/steam/template_seeds/steamdeck/wii_gc/wii_0.vdf`
   - `src/gamehub_cli/steam/template_seeds/steamdeck/n3ds/3ds_0.vdf`
+- During render/write, GAMEHUB normalizes non-functional seed metadata fields (`title`, `description`, `url`, `creator`, `progenitor`, `Timestamp`) as a defensive guardrail.
+- Mapping/action blocks from the seed payloads are preserved so behavior remains deterministic.
 - Seed refresh helper:
   - `./venv/bin/python scripts/capture_deck_template_seed.py --system wii_gc --title "<TITLE>"`
   - `./venv/bin/python scripts/capture_deck_template_seed.py --system n3ds --title "<TITLE>"`

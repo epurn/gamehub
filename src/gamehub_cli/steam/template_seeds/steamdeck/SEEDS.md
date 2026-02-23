@@ -8,13 +8,23 @@ Seed files:
 
 Current baseline:
 - Initial seed snapshot is based on a community Deck template file (`mysmg.vdf`) from EmuDeck community creations.
-- This baseline is intended to bootstrap deterministic file seeding and should be replaced with GAMEHUB-owned templates for your runtime expectations.
+- Stage 1 freshness status:
+  - seed source metadata is normalized in-repo (`title`/`description`/`url`/`creator`/`progenitor`/`Timestamp`)
+  - GAMEHUB also normalizes the same metadata during render/write as a defensive guardrail
+  - functional mapping blocks are preserved verbatim from the seed payloads
+
+Why these seed files are still required:
+- They are the committed deterministic source of full Steam Input mapping graphs for managed `Wii`/`N3DS`.
+- Runtime template generation depends on these payloads before per-title metadata rewrite.
+- Removing seeds would prevent GAMEHUB from reconstructing managed Deck templates during sync.
 
 Refresh workflow:
 1. Set the desired template in Steam for one representative GAMEHUB title in each system group (`wii_gc`, `n3ds`).
 2. Capture into repo seeds with:
-   - `./venv/bin/python scripts/capture_deck_template_seed.py --system wii_gc --title "<Wii or GC title>"`
-   - `./venv/bin/python scripts/capture_deck_template_seed.py --system n3ds --title "<N3DS title>"`
+   - Windows: `.\venv\Scripts\python.exe scripts/capture_deck_template_seed.py --system wii_gc --title "<Wii or GC title>"`
+   - Windows: `.\venv\Scripts\python.exe scripts/capture_deck_template_seed.py --system n3ds --title "<N3DS title>"`
+   - Linux/macOS: `./venv/bin/python scripts/capture_deck_template_seed.py --system wii_gc --title "<Wii or GC title>"`
+   - Linux/macOS: `./venv/bin/python scripts/capture_deck_template_seed.py --system n3ds --title "<N3DS title>"`
 3. Commit updated seed files in this folder.
 
 Notes:

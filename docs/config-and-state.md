@@ -98,6 +98,7 @@ Steam mutation behavior notes:
   - sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files (`controller_config`) so normalized title keys and companion aliases (`appid`/signed/title variants) select `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
   - when present, those per-title/configset writes are mirrored to `userdata/<steamid>/241100/remote/*/config/` to keep Deck startup Steam Input cloud/local roots aligned
   - seed source: `src/gamehub_cli/steam/template_seeds/steamdeck/`
+  - GAMEHUB normalizes non-functional seed metadata fields (`title`, `description`, `url`, `creator`, `progenitor`, `Timestamp`) during render/write as a defensive guardrail while preserving mapping blocks.
   - toggle with `GAMEHUB_DECK_TEMPLATE_SYNC=true|false` (default `true`)
   - strict mode with `GAMEHUB_DECK_TEMPLATE_STRICT=true|false` (default `true`)
 - GAMEHUB canonicalizes collection membership appids to unsigned numeric values in both `localconfig.vdf` (`user-collections`) and cloud storage collection entries.
