@@ -614,8 +614,8 @@
 		}
 			"settings"
 			{
-				"invert_x"		"1"
-				"invert_y"		"1"
+				"invert_x"		"0"
+				"invert_y"		"0"
 			}
 		}
 	"group"
@@ -640,8 +640,8 @@
 			"settings"
 			{
 				"gyro_natural_sensitivity"		"89"
-				"invert_x"		"1"
-				"invert_y"		"1"
+				"invert_x"		"0"
+				"invert_y"		"0"
 				"acceleration"		"1"
 				"mouse_smoothing"		"0"
 				"gyro_button"		"0"

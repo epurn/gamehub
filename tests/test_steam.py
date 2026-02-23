@@ -801,18 +801,18 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert not (n3ds_template / "controller_neptune.vdf").exists()
         configset_payload = vdf.loads((template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
         controller_config = configset_payload.get("controller_config", {})
-        assert controller_config["3366254221"]["template"] == "gamehub_wii"
+        assert controller_config["3366254221"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert "3242237453" not in controller_config
-        assert controller_config["4290272364"]["template"] == "gamehub_3ds"
+        assert controller_config["4290272364"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
         assert controller_config["3366254221"]["autosave"] == "1"
         assert controller_config["4290272364"]["autosave"] == "1"
         device_configset_payload = vdf.loads((template_root / "configset_FXAA30102486.vdf").read_text(encoding="utf-8"))
         device_controller_config = device_configset_payload.get("controller_config", {})
-        assert device_controller_config["3366254221"]["template"] == "gamehub_wii"
+        assert device_controller_config["3366254221"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert "3242237453" not in device_controller_config
-        assert device_controller_config["4290272364"]["template"] == "gamehub_3ds"
-        assert device_controller_config["-928713075"]["template"] == "gamehub_wii"
-        assert device_controller_config["Super Mario Galaxy"]["template"] == "gamehub_wii"
+        assert device_controller_config["4290272364"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
+        assert device_controller_config["-928713075"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
+        assert device_controller_config["Super Mario Galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert device_controller_config["3366254221"]["autosave"] == "1"
         assert device_controller_config["4290272364"]["autosave"] == "1"
         assert device_controller_config["-928713075"]["autosave"] == "1"
@@ -820,8 +820,8 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert "custom" not in device_controller_config["-928713075"]
         controller_type_payload = vdf.loads((template_root / "configset_controller_xboxone.vdf").read_text(encoding="utf-8"))
         controller_type_config = controller_type_payload.get("controller_config", {})
-        assert controller_type_config["3366254221"]["template"] == "gamehub_wii"
-        assert controller_type_config["4290272364"]["template"] == "gamehub_3ds"
+        assert controller_type_config["3366254221"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
+        assert controller_type_config["4290272364"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
         assert controller_type_config["3366254221"]["autosave"] == "1"
         assert controller_type_config["4290272364"]["autosave"] == "1"
 
@@ -955,8 +955,8 @@ def test_deck_template_seeds_axis_inversion_matches_wii_and_n3ds_targets() -> No
     n3ds_text = n3ds_seed.read_text(encoding="utf-8")
 
     assert '"invert_x"\t\t"0"' in n3ds_text
-    assert '"invert_x"\t\t"1"' in wii_text
-    assert '"invert_y"\t\t"1"' in wii_text
+    assert '"invert_x"\t\t"0"' in wii_text
+    assert '"invert_y"\t\t"0"' in wii_text
     assert '"invert_x"\t\t"1"' not in n3ds_text
     assert '"invert_y"\t\t"1"' not in n3ds_text
 

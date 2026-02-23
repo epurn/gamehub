@@ -178,6 +178,25 @@ def _template_selection_name_for_system(system_name: str) -> str:
     return first_name
 
 
+def _template_reference_for_title(title: TitleEntry) -> str:
+    selection_name = _template_selection_name_for_system(title.system)
+    title_key = normalize_steam_input_title_dir(title.title_name)
+    return f"CLOUD_{title_key}/{selection_name}"
+
+
+def _is_managed_template_name(value: str) -> bool:
+    normalized = str(value).strip().casefold()
+    if not normalized:
+        return False
+    if normalized in _DECK_MANAGED_TEMPLATE_SELECTIONS:
+        return True
+    if normalized.startswith("cloud_"):
+        for selection in _DECK_MANAGED_TEMPLATE_SELECTIONS:
+            if normalized.endswith(f"/{selection}"):
+                return True
+    return False
+
+
 def _replace_first_key_value(text: str, *, key: str, value: str) -> str:
     target_key = key.casefold()
     for match in _KV_SINGLE_VALUE_PATTERN.finditer(text):
@@ -328,10 +347,10 @@ def _sync_deck_template_selection_configset(
         changed = True
 
     for title in managed_titles:
-        selection_name = _template_selection_name_for_system(title.system)
+        template_reference = _template_reference_for_title(title)
         app_id = shortcut_result.app_ids_by_title.get(title.title_id)
         forced_entry = {
-            "template": selection_name,
+            "template": template_reference,
             "autosave": _DECK_TEMPLATE_CONFIGSET_AUTOSAVE,
         }
         title_keys = set(_configset_entry_keys(title.title_name, app_id))
@@ -357,8 +376,8 @@ def _sync_deck_template_selection_configset(
             existing_entry = controller_config.get(key)
             if not isinstance(existing_entry, dict):
                 continue
-            template_name = str(existing_entry.get("template", "")).strip().casefold()
-            if template_name not in _DECK_MANAGED_TEMPLATE_SELECTIONS:
+            template_name = str(existing_entry.get("template", ""))
+            if not _is_managed_template_name(template_name):
                 continue
             del controller_config[key]
             changed = True
