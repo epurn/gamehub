@@ -14,13 +14,15 @@ from gamehub_cli.steam.lifecycle import discover_steam_id, discover_userdata_dir
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _WII_CONTROLLER_FILE = "wii_0.vdf"
 _N3DS_CONTROLLER_FILE = "3ds_0.vdf"
+_WII_GAMEHUB_FILE = "gamehub_wii.vdf"
+_N3DS_GAMEHUB_FILE = "gamehub_3ds.vdf"
 _SYSTEM_TO_SEED_PATH = {
     "wii_gc": _REPO_ROOT / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "wii_gc" / _WII_CONTROLLER_FILE,
     "n3ds": _REPO_ROOT / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "n3ds" / _N3DS_CONTROLLER_FILE,
 }
-_SYSTEM_TO_SOURCE_FILE = {
-    "wii_gc": _WII_CONTROLLER_FILE,
-    "n3ds": _N3DS_CONTROLLER_FILE,
+_SYSTEM_TO_SOURCE_FILES = {
+    "wii_gc": (_WII_GAMEHUB_FILE, _WII_CONTROLLER_FILE),
+    "n3ds": (_N3DS_GAMEHUB_FILE, _N3DS_CONTROLLER_FILE),
 }
 
 
@@ -49,8 +51,8 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Optional controller VDF filename inside the title directory "
-            "(must be wii_0.vdf or 3ds_0.vdf). "
-            "When omitted, GAMEHUB uses the expected file for --system."
+            "(allowed: gamehub_wii.vdf, gamehub_3ds.vdf, wii_0.vdf, 3ds_0.vdf). "
+            "When omitted, GAMEHUB checks expected files for --system in priority order."
         ),
     )
     parser.add_argument(
@@ -75,7 +77,7 @@ def _resolve_title_controller_template(
     template_root: Path,
     *,
     title: str,
-    expected_file: str,
+    expected_files: tuple[str, ...],
 ) -> Path:
     title_dir = template_root / normalize_steam_input_title_dir(title)
     if not title_dir.exists() or not title_dir.is_dir():
@@ -84,16 +86,17 @@ def _resolve_title_controller_template(
             f"Expected: {title_dir}. Save a per-game Steam Input layout for this title first."
         )
 
-    if expected_file:
+    if not expected_files:
+        raise RuntimeError(f"Expected controller file list is empty for title directory: {title_dir}")
+    for expected_file in expected_files:
         target = title_dir / expected_file
         if target.exists():
             return target
-        available = sorted(path.name for path in title_dir.glob("*.vdf"))
-        raise RuntimeError(
-            f"Required controller file not found: {target}. "
-            f"Available in title dir: {available if available else '<none>'}"
-        )
-    raise RuntimeError(f"Expected controller file is empty for title directory: {title_dir}")
+    available = sorted(path.name for path in title_dir.glob("*.vdf"))
+    raise RuntimeError(
+        f"Required controller file not found for title: {title_dir}. "
+        f"Tried: {list(expected_files)}. Available in title dir: {available if available else '<none>'}"
+    )
 
 
 def main() -> int:
@@ -113,21 +116,22 @@ def main() -> int:
     if requested_file is not None and requested_file.startswith("controller_"):
         raise SystemExit(
             "controller_*.vdf is no longer supported for seed capture. "
-            "Use wii_0.vdf or 3ds_0.vdf."
+            "Use gamehub_wii.vdf, gamehub_3ds.vdf, wii_0.vdf, or 3ds_0.vdf."
         )
-    if requested_file is not None and requested_file not in {_WII_CONTROLLER_FILE, _N3DS_CONTROLLER_FILE}:
+    allowed = {_WII_CONTROLLER_FILE, _N3DS_CONTROLLER_FILE, _WII_GAMEHUB_FILE, _N3DS_GAMEHUB_FILE}
+    if requested_file is not None and requested_file not in allowed:
         raise SystemExit(
             "Unsupported --controller-file value. "
-            "Allowed values: wii_0.vdf, 3ds_0.vdf."
+            "Allowed values: gamehub_wii.vdf, gamehub_3ds.vdf, wii_0.vdf, 3ds_0.vdf."
         )
-    expected_file = requested_file or _SYSTEM_TO_SOURCE_FILE[args.system]
+    expected_files = (requested_file,) if requested_file is not None else _SYSTEM_TO_SOURCE_FILES[args.system]
 
     template_root = _resolve_existing_template_root(steam_id)
     try:
         source_path = _resolve_title_controller_template(
             template_root,
             title=args.title,
-            expected_file=expected_file,
+            expected_files=expected_files,
         )
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc

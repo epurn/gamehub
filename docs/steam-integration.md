@@ -49,14 +49,14 @@
 - During Steam update, GAMEHUB prunes duplicate signed-variant grid files when matching unsigned files exist.
 
 ## Steam Input Templates (Steam Deck)
-- On Linux Steam Deck, GAMEHUB syncs seeded Steam Input templates for managed `Wii`, `GC`, and `N3DS` shortcuts.
+- On Linux Steam Deck, GAMEHUB syncs seeded Steam Input templates for managed `Wii` and `N3DS` shortcuts (`GC` is intentionally excluded).
 - Files are written by normalized title path, not appid path:
-  - `Steam Controller Configs/<steamid>/config/<normalized_title>/wii_0.vdf` (`Wii`, `GC`)
-  - `Steam Controller Configs/<steamid>/config/<normalized_title>/3ds_0.vdf` (`N3DS`)
+  - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
+  - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
 - Selection metadata is updated in:
   - `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`
   - active `Steam Controller Configs/<steamid>/config/configset_*.vdf` files (except other `configset_controller_*.vdf` variants)
-  - `controller_config` entries are set to `template=wii_0` (`Wii`/`GC`) or `template=3ds_0` (`N3DS`) with `autosave=1`
+  - `controller_config` entries are set to `template=gamehub_wii` (`Wii`) or `template=gamehub_3ds` (`N3DS`) with `autosave=1`
 - Root resolution precedence:
   - `~/.local/share/Steam/steamapps/common/Steam Controller Configs/<steamid>/config`
   - `~/.steam/steam/steamapps/common/Steam Controller Configs/<steamid>/config`

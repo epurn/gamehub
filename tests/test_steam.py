@@ -654,7 +654,7 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         monkeypatch.setattr(
             steam_input_templates,
             "_seed_path_for_system",
-            lambda system_name: {"Wii": seed_wii_gc, "GC": seed_wii_gc, "N3DS": seed_n3ds}.get(system_name),
+            lambda system_name: {"Wii": seed_wii_gc, "N3DS": seed_n3ds}.get(system_name),
         )
         monkeypatch.setattr(steam_input_templates.Path, "home", staticmethod(lambda: temp_root))
 
@@ -738,46 +738,50 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
             / "config"
         )
         template_root.mkdir(parents=True, exist_ok=True)
-        (template_root / "configset_FXAA30102486.vdf").write_text(vdf.dumps({}), encoding="utf-8")
+        gc_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Luigi's Mansion")
+        gc_template.mkdir(parents=True, exist_ok=True)
+        (gc_template / "wii_0.vdf").write_bytes(b"STALE_GC_TEMPLATE")
+        (template_root / "configset_FXAA30102486.vdf").write_text(
+            vdf.dumps({"controller_config": {"3242237453": {"template": "wii_0", "autosave": "1"}}}),
+            encoding="utf-8",
+        )
 
         first = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
         second = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
 
         wii_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
-        gc_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Luigi's Mansion")
         n3ds_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Tomodachi Life")
 
-        assert first.targets == 3
-        assert first.written == 3
+        assert first.targets == 2
+        assert first.written == 2
         assert first.unchanged == 0
         assert first.errors == 0
-        assert first.systems_applied == ("Wii", "GC", "N3DS")
-        assert (wii_template / "wii_0.vdf").read_bytes() == b"WII_GC_TEMPLATE"
-        assert (gc_template / "wii_0.vdf").read_bytes() == b"WII_GC_TEMPLATE"
-        assert (n3ds_template / "3ds_0.vdf").read_bytes() == b"N3DS_TEMPLATE"
+        assert first.systems_applied == ("Wii", "N3DS")
+        assert (wii_template / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        assert (n3ds_template / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
+        assert not (gc_template / "wii_0.vdf").exists()
+        assert not (gc_template / "gamehub_wii.vdf").exists()
         assert not (wii_template / "controller_neptune.vdf").exists()
         assert not (gc_template / "controller_neptune.vdf").exists()
         assert not (n3ds_template / "controller_neptune.vdf").exists()
         configset_payload = vdf.loads((template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
         controller_config = configset_payload.get("controller_config", {})
-        assert controller_config["3366254221"]["template"] == "wii_0"
-        assert controller_config["3242237453"]["template"] == "wii_0"
-        assert controller_config["4290272364"]["template"] == "3ds_0"
+        assert controller_config["3366254221"]["template"] == "gamehub_wii"
+        assert "3242237453" not in controller_config
+        assert controller_config["4290272364"]["template"] == "gamehub_3ds"
         assert controller_config["3366254221"]["autosave"] == "1"
-        assert controller_config["3242237453"]["autosave"] == "1"
         assert controller_config["4290272364"]["autosave"] == "1"
         device_configset_payload = vdf.loads((template_root / "configset_FXAA30102486.vdf").read_text(encoding="utf-8"))
         device_controller_config = device_configset_payload.get("controller_config", {})
-        assert device_controller_config["3366254221"]["template"] == "wii_0"
-        assert device_controller_config["3242237453"]["template"] == "wii_0"
-        assert device_controller_config["4290272364"]["template"] == "3ds_0"
+        assert device_controller_config["3366254221"]["template"] == "gamehub_wii"
+        assert "3242237453" not in device_controller_config
+        assert device_controller_config["4290272364"]["template"] == "gamehub_3ds"
         assert device_controller_config["3366254221"]["autosave"] == "1"
-        assert device_controller_config["3242237453"]["autosave"] == "1"
         assert device_controller_config["4290272364"]["autosave"] == "1"
 
-        assert second.targets == 3
+        assert second.targets == 2
         assert second.written == 0
-        assert second.unchanged == 3
+        assert second.unchanged == 2
         assert second.errors == 0
 
 

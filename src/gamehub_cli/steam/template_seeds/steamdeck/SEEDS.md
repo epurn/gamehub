@@ -3,7 +3,7 @@
 This directory stores repo-managed Steam Input template seeds used by Deck template sync.
 
 Seed files:
-- `wii_gc/wii_0.vdf`: applied to managed `Wii` and `GC` shortcuts
+- `wii_gc/wii_0.vdf`: applied to managed `Wii` shortcuts
 - `n3ds/3ds_0.vdf`: applied to managed `N3DS` shortcuts
 
 Current baseline:
@@ -19,9 +19,9 @@ Refresh workflow:
 
 Notes:
 - GAMEHUB sync writes per-title template files under:
-  - `Steam Controller Configs/<steamid>/config/<normalized_title>/wii_0.vdf` (`Wii`/`GC`)
-  - `Steam Controller Configs/<steamid>/config/<normalized_title>/3ds_0.vdf` (`N3DS`)
+  - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
+  - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
 - GAMEHUB sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`:
-  - `controller_config` managed entries are set to `template=wii_0` (`Wii`/`GC`) or `template=3ds_0` (`N3DS`) with `autosave=1`
+  - `controller_config` managed entries are set to `template=gamehub_wii` (`Wii`) or `template=gamehub_3ds` (`N3DS`) with `autosave=1`
 - GAMEHUB also mirrors those `controller_config` selections to active `configset_*.vdf` files (excluding other `configset_controller_*.vdf` variants).
 - Title normalization uses lower-case (`casefold`), replaces `/` and `\` with space, and collapses whitespace.

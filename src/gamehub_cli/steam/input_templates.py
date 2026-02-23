@@ -14,24 +14,49 @@ from .io import _atomic_write_bytes, _atomic_write_text
 from .shortcuts import _canonical_unsigned_app_id
 from .types import ShortcutSyncResult, SteamContext
 
-_DECK_TEMPLATE_WII_FILENAME = "wii_0.vdf"
-_DECK_TEMPLATE_N3DS_FILENAME = "3ds_0.vdf"
+_DECK_TEMPLATE_SEED_WII_FILENAME = "wii_0.vdf"
+_DECK_TEMPLATE_SEED_N3DS_FILENAME = "3ds_0.vdf"
+_DECK_TEMPLATE_WII_FILENAME = "gamehub_wii.vdf"
+_DECK_TEMPLATE_N3DS_FILENAME = "gamehub_3ds.vdf"
 _DECK_TEMPLATE_CONFIGSET_FILENAME = "configset_controller_neptune.vdf"
 _DECK_TEMPLATE_CONFIGSET_AUTOSAVE = "1"
 _DECK_TEMPLATE_CONFIGSET_GLOB = "configset_*.vdf"
-_DECK_TEMPLATE_SYSTEM_ORDER = ("Wii", "GC", "N3DS")
+_DECK_TEMPLATE_SYSTEM_ORDER = ("Wii", "N3DS")
 _DECK_TEMPLATE_SEED_ROOT = Path(__file__).resolve().parent / "template_seeds" / "steamdeck"
 _DECK_TEMPLATE_SEED_BY_SYSTEM = {
-    "Wii": _DECK_TEMPLATE_SEED_ROOT / "wii_gc" / _DECK_TEMPLATE_WII_FILENAME,
-    "GC": _DECK_TEMPLATE_SEED_ROOT / "wii_gc" / _DECK_TEMPLATE_WII_FILENAME,
-    "N3DS": _DECK_TEMPLATE_SEED_ROOT / "n3ds" / _DECK_TEMPLATE_N3DS_FILENAME,
+    "Wii": _DECK_TEMPLATE_SEED_ROOT / "wii_gc" / _DECK_TEMPLATE_SEED_WII_FILENAME,
+    "N3DS": _DECK_TEMPLATE_SEED_ROOT / "n3ds" / _DECK_TEMPLATE_SEED_N3DS_FILENAME,
 }
 _DECK_TEMPLATE_FILENAMES_BY_SYSTEM = {
     # Managed Deck template targets are system-fixed filenames.
     "Wii": (_DECK_TEMPLATE_WII_FILENAME,),
-    "GC": (_DECK_TEMPLATE_WII_FILENAME,),
     "N3DS": (_DECK_TEMPLATE_N3DS_FILENAME,),
 }
+_DECK_TEMPLATE_DISABLED_SYSTEMS = {"GC"}
+_DECK_TEMPLATE_UI_TITLE_BY_SYSTEM = {
+    "Wii": "GameHub Wii",
+    "N3DS": "GameHub 3DS",
+}
+_DECK_TEMPLATE_UI_DESCRIPTION_BY_SYSTEM = {
+    "Wii": "GameHub managed Wii pointer template",
+    "N3DS": "GameHub managed 3DS touch template",
+}
+_DECK_MANAGED_TEMPLATE_SELECTIONS = frozenset(
+    {
+        "controller_neptune",
+        "wii_0",
+        "3ds_0",
+        "gamehub_wii",
+        "gamehub_3ds",
+    }
+)
+_DECK_MANAGED_TEMPLATE_FILENAMES_FOR_CLEANUP = (
+    "controller_neptune.vdf",
+    "wii_0.vdf",
+    "3ds_0.vdf",
+    "gamehub_wii.vdf",
+    "gamehub_3ds.vdf",
+)
 _WHITESPACE_RE = re.compile(r"\s+")
 
 _PathIdentity: TypeAlias = tuple[str, int, int] | tuple[str, str]
@@ -146,6 +171,42 @@ def _template_selection_name_for_system(system_name: str) -> str:
     return first_name
 
 
+def _render_managed_template_payload(system_name: str, payload: bytes) -> bytes:
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        return payload
+    try:
+        parsed = vdf.loads(text)
+    except Exception:
+        return payload
+    if not isinstance(parsed, dict):
+        return payload
+    mappings = parsed.get("controller_mappings")
+    if not isinstance(mappings, dict):
+        return payload
+
+    ui_title = _DECK_TEMPLATE_UI_TITLE_BY_SYSTEM.get(system_name, f"GameHub {system_name}")
+    ui_description = _DECK_TEMPLATE_UI_DESCRIPTION_BY_SYSTEM.get(system_name, "GameHub managed controller template")
+    selection_name = _template_selection_name_for_system(system_name)
+    mappings["title"] = ui_title
+    mappings["description"] = ui_description
+    mappings["url"] = f"template://{selection_name}.vdf"
+
+    localization = mappings.get("localization")
+    if not isinstance(localization, dict):
+        localization = {}
+        mappings["localization"] = localization
+    english = localization.get("english")
+    if not isinstance(english, dict):
+        english = {}
+        localization["english"] = english
+    english["title"] = ui_title
+    english["description"] = ui_description
+
+    return str(vdf.dumps(parsed, pretty=True)).encode("utf-8")
+
+
 def _load_seed_payloads(required_systems: list[str], *, strict: bool) -> tuple[dict[str, bytes], int]:
     payloads: dict[str, bytes] = {}
     errors = 0
@@ -164,7 +225,7 @@ def _load_seed_payloads(required_systems: list[str], *, strict: bool) -> tuple[d
             errors += 1
             continue
         try:
-            payloads[system_name] = seed_path.read_bytes()
+            payloads[system_name] = _render_managed_template_payload(system_name, seed_path.read_bytes())
         except OSError as exc:
             if strict:
                 raise RuntimeError(
@@ -190,6 +251,7 @@ def _sync_deck_template_selection_configset(
     *,
     configset_path: Path,
     managed_titles: list[TitleEntry],
+    removed_titles: list[TitleEntry],
     shortcut_result: ShortcutSyncResult,
     strict: bool,
 ) -> int:
@@ -227,6 +289,18 @@ def _sync_deck_template_selection_configset(
             if not isinstance(existing_entry, dict) or existing_entry != next_entry:
                 controller_config[key] = next_entry
                 changed = True
+
+    for title in removed_titles:
+        app_id = shortcut_result.app_ids_by_title.get(title.title_id)
+        for key in _configset_entry_keys(title.title_name, app_id):
+            existing_entry = controller_config.get(key)
+            if not isinstance(existing_entry, dict):
+                continue
+            template_name = str(existing_entry.get("template", "")).strip().casefold()
+            if template_name not in _DECK_MANAGED_TEMPLATE_SELECTIONS:
+                continue
+            del controller_config[key]
+            changed = True
 
     if not changed:
         return 0
@@ -271,6 +345,7 @@ def _sync_deck_template_selection_configsets(
     *,
     root: Path,
     managed_titles: list[TitleEntry],
+    removed_titles: list[TitleEntry],
     shortcut_result: ShortcutSyncResult,
     strict: bool,
 ) -> int:
@@ -279,9 +354,35 @@ def _sync_deck_template_selection_configsets(
         errors += _sync_deck_template_selection_configset(
             configset_path=configset_path,
             managed_titles=managed_titles,
+            removed_titles=removed_titles,
             shortcut_result=shortcut_result,
             strict=strict,
         )
+    return errors
+
+
+def _cleanup_disabled_title_template_files(
+    *,
+    root: Path,
+    removed_titles: list[TitleEntry],
+    strict: bool,
+) -> int:
+    errors = 0
+    for title in removed_titles:
+        title_dir = root / normalize_steam_input_title_dir(title.title_name)
+        for filename in _DECK_MANAGED_TEMPLATE_FILENAMES_FOR_CLEANUP:
+            target = title_dir / filename
+            if not target.exists() or not target.is_file():
+                continue
+            try:
+                target.unlink()
+            except OSError as exc:
+                if strict:
+                    raise RuntimeError(
+                        "Steam Deck template sync strict mode: failed removing disabled-system template file "
+                        f"for title '{title.title_name}' ({target}): {exc}"
+                    ) from exc
+                errors += 1
     return errors
 
 
@@ -296,12 +397,14 @@ def apply_deck_steam_input_templates(
     if not managed_title_ids:
         return TemplateSyncResult(targets=0, written=0, unchanged=0, errors=0, systems_applied=())
 
-    managed_titles = [
+    candidate_titles = [
         title
         for title in sorted(index.titles, key=lambda item: (item.system, item.title_name.casefold(), item.title_id))
-        if title.title_id in managed_title_ids and title.system in _DECK_TEMPLATE_SEED_BY_SYSTEM
+        if title.title_id in managed_title_ids
     ]
-    if not managed_titles:
+    managed_titles = [title for title in candidate_titles if title.system in _DECK_TEMPLATE_SEED_BY_SYSTEM]
+    removed_titles = [title for title in candidate_titles if title.system in _DECK_TEMPLATE_DISABLED_SYSTEMS]
+    if not managed_titles and not removed_titles:
         return TemplateSyncResult(targets=0, written=0, unchanged=0, errors=0, systems_applied=())
 
     required_systems = [
@@ -309,7 +412,7 @@ def apply_deck_steam_input_templates(
     ]
     seed_payloads, errors = _load_seed_payloads(required_systems, strict=strict)
     applied_systems = tuple(system_name for system_name in required_systems if system_name in seed_payloads)
-    if not seed_payloads:
+    if managed_titles and not seed_payloads:
         return TemplateSyncResult(targets=0, written=0, unchanged=0, errors=errors, systems_applied=applied_systems)
 
     root = _resolve_deck_steam_input_root(context.steam_id, strict=strict)
@@ -355,7 +458,13 @@ def apply_deck_steam_input_templates(
     errors += _sync_deck_template_selection_configsets(
         root=root,
         managed_titles=managed_titles,
+        removed_titles=removed_titles,
         shortcut_result=shortcut_result,
+        strict=strict,
+    )
+    errors += _cleanup_disabled_title_template_files(
+        root=root,
+        removed_titles=removed_titles,
         strict=strict,
     )
 
