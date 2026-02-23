@@ -83,7 +83,10 @@ def _dolphin_linux_device_pair(profile_name: str) -> tuple[str, str, str]:
     controllers = detect_xbox_controllers(max_devices=2)
     if is_steam_deck_linux():
         return _dolphin_deck_linux_device_pair(profile_name)
-    if any(any(marker in controller.name.casefold() for marker in _DOLPHIN_STEAM_DECK_DEVICE_MARKERS) for controller in controllers):
+    if any(
+        any(marker in controller.name.casefold() for marker in _DOLPHIN_STEAM_DECK_DEVICE_MARKERS)
+        for controller in controllers
+    ):
         if len(controllers) >= 2:
             return _DOLPHIN_STEAM_DECK_DEVICE, f"SDL/{controllers[1].slot}/{controllers[1].name}", "steamdeck"
         return _DOLPHIN_STEAM_DECK_DEVICE, "None", "steamdeck"
@@ -298,9 +301,7 @@ def apply_dolphin_profile(
         if audit_writer is not None:
             if selected_devices:
                 audit_writer(
-                    "controller-autoconfig\t"
-                    f"dolphin_device_selected={selected_devices[0]}\t"
-                    f"device_mode={selected_mode}"
+                    f"controller-autoconfig\tdolphin_device_selected={selected_devices[0]}\tdevice_mode={selected_mode}"
                 )
             audit_writer(f"controller-autoconfig\tdevice_identity_mode={overall_mode}")
     return touched

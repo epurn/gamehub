@@ -421,8 +421,7 @@ def run_controller_launch(*, payload_token: str, config_path: Path | None = None
             if zero_detect_policy == "xbox_1p":
                 controller_count = 1
                 print(
-                    "Warning: Steam Deck controller detection returned 0 controllers; "
-                    "forcing xbox_1p profile fallback"
+                    "Warning: Steam Deck controller detection returned 0 controllers; forcing xbox_1p profile fallback"
                 )
             elif zero_detect_policy == "abort":
                 print(

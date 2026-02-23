@@ -199,7 +199,9 @@ def configure_retroarch_runtime(
             _RETROARCH_ALL_USERS_MENU_VALUE,
         )
     if is_deck_linux:
-        normalized_driver = existing_joypad_driver.strip().strip('"').strip("'").casefold() if existing_joypad_driver else ""
+        normalized_driver = (
+            existing_joypad_driver.strip().strip('"').strip("'").casefold() if existing_joypad_driver else ""
+        )
         if normalized_driver != _RETROARCH_JOYPAD_DRIVER_SDL2 or not cfg_path.exists():
             lines, changed_joypad_driver = upsert_simple_cfg_key(
                 lines, _RETROARCH_JOYPAD_DRIVER_KEY, _RETROARCH_JOYPAD_DRIVER_SDL2

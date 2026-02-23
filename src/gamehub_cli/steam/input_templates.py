@@ -93,31 +93,9 @@ def normalize_steam_input_title_dir(title_name: str) -> str:
 def discover_deck_steam_input_roots(steam_id: str) -> list[Path]:
     home = Path.home()
     candidates = [
-        home
-        / ".local"
-        / "share"
-        / "Steam"
-        / "steamapps"
-        / "common"
-        / "Steam Controller Configs"
-        / steam_id
-        / "config",
-        home
-        / ".steam"
-        / "steam"
-        / "steamapps"
-        / "common"
-        / "Steam Controller Configs"
-        / steam_id
-        / "config",
-        home
-        / ".steam"
-        / "root"
-        / "steamapps"
-        / "common"
-        / "Steam Controller Configs"
-        / steam_id
-        / "config",
+        home / ".local" / "share" / "Steam" / "steamapps" / "common" / "Steam Controller Configs" / steam_id / "config",
+        home / ".steam" / "steam" / "steamapps" / "common" / "Steam Controller Configs" / steam_id / "config",
+        home / ".steam" / "root" / "steamapps" / "common" / "Steam Controller Configs" / steam_id / "config",
     ]
     unique: list[Path] = []
     seen: set[_PathIdentity] = set()
@@ -198,8 +176,7 @@ def _resolve_deck_steam_input_roots(context: SteamContext, *, strict: bool) -> l
     if strict:
         tried = ", ".join(str(path) for path in unique_candidates) or "<none>"
         raise RuntimeError(
-            "Steam Deck template sync strict mode: no writable Steam input config root was found "
-            f"(tried: {tried})"
+            f"Steam Deck template sync strict mode: no writable Steam input config root was found (tried: {tried})"
         )
 
     if not unique_candidates:
@@ -261,7 +238,7 @@ def _replace_first_key_value(text: str, *, key: str, value: str) -> str:
     for match in _KV_SINGLE_VALUE_PATTERN.finditer(text):
         if match.group("key").casefold() != target_key:
             continue
-        return f'{text[: match.start("value")]}{value}{text[match.end("value") :]}'
+        return f"{text[: match.start('value')]}{value}{text[match.end('value') :]}"
     return text
 
 
@@ -292,7 +269,7 @@ def _replace_english_localization_values(text: str, *, title: str, description: 
     english_block = text[brace_open : brace_close + 1]
     english_block = _replace_first_key_value(english_block, key="title", value=title)
     english_block = _replace_first_key_value(english_block, key="description", value=description)
-    return f"{text[:brace_open]}{english_block}{text[brace_close + 1:]}"
+    return f"{text[:brace_open]}{english_block}{text[brace_close + 1 :]}"
 
 
 def _render_managed_template_payload(system_name: str, payload: bytes) -> bytes:
@@ -396,8 +373,7 @@ def _sync_deck_template_selection_configset(
     except (OSError, Exception) as exc:
         if strict:
             raise RuntimeError(
-                "Steam Deck template sync strict mode: failed loading template configset "
-                f"({configset_path}): {exc}"
+                f"Steam Deck template sync strict mode: failed loading template configset ({configset_path}): {exc}"
             ) from exc
         return 1
 
@@ -448,8 +424,7 @@ def _sync_deck_template_selection_configset(
     except OSError as exc:
         if strict:
             raise RuntimeError(
-                "Steam Deck template sync strict mode: failed writing template configset "
-                f"({configset_path}): {exc}"
+                f"Steam Deck template sync strict mode: failed writing template configset ({configset_path}): {exc}"
             ) from exc
         return 1
     return 0
@@ -607,7 +582,9 @@ def apply_deck_steam_input_templates(
         return TemplateSyncResult(targets=0, written=0, unchanged=0, errors=0, systems_applied=())
 
     required_systems = [
-        system_name for system_name in _DECK_TEMPLATE_SYSTEM_ORDER if any(t.system == system_name for t in managed_titles)
+        system_name
+        for system_name in _DECK_TEMPLATE_SYSTEM_ORDER
+        if any(t.system == system_name for t in managed_titles)
     ]
     seed_payloads, errors = _load_seed_payloads(required_systems, strict=strict)
     applied_systems = tuple(system_name for system_name in required_systems if system_name in seed_payloads)
