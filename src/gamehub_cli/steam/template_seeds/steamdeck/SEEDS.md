@@ -24,4 +24,5 @@ Notes:
 - GAMEHUB sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`:
   - `controller_config` managed entries are set to `template=gamehub_wii` (`Wii`) or `template=gamehub_3ds` (`N3DS`) with `autosave=1`
 - GAMEHUB also mirrors those `controller_config` selections to active `configset_*.vdf` files (excluding other `configset_controller_*.vdf` variants).
+- Managed sync force-overwrites those per-title selections and removes legacy title-level template variants (`controller_*.vdf`, `wii_*.vdf`, `3ds_*.vdf`) for managed `Wii`/`N3DS` titles.
 - Title normalization uses lower-case (`casefold`), replaces `/` and `\` with space, and collapses whitespace.

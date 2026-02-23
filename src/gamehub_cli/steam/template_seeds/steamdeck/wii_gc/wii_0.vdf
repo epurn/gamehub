@@ -371,7 +371,7 @@
 		}
 		"settings"
 		{
-			"output_trigger"		"2"
+			"output_trigger"		"1"
 		}
 	}
 	"group"
@@ -385,7 +385,7 @@
 		}
 		"settings"
 		{
-			"output_trigger"		"1"
+			"output_trigger"		"2"
 		}
 	}
 	"group"

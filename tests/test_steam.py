@@ -739,18 +739,31 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         )
         template_root.mkdir(parents=True, exist_ok=True)
         gc_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Luigi's Mansion")
+        wii_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
+        n3ds_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Tomodachi Life")
         gc_template.mkdir(parents=True, exist_ok=True)
+        wii_template.mkdir(parents=True, exist_ok=True)
+        n3ds_template.mkdir(parents=True, exist_ok=True)
         (gc_template / "wii_0.vdf").write_bytes(b"STALE_GC_TEMPLATE")
+        (wii_template / "wii_0.vdf").write_bytes(b"STALE_WII_TEMPLATE")
+        (wii_template / "controller_neptune.vdf").write_bytes(b"STALE_WII_CONTROLLER_TEMPLATE")
+        (n3ds_template / "3ds_1.vdf").write_bytes(b"STALE_3DS_TEMPLATE")
+        (n3ds_template / "controller_neptune.vdf").write_bytes(b"STALE_3DS_CONTROLLER_TEMPLATE")
         (template_root / "configset_FXAA30102486.vdf").write_text(
-            vdf.dumps({"controller_config": {"3242237453": {"template": "wii_0", "autosave": "1"}}}),
+            vdf.dumps(
+                {
+                    "controller_config": {
+                        "3242237453": {"template": "wii_0", "autosave": "1"},
+                        "-928713075": {"template": "my_smg_profile", "autosave": "0", "custom": "1"},
+                        "Super Mario Galaxy": {"template": "my_smg_profile", "autosave": "0"},
+                    }
+                }
+            ),
             encoding="utf-8",
         )
 
         first = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
         second = apply_deck_steam_input_templates(context, index, shortcut_result, strict=True)
-
-        wii_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
-        n3ds_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Tomodachi Life")
 
         assert first.targets == 2
         assert first.written == 2
@@ -760,6 +773,8 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert (wii_template / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
         assert (n3ds_template / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
         assert not (gc_template / "wii_0.vdf").exists()
+        assert not (wii_template / "wii_0.vdf").exists()
+        assert not (n3ds_template / "3ds_1.vdf").exists()
         assert not (gc_template / "gamehub_wii.vdf").exists()
         assert not (wii_template / "controller_neptune.vdf").exists()
         assert not (gc_template / "controller_neptune.vdf").exists()
@@ -776,8 +791,13 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert device_controller_config["3366254221"]["template"] == "gamehub_wii"
         assert "3242237453" not in device_controller_config
         assert device_controller_config["4290272364"]["template"] == "gamehub_3ds"
+        assert device_controller_config["-928713075"]["template"] == "gamehub_wii"
+        assert device_controller_config["Super Mario Galaxy"]["template"] == "gamehub_wii"
         assert device_controller_config["3366254221"]["autosave"] == "1"
         assert device_controller_config["4290272364"]["autosave"] == "1"
+        assert device_controller_config["-928713075"]["autosave"] == "1"
+        assert device_controller_config["Super Mario Galaxy"]["autosave"] == "1"
+        assert "custom" not in device_controller_config["-928713075"]
 
         assert second.targets == 2
         assert second.written == 0

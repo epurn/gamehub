@@ -57,6 +57,12 @@ _DECK_MANAGED_TEMPLATE_FILENAMES_FOR_CLEANUP = (
     "gamehub_wii.vdf",
     "gamehub_3ds.vdf",
 )
+_DECK_MANAGED_TEMPLATE_GLOBS = (
+    "controller_*.vdf",
+    "wii_*.vdf",
+    "3ds_*.vdf",
+    "gamehub_*.vdf",
+)
 _WHITESPACE_RE = re.compile(r"\s+")
 
 _PathIdentity: TypeAlias = tuple[str, int, int] | tuple[str, str]
@@ -235,8 +241,29 @@ def _load_seed_payloads(required_systems: list[str], *, strict: bool) -> tuple[d
     return payloads, errors
 
 
+def _canonical_signed_app_id(app_id: str) -> str | None:
+    text = str(app_id).strip()
+    if not text or not text.lstrip("-").isdigit():
+        return None
+    unsigned = int(_canonical_unsigned_app_id(text))
+    if unsigned <= 0x7FFFFFFF:
+        return None
+    return str(unsigned - (2**32))
+
+
+def _configset_key_sort_key(value: str) -> tuple[int, int | str]:
+    text = str(value).strip()
+    if text.lstrip("-").isdigit():
+        return (0, int(text))
+    return (1, text.casefold())
+
+
 def _configset_entry_keys(title_name: str, app_id: str | None) -> tuple[str, ...]:
-    keys: set[str] = {normalize_steam_input_title_dir(title_name)}
+    keys: set[str] = set()
+    raw_title = str(title_name).strip()
+    if raw_title:
+        keys.add(raw_title)
+        keys.add(normalize_steam_input_title_dir(raw_title))
     if app_id is not None:
         raw_app_id = str(app_id).strip()
         if raw_app_id:
@@ -244,7 +271,10 @@ def _configset_entry_keys(title_name: str, app_id: str | None) -> tuple[str, ...
             unsigned_app_id = _canonical_unsigned_app_id(raw_app_id)
             if unsigned_app_id:
                 keys.add(unsigned_app_id)
-    return tuple(sorted(keys))
+                signed_app_id = _canonical_signed_app_id(unsigned_app_id)
+                if signed_app_id:
+                    keys.add(signed_app_id)
+    return tuple(sorted(keys, key=_configset_key_sort_key))
 
 
 def _sync_deck_template_selection_configset(
@@ -279,16 +309,26 @@ def _sync_deck_template_selection_configset(
     for title in managed_titles:
         selection_name = _template_selection_name_for_system(title.system)
         app_id = shortcut_result.app_ids_by_title.get(title.title_id)
-        for key in _configset_entry_keys(title.title_name, app_id):
+        forced_entry = {
+            "template": selection_name,
+            "autosave": _DECK_TEMPLATE_CONFIGSET_AUTOSAVE,
+        }
+        title_keys = set(_configset_entry_keys(title.title_name, app_id))
+        for key in title_keys:
             existing_entry = controller_config.get(key)
-            next_entry = dict(existing_entry) if isinstance(existing_entry, dict) else {}
-            if next_entry.get("template") != selection_name:
-                next_entry["template"] = selection_name
-            if next_entry.get("autosave") != _DECK_TEMPLATE_CONFIGSET_AUTOSAVE:
-                next_entry["autosave"] = _DECK_TEMPLATE_CONFIGSET_AUTOSAVE
-            if not isinstance(existing_entry, dict) or existing_entry != next_entry:
-                controller_config[key] = next_entry
+            if not isinstance(existing_entry, dict) or existing_entry != forced_entry:
+                controller_config[key] = dict(forced_entry)
                 changed = True
+        normalized_title = normalize_steam_input_title_dir(title.title_name)
+        for existing_key in list(controller_config):
+            if not isinstance(existing_key, str):
+                continue
+            if existing_key in title_keys:
+                continue
+            if normalize_steam_input_title_dir(existing_key) != normalized_title:
+                continue
+            del controller_config[existing_key]
+            changed = True
 
     for title in removed_titles:
         app_id = shortcut_result.app_ids_by_title.get(title.title_id)
@@ -358,6 +398,36 @@ def _sync_deck_template_selection_configsets(
             shortcut_result=shortcut_result,
             strict=strict,
         )
+    return errors
+
+
+def _cleanup_managed_title_template_files(
+    *,
+    root: Path,
+    managed_titles: list[TitleEntry],
+    strict: bool,
+) -> int:
+    errors = 0
+    for title in managed_titles:
+        title_dir = root / normalize_steam_input_title_dir(title.title_name)
+        if not title_dir.is_dir():
+            continue
+        allowed = set(_template_filenames_for_system(title.system))
+        for pattern in _DECK_MANAGED_TEMPLATE_GLOBS:
+            for candidate in sorted(title_dir.glob(pattern), key=lambda item: item.name.casefold()):
+                if not candidate.is_file():
+                    continue
+                if candidate.name in allowed:
+                    continue
+                try:
+                    candidate.unlink()
+                except OSError as exc:
+                    if strict:
+                        raise RuntimeError(
+                            "Steam Deck template sync strict mode: failed removing legacy managed template file "
+                            f"for title '{title.title_name}' ({candidate}): {exc}"
+                        ) from exc
+                    errors += 1
     return errors
 
 
@@ -455,6 +525,11 @@ def apply_deck_steam_input_templates(
         else:
             unchanged += 1
 
+    errors += _cleanup_managed_title_template_files(
+        root=root,
+        managed_titles=managed_titles,
+        strict=strict,
+    )
     errors += _sync_deck_template_selection_configsets(
         root=root,
         managed_titles=managed_titles,
