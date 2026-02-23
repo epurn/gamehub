@@ -343,7 +343,9 @@ def repair_managed_steam_input_overrides(
             continue
         app_entry = apps.get(app_id)
         if not isinstance(app_entry, dict):
-            continue
+            app_entry = {}
+            apps[app_id] = app_entry
+            updates += 1
         existing = app_entry.get("UseSteamControllerConfig")
         if existing is None:
             app_entry["UseSteamControllerConfig"] = "1"

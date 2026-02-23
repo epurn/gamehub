@@ -652,11 +652,11 @@
 				}
 			}
 		}
-		"settings"
-		{
-			"invert_x"		"1"
+			"settings"
+			{
+				"invert_x"		"0"
+			}
 		}
-	}
 	"group"
 	{
 		"id"		"13"
@@ -676,13 +676,13 @@
 		"inputs"
 		{
 		}
-		"settings"
-		{
-			"gyro_natural_sensitivity"		"89"
-			"invert_x"		"1"
-			"acceleration"		"1"
-			"mouse_smoothing"		"0"
-			"gyro_button"		"0"
+			"settings"
+			{
+				"gyro_natural_sensitivity"		"89"
+				"invert_x"		"0"
+				"acceleration"		"1"
+				"mouse_smoothing"		"0"
+				"gyro_button"		"0"
 		}
 	}
 	"group"

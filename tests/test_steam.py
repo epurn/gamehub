@@ -625,15 +625,17 @@ def test_repair_managed_steam_input_overrides_sets_enabled_for_managed_apps(work
             disable_cloud=True,
         )
 
-        assert updates == 5
+        assert updates == 8
         updated = vdf.loads(context.localconfig_path.read_text(encoding="utf-8"))
         apps = updated["UserLocalConfigStore"]["Software"]["Valve"]["Steam"]["apps"]
         assert apps["100"]["UseSteamControllerConfig"] == "1"
         assert apps["200"]["UseSteamControllerConfig"] == "1"
         assert apps["300"]["UseSteamControllerConfig"] == "1"
+        assert apps["999"]["UseSteamControllerConfig"] == "1"
         assert apps["100"]["DisableCloud"] == "1"
         assert apps["200"]["DisableCloud"] == "1"
         assert apps["300"]["DisableCloud"] == "1"
+        assert apps["999"]["DisableCloud"] == "1"
 
 
 def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
@@ -952,10 +954,10 @@ def test_deck_template_seeds_axis_inversion_matches_wii_and_n3ds_targets() -> No
     wii_text = wii_seed.read_text(encoding="utf-8")
     n3ds_text = n3ds_seed.read_text(encoding="utf-8")
 
-    assert '"invert_x"\t\t"1"' in n3ds_text
-    assert '"invert_x"\t\t"0"' in wii_text
+    assert '"invert_x"\t\t"0"' in n3ds_text
+    assert '"invert_x"\t\t"1"' in wii_text
     assert '"invert_y"\t\t"1"' in wii_text
-    assert '"invert_x"\t\t"1"' not in wii_text
+    assert '"invert_x"\t\t"1"' not in n3ds_text
     assert '"invert_y"\t\t"1"' not in n3ds_text
 
 
