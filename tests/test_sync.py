@@ -215,7 +215,7 @@ def test_apply_steam_updates_deck_repairs_steam_input_overrides(monkeypatch) -> 
 
     assert "collections" in order
     assert "collections-cloud" in order
-    assert "repair:-602952253,241100:disable_cloud=True:exclude=241100" in order
+    assert "repair:-602952253:disable_cloud=True:exclude=" in order
 
 
 def test_apply_steam_updates_deck_always_repairs_steam_input_overrides(monkeypatch) -> None:

@@ -17,7 +17,6 @@ DECK_TEMPLATE_FILENAMES_BY_SYSTEM = {
     "Wii": (_DECK_TEMPLATE_WII_FILENAME,),
     "N3DS": (_DECK_TEMPLATE_N3DS_FILENAME,),
 }
-DECK_TEMPLATE_DISABLED_SYSTEMS = {"GC"}
 
 
 def seed_path_for_system(system_name: str) -> Path | None:

@@ -103,7 +103,7 @@ Steam mutation behavior notes:
   - template sync is deterministic fail-fast when required Deck roots/seeds are unavailable.
 - GAMEHUB canonicalizes collection membership appids to unsigned numeric values in both `localconfig.vdf` (`user-collections`) and cloud storage collection entries.
 - On Linux Steam Deck, GAMEHUB always repairs managed app overrides so `UseSteamControllerConfig = 1` for managed app entries.
-- Managed `Wii`/`N3DS` app entries are written with `DisableCloud = 1`; Steam Input app `241100` remains cloud-enabled to keep `CLOUD_<title>/...` resolution intact.
+- Managed `Wii`/`N3DS` app entries are written with `DisableCloud = 1`.
 - Steam reopen requires an active desktop/GUI session; SSH-only sessions may apply file updates successfully but fail to relaunch Steam.
 
 `paths.gamehub_dir` is the local sync root. Derived paths:

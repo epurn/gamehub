@@ -20,6 +20,7 @@ from gamehub_cli.steam import (
     discover_steam_id,
     discover_userdata_dir,
     is_steam_running,
+    normalize_steam_input_title_dir,
     prune_grid_noncanonical_variants,
     reopen_steam,
     repair_managed_steam_input_overrides,
@@ -685,7 +686,6 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
     monkeypatch,
     workspace_tempdir,
 ) -> None:
-    from gamehub_cli.steam import input_templates as steam_input_templates
     from gamehub_cli.steam.deck_templates import roots as deck_template_roots
     from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
 
@@ -794,14 +794,9 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         template_root.mkdir(parents=True, exist_ok=True)
         remote_template_root = temp_root / "userdata" / "95402412" / "241100" / "remote" / "95402412" / "config"
         remote_template_root.mkdir(parents=True, exist_ok=True)
-        (template_root / "steam_autocloud.vdf").write_text('"steam_autocloud.vdf"\n{\n}\n', encoding="utf-8")
-        (remote_template_root / "steam_autocloud.vdf").write_text(
-            '"steam_autocloud.vdf"\n{\n}\n',
-            encoding="utf-8",
-        )
-        gc_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Luigi's Mansion")
-        wii_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
-        n3ds_template = template_root / steam_input_templates.normalize_steam_input_title_dir("Tomodachi Life")
+        gc_template = template_root / normalize_steam_input_title_dir("Luigi's Mansion")
+        wii_template = template_root / normalize_steam_input_title_dir("Super Mario Galaxy")
+        n3ds_template = template_root / normalize_steam_input_title_dir("Tomodachi Life")
         gc_template.mkdir(parents=True, exist_ok=True)
         wii_template.mkdir(parents=True, exist_ok=True)
         n3ds_template.mkdir(parents=True, exist_ok=True)
@@ -863,7 +858,8 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         device_controller_config = device_configset_payload.get("controller_config", {})
         assert device_controller_config["super mario galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert device_controller_config["tomodachi life"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
-        assert "3242237453" not in device_controller_config
+        assert device_controller_config["3242237453"]["template"] == "CLOUD_luigi's mansion/gamehub_wii"
+        assert device_controller_config["3242237453"]["autosave"] == "1"
         assert device_controller_config["3366254221"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert device_controller_config["4290272364"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
         assert device_controller_config["-928713075"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
@@ -899,12 +895,8 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert "CLOUD_tomodachi life/gamehub_3ds" in (template_root / "configset_controller_neptune.vdf").read_text(
             encoding="utf-8"
         )
-        remote_wii_template = remote_template_root / steam_input_templates.normalize_steam_input_title_dir(
-            "Super Mario Galaxy"
-        )
-        remote_n3ds_template = remote_template_root / steam_input_templates.normalize_steam_input_title_dir(
-            "Tomodachi Life"
-        )
+        remote_wii_template = remote_template_root / normalize_steam_input_title_dir("Super Mario Galaxy")
+        remote_n3ds_template = remote_template_root / normalize_steam_input_title_dir("Tomodachi Life")
         assert (remote_wii_template / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
         assert (remote_n3ds_template / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
         remote_configset_payload = vdf.loads(
@@ -919,15 +911,12 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert second.targets == 2
         assert second.written == 0
         assert second.unchanged == 2
-        assert not (template_root / "steam_autocloud.vdf").exists()
-        assert not (remote_template_root / "steam_autocloud.vdf").exists()
 
 
 def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_missing(
     monkeypatch,
     workspace_tempdir,
 ) -> None:
-    from gamehub_cli.steam import input_templates as steam_input_templates
     from gamehub_cli.steam.deck_templates import roots as deck_template_roots
     from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
 
@@ -987,7 +976,7 @@ def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_
 
         result = apply_deck_steam_input_templates(context, index, shortcut_result)
 
-        title_dir = root_parent / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
+        title_dir = root_parent / normalize_steam_input_title_dir("Super Mario Galaxy")
         assert result.targets == 1
         assert result.written == 1
         assert (title_dir / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
@@ -1145,7 +1134,6 @@ def test_apply_deck_steam_input_templates_preserves_seed_payload_bytes(monkeypat
 def test_apply_deck_steam_input_templates_preserves_existing_managed_file_without_reseed(
     monkeypatch, workspace_tempdir
 ) -> None:
-    from gamehub_cli.steam import input_templates as steam_input_templates
     from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
     from gamehub_cli.steam.deck_templates import sync as deck_template_sync
 
@@ -1202,7 +1190,7 @@ def test_apply_deck_steam_input_templates_preserves_existing_managed_file_withou
             total_shortcuts=1,
         )
 
-        title_dir = template_root / steam_input_templates.normalize_steam_input_title_dir("Super Mario Galaxy")
+        title_dir = template_root / normalize_steam_input_title_dir("Super Mario Galaxy")
         title_dir.mkdir(parents=True, exist_ok=True)
         target = title_dir / "gamehub_wii.vdf"
         target.write_bytes(b"USER_CUSTOMIZED_TEMPLATE")

@@ -14,16 +14,6 @@ from .seeds import template_selection_name_for_system
 
 _DECK_TEMPLATE_CONFIGSET_FILENAME = "configset_controller_neptune.vdf"
 _DECK_TEMPLATE_CONFIGSET_GLOB = "configset_*.vdf"
-_DECK_TEMPLATE_CONFIGSET_AUTOSAVE = "1"
-_DECK_MANAGED_TEMPLATE_SELECTIONS = frozenset(
-    {
-        "controller_neptune",
-        "wii_0",
-        "3ds_0",
-        "gamehub_wii",
-        "gamehub_3ds",
-    }
-)
 
 
 def template_reference_for_title(title: TitleEntry) -> str:
@@ -34,20 +24,6 @@ def template_reference_for_title(title: TitleEntry) -> str:
 
 def _forced_controller_config_entry(*, title: TitleEntry) -> dict[str, str]:
     return {"template": template_reference_for_title(title)}
-
-
-def _is_managed_template_name(value: str) -> bool:
-    normalized = str(value).strip().casefold()
-    if not normalized:
-        return False
-    base = normalized[:-4] if normalized.endswith(".vdf") else normalized
-    if base in _DECK_MANAGED_TEMPLATE_SELECTIONS:
-        return True
-    if normalized.startswith("cloud_"):
-        for selection in _DECK_MANAGED_TEMPLATE_SELECTIONS:
-            if normalized.endswith(f"/{selection}") or normalized.endswith(f"/{selection}.vdf"):
-                return True
-    return False
 
 
 def _canonical_signed_app_id(app_id: str) -> str | None:
@@ -90,7 +66,6 @@ def sync_deck_template_selection_configset(
     *,
     configset_path: Path,
     managed_titles: list[TitleEntry],
-    removed_titles: list[TitleEntry],
     shortcut_result: ShortcutSyncResult,
 ) -> None:
     try:
@@ -131,19 +106,6 @@ def sync_deck_template_selection_configset(
             del controller_config[existing_key]
             changed = True
 
-    for title in removed_titles:
-        app_id = shortcut_result.app_ids_by_title.get(title.title_id)
-        for key in _configset_entry_keys(title.title_name, app_id):
-            existing_entry = controller_config.get(key)
-            if not isinstance(existing_entry, dict):
-                continue
-            template_name = str(existing_entry.get("template", ""))
-            autosave = str(existing_entry.get("autosave", "")).strip()
-            if not _is_managed_template_name(template_name) and autosave != _DECK_TEMPLATE_CONFIGSET_AUTOSAVE:
-                continue
-            del controller_config[key]
-            changed = True
-
     if not changed:
         return
     try:
@@ -181,13 +143,11 @@ def sync_deck_template_selection_configsets(
     *,
     root: Path,
     managed_titles: list[TitleEntry],
-    removed_titles: list[TitleEntry],
     shortcut_result: ShortcutSyncResult,
 ) -> None:
     for configset_path in _iter_target_configset_paths(root):
         sync_deck_template_selection_configset(
             configset_path=configset_path,
             managed_titles=managed_titles,
-            removed_titles=removed_titles,
             shortcut_result=shortcut_result,
         )

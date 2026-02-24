@@ -86,7 +86,7 @@ Steam close behavior:
       - writes raw seed bytes without runtime metadata rewriting
       - is deterministic fail-fast: missing required roots/seeds fail the Steam apply stage
       - managed app overrides are always repaired so `UseSteamControllerConfig = 1` for managed app entries
-      - managed `Wii`/`N3DS` app entries are written with `DisableCloud = 1`, while Steam Input app `241100` remains cloud-enabled so `CLOUD_<title>/...` template pointers resolve
+      - managed `Wii`/`N3DS` app entries are written with `DisableCloud = 1`
    - Linux Steam Deck zero-controller detection in `controller-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 11. Save `state.json`

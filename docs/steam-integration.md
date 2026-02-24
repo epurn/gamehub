@@ -61,9 +61,8 @@
 - Managed template sync force-overwrites per-title selection aliases (appid/title variants) for `Wii` and `N3DS`.
 - Managed per-title template payload files (`gamehub_wii.vdf`/`gamehub_3ds.vdf`) are preserved by default and only overwritten when sync runs with `--reseed-profiles`.
 - Managed template sync does not delete legacy per-title template variant files; only managed `gamehub_wii.vdf`/`gamehub_3ds.vdf` payloads and selection configsets are updated.
-- Managed template sync removes legacy `steam_autocloud.vdf` files from active Deck Steam Input roots to avoid stale source-of-truth conflicts.
 - Managed per-title template files are also mirrored to present app-remote roots under `userdata/<steamid>/241100/remote/*/config/<normalized_title>/`.
-- Deck app override repair always sets `UseSteamControllerConfig=1` for managed `Wii`/`N3DS` app entries and sets `DisableCloud=1` for those appids. Steam Input app `241100` is kept cloud-enabled so `CLOUD_<title>/...` references remain resolvable.
+- Deck app override repair sets `UseSteamControllerConfig=1` and `DisableCloud=1` for managed `Wii`/`N3DS` app entries.
 - Root resolution precedence:
   - `~/.local/share/Steam/steamapps/common/Steam Controller Configs/<steamid>/config` and `.../<steamid>/`
   - `~/.steam/steam/steamapps/common/Steam Controller Configs/<steamid>/config` and `.../<steamid>/`

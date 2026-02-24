@@ -6,13 +6,9 @@ from gamehub_common.models import LibraryIndex
 
 from ..io import _atomic_write_bytes
 from ..types import ShortcutSyncResult, SteamContext
-from .cleanup import (
-    cleanup_legacy_steam_autocloud_files,
-)
 from .configset import sync_deck_template_selection_configsets
 from .roots import normalize_steam_input_title_dir, resolve_deck_steam_input_roots
 from .seeds import (
-    DECK_TEMPLATE_DISABLED_SYSTEMS,
     DECK_TEMPLATE_SEED_BY_SYSTEM,
     DECK_TEMPLATE_SYSTEM_ORDER,
     load_seed_payloads,
@@ -45,8 +41,7 @@ def apply_deck_steam_input_templates(
         if title.title_id in managed_title_ids
     ]
     managed_titles = [title for title in candidate_titles if title.system in DECK_TEMPLATE_SEED_BY_SYSTEM]
-    removed_titles = [title for title in candidate_titles if title.system in DECK_TEMPLATE_DISABLED_SYSTEMS]
-    if not managed_titles and not removed_titles:
+    if not managed_titles:
         return TemplateSyncResult(targets=0, written=0, unchanged=0, systems_applied=())
 
     required_systems = [
@@ -87,11 +82,9 @@ def apply_deck_steam_input_templates(
             unchanged += 1
 
     for root in roots:
-        cleanup_legacy_steam_autocloud_files(root=root)
         sync_deck_template_selection_configsets(
             root=root,
             managed_titles=managed_titles,
-            removed_titles=removed_titles,
             shortcut_result=shortcut_result,
         )
 
