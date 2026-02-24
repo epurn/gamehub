@@ -154,6 +154,7 @@ Refactor guardrail:
 - Treat maintainability as a release requirement, not a cleanup task:
   - avoid copy/pasting business logic across modules
   - extract shared helpers in `common/` when logic is used in more than one runtime path
+  - remove failed/experimental attempts as you go; do not leave dead fallback/fix branches for later cleanup
 - Keep module responsibilities narrow:
   - orchestration modules should coordinate calls, not own parsing/mutation details
   - parsing/mutation logic should live in dedicated helpers with focused unit tests
