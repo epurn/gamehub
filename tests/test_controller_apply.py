@@ -347,10 +347,10 @@ def test_apply_controller_profile_dolphin_linux_steam_deck_bindings_are_ab_first
 
         assert "Buttons/A = SOUTH | `Button A`" in gcpad_text
         assert "Buttons/B = EAST | `Button B`" in gcpad_text
-        assert "Buttons/Z = `Shoulder R`" in gcpad_text
-        assert "Triggers/R = `Trigger R`" in gcpad_text
-        assert "Buttons/A = SOUTH | `Button A` | `Shoulder R`" in wiimote_text
-        assert "Buttons/B = EAST | `Button B` | `Trigger R`" in wiimote_text
+        assert "Buttons/Z = `Shoulder R` | `Button 5`" in gcpad_text
+        assert "Triggers/R = `Trigger R` | `Axis 5+`" in gcpad_text
+        assert "Buttons/A = SOUTH | `Button A` | `Shoulder R` | `Button 5`" in wiimote_text
+        assert "Buttons/B = EAST | `Button B` | `Trigger R` | `Axis 5+`" in wiimote_text
 
 
 def test_apply_controller_profile_dolphin_linux_kbm_uses_virtual_pointer_hotkeys(
@@ -920,7 +920,7 @@ def test_apply_controller_profile_dolphin_linux_deck_backfills_mouse_pointer_for
         assert "IR/Down = `XInput2/0/Virtual core pointer:Cursor Y+`" in wiimote_text
         assert "IR/Left = `XInput2/0/Virtual core pointer:Cursor X-`" in wiimote_text
         assert "IR/Right = `XInput2/0/Virtual core pointer:Cursor X+`" in wiimote_text
-        assert "Buttons/B = EAST | `Button B` | `Trigger R`" in wiimote_text
+        assert "Buttons/B = EAST | `Button B` | `Trigger R` | `Axis 5+`" in wiimote_text
 
 
 def test_apply_controller_profile_dolphin_linux_deck_seeds_mouse_pointer_mapping(
