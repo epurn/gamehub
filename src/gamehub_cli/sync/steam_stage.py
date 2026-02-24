@@ -56,11 +56,6 @@ _DOLPHIN_EXEC_TOKEN_RE = re.compile(r"\s(-e|--exec)(\s|=)")
 _DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
 _AZAHAR_LINUX_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_LINUX_EXIT_HOOK"
 _STEAM_ALLOW_DESKTOP_CONFIG_ENV = "GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG"
-_DECK_REPAIR_STEAM_INPUT_ENV = "GAMEHUB_DECK_REPAIR_STEAM_INPUT"
-_DECK_DISABLE_STEAM_CLOUD_INPUT_ENV = "GAMEHUB_DECK_DISABLE_STEAM_CLOUD_INPUT"
-_DECK_TEMPLATE_SYNC_ENV = "GAMEHUB_DECK_TEMPLATE_SYNC"
-_DECK_TEMPLATE_STRICT_ENV = "GAMEHUB_DECK_TEMPLATE_STRICT"
-_STEAM_INPUT_CONFIG_APP_ID = "241100"
 _WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar"}
 
 
@@ -485,6 +480,7 @@ def apply_steam_updates(
     require_steam_closed: bool,
     artwork_by_title: dict[str, dict[str, Path]],
     reopen_steam_after_update: bool = True,
+    reseed_profiles: bool = False,
 ) -> None:
     context = resolve_steam_context(config)
     if context is None:
@@ -509,56 +505,39 @@ def apply_steam_updates(
         "Steam shortcuts synced: "
         f"managed_titles={len(shortcut_result.app_ids_by_title)} total_shortcuts={shortcut_result.total_shortcuts}"
     )
-    if (
-        sys.platform.startswith("linux")
-        and is_steam_deck_linux()
-        and _env_enabled(_DECK_TEMPLATE_SYNC_ENV, default=True)
-    ):
-        strict_template_sync = _env_enabled(_DECK_TEMPLATE_STRICT_ENV, default=True)
+    if sys.platform.startswith("linux") and is_steam_deck_linux():
         template_sync = apply_deck_steam_input_templates(
             context,
             index,
             shortcut_result,
-            strict=strict_template_sync,
+            overwrite_existing=reseed_profiles,
         )
         systems = ",".join(template_sync.systems_applied) if template_sync.systems_applied else "-"
         print(
             "steam-input-template-sync "
             f"systems={systems} "
             f"written={template_sync.written} "
-            f"unchanged={template_sync.unchanged} "
-            f"strict={strict_template_sync}"
+            f"unchanged={template_sync.unchanged}"
         )
-        if template_sync.errors:
-            print(f"Warning: steam-input-template-sync encountered errors={template_sync.errors}")
     if not shortcut_result.app_ids_by_system:
         print("Warning: no GAMEHUB appids were derived from persisted shortcuts")
     local_update_count = update_collections(context, shortcut_result.app_ids_by_system)
     cloud_update_count = update_cloud_collections(context, shortcut_result.app_ids_by_system)
     deck_repair_count = 0
-    if (
-        sys.platform.startswith("linux")
-        and is_steam_deck_linux()
-        and _env_enabled(_DECK_REPAIR_STEAM_INPUT_ENV, default=True)
-    ):
+    if sys.platform.startswith("linux") and is_steam_deck_linux():
         template_managed_app_ids = [
             *shortcut_result.app_ids_by_system.get("Wii", []),
             *shortcut_result.app_ids_by_system.get("N3DS", []),
         ]
         if not template_managed_app_ids:
             template_managed_app_ids = list(shortcut_result.app_ids_by_title.values())
-        disable_cloud_input = _env_enabled(_DECK_DISABLE_STEAM_CLOUD_INPUT_ENV, default=True)
-        if disable_cloud_input:
-            # Always include Steam Input app metadata so stale DisableCloud can be removed.
-            template_managed_app_ids.append(_STEAM_INPUT_CONFIG_APP_ID)
         template_managed_app_ids = list(
             dict.fromkeys(str(app_id).strip() for app_id in template_managed_app_ids if str(app_id).strip())
         )
         deck_repair_count = repair_managed_steam_input_overrides(
             context,
             template_managed_app_ids,
-            disable_cloud=disable_cloud_input,
-            disable_cloud_exclude_app_ids={_STEAM_INPUT_CONFIG_APP_ID},
+            disable_cloud=True,
         )
     update_count = local_update_count + cloud_update_count + deck_repair_count
     if update_count:

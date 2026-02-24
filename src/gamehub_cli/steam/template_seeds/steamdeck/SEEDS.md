@@ -8,14 +8,14 @@ Seed files:
 
 Current baseline:
 - Initial seed snapshot is based on a community Deck template file (`mysmg.vdf`) from EmuDeck community creations.
-- Stage 1 freshness status:
-  - seed source metadata is normalized in-repo (`title`/`description`/`url`/`creator`/`progenitor`/`Timestamp`)
-  - GAMEHUB also normalizes the same metadata during render/write as a defensive guardrail
-  - functional mapping blocks are preserved verbatim from the seed payloads
+- Stage 2 policy:
+  - committed seed files are authoritative payloads
+  - GAMEHUB writes raw seed bytes with no runtime metadata rewrite
+  - manual seed edits are preserved in output as-is
 
 Why these seed files are still required:
 - They are the committed deterministic source of full Steam Input mapping graphs for managed `Wii`/`N3DS`.
-- Runtime template generation depends on these payloads before per-title metadata rewrite.
+- Runtime template generation depends on these payloads directly.
 - Removing seeds would prevent GAMEHUB from reconstructing managed Deck templates during sync.
 
 Refresh workflow:
@@ -35,5 +35,5 @@ Notes:
   - `controller_config` normalized title keys and companion alias keys (`appid`/signed/title variants) are set to `template=CLOUD_<normalized_title>/gamehub_wii` (`Wii`) or `template=CLOUD_<normalized_title>/gamehub_3ds` (`N3DS`)
 - GAMEHUB also mirrors those `controller_config` selections to active `configset_*.vdf` files (including `configset_controller_*.vdf` variants).
 - When present, GAMEHUB mirrors per-title/template-configset writes into `userdata/<steamid>/241100/remote/*/config/` so Deck startup local+cloud input roots stay aligned.
-- Managed sync force-overwrites those per-title selections and removes legacy title-level template variants (`controller_*.vdf`, `wii_*.vdf`, `3ds_*.vdf`) for managed `Wii`/`N3DS` titles.
+- Managed sync force-overwrites per-title selection aliases in configsets but does not remove legacy title-level template variant files.
 - Title normalization uses lower-case (`casefold`), replaces `/` and `\` with space, and collapses whitespace.

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Callable
@@ -12,17 +11,9 @@ from .detection import detect_xbox_controllers, is_steam_deck_linux
 from .profiles import PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P, load_profile_file
 
 _DOLPHIN_KBM_FALLBACK_DEVICE_MARKERS = ("virtual core pointer", "keyboard mouse")
-_DOLPHIN_STEAM_DECK_DEVICE_MARKERS = (
-    "steam deck",
-    "steam virtual gamepad",
-    "steam controller",
-    "neptune controller",
-)
 _DOLPHIN_NON_GAMEPAD_DEVICE_MARKERS = ("motion sensor", "accelerometer", "gyroscope", "gyro", "imu")
 _DOLPHIN_GENERIC_SDL_DEVICE_NAMES = {"gamepad", "controller", "joystick"}
-_DOLPHIN_STEAM_DECK_DEVICE = "SteamDeck/0/Steam Deck"
 _DOLPHIN_STEAM_DECK_POINTER_DEVICE = "XInput2/0/Virtual core pointer"
-_DOLPHIN_DECK_DEVICE_MODE_ENV = "GAMEHUB_DOLPHIN_DECK_DEVICE_MODE"
 _DOLPHIN_DEFAULT_EVDEV_FALLBACK = "evdev/0/Microsoft X-Box 360 pad 0"
 
 
@@ -37,33 +28,14 @@ def _dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
     return paths
 
 
-def _deck_device_mode() -> str:
-    raw = os.environ.get(_DOLPHIN_DECK_DEVICE_MODE_ENV)
-    if raw is None:
-        return "auto"
-    normalized = raw.strip().casefold()
-    if normalized in {"auto", "evdev", "steamdeck"}:
-        return normalized
-    return "auto"
-
-
 def _is_xbox_like_name(name: str) -> bool:
     normalized = name.casefold()
     return any(marker in normalized for marker in ("xbox", "x-box", "xinput", "microsoft x-box"))
 
 
-def _dolphin_deck_linux_device_pair(profile_name: str) -> tuple[str, str, str]:
-    mode = _deck_device_mode()
+def _dolphin_deck_linux_device_pair(profile_name: str) -> tuple[str, str]:
     controllers = detect_xbox_controllers(max_devices=2)
     xbox_like = [controller for controller in controllers if _is_xbox_like_name(controller.name)]
-
-    if mode == "steamdeck":
-        pad_device0 = _DOLPHIN_STEAM_DECK_DEVICE
-        if profile_name == PROFILE_XBOX_2P and len(controllers) >= 2:
-            pad_device1 = f"SDL/{controllers[1].slot}/{controllers[1].name}"
-        else:
-            pad_device1 = "None"
-        return pad_device0, pad_device1, mode
 
     if xbox_like:
         primary = xbox_like[0]
@@ -76,27 +48,20 @@ def _dolphin_deck_linux_device_pair(profile_name: str) -> tuple[str, str, str]:
         pad_device1 = f"evdev/{secondary.slot}/{secondary.name}"
     else:
         pad_device1 = "None"
-    return pad_device0, pad_device1, mode
+    return pad_device0, pad_device1
 
 
-def _dolphin_linux_device_pair(profile_name: str) -> tuple[str, str, str]:
+def _dolphin_linux_device_pair(profile_name: str) -> tuple[str, str]:
     controllers = detect_xbox_controllers(max_devices=2)
     if is_steam_deck_linux():
         return _dolphin_deck_linux_device_pair(profile_name)
-    if any(
-        any(marker in controller.name.casefold() for marker in _DOLPHIN_STEAM_DECK_DEVICE_MARKERS)
-        for controller in controllers
-    ):
-        if len(controllers) >= 2:
-            return _DOLPHIN_STEAM_DECK_DEVICE, f"SDL/{controllers[1].slot}/{controllers[1].name}", "steamdeck"
-        return _DOLPHIN_STEAM_DECK_DEVICE, "None", "steamdeck"
     if len(controllers) >= 2:
-        return f"evdev/0/{controllers[0].name}", f"evdev/1/{controllers[1].name}", "auto"
+        return f"evdev/0/{controllers[0].name}", f"evdev/1/{controllers[1].name}"
     if len(controllers) == 1:
         if profile_name == PROFILE_XBOX_1P:
-            return f"evdev/0/{controllers[0].name}", "None", "auto"
-        return f"evdev/0/{controllers[0].name}", "XInput2/0/Virtual core pointer", "auto"
-    return "SDL/0/Gamepad", "SDL/1/Gamepad", "auto"
+            return f"evdev/0/{controllers[0].name}", "None"
+        return f"evdev/0/{controllers[0].name}", _DOLPHIN_STEAM_DECK_POINTER_DEVICE
+    return "SDL/0/Gamepad", "SDL/1/Gamepad"
 
 
 def _dolphin_windows_device_pair(profile_name: str) -> tuple[str, str]:
@@ -122,15 +87,14 @@ def _override_dolphin_device_sections(
     *,
     profile_name: str,
     existing_sections: dict[str, dict[str, str]] | None = None,
-) -> tuple[dict[str, dict[str, str]], str, str, str]:
-    device_mode = "auto"
+) -> tuple[dict[str, dict[str, str]], str, str]:
     selected_device = ""
     if sys.platform.startswith("linux"):
         if profile_name == PROFILE_KBM:
             pad_device0, pad_device1 = "XInput2/0/Virtual core pointer", "None"
             hotkey_device0, hotkey_device1 = "XInput2/0/Virtual core pointer", "XInput2/0/Virtual core pointer"
         else:
-            pad_device0, pad_device1, device_mode = _dolphin_linux_device_pair(profile_name)
+            pad_device0, pad_device1 = _dolphin_linux_device_pair(profile_name)
             if profile_name == PROFILE_XBOX_1P:
                 pad_device1 = "None"
             hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
@@ -138,7 +102,7 @@ def _override_dolphin_device_sections(
         pad_device0, pad_device1 = _dolphin_windows_device_pair(profile_name)
         hotkey_device0, hotkey_device1 = pad_device0, pad_device1
     else:
-        return sections, "rebind", selected_device, device_mode
+        return sections, "rebind", selected_device
     selected_device = pad_device0
     updated: dict[str, dict[str, str]] = {section: dict(values) for section, values in sections.items()}
     device_identity_mode = "preserve"
@@ -197,7 +161,7 @@ def _override_dolphin_device_sections(
         if section_name not in updated:
             continue
         updated[section_name]["Device"] = device
-    return updated, device_identity_mode, selected_device, device_mode
+    return updated, device_identity_mode, selected_device
 
 
 def _dolphin_hotkey_expression_for_profile(profile_name: str) -> str:
@@ -258,9 +222,8 @@ def apply_dolphin_profile(
     audit_writer: Callable[[str], None] | None = None,
 ) -> list[Path]:
     touched: list[Path] = []
-    device_modes: list[str] = []
+    device_identity_modes: list[str] = []
     selected_devices: list[str] = []
-    selected_mode = "auto"
     for target_dir in _dolphin_target_config_dirs(config):
         dolphin_ini = target_dir / "Dolphin.ini"
         dolphin_sections = {
@@ -281,7 +244,7 @@ def apply_dolphin_profile(
             existing_sections = (
                 parse_ini_sections(target_path.read_text(encoding="utf-8").splitlines()) if target_path.exists() else {}
             )
-            sections, device_mode, selected_device, selected_mode = _override_dolphin_device_sections(
+            sections, device_identity_mode, selected_device = _override_dolphin_device_sections(
                 sections,
                 profile_name=profile_name,
                 existing_sections=existing_sections,
@@ -293,15 +256,13 @@ def apply_dolphin_profile(
             sections = _override_dolphin_hotkey_sections(sections, profile_name=profile_name)
             apply_managed_ini_sections(target_path=target_path, sections=sections)
             touched.append(target_path)
-            device_modes.append(device_mode)
+            device_identity_modes.append(device_identity_mode)
             if selected_device:
                 selected_devices.append(selected_device)
-    if device_modes:
-        overall_mode = "preserve" if all(mode == "preserve" for mode in device_modes) else "rebind"
+    if device_identity_modes:
+        overall_mode = "preserve" if all(mode == "preserve" for mode in device_identity_modes) else "rebind"
         if audit_writer is not None:
             if selected_devices:
-                audit_writer(
-                    f"controller-autoconfig\tdolphin_device_selected={selected_devices[0]}\tdevice_mode={selected_mode}"
-                )
+                audit_writer(f"controller-autoconfig\tdolphin_device_selected={selected_devices[0]}")
             audit_writer(f"controller-autoconfig\tdevice_identity_mode={overall_mode}")
     return touched

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from .artwork import backup_steam_configs, copy_grid_art, prune_grid_noncanonical_variants
 from .collections import repair_managed_steam_input_overrides, update_cloud_collections, update_collections
-from .input_templates import (
+from .deck_templates import (
     TemplateSyncResult,
     apply_deck_steam_input_templates,
     discover_deck_steam_input_roots,

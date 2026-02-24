@@ -8,7 +8,6 @@ from ..common.config import GamehubConfig
 from ..common.config_edit import parse_qsettings_pairs, read_qsettings_key, upsert_qsettings_key
 from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID
 from ..firmware.pcsx2_ini import read_ini_lines, write_ini_atomic
-from .detection import is_steam_deck_linux
 from .profiles import PROFILE_KBM, load_profile_file
 from .sdl_guid import (
     _azahar_detect_sdl_identity,
@@ -107,27 +106,6 @@ def _is_pointer_related_azahar_key(key: str) -> bool:
     return any(marker in lowered for marker in _AZAHAR_POINTER_KEY_MARKERS)
 
 
-_DECK_TOUCHPAD_MOUSE_FALLBACKS: dict[str, str] = {
-    r"profiles\1\touch_device": '"engine:emu_window"',
-    r"profiles\1\use_touch_from_button": "false",
-    "hideInactiveMouse": "false",
-}
-
-
-def _apply_azahar_deck_touchpad_mouse_fallback(lines: list[str]) -> tuple[list[str], bool]:
-    if not sys.platform.startswith("linux") or not is_steam_deck_linux():
-        return lines, False
-    changed = False
-    updated = lines
-    for key, value in _DECK_TOUCHPAD_MOUSE_FALLBACKS.items():
-        existing = read_qsettings_key(updated, key)
-        if existing is not None:
-            continue
-        updated, key_changed = upsert_qsettings_key(updated, key, value)
-        changed |= key_changed
-    return updated, changed
-
-
 def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]:
     profile_lines = load_profile_file(
         config,
@@ -201,9 +179,6 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
                 continue
             lines, key_changed = upsert_qsettings_key(lines, key, desired)
             changed |= key_changed
-        if controller_mode:
-            lines, fallback_changed = _apply_azahar_deck_touchpad_mouse_fallback(lines)
-            changed |= fallback_changed
         if changed or not target_path.exists():
             write_ini_atomic(target_path, lines)
         touched.append(target_path)

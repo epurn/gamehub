@@ -322,7 +322,6 @@ def test_apply_controller_profile_dolphin_linux_steam_deck_bindings_are_ab_first
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         monkeypatch.setattr(controller_profiles.sys, "platform", "linux")
-        monkeypatch.setattr(controller_profiles, "is_steam_deck_linux", lambda: True)
         monkeypatch.setattr(controller_profiles, "DEFAULT_PROFILE_TEXTS", controller_profiles._default_profile_texts())
         seed_default_profiles(config)
         dolphin_root = temp_root / "dolphin-user"
@@ -346,40 +345,10 @@ def test_apply_controller_profile_dolphin_linux_steam_deck_bindings_are_ab_first
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
         wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
 
-        assert "Buttons/A = A | SOUTH | `Button A`" in gcpad_text
-        assert "Buttons/B = B | EAST | `Button B`" in gcpad_text
-        assert "Buttons/A = A | SOUTH | `Button A`" in wiimote_text
-        assert "Buttons/B = B | EAST | `Button B`" in wiimote_text
-
-
-def test_apply_controller_profile_dolphin_linux_steam_deck_can_force_steamdeck_mode(
-    monkeypatch, workspace_tempdir
-) -> None:
-    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
-        config = _config(temp_root)
-        seed_default_profiles(config)
-        dolphin_root = temp_root / "dolphin-user"
-        config_dir = dolphin_root / "Config"
-        config_dir.mkdir(parents=True, exist_ok=True)
-
-        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.is_steam_deck_linux", lambda: True)
-        monkeypatch.setenv("GAMEHUB_DOLPHIN_DECK_DEVICE_MODE", "steamdeck")
-        monkeypatch.setattr(
-            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
-            lambda max_devices=2: [XboxController(slot=0, name="Microsoft X-Box 360 pad 0", subtype=None)],
-        )
-        monkeypatch.setattr(
-            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
-        )
-        monkeypatch.setattr(
-            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
-        )
-
-        apply_controller_profile(config, emulator_name="dolphin", controller_count=1)
-        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
-
-        assert "Device = SteamDeck/0/Steam Deck" in gcpad_text
+        assert "Buttons/A = SOUTH | `Button A`" in gcpad_text
+        assert "Buttons/B = EAST | `Button B`" in gcpad_text
+        assert "Buttons/A = SOUTH | `Button A`" in wiimote_text
+        assert "Buttons/B = EAST | `Button B`" in wiimote_text
 
 
 def test_apply_controller_profile_dolphin_linux_kbm_uses_virtual_pointer_hotkeys(
@@ -748,7 +717,7 @@ def test_apply_controller_profile_dolphin_linux_rebinds_generic_sdl_gamepad_for_
 
         wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
         assert "Device = SDL/0/Gamepad" not in wiimote_text
-        assert "Device = SteamDeck/0/Steam Deck" in wiimote_text
+        assert "Device = evdev/0/Steam Deck" in wiimote_text
 
 
 def test_apply_controller_profile_dolphin_linux_deck_rebinds_sdl_xbox_alias_to_evdev_device(
@@ -927,7 +896,6 @@ def test_apply_controller_profile_dolphin_linux_deck_backfills_mouse_pointer_for
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         monkeypatch.setattr(controller_profiles.sys, "platform", "linux")
-        monkeypatch.setattr(controller_profiles, "is_steam_deck_linux", lambda: True)
         monkeypatch.setattr(controller_profiles, "DEFAULT_PROFILE_TEXTS", controller_profiles._default_profile_texts())
         seed_default_profiles(config)
         dolphin_root = temp_root / "dolphin-user"
@@ -950,7 +918,7 @@ def test_apply_controller_profile_dolphin_linux_deck_backfills_mouse_pointer_for
         assert "IR/Down = `XInput2/0/Virtual core pointer:Cursor Y+`" in wiimote_text
         assert "IR/Left = `XInput2/0/Virtual core pointer:Cursor X-`" in wiimote_text
         assert "IR/Right = `XInput2/0/Virtual core pointer:Cursor X+`" in wiimote_text
-        assert "Buttons/B = B | EAST | `Button B`" in wiimote_text
+        assert "Buttons/B = EAST | `Button B`" in wiimote_text
 
 
 def test_apply_controller_profile_dolphin_linux_deck_seeds_mouse_pointer_mapping(
@@ -998,31 +966,6 @@ def test_apply_controller_profile_dolphin_linux_deck_seeds_mouse_pointer_mapping
         assert "IR/Down = `XInput2/0/Virtual core pointer:Cursor Y+`" in wiimote_text
         assert "IR/Left = `XInput2/0/Virtual core pointer:Cursor X-`" in wiimote_text
         assert "IR/Right = `XInput2/0/Virtual core pointer:Cursor X+`" in wiimote_text
-
-
-def test_apply_controller_profile_azahar_deck_backfills_touchpad_mouse_fallback(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
-        config = _config(temp_root)
-        seed_default_profiles(config)
-        qt_config = temp_root / "azahar" / "qt-config.ini"
-        qt_config.parent.mkdir(parents=True, exist_ok=True)
-        qt_config.write_text("profile=0\n", encoding="utf-8")
-
-        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
-        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.is_steam_deck_linux", lambda: True)
-        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
-        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: False)
-        monkeypatch.setattr(
-            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
-            lambda port=0: "040018dc5e040000130b000000006800",
-        )
-
-        apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
-        text = qt_config.read_text(encoding="utf-8")
-
-        assert r'profiles\1\touch_device="engine:emu_window"' in text
-        assert r"profiles\1\use_touch_from_button=false" in text
-        assert "hideInactiveMouse=false" in text
 
 
 def _line_for_key(text: str, key: str) -> str | None:

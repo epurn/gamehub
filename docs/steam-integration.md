@@ -59,10 +59,10 @@
   - when present, mirrored app-remote roots under `userdata/<steamid>/241100/remote/*/config/` receive the same `configset_*.vdf` updates
   - `controller_config` entries set both normalized title keys and companion alias keys (`appid`/signed/title variants) to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
 - Managed template sync force-overwrites per-title selection aliases (appid/title variants) for `Wii` and `N3DS`.
-- Managed template sync also removes legacy per-title Deck template variants (`controller_*.vdf`, `wii_*.vdf`, `3ds_*.vdf`) so stale custom selections do not persist.
-- Managed template sync removes legacy `steam_autocloud.vdf` files from active Deck Steam Input roots to avoid stale source-of-truth conflicts.
+- Managed per-title template payload files (`gamehub_wii.vdf`/`gamehub_3ds.vdf`) are preserved by default and only overwritten when sync runs with `--reseed-profiles`.
+- Managed template sync does not delete legacy per-title template variant files; only managed `gamehub_wii.vdf`/`gamehub_3ds.vdf` payloads and selection configsets are updated.
 - Managed per-title template files are also mirrored to present app-remote roots under `userdata/<steamid>/241100/remote/*/config/<normalized_title>/`.
-- Deck app override repair also sets `UseSteamControllerConfig=1` for managed `Wii`/`N3DS` app entries and (by default) `DisableCloud=1` for those appids. Steam Input app `241100` is kept cloud-enabled so `CLOUD_<title>/...` references remain resolvable.
+- Deck app override repair sets `UseSteamControllerConfig=1` and `DisableCloud=1` for managed `Wii`/`N3DS` app entries.
 - Root resolution precedence:
   - `~/.local/share/Steam/steamapps/common/Steam Controller Configs/<steamid>/config` and `.../<steamid>/`
   - `~/.steam/steam/steamapps/common/Steam Controller Configs/<steamid>/config` and `.../<steamid>/`
@@ -71,14 +71,11 @@
 - Seed source files are committed in:
   - `src/gamehub_cli/steam/template_seeds/steamdeck/wii_gc/wii_0.vdf`
   - `src/gamehub_cli/steam/template_seeds/steamdeck/n3ds/3ds_0.vdf`
-- During render/write, GAMEHUB normalizes non-functional seed metadata fields (`title`, `description`, `url`, `creator`, `progenitor`, `Timestamp`) as a defensive guardrail.
-- Mapping/action blocks from the seed payloads are preserved so behavior remains deterministic.
+- GAMEHUB writes raw seed bytes as-is (no runtime metadata rewriting).
 - Seed refresh helper:
   - `./venv/bin/python scripts/capture_deck_template_seed.py --system wii_gc --title "<TITLE>"`
   - `./venv/bin/python scripts/capture_deck_template_seed.py --system n3ds --title "<TITLE>"`
-- Behavior toggles:
-  - `GAMEHUB_DECK_TEMPLATE_SYNC=true|false` (default `true`)
-  - `GAMEHUB_DECK_TEMPLATE_STRICT=true|false` (default `true`)
+- Deck template sync behavior is deterministic fail-fast when required roots/seeds are missing.
 
 ## Safety behavior
 - If Steam is running, sync attempts close + wait.
