@@ -10,7 +10,7 @@ Config resolution order:
 Sample templates:
 - Windows (verified): [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
 - Bazzite (tested): [docs/templates/config.bazzite.template.toml](templates/config.bazzite.template.toml)
-- Steam Deck (untested): [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
+- Steam Deck (verified): [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 - General Linux: [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
 
 Platform validation status is tracked in [platform-support.md](platform-support.md).
@@ -127,6 +127,7 @@ Firmware deployment and Linux runtime env overrides:
   - Steam launch templates are normalized to pass `-u "<userpath>"`.
   - Dolphin runtime config bootstraps `Dolphin.ini` under `<userpath>/Config` (display/fullscreen + background input flags).
   - Dolphin input profiles (`GCPadNew.ini`, `WiimoteNew.ini`, `Hotkeys.ini`) are applied at launch via controller profiles.
+  - Default Dolphin Xbox mappings include Wii `R1 -> A` and `R2 -> B`; GameCube keeps `R2` on right trigger.
 - `GAMEHUB_RETROARCH_CFG_PATH`: explicit RetroArch config file path.
 - `GAMEHUB_PCSX2_INI_PATH`: explicit PCSX2 ini path.
 - `GAMEHUB_RETROARCH_CORES_BASE_URL`: optional base URL override for RetroArch core downloads.
@@ -180,6 +181,7 @@ Controller launch autoconfig:
 - Does not wrap `RetroArch` launches.
 - Runtime flow: detect Xbox controller count (`0`, `1`, `2+`) -> choose profile (`kbm`, `xbox_1p`, `xbox_2p`) -> apply managed keys -> launch emulator.
 - Linux Steam Deck controller-launch uses a single detect pass and applies `xbox_1p` when detection returns zero.
+- Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later update.
 - Non-Deck platforms keep standard behavior (`0 -> kbm`).
 - Azahar controller-mode apply keeps pointer/touch keys preservation-first, while managed button keys are always normalized from profile mappings.
 - Dolphin Linux controller-mode preserves existing controller-class device identities on non-Deck, while Deck controller-mode uses deterministic `evdev` rebinding.

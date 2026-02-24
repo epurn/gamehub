@@ -15,11 +15,11 @@ Docker-first home server + client CLI that syncs emulator libraries into Steam n
 | --- | --- |
 | Windows | ✅ |
 | Bazzite | ✅ |
-| SteamOS (Deck) | ⚠️ |
+| SteamOS (Deck) | ✅ |
 | Other Linux distros (Fedora/Ubuntu/etc.) | ⚠️ |
 | macOS | ❌ |
 
-### Controller support
+### Controller support (external Xbox)
 | Platform | Xbox controllers |
 | --- | --- |
 | Bazzite | ✅ |
@@ -27,6 +27,8 @@ Docker-first home server + client CLI that syncs emulator libraries into Steam n
 | SteamOS (Deck) | ❌ |
 | Other Linux distros (Fedora/Ubuntu/etc.) | ❌ |
 | macOS | ❌ |
+
+SteamOS (Deck) is fully supported with the built-in controller. External Xbox controller support on Deck is planned for a later update.
 
 Details: [Platform Support (v1)](docs/platform-support.md)
 
@@ -39,7 +41,7 @@ Details: [Platform Support (v1)](docs/platform-support.md)
   - grid/hero/logo/icon artwork
 - SGDB artwork cache with cache-first lookups and portrait+landscape grid support.
 - Steam lifecycle safety: close -> backup -> write -> reopen.
-- Launch-time controller autoconfig for `PCSX2`, `Dolphin`, and `Azahar` (Xbox-first) with user-overridable profile files.
+- Launch-time controller autoconfig for `PCSX2`, `Dolphin`, and `Azahar` with user-overridable profile files (including Steam Deck built-in controller defaults).
 
 Supported systems in v1.1:
 - `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
@@ -54,7 +56,7 @@ Start from a template:
 - Windows: [`docs/templates/config.windows.template.toml`](docs/templates/config.windows.template.toml)
 - Linux: [`docs/templates/config.linux.template.toml`](docs/templates/config.linux.template.toml)
 - Bazzite: [`docs/templates/config.bazzite.template.toml`](docs/templates/config.bazzite.template.toml)
-- Steam Deck (untested): [`docs/templates/config.steamdeck.template.toml`](docs/templates/config.steamdeck.template.toml)
+- Steam Deck: [`docs/templates/config.steamdeck.template.toml`](docs/templates/config.steamdeck.template.toml)
 
 Linux install from latest release wheel:
 ```bash

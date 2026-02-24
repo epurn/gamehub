@@ -3,7 +3,7 @@
 ## Validation Status
 - Windows: verified
 - Bazzite: tested
-- SteamOS (Deck): in-progress (defaults/path coverage improved)
+- SteamOS (Deck): verified
 - Fedora: untested
 - Ubuntu: untested
 
@@ -12,7 +12,7 @@
   - [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
 - Bazzite:
   - [docs/templates/config.bazzite.template.toml](templates/config.bazzite.template.toml)
-- SteamOS (Deck, untested):
+- SteamOS (Deck):
   - [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 
 Legacy/general templates are still available:
@@ -36,11 +36,15 @@ Legacy/general templates are still available:
   - `[linux].flatpak_remote = "flathub"`
 - Keep Bazzite sync runs in an active desktop session so Steam relaunch works.
 
-### SteamOS (Deck), Fedora, Ubuntu (untested)
-- These are not validated release targets for v1.
-- SteamOS (Deck): start from:
+### SteamOS (Deck) (verified)
+- Start from:
   - [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
-- Fedora/Ubuntu: start from:
+- Built-in Steam Deck controller support is validated.
+- External Xbox controller support on Deck is planned for a later update.
+
+### Fedora, Ubuntu (untested)
+- These are not validated release targets for v1.
+- Start from:
   - [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
 - Then review:
   - [config-and-state.md](config-and-state.md)

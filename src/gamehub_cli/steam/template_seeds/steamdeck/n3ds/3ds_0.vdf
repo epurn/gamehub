@@ -804,13 +804,6 @@
 			{
 				"activators"
 				{
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"xinput_button DPAD_LEFT, , "
-						}
-					}
 				}
 				"disabled_activators"
 				{
@@ -820,13 +813,6 @@
 			{
 				"activators"
 				{
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"xinput_button DPAD_RIGHT, , "
-						}
-					}
 				}
 				"disabled_activators"
 				{
@@ -836,13 +822,6 @@
 			{
 				"activators"
 				{
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"xinput_button SHOULDER_RIGHT, , "
-						}
-					}
 				}
 				"disabled_activators"
 				{
@@ -852,13 +831,6 @@
 			{
 				"activators"
 				{
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"xinput_button A, , "
-						}
-					}
 				}
 				"disabled_activators"
 				{
@@ -904,7 +876,7 @@
 			"8"		"right_joystick inactive"
 			"17"		"right_joystick active"
 			"9"		"dpad active"
-			"15"		"gyro active"
+			"15"		"gyro inactive"
 		}
 	}
 	"settings"
