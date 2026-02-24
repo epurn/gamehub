@@ -63,11 +63,15 @@ def test_seed_default_profiles_creates_profile_tree(workspace_tempdir) -> None:
         assert "[GCPad2]" in dolphin_gc_xbox_1p
         assert "Buttons/A = X" in dolphin_gc_xbox_1p
         assert "Buttons/A = SOUTH | `Button A`" in dolphin_gc_xbox_1p
+        assert "Buttons/Z = `Shoulder R`" in dolphin_gc_xbox_1p
+        assert "Triggers/R = `Trigger R`" in dolphin_gc_xbox_1p
 
         dolphin_wii_xbox_1p = (root / "dolphin" / "xbox_1p" / "WiimoteNew.ini").read_text(encoding="utf-8")
         assert "[Wiimote2]" in dolphin_wii_xbox_1p
         assert "Buttons/A = `Click 0`" in dolphin_wii_xbox_1p
         assert "Buttons/A = SOUTH | `Button A`" in dolphin_wii_xbox_1p
+        assert "Buttons/A = SOUTH | `Button A` | `Shoulder R`" in dolphin_wii_xbox_1p
+        assert "Buttons/B = EAST | `Button B` | `Trigger R`" in dolphin_wii_xbox_1p
 
         dolphin_kbm_hotkeys = (root / "dolphin" / "kbm" / "Hotkeys.ini").read_text(encoding="utf-8")
         if sys.platform.startswith("linux"):
@@ -91,6 +95,8 @@ def test_seed_default_profiles_linux_uses_platform_neutral_dolphin_defaults(monk
         assert "Device = DInput/0/Keyboard Mouse" in dolphin_gc_xbox_1p
         assert "Buttons/A = SOUTH | `Button A`" in dolphin_wii_xbox_1p
         assert "Buttons/B = EAST | `Button B`" in dolphin_wii_xbox_1p
+        assert "Buttons/A = SOUTH | `Button A` | `Shoulder R`" in dolphin_wii_xbox_1p
+        assert "Buttons/B = EAST | `Button B` | `Trigger R`" in dolphin_wii_xbox_1p
         assert "Device = SteamDeck/0/Steam Deck" not in dolphin_gc_xbox_1p
         assert "Device = SteamDeck/0/Steam Deck" not in dolphin_wii_xbox_1p
 

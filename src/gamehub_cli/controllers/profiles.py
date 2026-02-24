@@ -143,7 +143,7 @@ _DOLPHIN_XBOX_GCPAD_BINDINGS: tuple[tuple[str, str], ...] = (
     ("Buttons/B", "EAST | `Button B`"),
     ("Buttons/X", "WEST | `Button X`"),
     ("Buttons/Y", "NORTH | `Button Y`"),
-    ("Buttons/Z", "`Trigger R`"),
+    ("Buttons/Z", "`Shoulder R`"),
     ("Buttons/Start", "START | Start"),
     ("Main Stick/Up", "`Axis 1-` | `Left Y+`"),
     ("Main Stick/Down", "`Axis 1+` | `Left Y-`"),
@@ -157,8 +157,8 @@ _DOLPHIN_XBOX_GCPAD_BINDINGS: tuple[tuple[str, str], ...] = (
     ("C-Stick/Right", "`Axis 2+` | `Right X+`"),
     ("C-Stick/Modifier", "`Thumb R`"),
     ("C-Stick/Modifier/Range", "50.000000000000000"),
-    ("Triggers/L", "`Shoulder L`"),
-    ("Triggers/R", "`Shoulder R`"),
+    ("Triggers/L", "`Trigger L`"),
+    ("Triggers/R", "`Trigger R`"),
     ("Rumble/Motor", "`Motor L` | `Motor R`"),
     ("D-Pad/Up", "`Pad N`"),
     ("D-Pad/Down", "`Pad S`"),
@@ -167,8 +167,8 @@ _DOLPHIN_XBOX_GCPAD_BINDINGS: tuple[tuple[str, str], ...] = (
 )
 
 _DOLPHIN_XBOX_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
-    ("Buttons/A", "SOUTH | `Button A`"),
-    ("Buttons/B", "EAST | `Button B`"),
+    ("Buttons/A", "SOUTH | `Button A` | `Shoulder R`"),
+    ("Buttons/B", "EAST | `Button B` | `Trigger R`"),
     ("Buttons/1", "WEST | `Button X`"),
     ("Buttons/2", "NORTH | `Button Y`"),
     ("Buttons/-", "BACK | Back"),

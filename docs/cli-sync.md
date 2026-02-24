@@ -68,11 +68,11 @@ Steam close behavior:
 10. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
    - managed shortcuts persist stable `appid` values on write, so first-run artwork/category mapping does not depend on a later Steam rewrite pass
    - collection membership appids are canonicalized to unsigned numeric values in both localconfig and cloud payloads
-   - when `[controllers].launch_autoconfig = true`, GAMEHUB wraps `PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `controller-launch` command that:
-     - decodes target emulator command payload
-     - detects attached Xbox controllers
-     - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
-     - launches the original emulator command
+    - when `[controllers].launch_autoconfig = true`, GAMEHUB wraps `PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `controller-launch` command that:
+      - decodes target emulator command payload
+      - detects attached controllers (Xbox on non-Deck platforms; built-in controller on Steam Deck)
+      - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
+      - launches the original emulator command
    - Linux Steam Deck default shortcut policy:
      - managed shortcuts default to `AllowDesktopConfig = 0` (native-first controller path)
      - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`
@@ -87,7 +87,8 @@ Steam close behavior:
       - is deterministic fail-fast: missing required roots/seeds fail the Steam apply stage
       - managed app overrides are always repaired so `UseSteamControllerConfig = 1` for managed app entries
       - managed `Wii`/`N3DS` app entries are written with `DisableCloud = 1`
-   - Linux Steam Deck zero-controller detection in `controller-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
+    - Linux Steam Deck zero-controller detection in `controller-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
+    - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later release
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 11. Save `state.json`
 

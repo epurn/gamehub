@@ -43,8 +43,10 @@ cache_dir = "/home/deck/GameHub/artwork-cache/sgdb"
 enabled_kinds = ["grid", "hero", "logo", "icon"]
 
 [controllers]
-# Steam Deck default should favor the built-in controller in launch autoconfig.
+# Steam Deck default targets the built-in controller for launch autoconfig.
 launch_autoconfig = true
+# Steam Deck support is validated for the built-in controller path.
+# External Xbox controller support on Deck is planned for a later release.
 # Deck launcher defaults (env overrides):
 # GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false      (default false on Deck)
 # Steam Deck template sync + managed app override repair are always on for managed Wii/N3DS titles.

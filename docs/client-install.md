@@ -72,6 +72,7 @@ grep -n "^Device =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Confi
 ```
    - Controller exit default is `Back+Start` (pad1/pad2) and is applied via controller profiles.
    - On Linux, controller profiles prefer evdev device roots (for example `evdev/0/Xbox Wireless Controller`) and fall back to `SDL/<n>/Gamepad` when evdev cannot be detected.
+   - Dolphin Xbox profile defaults now include Wii quick actions `R1 -> A` and `R2 -> B`; GameCube keeps `R2` on the right trigger path.
    - Existing Dolphin input files are preserved once present; controller profile apply reconciles managed stop/exit hotkeys.
 11. RetroArch menu combo bootstrap sets `Start+Select` when a writable RetroArch config file is discovered. Verify with:
 ```bash
@@ -113,9 +114,9 @@ export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
 # Optional explicit joystick device:
 # export GAMEHUB_AZAHAR_EXIT_JS_DEVICE=/dev/input/js0
 ```
-14. N3DS Steam Input template limitation (current):
-   - GAMEHUB does not auto-copy Steam Input layouts for N3DS shortcuts.
-   - Configure one shortcut in Steam (`Controller Layout`), export it, then apply the same layout to each N3DS shortcut manually.
+14. N3DS Steam Input templates on Steam Deck:
+   - GAMEHUB auto-syncs managed per-title Steam Input templates for `N3DS` shortcuts during non-dry sync.
+   - Use `gamehub sync --reseed-profiles` to refresh managed Deck template seeds when needed.
 
 ## Steam Deck notes
 - Start from template [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml).
@@ -128,7 +129,7 @@ export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
 emulator_install_backend = "flatpak"
 flatpak_remote = "flathub"
 ```
-- Launch autoconfig now treats the built-in Steam Deck controller as a controller-first default (Xbox controllers remain supported).
+- Steam Deck support is fully validated for the built-in controller path. External Xbox controller support on Deck is planned for a later release.
 - Game Mode note: Steam relaunch/foreground behavior can differ from Desktop Mode; if relaunch is flaky during validation, run with `--skip-steam-relaunch` and reopen Steam manually.
 - Detailed implementation notes: [docs/steamdeck-support-plan.md](steamdeck-support-plan.md).
 
