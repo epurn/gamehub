@@ -261,12 +261,9 @@ def resolve_dolphin_user_dirs(config: GamehubConfig | None = None) -> list[Path]
         values.append(_host_path(appdata) / "Dolphin Emulator")
 
     home = _safe_home_path()
-    legacy = home / ".dolphin-emu"
-    if legacy.exists():
-        values.append(legacy)
     native = home / ".local" / "share" / "dolphin-emu"
     flatpak = linux_flatpak_dolphin_root()
-    existing_linux = [path for path in (flatpak, native, legacy) if path.exists()]
+    existing_linux = [path for path in (flatpak, native) if path.exists()]
     if existing_linux:
         values.extend(existing_linux)
         return unique_paths(values)
@@ -302,10 +299,6 @@ def resolve_dolphin_runtime_user_dir(config: GamehubConfig | None = None) -> Pat
             return _host_path(appdata) / "Dolphin Emulator"
 
     home = _safe_home_path()
-    legacy = home / ".dolphin-emu"
-    if legacy.exists():
-        return legacy
-
     if sys.platform.startswith("linux"):
         flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / DOLPHIN_FLATPAK_APP_ID
         flatpak_export_system = _host_path("/var/lib/flatpak/exports/bin") / DOLPHIN_FLATPAK_APP_ID
@@ -320,7 +313,7 @@ def resolve_dolphin_runtime_user_dir(config: GamehubConfig | None = None) -> Pat
             return flatpak_data
     if sys.platform.startswith("linux"):
         return home / ".local" / "share" / "dolphin-emu"
-    return home / ".dolphin-emu"
+    return home / ".local" / "share" / "dolphin-emu"
 
 
 def resolve_dolphin_config_dirs(config: GamehubConfig | None = None) -> list[Path]:
@@ -336,13 +329,10 @@ def resolve_dolphin_config_dirs(config: GamehubConfig | None = None) -> list[Pat
         return unique_paths(values)
 
     home = _safe_home_path()
-    legacy = home / ".dolphin-emu"
-    if legacy.exists():
-        values.append(legacy)
     native = home / ".config" / "dolphin-emu"
     native_data = home / ".local" / "share" / "dolphin-emu"
     flatpak = linux_flatpak_dolphin_config_root()
-    existing_linux = [path for path in (flatpak, native, native_data, legacy) if path.exists()]
+    existing_linux = [path for path in (flatpak, native, native_data) if path.exists()]
     if existing_linux:
         values.extend(existing_linux)
         return unique_paths(values)

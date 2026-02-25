@@ -5,7 +5,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from platformdirs import user_config_dir, user_state_dir
+from platformdirs import user_state_dir
 
 
 @dataclass(frozen=True)
@@ -52,6 +52,15 @@ class GamehubConfig:
 
 
 _VALID_SGDB_KINDS = ("grid", "hero", "logo", "icon")
+_REMOVED_PATH_KEYS = {
+    "library_dir": "paths.gamehub_dir",
+    "firmware_dir": "paths.gamehub_dir (firmware path is <gamehub_dir>/firmware)",
+    "state_path": "paths.gamehub_dir (state path is <gamehub_dir>/state.json)",
+    "output_dir": "paths.roms_dir",
+}
+_REMOVED_ENV_ALIASES = {
+    "GAMEHUB_OUTPUT_DIR": "GAMEHUB_ROMS_DIR",
+}
 
 
 def default_config_path() -> Path:
@@ -61,9 +70,6 @@ def default_config_path() -> Path:
     home_config = Path.home() / ".gamehub" / "config.toml"
     if home_config.exists():
         return home_config
-    legacy_config = Path(user_config_dir("gamehub")) / "config.toml"
-    if legacy_config.exists():
-        return legacy_config
     return home_config
 
 
@@ -191,18 +197,27 @@ def _path_or_default(raw: object, default: Path) -> Path:
 
 
 def _resolve_paths(paths: dict[str, object]) -> tuple[Path, Path, Path]:
-    """
-    Resolve client storage locations.
+    root = _path_or_default(paths.get("gamehub_dir"), default_gamehub_dir())
+    return root, root / "firmware", root / "state.json"
 
-    Canonical config key is `paths.gamehub_dir`.
-    Legacy keys are accepted as fallback for compatibility.
-    """
-    root = _path_or_default(paths.get("gamehub_dir", paths.get("library_dir")), default_gamehub_dir())
-    if "gamehub_dir" in paths:
-        return root, root / "firmware", root / "state.json"
-    firmware = _path_or_default(paths.get("firmware_dir"), root / "firmware")
-    state = _path_or_default(paths.get("state_path"), root / "state.json")
-    return root, firmware, state
+
+def _reject_removed_path_keys(paths: dict[str, object]) -> None:
+    removed = [key for key in _REMOVED_PATH_KEYS if key in paths]
+    if not removed:
+        return
+    removed_text = ", ".join(f"paths.{key}" for key in removed)
+    migration_text = "; ".join(f"paths.{key} -> {_REMOVED_PATH_KEYS[key]}" for key in removed)
+    raise ValueError(
+        f"Unsupported [paths] keys: {removed_text}. "
+        f"These compatibility keys were removed. Update config: {migration_text}."
+    )
+
+
+def _reject_removed_env_aliases() -> None:
+    for legacy_name, replacement in _REMOVED_ENV_ALIASES.items():
+        raw_value = os.environ.get(legacy_name)
+        if isinstance(raw_value, str) and raw_value.strip():
+            raise ValueError(f"Environment variable {legacy_name} is no longer supported. Use {replacement} instead.")
 
 
 def load_config(config_path: Path | None = None) -> GamehubConfig:
@@ -220,6 +235,8 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     sgdb = _as_section(data.get("sgdb"))
     linux = _as_section(data.get("linux"))
     controllers = _as_section(data.get("controllers"))
+    _reject_removed_path_keys(paths)
+    _reject_removed_env_aliases()
 
     env_api_key = _normalize_secret(_first_env_value("GAMEHUB_SGDB_API_KEY"))
     config_api_key = _normalize_secret(sgdb.get("api_key"))
@@ -247,8 +264,8 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     config_flatpak_remote = _normalize_optional_text(linux.get("flatpak_remote"))
     env_flatpak_remote = _normalize_optional_text(_first_env_value("GAMEHUB_LINUX_FLATPAK_REMOTE"))
 
-    config_roms_dir = _normalize_optional_path(paths.get("roms_dir", paths.get("output_dir")))
-    env_roms_dir = _normalize_optional_path(_first_env_value("GAMEHUB_ROMS_DIR", "GAMEHUB_OUTPUT_DIR"))
+    config_roms_dir = _normalize_optional_path(paths.get("roms_dir"))
+    env_roms_dir = _normalize_optional_path(_first_env_value("GAMEHUB_ROMS_DIR"))
 
     config_retroarch_cfg_path = _normalize_optional_path(linux.get("retroarch_cfg_path"))
     env_retroarch_cfg_path = _normalize_optional_path(_first_env_value("GAMEHUB_RETROARCH_CFG_PATH"))

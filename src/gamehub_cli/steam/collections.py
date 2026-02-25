@@ -8,20 +8,7 @@ import vdf
 
 from .io import _atomic_write_text
 from .shortcuts import _canonical_unsigned_app_id
-from .types import DEFAULT_USER_COLLECTIONS_PATH, USER_COLLECTIONS_KEY, SteamContext
-
-
-def _find_key_path(payload: object, target: str, path: list[str] | None = None) -> list[str] | None:
-    if path is None:
-        path = []
-    if isinstance(payload, dict):
-        for key, value in payload.items():
-            if str(key) == target:
-                return [*path, str(key)]
-            found = _find_key_path(value, target, [*path, str(key)])
-            if found:
-                return found
-    return None
+from .types import DEFAULT_USER_COLLECTIONS_PATH, SteamContext
 
 
 def _resolve_path(payload: dict, keys: list[str]) -> object:
@@ -44,22 +31,19 @@ def _set_path(payload: dict, keys: list[str], value: object) -> None:
     current[keys[-1]] = value
 
 
-def _decode_user_collections(raw: object) -> tuple[list[object], str, dict[str, object]]:
+def _decode_user_collections(raw: object) -> tuple[list[object], dict[str, object]]:
     """
-    Decode user collections from dict/list/string variants.
+    Decode canonical user collections payload.
 
-    Returns: (collections, style, metadata_dict)
-    style: "dict" (default Steam style) or "list" (legacy/alternate style)
+    Returns: (collections, metadata_dict)
     """
     if isinstance(raw, dict):
         metadata = dict(raw)
         collections_obj = metadata.get("collections")
         collections = list(collections_obj) if isinstance(collections_obj, list) else []
-        return collections, "dict", metadata
-    if isinstance(raw, list):
-        return list(raw), "list", {}
+        return collections, metadata
     if not isinstance(raw, str) or not raw.strip():
-        return [], "dict", {}
+        return [], {}
 
     candidates = [raw]
     if raw.startswith('"') and raw.endswith('"'):
@@ -70,14 +54,12 @@ def _decode_user_collections(raw: object) -> tuple[list[object], str, dict[str, 
             parsed = json.loads(candidate)
         except json.JSONDecodeError:
             continue
-        if isinstance(parsed, list):
-            return list(parsed), "list", {}
         if isinstance(parsed, dict):
             metadata = dict(parsed)
             collections_obj = metadata.get("collections")
             collections = list(collections_obj) if isinstance(collections_obj, list) else []
-            return collections, "dict", metadata
-    return [], "dict", {}
+            return collections, metadata
+    return [], {}
 
 
 def _load_localconfig(path: Path) -> dict:
@@ -231,32 +213,14 @@ def update_collections(context: SteamContext, app_ids_by_system: dict[str, list[
     payload = _load_localconfig(context.localconfig_path)
     before_dump = _dump_localconfig(payload)
     structure_changed = False
-    user_collections_path = _find_key_path(payload, USER_COLLECTIONS_KEY)
-    canonical_path = list(DEFAULT_USER_COLLECTIONS_PATH)
-    canonical_raw = _resolve_path(payload, canonical_path)
-    if canonical_raw is not None:
-        user_collections_path = canonical_path
-    elif user_collections_path is None:
-        user_collections_path = canonical_path
-        _set_path(
-            payload, user_collections_path, json.dumps({"collections": []}, separators=(",", ":"), sort_keys=True)
-        )
-        structure_changed = True
-    elif user_collections_path == ["UserLocalConfigStore", USER_COLLECTIONS_KEY]:
-        # Migrate legacy GAMEHUB location to Steam's nested WebStorage path.
-        legacy_raw = _resolve_path(payload, user_collections_path)
-        _set_path(
-            payload,
-            canonical_path,
-            legacy_raw
-            if legacy_raw is not None
-            else json.dumps({"collections": []}, separators=(",", ":"), sort_keys=True),
-        )
-        user_collections_path = canonical_path
+    user_collections_path = list(DEFAULT_USER_COLLECTIONS_PATH)
+    raw = _resolve_path(payload, user_collections_path)
+    if raw is None:
+        raw = json.dumps({"collections": []}, separators=(",", ":"), sort_keys=True)
+        _set_path(payload, user_collections_path, raw)
         structure_changed = True
 
-    raw = _resolve_path(payload, user_collections_path)
-    existing_collections, style, metadata = _decode_user_collections(raw)
+    existing_collections, metadata = _decode_user_collections(raw)
 
     managed_names = set(app_ids_by_system)
     next_collections: list[object] = []
@@ -308,12 +272,9 @@ def update_collections(context: SteamContext, app_ids_by_system: dict[str, list[
     if updates == 0 and not structure_changed:
         return 0
 
-    if style == "list":
-        serialized_target: object = next_collections
-    else:
-        next_metadata = dict(metadata)
-        next_metadata["collections"] = next_collections
-        serialized_target = next_metadata
+    next_metadata = dict(metadata)
+    next_metadata["collections"] = next_collections
+    serialized_target: object = next_metadata
     serialized = json.dumps(serialized_target, separators=(",", ":"), sort_keys=True)
     _set_path(payload, user_collections_path, serialized)
     after_dump = _dump_localconfig(payload)

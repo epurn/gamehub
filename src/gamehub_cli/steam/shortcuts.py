@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import zlib
 from pathlib import Path
 
@@ -38,77 +37,6 @@ def _extract_tag_value(tags: list[str], prefix: str) -> str | None:
     for tag in tags:
         if tag.startswith(prefix):
             return tag[len(prefix) :]
-    return None
-
-
-def _normalize_launch_options(value: object) -> str:
-    if not isinstance(value, str):
-        return ""
-    return " ".join(value.split())
-
-
-def _emulator_family(command: object) -> str:
-    if not isinstance(command, str):
-        return ""
-    normalized = command.casefold()
-    if "retroarch" in normalized:
-        return "retroarch"
-    if "pcsx2" in normalized:
-        return "pcsx2"
-    if "dolphin" in normalized:
-        return "dolphin"
-    if "azahar" in normalized:
-        return "azahar"
-    return ""
-
-
-def _legacy_shortcut_matches(entry: dict, spec: SteamShortcutSpec) -> bool:
-    app_name = entry.get("AppName")
-    if not isinstance(app_name, str) or app_name.casefold() != spec.title_name.casefold():
-        return False
-    existing_family = _emulator_family(entry.get("Exe"))
-    desired_family = _emulator_family(spec.exe)
-    if existing_family and desired_family and existing_family == desired_family:
-        return True
-
-    existing_basenames = _extract_path_basenames(entry.get("LaunchOptions"))
-    desired_basenames = _extract_path_basenames(spec.launch_options)
-    if existing_basenames and desired_basenames and existing_basenames.intersection(desired_basenames):
-        return True
-    return False
-
-
-def _extract_path_basenames(value: object) -> set[str]:
-    if not isinstance(value, str):
-        return set()
-
-    def _basename_candidate(token: str) -> str | None:
-        normalized = token.strip().strip('"').strip("'").replace("\\", "/")
-        if not normalized or normalized == "@@":
-            return None
-        basename = normalized.rsplit("/", 1)[-1]
-        if "." not in basename:
-            return None
-        return basename.casefold()
-
-    basenames: set[str] = set()
-    for token in re.findall(r'"([^"]+)"', value):
-        candidate = _basename_candidate(token)
-        if candidate:
-            basenames.add(candidate)
-    if basenames:
-        return basenames
-    for token in value.split():
-        candidate = _basename_candidate(token)
-        if candidate:
-            basenames.add(candidate)
-    return basenames
-
-
-def _pop_legacy_match(entries: list[dict], spec: SteamShortcutSpec) -> dict | None:
-    for index, entry in enumerate(entries):
-        if _legacy_shortcut_matches(entry, spec):
-            return entries.pop(index)
     return None
 
 
@@ -237,15 +165,12 @@ def upsert_shortcuts(context: SteamContext, desired_shortcuts: list[SteamShortcu
         if title_id:
             managed_by_title[title_id] = entry
 
-    remaining_unmanaged = list(unmanaged_entries)
     managed_entries: list[dict] = []
     for shortcut in desired_shortcuts:
         existing = managed_by_title.get(shortcut.title_id)
-        if existing is None:
-            existing = _pop_legacy_match(remaining_unmanaged, shortcut)
         managed_entries.append(_build_shortcut_entry(shortcut, existing))
 
-    next_entries = [*remaining_unmanaged, *managed_entries]
+    next_entries = [*unmanaged_entries, *managed_entries]
 
     payload = _encode_shortcuts(next_entries)
     _atomic_write_bytes(context.shortcuts_path, payload)

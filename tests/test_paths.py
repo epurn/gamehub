@@ -18,14 +18,16 @@ def test_from_rel_path_uses_posix_relative_segments() -> None:
     assert resolved == Path("D:/GameHub/roms/NES/Super Mario Bros.nes")
 
 
-def test_from_rel_path_prefers_legacy_existing_path_when_canonical_missing(workspace_tempdir) -> None:
+def test_from_rel_path_returns_canonical_path_when_only_legacy_exists(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-paths-") as temp_root:
         legacy = temp_root / "NES" / "SuperMarioBros.nes"
         legacy.parent.mkdir(parents=True, exist_ok=True)
         legacy.write_bytes(b"legacy")
+        canonical = temp_root / "roms" / "NES" / "SuperMarioBros.nes"
 
         resolved = from_rel_path(temp_root, "roms/NES/SuperMarioBros.nes", preferred_root="roms")
-        assert resolved == legacy
+        assert resolved == canonical
+        assert resolved != legacy
 
 
 def test_from_rel_path_prefers_canonical_when_present(workspace_tempdir) -> None:

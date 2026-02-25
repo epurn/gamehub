@@ -47,9 +47,6 @@ def _default_dependencies() -> SyncDependencies:
 
 _DEPS = _default_dependencies()
 
-# Compatibility exports for existing tests/helpers.
-httpx = sync_index.httpx
-
 
 def configure_dependencies(
     *,
@@ -159,7 +156,7 @@ def _fetch_index_with_retries(
         attempts=attempts,
         retry_backoff_seconds=retry_backoff_seconds,
         verbose=verbose,
-        http_client_module=httpx,
+        http_client_module=sync_index.httpx,
         sleep_func=time.sleep,
     )
 

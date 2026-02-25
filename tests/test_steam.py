@@ -406,7 +406,7 @@ def test_upsert_shortcuts_preserves_existing_allow_desktop_config_when_unspecifi
         assert unmanaged.get("AllowDesktopConfig") == "0"
 
 
-def test_upsert_shortcuts_migrates_legacy_matching_entry(workspace_tempdir) -> None:
+def test_upsert_shortcuts_does_not_adopt_legacy_matching_unmanaged_entry(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -438,99 +438,22 @@ def test_upsert_shortcuts_migrates_legacy_matching_entry(workspace_tempdir) -> N
 
         result = upsert_shortcuts(context, desired)
 
-        assert result.total_shortcuts == 1
+        assert result.total_shortcuts == 2
         payload = vdf.binary_loads(context.shortcuts_path.read_bytes())
-        entry = next(iter(payload["shortcuts"].values()))
-        assert entry.get("Exe") == '"C:\\RetroArch\\retroarch.exe"'
-        tags = entry.get("tags", {})
-        tag_values = [tags[key] for key in sorted(tags, key=lambda k: int(str(k)) if str(k).isdigit() else str(k))]
-        assert "GAMEHUB" in tag_values
-        assert "GAMEHUB_TITLE:title_nes_mario" in tag_values
-        assert "NES" in tag_values
-
-
-def test_upsert_shortcuts_migrates_legacy_entry_when_launch_options_changed(workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-steam-") as temp_root:
-        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        context = SteamContext(
-            userdata_dir=temp_root / "userdata",
-            steam_id="76561198000000001",
-            shortcuts_path=config_dir / "shortcuts.vdf",
-            localconfig_path=config_dir / "localconfig.vdf",
-            steam_exe=None,
-        )
-        legacy = {
-            "AppName": "Crash Team Racing",
-            "Exe": '"retroarch"',
-            "LaunchOptions": '-L cores/swanstation_libretro.dll "D:\\Old\\Crash Team Racing.bin"',
-            "tags": {},
-        }
-        context.shortcuts_path.write_bytes(vdf.binary_dumps({"shortcuts": {"0": legacy}}))
-        desired = [
-            SteamShortcutSpec(
-                title_id="title_psx_ctr",
-                system="PSX",
-                title_name="Crash Team Racing",
-                exe='"C:\\RetroArch\\retroarch.exe"',
-                launch_options='-L cores/swanstation_libretro.dll "D:\\GamehubOutput\\roms\\PSX\\Crash Team Racing.cue"',
-                start_dir="C:\\RetroArch",
-                icon_path="",
-            )
-        ]
-
-        result = upsert_shortcuts(context, desired)
-
-        assert result.total_shortcuts == 1
-        payload = vdf.binary_loads(context.shortcuts_path.read_bytes())
-        entry = next(iter(payload["shortcuts"].values()))
-        assert entry.get("Exe") == '"C:\\RetroArch\\retroarch.exe"'
-        assert entry.get("LaunchOptions") == desired[0].launch_options
-        tags = entry.get("tags", {})
-        tag_values = [tags[key] for key in sorted(tags, key=lambda k: int(str(k)) if str(k).isdigit() else str(k))]
-        assert "GAMEHUB_TITLE:title_psx_ctr" in tag_values
-
-
-def test_upsert_shortcuts_migrates_legacy_entry_when_emulator_family_changes(workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-steam-") as temp_root:
-        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        context = SteamContext(
-            userdata_dir=temp_root / "userdata",
-            steam_id="76561198000000001",
-            shortcuts_path=config_dir / "shortcuts.vdf",
-            localconfig_path=config_dir / "localconfig.vdf",
-            steam_exe=None,
-        )
-        legacy = {
-            "AppName": "Torino 2006",
-            "Exe": '"retroarch"',
-            "LaunchOptions": '-L cores/swanstation_libretro.dll "D:\\GameHub\\roms\\PS2\\Torino 2006.chd"',
-            "tags": {},
-        }
-        context.shortcuts_path.write_bytes(vdf.binary_dumps({"shortcuts": {"0": legacy}}))
-        desired = [
-            SteamShortcutSpec(
-                title_id="title_ps2_torino_2006",
-                system="PS2",
-                title_name="Torino 2006",
-                exe="flatpak",
-                launch_options='run --file-forwarding net.pcsx2.PCSX2 -fullscreen -- @@ "/var/home/epurn/GameHub/roms/PS2/Torino 2006.chd" @@',
-                start_dir="",
-                icon_path="",
-            )
-        ]
-
-        result = upsert_shortcuts(context, desired)
-
-        assert result.total_shortcuts == 1
-        payload = vdf.binary_loads(context.shortcuts_path.read_bytes())
-        entry = next(iter(payload["shortcuts"].values()))
-        assert entry.get("Exe") == "flatpak"
-        assert entry.get("LaunchOptions") == desired[0].launch_options
-        tags = entry.get("tags", {})
-        tag_values = [tags[key] for key in sorted(tags, key=lambda k: int(str(k)) if str(k).isdigit() else str(k))]
-        assert "GAMEHUB_TITLE:title_ps2_torino_2006" in tag_values
+        entries = list(payload["shortcuts"].values())
+        managed = []
+        unmanaged = []
+        for entry in entries:
+            tags = entry.get("tags", {})
+            tag_values = [tags[key] for key in sorted(tags, key=lambda k: int(str(k)) if str(k).isdigit() else str(k))]
+            if "GAMEHUB" in tag_values:
+                managed.append(entry)
+            else:
+                unmanaged.append(entry)
+        assert len(managed) == 1
+        assert len(unmanaged) == 1
+        assert managed[0].get("Exe") == '"C:\\RetroArch\\retroarch.exe"'
+        assert unmanaged[0].get("Exe") == '"retroarch"'
 
 
 def test_update_collections_preserves_unmanaged_and_is_idempotent(workspace_tempdir) -> None:
@@ -546,7 +469,7 @@ def test_update_collections_preserves_unmanaged_and_is_idempotent(workspace_temp
         )
         initial_collections = {"collections": [{"name": "Manual", "added": ["123"], "removed": []}]}
         context.localconfig_path.write_text(
-            vdf.dumps({"UserLocalConfigStore": {"user-collections": json.dumps(initial_collections)}}),
+            vdf.dumps({"UserLocalConfigStore": {"WebStorage": {"user-collections": json.dumps(initial_collections)}}}),
             encoding="utf-8",
         )
 
@@ -1330,7 +1253,7 @@ def test_update_collections_normalizes_added_appids_to_unsigned(workspace_tempdi
         assert psx["added"] == [3692015043]
 
 
-def test_update_collections_preserves_list_json_shape(workspace_tempdir) -> None:
+def test_update_collections_does_not_migrate_legacy_key_path(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -1341,9 +1264,9 @@ def test_update_collections_preserves_list_json_shape(workspace_tempdir) -> None
             localconfig_path=config_dir / "localconfig.vdf",
             steam_exe=None,
         )
-        initial_collections = [{"name": "Manual", "added": ["123"], "removed": []}]
+        legacy_collections = {"collections": [{"name": "Manual", "added": ["123"], "removed": []}]}
         context.localconfig_path.write_text(
-            vdf.dumps({"UserLocalConfigStore": {"user-collections": json.dumps(initial_collections)}}),
+            vdf.dumps({"UserLocalConfigStore": {"user-collections": json.dumps(legacy_collections)}}),
             encoding="utf-8",
         )
 
@@ -1353,9 +1276,12 @@ def test_update_collections_preserves_list_json_shape(workspace_tempdir) -> None
         payload = vdf.loads(context.localconfig_path.read_text(encoding="utf-8"))
         encoded = payload["UserLocalConfigStore"]["WebStorage"]["user-collections"]
         parsed = json.loads(encoded)
-        assert isinstance(parsed, list)
-        names = sorted(item["name"] for item in parsed if isinstance(item, dict))
-        assert names == ["Manual", "NES"]
+        names = sorted(item["name"] for item in parsed["collections"] if isinstance(item, dict))
+        assert names == ["NES"]
+        legacy_encoded = payload["UserLocalConfigStore"]["user-collections"]
+        legacy_parsed = json.loads(legacy_encoded)
+        legacy_names = sorted(item["name"] for item in legacy_parsed["collections"] if isinstance(item, dict))
+        assert legacy_names == ["Manual"]
 
 
 def test_update_cloud_collections_preserves_unmanaged_and_is_idempotent(workspace_tempdir) -> None:
@@ -1430,7 +1356,7 @@ def test_update_cloud_collections_returns_zero_without_path(workspace_tempdir) -
         assert changed == 0
 
 
-def test_prune_grid_noncanonical_variants_removes_signed_when_unsigned_exists(workspace_tempdir) -> None:
+def test_prune_grid_noncanonical_variants_is_noop(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         grid_dir = config_dir / "grid"
@@ -1447,7 +1373,8 @@ def test_prune_grid_noncanonical_variants_removes_signed_when_unsigned_exists(wo
 
         removed = prune_grid_noncanonical_variants(context, ["-602952253"])
 
-        assert removed in {0, 1}
+        assert removed == 0
+        assert (grid_dir / "-602952253p.png").exists()
         assert (grid_dir / "3692015043p.png").exists()
 
 

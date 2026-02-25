@@ -30,7 +30,6 @@ gamehub sync --help
 - If `--config` is not supplied, GAMEHUB resolves config in this order:
 1. `./config.toml`
 2. `~/.gamehub/config.toml`
-3. legacy fallback: platform config dir `gamehub/config.toml`
 
 ### Linux first-run config checklist
 1. Set `steam.userdata_dir` in your config (`~/.gamehub/config.toml` by default) for deterministic profile targeting (or export `GAMEHUB_STEAM_USERDATA_DIR`).
@@ -122,7 +121,7 @@ export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
 - Start from template [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml).
 - Steam Deck installs may use `~/.steam/steam/userdata` or `~/.local/share/Steam/userdata`.
 - Keep config explicit with `steam.userdata_dir` and optional `steam.steam_id` to avoid profile ambiguity on shared devices.
-- If you keep ROMs on microSD, set `paths.roms_dir` (or `paths.output_dir`) to `/run/media/deck/<SD_CARD_LABEL>/...`.
+- If you keep ROMs on microSD, set `paths.roms_dir` to `/run/media/deck/<SD_CARD_LABEL>/...`.
 - Steam Deck should use Flatpak emulator management by default:
 ```toml
 [linux]

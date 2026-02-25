@@ -5,7 +5,6 @@ Config resolution order:
 1. `--config <path>` CLI option (when provided)
 2. `./config.toml` in current working directory (if present)
 3. `~/.gamehub/config.toml`
-4. legacy fallback: platform-specific config dir `gamehub/config.toml`
 
 Sample templates:
 - Windows (verified): [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
@@ -108,12 +107,15 @@ Steam mutation behavior notes:
 
 `paths.gamehub_dir` is the local sync root. Derived paths:
 - ROMs root: `<gamehub_dir>/roms/...` by default
-  - Optional override: `paths.roms_dir` (alias: `paths.output_dir`)
-  - Env override: `GAMEHUB_ROMS_DIR` (alias: `GAMEHUB_OUTPUT_DIR`)
+  - Optional override: `paths.roms_dir`
+  - Env override: `GAMEHUB_ROMS_DIR`
+  - Removed aliases now rejected: `paths.output_dir`, `GAMEHUB_OUTPUT_DIR`
   - This ROM root is used consistently for both sync download destinations and Steam shortcut ROM launch targets.
 - Asset root: `<gamehub_dir>/...` (from server asset relative paths)
 - Firmware root: `<gamehub_dir>/firmware/...`
 - State file: `<gamehub_dir>/state.json`
+
+Removed compatibility keys are rejected at load time: `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path`.
 
 On non-dry sync, firmware system subdirectories are auto-created under `<gamehub_dir>/firmware` based on indexed systems.
 
@@ -198,8 +200,6 @@ Controller launch autoconfig:
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
 - If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
-
-Legacy keys `paths.library_dir`, `paths.firmware_dir`, and `paths.state_path` are still accepted for compatibility, but `paths.gamehub_dir` is the canonical setting.
 
 Windows Dolphin defaults:
 - If Dolphin is installed by GAMEHUB (default `LOCALAPPDATA/Programs/Dolphin`), the runtime user dir is pinned to `<dolphin-install>/User`.
