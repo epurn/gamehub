@@ -7,7 +7,7 @@ from gamehub_common.models import LibraryIndex
 from ..io import _atomic_write_bytes
 from ..types import ShortcutSyncResult, SteamContext
 from .configset import sync_deck_template_selection_configsets
-from .roots import resolve_deck_steam_input_roots, steam_input_title_dir_aliases
+from .roots import normalize_steam_input_title_dir, resolve_deck_steam_input_roots
 from .seeds import (
     DECK_TEMPLATE_SEED_BY_SYSTEM,
     DECK_TEMPLATE_SYSTEM_ORDER,
@@ -66,15 +66,14 @@ def apply_deck_steam_input_templates(
         targets += 1
         title_changed = False
         for root in roots:
-            for title_dir_key in steam_input_title_dir_aliases(title.title_name):
-                title_dir = root / title_dir_key
-                for filename in filenames:
-                    target_path = title_dir / filename
-                    if target_path.exists():
-                        if not overwrite_existing:
-                            continue
-                    _atomic_write_bytes(target_path, payload)
-                    title_changed = True
+            title_dir = root / normalize_steam_input_title_dir(title.title_name)
+            for filename in filenames:
+                target_path = title_dir / filename
+                if target_path.exists():
+                    if not overwrite_existing:
+                        continue
+                _atomic_write_bytes(target_path, payload)
+                title_changed = True
         if title_changed:
             written += 1
         else:

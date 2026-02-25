@@ -7,7 +7,6 @@ from .deck_templates import (
     apply_deck_steam_input_templates,
     discover_deck_steam_input_roots,
     normalize_steam_input_title_dir,
-    steam_input_title_dir_aliases,
 )
 from .lifecycle import (
     build_context,
@@ -57,7 +56,6 @@ __all__ = [
     "discover_userdata_dir",
     "is_steam_running",
     "normalize_steam_input_title_dir",
-    "steam_input_title_dir_aliases",
     "prune_grid_noncanonical_variants",
     "repair_managed_steam_input_overrides",
     "reopen_steam",

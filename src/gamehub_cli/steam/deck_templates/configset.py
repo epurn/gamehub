@@ -9,7 +9,7 @@ from gamehub_common.models import TitleEntry
 from ..io import _atomic_write_text
 from ..shortcuts import _canonical_unsigned_app_id
 from ..types import ShortcutSyncResult
-from .roots import normalize_steam_input_title_dir, path_identity, steam_input_title_dir_aliases
+from .roots import normalize_steam_input_title_dir, path_identity
 from .seeds import template_selection_name_for_system
 
 _DECK_TEMPLATE_CONFIGSET_FILENAME = "configset_controller_neptune.vdf"
@@ -18,7 +18,7 @@ _DECK_TEMPLATE_CONFIGSET_GLOB = "configset_*.vdf"
 
 def template_reference_for_title(title: TitleEntry) -> str:
     selection_name = template_selection_name_for_system(title.system)
-    title_key = steam_input_title_dir_aliases(title.title_name)[-1]
+    title_key = normalize_steam_input_title_dir(title.title_name)
     return f"CLOUD_{title_key}/{selection_name}"
 
 
@@ -48,11 +48,7 @@ def _configset_entry_keys(title_name: str, app_id: str | None) -> tuple[str, ...
     raw_title = str(title_name).strip()
     if raw_title:
         keys.add(raw_title)
-        keys.update(steam_input_title_dir_aliases(raw_title))
-        apostrophe_safe_title = " ".join(raw_title.replace("'", " ").replace("\u2019", " ").split())
-        if apostrophe_safe_title:
-            keys.add(apostrophe_safe_title)
-            keys.update(steam_input_title_dir_aliases(apostrophe_safe_title))
+        keys.add(normalize_steam_input_title_dir(raw_title))
     if app_id is not None:
         raw_app_id = str(app_id).strip()
         if raw_app_id:
@@ -99,13 +95,13 @@ def sync_deck_template_selection_configset(
             if not isinstance(existing_entry, dict) or existing_entry != forced_entry:
                 controller_config[key] = dict(forced_entry)
                 changed = True
-        normalized_title_aliases = set(steam_input_title_dir_aliases(title.title_name))
+        normalized_title = normalize_steam_input_title_dir(title.title_name)
         for existing_key in list(controller_config):
             if not isinstance(existing_key, str):
                 continue
             if existing_key in title_keys:
                 continue
-            if normalize_steam_input_title_dir(existing_key) not in normalized_title_aliases:
+            if normalize_steam_input_title_dir(existing_key) != normalized_title:
                 continue
             del controller_config[existing_key]
             changed = True

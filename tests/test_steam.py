@@ -25,7 +25,6 @@ from gamehub_cli.steam import (
     reopen_steam,
     repair_managed_steam_input_overrides,
     steam_id64_from_userdata_id,
-    steam_input_title_dir_aliases,
     update_cloud_collections,
     update_collections,
     upsert_shortcuts,
@@ -910,7 +909,7 @@ def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_
         assert controller_config["3366254221"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
 
 
-def test_apply_deck_steam_input_templates_handles_apostrophe_title_aliases(
+def test_apply_deck_steam_input_templates_handles_apostrophe_title_canonical_mapping(
     monkeypatch,
     workspace_tempdir,
 ) -> None:
@@ -982,23 +981,19 @@ def test_apply_deck_steam_input_templates_handles_apostrophe_title_aliases(
 
         result = apply_deck_steam_input_templates(context, index, shortcut_result)
 
-        title_aliases = steam_input_title_dir_aliases(title_name)
-        assert len(title_aliases) == 2
-        assert title_aliases[0] == "legend of zelda, the - majora's mask 3d"
-        assert title_aliases[1] == "legend of zelda, the - majora s mask 3d"
+        title_dir = normalize_steam_input_title_dir(title_name)
         assert result.targets == 1
         assert result.written == 1
-        assert (template_root / title_aliases[0] / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
-        assert (template_root / title_aliases[1] / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
+        assert (template_root / title_dir / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
 
         configset_payload = vdf.loads((template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
         controller_config = configset_payload.get("controller_config", {})
-        expected_template = "CLOUD_legend of zelda, the - majora s mask 3d/gamehub_3ds"
+        expected_template = "CLOUD_legend of zelda, the - majora's mask 3d/gamehub_3ds"
         assert controller_config["2562475268"]["template"] == expected_template
         assert controller_config["Legend of Zelda, The - Majora's Mask 3D"]["template"] == expected_template
         assert controller_config["legend of zelda, the - majora's mask 3d"]["template"] == expected_template
-        assert controller_config["Legend of Zelda, The - Majora s Mask 3D"]["template"] == expected_template
-        assert controller_config["legend of zelda, the - majora s mask 3d"]["template"] == expected_template
+        assert "Legend of Zelda, The - Majora s Mask 3D" not in controller_config
+        assert "legend of zelda, the - majora s mask 3d" not in controller_config
 
 
 def test_apply_deck_steam_input_templates_fails_when_required_seed_missing(
