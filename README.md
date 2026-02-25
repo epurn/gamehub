@@ -42,8 +42,9 @@ Details: [Platform Support (v1)](docs/platform-support.md)
 - SGDB artwork cache with cache-first lookups and portrait+landscape grid support.
 - Steam lifecycle safety: close -> backup -> write -> reopen.
 - Launch-time controller autoconfig for `PCSX2`, `Dolphin`, and `Azahar` with user-overridable profile files (including Steam Deck built-in controller defaults).
+- On Steam Deck, managed `Wii`/`N3DS` shortcuts auto-sync Steam Input template seeds and repair app override flags for native-first controller behavior.
 
-Supported systems in v1.1:
+Supported systems in v1.3.0:
 - `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
 
 ## 👤 User Install (Latest Release)
@@ -61,7 +62,7 @@ Start from a template:
 Linux install from latest release wheel:
 ```bash
 LATEST_TAG="$(python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://api.github.com/repos/epurn/gamehub/releases/latest'))['tag_name'])")"
-LATEST_VER="${LATEST_TAG#v}"
+LATEST_VER="${LATEST_TAG}"
 python3 -m pip install --user --upgrade "https://github.com/epurn/gamehub/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
 ```
 
