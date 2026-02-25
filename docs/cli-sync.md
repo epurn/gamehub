@@ -12,7 +12,7 @@ Command:
 - `--skip-steam`: run sync downloads/state updates but skip Steam lifecycle and Steam file updates
 - `--skip-steam-relaunch`: apply Steam updates but do not relaunch Steam at end
 - `--require-steam-closed`: fail if Steam cannot be closed before config writes
-- `--reseed-profiles`: overwrite managed profile/template files during sync
+- `--reseed-profiles`: force-overwrite managed profile/template files during sync (even when bytes already match)
 - `--config <path>`: TOML config path override
 
 Steam close behavior:
@@ -166,6 +166,7 @@ Controller launch profile defaults:
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
+  - with `--reseed-profiles`, managed files are rewritten even when bytes already match
 - Controller profiles apply input mappings for `PCSX2`, `Dolphin`, and `Azahar` at launch; firmware deploy does not write controller bindings.
 - Profile selection:
   - `0` Xbox controllers -> `kbm`

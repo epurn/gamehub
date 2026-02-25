@@ -60,7 +60,7 @@
   - `controller_config` entries set normalized title keys and companion alias keys (`appid`/signed/title variants) to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
   - apostrophe-containing titles use the apostrophe-safe `<normalized_title>` alias in `template=CLOUD_<...>/...` references
 - Managed template sync force-overwrites per-title selection aliases (appid/title variants) for `Wii` and `N3DS`.
-- Managed per-title template payload files (`gamehub_wii.vdf`/`gamehub_3ds.vdf`) are preserved by default and only overwritten when sync runs with `--reseed-profiles`.
+- Managed per-title template payload files (`gamehub_wii.vdf`/`gamehub_3ds.vdf`) are preserved by default and only overwritten when sync runs with `--reseed-profiles` (force rewrite even when bytes already match).
 - Managed template sync does not delete legacy per-title template variant files; only managed `gamehub_wii.vdf`/`gamehub_3ds.vdf` payloads and selection configsets are updated.
 - Managed per-title template files are also mirrored to present app-remote roots under `userdata/<steamid>/241100/remote/*/config/<normalized_title>/`.
 - Deck app override repair sets `UseSteamControllerConfig=1` and `DisableCloud=1` for managed `Wii`/`N3DS` app entries.

@@ -73,8 +73,6 @@ def apply_deck_steam_input_templates(
                     if target_path.exists():
                         if not overwrite_existing:
                             continue
-                        if target_path.read_bytes() == payload:
-                            continue
                     _atomic_write_bytes(target_path, payload)
                     title_changed = True
         if title_changed:
