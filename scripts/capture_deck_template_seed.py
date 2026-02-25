@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from gamehub_cli.common.config import load_config
-from gamehub_cli.steam.input_templates import (
+from gamehub_cli.steam import (
     discover_deck_steam_input_roots,
     normalize_steam_input_title_dir,
 )
