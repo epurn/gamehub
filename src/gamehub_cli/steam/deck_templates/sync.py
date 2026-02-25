@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from gamehub_common.models import LibraryIndex
 
 from ..io import _atomic_write_bytes
+from ..shortcuts import _canonical_unsigned_app_id
 from ..types import ShortcutSyncResult, SteamContext
 from .configset import sync_deck_template_selection_configsets
 from .roots import normalize_steam_input_title_dir, resolve_deck_steam_input_roots
@@ -22,6 +23,18 @@ class TemplateSyncResult:
     written: int
     unchanged: int
     systems_applied: tuple[str, ...]
+
+
+def _template_dir_keys_for_title(*, title_name: str, app_id: str | None) -> tuple[str, ...]:
+    keys: list[str] = []
+    normalized_title = normalize_steam_input_title_dir(title_name)
+    if normalized_title:
+        keys.append(normalized_title)
+    if app_id is not None:
+        unsigned_app_id = _canonical_unsigned_app_id(str(app_id).strip())
+        if unsigned_app_id and unsigned_app_id.isdigit() and unsigned_app_id not in keys:
+            keys.append(unsigned_app_id)
+    return tuple(keys)
 
 
 def apply_deck_steam_input_templates(
@@ -65,15 +78,18 @@ def apply_deck_steam_input_templates(
         filenames = template_filenames_for_system(title.system)
         targets += 1
         title_changed = False
+        app_id = shortcut_result.app_ids_by_title.get(title.title_id)
+        template_dir_keys = _template_dir_keys_for_title(title_name=title.title_name, app_id=app_id)
         for root in roots:
-            title_dir = root / normalize_steam_input_title_dir(title.title_name)
-            for filename in filenames:
-                target_path = title_dir / filename
-                if target_path.exists():
-                    if not overwrite_existing:
-                        continue
-                _atomic_write_bytes(target_path, payload)
-                title_changed = True
+            for dir_key in template_dir_keys:
+                title_dir = root / dir_key
+                for filename in filenames:
+                    target_path = title_dir / filename
+                    if target_path.exists():
+                        if not overwrite_existing:
+                            continue
+                    _atomic_write_bytes(target_path, payload)
+                    title_changed = True
         if title_changed:
             written += 1
         else:

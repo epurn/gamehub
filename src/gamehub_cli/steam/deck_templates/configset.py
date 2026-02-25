@@ -22,8 +22,24 @@ def template_reference_for_title(title: TitleEntry) -> str:
     return f"CLOUD_{title_key}/{selection_name}"
 
 
-def _forced_controller_config_entry(*, title: TitleEntry) -> dict[str, str]:
-    return {"template": template_reference_for_title(title)}
+def _template_reference_for_key(*, title: TitleEntry, key: str, app_id: str | None) -> str:
+    selection_name = template_selection_name_for_system(title.system)
+    normalized_key = str(key).strip()
+    if app_id is not None:
+        normalized_app_id = str(app_id).strip()
+        if normalized_key == normalized_app_id:
+            unsigned_app_id = _canonical_unsigned_app_id(normalized_app_id)
+            if unsigned_app_id and unsigned_app_id.isdigit():
+                return f"CLOUD_{unsigned_app_id}/{selection_name}"
+    if normalized_key and normalized_key.lstrip("-").isdigit():
+        unsigned_app_id = _canonical_unsigned_app_id(normalized_key)
+        if unsigned_app_id and unsigned_app_id.isdigit():
+            return f"CLOUD_{unsigned_app_id}/{selection_name}"
+    return template_reference_for_title(title)
+
+
+def _forced_controller_config_entry(*, title: TitleEntry, key: str, app_id: str | None) -> dict[str, str]:
+    return {"template": _template_reference_for_key(title=title, key=key, app_id=app_id)}
 
 
 def _canonical_signed_app_id(app_id: str) -> str | None:
@@ -95,7 +111,7 @@ def sync_deck_template_selection_configset(
         app_id = shortcut_result.app_ids_by_title.get(title.title_id)
         title_keys = set(_configset_entry_keys(title.title_name, app_id))
         for key in title_keys:
-            forced_entry = _forced_controller_config_entry(title=title)
+            forced_entry = _forced_controller_config_entry(title=title, key=key, app_id=app_id)
             existing_entry = controller_config.get(key)
             if not isinstance(existing_entry, dict) or existing_entry != forced_entry:
                 controller_config[key] = dict(forced_entry)
