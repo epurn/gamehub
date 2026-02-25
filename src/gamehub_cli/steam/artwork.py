@@ -1,29 +1,11 @@
 from __future__ import annotations
 
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
 
-from .shortcuts import _canonical_signed_app_id_from_unsigned, _canonical_unsigned_app_id
+from .shortcuts import _canonical_unsigned_app_id
 from .types import SteamArtworkAssignment, SteamContext
-
-
-def _unlink_best_effort(path: Path) -> bool:
-    try:
-        path.unlink()
-        return True
-    except FileNotFoundError:
-        return False
-    except PermissionError:
-        try:
-            os.chmod(path, 0o666)
-            path.unlink()
-            return True
-        except OSError:
-            return False
-    except OSError:
-        return False
 
 
 def backup_steam_configs(context: SteamContext) -> list[Path]:
@@ -81,26 +63,5 @@ def copy_grid_art(context: SteamContext, assignments: list[SteamArtworkAssignmen
 
 
 def prune_grid_noncanonical_variants(context: SteamContext, steam_app_ids: list[str]) -> int:
-    grid_dir = context.userdata_dir / context.steam_id / "config" / "grid"
-    if not grid_dir.exists():
-        return 0
-
-    removed = 0
-    suffixes = ("p", "", "_hero", "_logo", "_icon")
-    extensions = (".png", ".jpg", ".jpeg", ".ico", ".webp")
-    for app_id in steam_app_ids:
-        canonical_unsigned = _canonical_unsigned_app_id(app_id)
-        legacy_signed = _canonical_signed_app_id_from_unsigned(canonical_unsigned)
-        if not legacy_signed:
-            continue
-        for suffix in suffixes:
-            for extension in extensions:
-                canonical = grid_dir / f"{canonical_unsigned}{suffix}{extension}"
-                legacy = grid_dir / f"{legacy_signed}{suffix}{extension}"
-                if not (canonical.exists() and canonical.is_file()):
-                    continue
-                if not (legacy.exists() and legacy.is_file()):
-                    continue
-                if _unlink_best_effort(legacy):
-                    removed += 1
-    return removed
+    del context, steam_app_ids
+    return 0

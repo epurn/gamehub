@@ -2,114 +2,63 @@
 
 ## Scope
 
-This audit targets legacy migration code paths and fallback branches that were introduced to preserve compatibility with older layouts/configs, plus paths created only by tests/experimentation.
+This audit tracks status for compatibility branches that previously carried legacy config, path, and Steam migration behavior.
 
 Reviewed areas:
 - Runtime packages under `src/gamehub_cli/` and `src/gamehub_server/`
 - Test fixtures/assertions under `tests/`
-- Utility scripts under `scripts/`
+- Utility/docs updates under `docs/`
 
-## Findings
+## Status summary
 
-### 1) Config path and key compatibility branches are still active but legacy-heavy
+### Removed now: config compatibility branches
 
-**Code paths**
-- `default_config_path()` checks three locations and keeps a legacy fallback at `platformdirs.user_config_dir("gamehub")/config.toml`.  
-- `_resolve_paths()` supports both canonical `paths.gamehub_dir` and legacy keys (`paths.library_dir`, `paths.firmware_dir`, `paths.state_path`).  
-- `load_config()` supports alias keys/env vars for ROM output (`paths.output_dir`, `GAMEHUB_OUTPUT_DIR`) in addition to `paths.roms_dir` and `GAMEHUB_ROMS_DIR`.
+**Runtime changes**
+- `default_config_path()` no longer checks `platformdirs.user_config_dir("gamehub")/config.toml`.
+- `_resolve_paths()` now accepts only canonical `paths.gamehub_dir`.
+- `load_config()` no longer accepts `paths.output_dir` or `GAMEHUB_OUTPUT_DIR` aliases.
+- Removed keys/env aliases now fail fast with actionable `ValueError` messages.
 
-**Why it exists**
-- These paths are migration shims for older branch/state layouts and older config templates.
-
-**Evidence in tests**
-- `tests/test_cli_config_state.py` explicitly validates legacy config path fallback and legacy key/alias support.
-
-**Maintainability risk**
-- Medium: these branches increase config-resolution complexity and code paths to test.
-
-**Recommendation**
-- Keep for now, but mark with a deprecation window in docs and remove after one minor release that emits migration warnings.
+**Test/doc changes**
+- Legacy path/alias support tests were replaced with strict rejection tests.
+- Config docs now describe only canonical keys and config resolution paths.
 
 ---
 
-### 2) ROM destination resolver has a compatibility exception path likely never triggered in normal runtime
+### Removed now: ROM destination compatibility fallbacks
 
-**Code path**
-- `resolve_rom_destination()` wraps `from_rel_path(..., preferred_root="roms")` in `try/except TypeError` and falls back to calling a 2-arg `from_rel_path(library_dir, rel_path)`.
+**Runtime changes**
+- `from_rel_path(..., preferred_root="roms")` no longer falls back to legacy existing flat paths.
+- `resolve_rom_destination()` no longer swallows `TypeError` for old patched signatures.
 
-**Why it exists**
-- Inline comment says it is for patched resolvers in tests/extensions that still use the old signature.
-
-**Maintainability risk**
-- Medium-high: this is effectively a compatibility shim for monkeypatch/extension behavior, not normal in-repo runtime flow.
-
-**Recommendation**
-- Prefer explicit adapter hook for extensions (or remove if extension contract is not official).
-- If extension contract is not supported, drop the `TypeError` fallback and keep a strict signature.
+**Test/doc changes**
+- Path tests now assert strict canonical ROM destination behavior.
 
 ---
 
-### 3) Steam collections path migration is a one-time compatibility move
+### Removed now: Steam legacy migration/adoption branches
 
-**Code path**
-- `update_collections()` migrates `UserLocalConfigStore.user-collections` to `UserLocalConfigStore.WebStorage.user-collections`.
+**Runtime changes**
+- `shortcuts.py` no longer adopts unmanaged legacy shortcuts via heuristic matching.
+- `collections.py` no longer migrates `UserLocalConfigStore.user-collections` into `.../WebStorage/user-collections`.
+- Collections parsing/writing is now canonical-path oriented.
 
-**Why it exists**
-- Supports older/local layouts where GAMEHUB or previous logic wrote collections under a non-canonical key path.
-
-**Evidence in tests**
-- `tests/test_steam.py` includes migration coverage for older key placement and stale cloud keys cleanup.
-
-**Maintainability risk**
-- Low-medium: one-time migration branch, but safe and bounded.
-
-**Recommendation**
-- Keep until there is confidence that pre-migration installations are no longer in supported upgrade paths.
+**Test/doc changes**
+- Legacy shortcut migration tests were replaced with strict no-adoption assertions.
+- Collections tests now verify canonical-only behavior and no legacy key-path migration.
+- Steam integration docs no longer claim unmanaged legacy adoption.
 
 ---
 
-### 4) Steam shortcut legacy matching migrates unmanaged/older entries
+### Removed now: test-only orchestrator httpx compatibility export
 
-**Code path**
-- `shortcuts.py` includes `_legacy_shortcut_matches()` and `_pop_legacy_match()` to find older entries by title + executable family and migrate them into managed GAMEHUB entries.
+**Runtime changes**
+- `sync/orchestrator.py` no longer exports `httpx = sync_index.httpx`.
+- Index fetch now uses `sync_index.httpx` directly.
 
-**Why it exists**
-- Allows seamless upgrades from pre-managed naming/launch-option variants.
+**Test/doc changes**
+- Sync tests patch `gamehub_cli.sync.index.httpx` directly.
 
-**Evidence in tests**
-- `tests/test_steam.py` has dedicated migration tests for launch-options changes and emulator family changes.
+## Remaining optional cleanup candidates
 
-**Maintainability risk**
-- Medium: matching heuristics are hard to reason about and can age poorly as launch templates evolve.
-
-**Recommendation**
-- Keep short-term; add telemetry/log counters for legacy migrations and remove when counters show near-zero usage.
-
----
-
-### 5) Test-only and experimentation artifacts that intentionally model stale state
-
-These are not runtime dead code, but they are intentionally creating old/stale paths to validate migration behavior:
-- `tests/test_cli_config_state.py`: `legacy-config/gamehub/config.toml`, legacy path keys, output-dir aliases.
-- `tests/test_paths.py`: fallback from canonical `roms/...` to legacy flat path.
-- `tests/test_steam.py`: stale collection key (`user-collections.gamehub-old`), legacy shortcut payloads, older collection placement.
-- `tests/test_artwork.py`: old cached artwork file naming (`grid-old.png`, etc.) used for replacement checks.
-
-**Maintainability risk**
-- Low: valuable regression coverage.
-
-**Recommendation**
-- Keep these tests; they are the strongest signal for safely removing production migration branches later.
-
-## Likely low-value/cleanup candidates (follow-up PR candidates)
-
-1. Remove `resolve_rom_destination()` TypeError fallback once extension compatibility is clarified.
-2. Remove `orchestrator.httpx` compatibility export once tests are switched to dependency injection only.
-3. Add explicit deprecation plan (docs + warning) for legacy config keys and `output_dir` aliases.
-4. After deprecation window, remove one-time Steam migration branches that no longer have supported upgrade paths.
-
-## Suggested phased cleanup plan
-
-- **Phase 1 (now):** add deprecation logging + usage counters for legacy config/Steam migration branches.
-- **Phase 2 (next minor):** retain behavior but print actionable migration warnings.
-- **Phase 3 (following minor):** remove lowest-value shims first (`TypeError` resolver fallback, test-only compatibility exports), then prune legacy key-path migrations with release-note callouts.
+- None currently tracked.

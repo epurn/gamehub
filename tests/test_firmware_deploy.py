@@ -7,7 +7,14 @@ from gamehub_cli.common.config import GamehubConfig
 from gamehub_cli.firmware.deploy import deploy_firmware_to_emulators
 from gamehub_cli.firmware.runtime_azahar import default_azahar_qt_config_path
 from gamehub_cli.firmware.runtime_dolphin import default_dolphin_ini_path
-from gamehub_cli.firmware.targets import default_pcsx2_ini_path, resolve_retroarch_system_dirs, target_dirs_for_system
+from gamehub_cli.firmware.targets import (
+    default_pcsx2_ini_path,
+    resolve_dolphin_config_dirs,
+    resolve_dolphin_runtime_user_dir,
+    resolve_dolphin_user_dirs,
+    resolve_retroarch_system_dirs,
+    target_dirs_for_system,
+)
 from gamehub_common.models import FirmwareSpec, LibraryIndex, SystemSpec
 
 
@@ -470,6 +477,47 @@ def test_default_dolphin_ini_path_prefers_existing_flatpak_ini(monkeypatch, work
         ini_path = default_dolphin_ini_path()
 
         assert ini_path == flatpak_root / "Config" / "Dolphin.ini"
+
+
+def test_resolve_dolphin_runtime_user_dir_ignores_legacy_linux_path(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
+        home = temp_root / "home"
+        legacy = home / ".dolphin-emu"
+        legacy.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "/usr/bin/dolphin")
+
+        runtime_dir = resolve_dolphin_runtime_user_dir()
+
+        assert runtime_dir == home / ".local" / "share" / "dolphin-emu"
+
+
+def test_resolve_dolphin_user_paths_exclude_legacy_linux_path(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-dolphin-") as temp_root:
+        home = temp_root / "home"
+        legacy = home / ".dolphin-emu"
+        legacy.mkdir(parents=True, exist_ok=True)
+        native = home / ".local" / "share" / "dolphin-emu"
+        native.mkdir(parents=True, exist_ok=True)
+        native_cfg = home / ".config" / "dolphin-emu"
+        native_cfg.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "/usr/bin/dolphin")
+
+        user_dirs = resolve_dolphin_user_dirs()
+        config_dirs = resolve_dolphin_config_dirs()
+
+        assert legacy not in user_dirs
+        assert legacy not in config_dirs
+        assert native in user_dirs
+        assert native in config_dirs
+        assert native_cfg in config_dirs
 
 
 def test_deploy_firmware_configures_dolphin_fullscreen_ini(monkeypatch, workspace_tempdir) -> None:

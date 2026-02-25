@@ -2,16 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from gamehub_cli.common.config import ControllersConfig, LinuxConfig, default_config_path, load_config
 from gamehub_cli.sync.state import SyncState, load_state, save_state_atomic
+
+
+@pytest.fixture(autouse=True)
+def _clear_removed_output_dir_alias(monkeypatch) -> None:
+    monkeypatch.delenv("GAMEHUB_OUTPUT_DIR", raising=False)
 
 
 def test_load_config_uses_defaults_when_file_is_missing(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-config-") as temp_root:
         monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
-        config_home = temp_root / "cfg-home"
         state_home = temp_root / "state-home"
-        monkeypatch.setattr("gamehub_cli.common.config.user_config_dir", lambda appname: str(config_home / appname))
         monkeypatch.setattr("gamehub_cli.common.config.user_state_dir", lambda appname: str(state_home / appname))
 
         loaded = load_config(temp_root / "missing.toml")
@@ -37,9 +42,7 @@ def test_load_config_uses_defaults_when_file_is_missing(monkeypatch, workspace_t
 def test_load_config_prefers_workspace_config_when_present(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-config-") as temp_root:
         monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
-        config_home = temp_root / "cfg-home"
         state_home = temp_root / "state-home"
-        monkeypatch.setattr("gamehub_cli.common.config.user_config_dir", lambda appname: str(config_home / appname))
         monkeypatch.setattr("gamehub_cli.common.config.user_state_dir", lambda appname: str(state_home / appname))
         monkeypatch.chdir(temp_root)
         (temp_root / "config.toml").write_text(
@@ -75,9 +78,6 @@ def test_default_config_path_prefers_home_dot_gamehub(monkeypatch, workspace_tem
         home_config.write_text("[server]\nurl='http://example.invalid:8123'\n", encoding="utf-8")
         monkeypatch.chdir(temp_root)
         monkeypatch.setattr("gamehub_cli.common.config.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr(
-            "gamehub_cli.common.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname)
-        )
 
         resolved = default_config_path()
 
@@ -103,9 +103,6 @@ def test_load_config_uses_home_dot_gamehub_default_when_workspace_missing(monkey
         )
         monkeypatch.chdir(temp_root)
         monkeypatch.setattr("gamehub_cli.common.config.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr(
-            "gamehub_cli.common.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname)
-        )
 
         loaded = load_config()
 
@@ -115,21 +112,15 @@ def test_load_config_uses_home_dot_gamehub_default_when_workspace_missing(monkey
         assert loaded.state_path == Path("D:/HomeDefaultGamehub/state.json")
 
 
-def test_default_config_path_uses_legacy_when_present(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-cli-config-legacy-") as temp_root:
+def test_default_config_path_defaults_to_home_when_missing(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-home-default-") as temp_root:
         home = temp_root / "home"
-        legacy_config = temp_root / "legacy-config" / "gamehub" / "config.toml"
-        legacy_config.parent.mkdir(parents=True, exist_ok=True)
-        legacy_config.write_text("[server]\nurl='http://legacy.invalid:8123'\n", encoding="utf-8")
         monkeypatch.chdir(temp_root)
         monkeypatch.setattr("gamehub_cli.common.config.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr(
-            "gamehub_cli.common.config.user_config_dir", lambda appname: str(temp_root / "legacy-config" / appname)
-        )
 
         resolved = default_config_path()
 
-        assert resolved == legacy_config
+        assert resolved == home / ".gamehub" / "config.toml"
 
 
 def test_load_config_toml_overrides_defaults(monkeypatch, workspace_tempdir) -> None:
@@ -179,7 +170,7 @@ def test_load_config_toml_overrides_defaults(monkeypatch, workspace_tempdir) -> 
         assert loaded.sgdb_enabled_kinds == ("grid", "icon")
 
 
-def test_load_config_supports_legacy_path_keys(monkeypatch, workspace_tempdir) -> None:
+def test_load_config_rejects_removed_legacy_path_keys(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-config-") as temp_root:
         monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
         config_path = temp_root / "config.toml"
@@ -195,11 +186,8 @@ def test_load_config_supports_legacy_path_keys(monkeypatch, workspace_tempdir) -
             encoding="utf-8",
         )
 
-        loaded = load_config(config_path)
-
-        assert loaded.library_dir == Path("C:/legacy-library")
-        assert loaded.firmware_dir == Path("C:/legacy-firmware")
-        assert loaded.state_path == Path("C:/legacy/state.json")
+        with pytest.raises(ValueError, match="Unsupported \\[paths\\] keys"):
+            load_config(config_path)
 
 
 def test_load_config_prefers_sgdb_api_key_from_env(monkeypatch, workspace_tempdir) -> None:
@@ -398,7 +386,7 @@ def test_state_round_trip_with_atomic_save(workspace_tempdir) -> None:
         assert loaded.to_dict() == state.to_dict()
 
 
-def test_load_config_supports_roms_output_dir_and_alias(workspace_tempdir) -> None:
+def test_load_config_supports_roms_dir(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
         config_path.write_text(
@@ -418,12 +406,31 @@ def test_load_config_supports_roms_output_dir_and_alias(workspace_tempdir) -> No
         assert loaded.roms_dir == Path("E:/sdcard/roms")
 
 
-def test_load_config_prefers_roms_output_env_override(monkeypatch, workspace_tempdir) -> None:
+def test_load_config_prefers_roms_env_override(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
-        config_path.write_text('[paths]\noutput_dir = "C:/config/output"\n', encoding="utf-8")
+        config_path.write_text('[paths]\nroms_dir = "C:/config/output"\n', encoding="utf-8")
         monkeypatch.setenv("GAMEHUB_ROMS_DIR", "D:/env/output")
 
         loaded = load_config(config_path)
 
         assert loaded.roms_dir == Path("D:/env/output")
+
+
+def test_load_config_rejects_removed_output_dir_alias(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text('[paths]\noutput_dir = "C:/config/output"\n', encoding="utf-8")
+
+        with pytest.raises(ValueError, match=r"paths\.output_dir"):
+            load_config(config_path)
+
+
+def test_load_config_rejects_removed_output_dir_env_alias(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text("", encoding="utf-8")
+        monkeypatch.setenv("GAMEHUB_OUTPUT_DIR", "D:/legacy-output")
+
+        with pytest.raises(ValueError, match="GAMEHUB_OUTPUT_DIR"):
+            load_config(config_path)

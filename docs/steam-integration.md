@@ -23,13 +23,13 @@
   - `<system>` (plain system tag for Steam tag/category compatibility)
 - Non-GAMEHUB shortcuts are preserved unchanged.
 - Repeated syncs are idempotent (no duplicate GAMEHUB shortcuts).
-- Legacy matching entries (same title + launch options but missing GAMEHUB tags) are adopted/migrated in place so stale targets get corrected on sync.
 
 ## Collections model
 - Collections are named exactly by system (`NES`, `PS2`, `Wii`, etc.).
 - Managed collections include `gamehub_managed: true` marker in the JSON payload.
 - Only managed collections are updated/removed by sync; unmanaged collections are preserved.
 - Collection `added` appids are normalized to unsigned 32-bit decimal values for Steam compatibility.
+- Local collections are read/written at the canonical `UserLocalConfigStore/WebStorage/user-collections` path.
 - GAMEHUB writes both:
   - local `localconfig.vdf` collections payload
   - cloud `user-collections.gamehub-*` entries
@@ -46,7 +46,6 @@
   - `<appid>_logo.<ext>`
   - `<appid>_icon.<ext>`
 - GAMEHUB writes grid filenames using unsigned appid values only.
-- During Steam update, GAMEHUB prunes duplicate signed-variant grid files when matching unsigned files exist.
 
 ## Steam Input Templates (Steam Deck)
 - On Linux Steam Deck, GAMEHUB syncs seeded Steam Input templates for managed `Wii` and `N3DS` shortcuts (`GC` is intentionally excluded).

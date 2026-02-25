@@ -712,7 +712,7 @@ def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
         controllers=ControllersConfig(launch_autoconfig=False),
     )
     steam_called = {"value": False}
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
         lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
@@ -762,7 +762,7 @@ def test_run_sync_skip_steam_relaunch_still_applies_steam_updates(monkeypatch) -
         controllers=ControllersConfig(launch_autoconfig=False),
     )
     received: dict[str, object] = {}
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
         lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
@@ -814,7 +814,7 @@ def test_run_sync_reseed_profiles_propagates_to_steam_updates(monkeypatch) -> No
         controllers=ControllersConfig(launch_autoconfig=False),
     )
     captured: dict[str, object] = {}
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_emulators", lambda **kwargs: None)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_retroarch_cores", lambda **kwargs: None)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
@@ -871,7 +871,7 @@ def test_run_sync_reseed_profiles_forces_defaults(monkeypatch) -> None:
         controllers=ControllersConfig(launch_autoconfig=True),
     )
     called: dict[str, object] = {}
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_emulators", lambda **kwargs: None)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_retroarch_cores", lambda **kwargs: None)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
@@ -938,7 +938,7 @@ def test_run_sync_profile_seed_allows_configured_profiles_dir(monkeypatch) -> No
         ),
     )
     called: dict[str, object] = {}
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_emulators", lambda **kwargs: None)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_retroarch_cores", lambda **kwargs: None)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
@@ -1001,7 +1001,7 @@ def test_run_sync_skips_profile_seed_when_autoconfig_disabled(monkeypatch) -> No
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
         controllers=ControllersConfig(launch_autoconfig=False),
     )
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_emulators", lambda **kwargs: None)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_retroarch_cores", lambda **kwargs: None)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
@@ -1059,7 +1059,7 @@ def test_run_sync_retries_index_fetch_after_timeout(monkeypatch) -> None:
         index_fetch_attempts=3,
         index_retry_backoff_seconds=0.25,
     )
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.time.sleep", lambda seconds: sleeps.append(seconds))
 
     exit_code = run_sync(
@@ -1100,7 +1100,7 @@ def test_run_sync_fails_fast_on_non_retryable_index_error(monkeypatch) -> None:
         index_fetch_attempts=5,
         index_retry_backoff_seconds=0.1,
     )
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator.time.sleep", lambda seconds: (_ for _ in ()).throw(AssertionError(seconds))
     )
@@ -1150,7 +1150,7 @@ def test_run_sync_invokes_retroarch_core_provisioner(monkeypatch) -> None:
         controllers=ControllersConfig(launch_autoconfig=False),
     )
     core_args: dict[str, object] = {}
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator.ensure_retroarch_cores",
         lambda index, dry_run, verbose, **kwargs: core_args.update(
@@ -1200,7 +1200,7 @@ def test_run_sync_applies_steam_updates_even_when_no_downloads(monkeypatch) -> N
         controllers=ControllersConfig(launch_autoconfig=False),
     )
     steam_called = {"value": False}
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
         lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
@@ -1248,7 +1248,7 @@ def test_run_sync_dry_run_errors_for_missing_configured_steam_id(monkeypatch) ->
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
         controllers=ControllersConfig(launch_autoconfig=False),
     )
-    monkeypatch.setattr("gamehub_cli.sync.orchestrator.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.discover_userdata_dir", lambda explicit: Path("userdata"))
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.discover_steam_id",
