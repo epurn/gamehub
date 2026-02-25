@@ -217,10 +217,7 @@ def _reject_removed_env_aliases() -> None:
     for legacy_name, replacement in _REMOVED_ENV_ALIASES.items():
         raw_value = os.environ.get(legacy_name)
         if isinstance(raw_value, str) and raw_value.strip():
-            raise ValueError(
-                f"Environment variable {legacy_name} is no longer supported. "
-                f"Use {replacement} instead."
-            )
+            raise ValueError(f"Environment variable {legacy_name} is no longer supported. Use {replacement} instead.")
 
 
 def load_config(config_path: Path | None = None) -> GamehubConfig:
