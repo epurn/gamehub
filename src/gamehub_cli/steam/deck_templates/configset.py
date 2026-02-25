@@ -22,24 +22,8 @@ def template_reference_for_title(title: TitleEntry) -> str:
     return f"CLOUD_{title_key}/{selection_name}"
 
 
-def _template_reference_for_key(*, title: TitleEntry, key: str, app_id: str | None) -> str:
-    selection_name = template_selection_name_for_system(title.system)
-    normalized_key = str(key).strip()
-    if app_id is not None:
-        normalized_app_id = str(app_id).strip()
-        if normalized_key == normalized_app_id:
-            unsigned_app_id = _canonical_unsigned_app_id(normalized_app_id)
-            if unsigned_app_id and unsigned_app_id.isdigit():
-                return f"CLOUD_{unsigned_app_id}/{selection_name}"
-    if normalized_key and normalized_key.lstrip("-").isdigit():
-        unsigned_app_id = _canonical_unsigned_app_id(normalized_key)
-        if unsigned_app_id and unsigned_app_id.isdigit():
-            return f"CLOUD_{unsigned_app_id}/{selection_name}"
-    return template_reference_for_title(title)
-
-
-def _forced_controller_config_entry(*, title: TitleEntry, key: str, app_id: str | None) -> dict[str, str]:
-    return {"template": _template_reference_for_key(title=title, key=key, app_id=app_id)}
+def _forced_controller_config_entry(*, title: TitleEntry) -> dict[str, str]:
+    return {"template": template_reference_for_title(title)}
 
 
 def _canonical_signed_app_id(app_id: str) -> str | None:
@@ -78,11 +62,6 @@ def _configset_entry_keys(title_name: str, app_id: str | None) -> tuple[str, ...
     return tuple(sorted(keys, key=_configset_key_sort_key))
 
 
-def _normalize_title_without_apostrophes(title_name: str) -> str:
-    stripped = str(title_name).replace("'", " ").replace("\u2019", " ")
-    return normalize_steam_input_title_dir(stripped)
-
-
 def sync_deck_template_selection_configset(
     *,
     configset_path: Path,
@@ -111,20 +90,18 @@ def sync_deck_template_selection_configset(
         app_id = shortcut_result.app_ids_by_title.get(title.title_id)
         title_keys = set(_configset_entry_keys(title.title_name, app_id))
         for key in title_keys:
-            forced_entry = _forced_controller_config_entry(title=title, key=key, app_id=app_id)
+            forced_entry = _forced_controller_config_entry(title=title)
             existing_entry = controller_config.get(key)
             if not isinstance(existing_entry, dict) or existing_entry != forced_entry:
                 controller_config[key] = dict(forced_entry)
                 changed = True
         normalized_title = normalize_steam_input_title_dir(title.title_name)
-        normalized_title_without_apostrophes = _normalize_title_without_apostrophes(title.title_name)
         for existing_key in list(controller_config):
             if not isinstance(existing_key, str):
                 continue
             if existing_key in title_keys:
                 continue
-            normalized_existing_key = normalize_steam_input_title_dir(existing_key)
-            if normalized_existing_key != normalized_title and normalized_existing_key != normalized_title_without_apostrophes:
+            if normalize_steam_input_title_dir(existing_key) != normalized_title:
                 continue
             del controller_config[existing_key]
             changed = True

@@ -80,9 +80,8 @@ Steam close behavior:
       - writes per-title Steam Input files under:
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
-        - plus appid alias directories: `.../config/<unsigned_appid>/gamehub_wii.vdf|gamehub_3ds.vdf`
       - writes Steam local override payloads under each detected Steam root `controller_config/` directory (for example `~/.local/share/Steam/controller_config/app_<unsigned_appid>.vdf`)
-      - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files so managed title keys point to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds` and numeric appid/signed aliases point to `template=CLOUD_<unsigned_appid>/gamehub_wii|gamehub_3ds`
+      - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files so managed normalized title keys and companion aliases (`appid`/signed/title variants) all point to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
       - when present, mirrors the same template/configset writes into `userdata/<steamid>/241100/remote/*/config/` to align Deck startup local+cloud Steam Input sources
       - uses committed seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/` as authoritative payloads
       - writes raw seed bytes without runtime metadata rewriting
@@ -163,7 +162,7 @@ Windows path notes:
 Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
 - Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
-- Use `--reseed-profiles` to overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
+- Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
 - If you used older branch builds before these controller profile changes, run one non-dry sync with `--reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled

@@ -52,8 +52,6 @@
 - Files are written by normalized title path, not appid path:
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
-  - `Steam Controller Configs/<steamid>/config/<unsigned_appid>/gamehub_wii.vdf` (`Wii` alias)
-  - `Steam Controller Configs/<steamid>/config/<unsigned_appid>/gamehub_3ds.vdf` (`N3DS` alias)
 - GAMEHUB also writes Steam local override payloads for managed Deck-template titles:
   - for example: `~/.local/share/Steam/controller_config/app_<unsigned_appid>.vdf`
   - writes only when missing by default; with `--reseed-profiles`, force rewrites even when files already exist
@@ -61,8 +59,7 @@
   - `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`
   - active `Steam Controller Configs/<steamid>/config/configset_*.vdf` files (including `configset_controller_*.vdf` variants)
   - when present, mirrored app-remote roots under `userdata/<steamid>/241100/remote/*/config/` receive the same `configset_*.vdf` updates
-  - `controller_config` title keys use `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
-  - numeric appid/signed alias keys use `template=CLOUD_<unsigned_appid>/gamehub_wii|gamehub_3ds`
+  - `controller_config` entries set both normalized title keys and companion alias keys (`appid`/signed/title variants) to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
 - Managed template sync force-overwrites per-title selection aliases (appid/title variants) for `Wii` and `N3DS`.
 - Managed per-title template payload files (`gamehub_wii.vdf`/`gamehub_3ds.vdf`) are preserved by default and only overwritten when sync runs with `--reseed-profiles` (force rewrite even when bytes already match).
 - Managed template sync does not delete legacy per-title template variant files; only managed `gamehub_wii.vdf`/`gamehub_3ds.vdf` payloads and selection configsets are updated.

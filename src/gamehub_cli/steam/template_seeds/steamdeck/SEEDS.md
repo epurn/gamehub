@@ -31,12 +31,10 @@ Notes:
 - GAMEHUB sync writes per-title template files under:
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
-  - plus appid aliases: `Steam Controller Configs/<steamid>/config/<unsigned_appid>/gamehub_wii.vdf|gamehub_3ds.vdf`
 - GAMEHUB sync also writes local override payloads for managed Deck-template appids:
   - for example: `~/.local/share/Steam/controller_config/app_<unsigned_appid>.vdf`
 - GAMEHUB sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`:
-  - `controller_config` title keys are set to `template=CLOUD_<normalized_title>/gamehub_wii` (`Wii`) or `template=CLOUD_<normalized_title>/gamehub_3ds` (`N3DS`)
-  - numeric appid/signed alias keys are set to `template=CLOUD_<unsigned_appid>/gamehub_wii` (`Wii`) or `template=CLOUD_<unsigned_appid>/gamehub_3ds` (`N3DS`)
+  - `controller_config` normalized title keys and companion alias keys (`appid`/signed/title variants) are set to `template=CLOUD_<normalized_title>/gamehub_wii` (`Wii`) or `template=CLOUD_<normalized_title>/gamehub_3ds` (`N3DS`)
 - GAMEHUB also mirrors those `controller_config` selections to active `configset_*.vdf` files (including `configset_controller_*.vdf` variants).
 - When present, GAMEHUB mirrors per-title/template-configset writes into `userdata/<steamid>/241100/remote/*/config/` so Deck startup local+cloud input roots stay aligned.
 - Managed sync force-overwrites per-title selection aliases in configsets but does not remove legacy title-level template variant files.
