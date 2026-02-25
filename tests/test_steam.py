@@ -978,6 +978,21 @@ def test_apply_deck_steam_input_templates_handles_apostrophe_title_canonical_map
             / "config"
         )
         template_root.mkdir(parents=True, exist_ok=True)
+        (template_root / "configset_controller_neptune.vdf").write_text(
+            vdf.dumps(
+                {
+                    "controller_config": {
+                        "Legend of Zelda, The - Majora s Mask 3D": {
+                            "template": "CLOUD_legend of zelda, the - majora s mask 3d/gamehub_3ds"
+                        },
+                        "legend of zelda, the - majora s mask 3d": {
+                            "template": "CLOUD_legend of zelda, the - majora s mask 3d/gamehub_3ds"
+                        },
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
 
         result = apply_deck_steam_input_templates(context, index, shortcut_result)
 

@@ -62,6 +62,11 @@ def _configset_entry_keys(title_name: str, app_id: str | None) -> tuple[str, ...
     return tuple(sorted(keys, key=_configset_key_sort_key))
 
 
+def _normalize_title_without_apostrophes(title_name: str) -> str:
+    stripped = str(title_name).replace("'", " ").replace("\u2019", " ")
+    return normalize_steam_input_title_dir(stripped)
+
+
 def sync_deck_template_selection_configset(
     *,
     configset_path: Path,
@@ -96,12 +101,14 @@ def sync_deck_template_selection_configset(
                 controller_config[key] = dict(forced_entry)
                 changed = True
         normalized_title = normalize_steam_input_title_dir(title.title_name)
+        normalized_title_without_apostrophes = _normalize_title_without_apostrophes(title.title_name)
         for existing_key in list(controller_config):
             if not isinstance(existing_key, str):
                 continue
             if existing_key in title_keys:
                 continue
-            if normalize_steam_input_title_dir(existing_key) != normalized_title:
+            normalized_existing_key = normalize_steam_input_title_dir(existing_key)
+            if normalized_existing_key != normalized_title and normalized_existing_key != normalized_title_without_apostrophes:
                 continue
             del controller_config[existing_key]
             changed = True
