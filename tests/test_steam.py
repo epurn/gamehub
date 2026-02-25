@@ -834,6 +834,9 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         assert remote_controller_config["tomodachi life"]["template"] == "CLOUD_tomodachi life/gamehub_3ds"
         assert remote_controller_config["3366254221"]["template"] == "CLOUD_3366254221/gamehub_wii"
         assert remote_controller_config["4290272364"]["template"] == "CLOUD_4290272364/gamehub_3ds"
+        override_root = temp_root / ".local" / "share" / "Steam" / "controller_config"
+        assert (override_root / "app_3366254221.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        assert (override_root / "app_4290272364.vdf").read_bytes() == b"N3DS_TEMPLATE"
 
         assert second.targets == 2
         assert second.written == 0
@@ -908,6 +911,8 @@ def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_
         assert result.written == 1
         assert (title_dir / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
         assert (root_parent / "3366254221" / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        override_root = temp_root / ".local" / "share" / "Steam" / "controller_config"
+        assert (override_root / "app_3366254221.vdf").read_bytes() == b"WII_GC_TEMPLATE"
         configset_payload = vdf.loads((root_parent / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
         controller_config = configset_payload.get("controller_config", {})
         assert controller_config["super mario galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
@@ -1006,6 +1011,8 @@ def test_apply_deck_steam_input_templates_handles_apostrophe_title_canonical_map
         assert result.written == 1
         assert (template_root / title_dir / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
         assert (template_root / "2562475268" / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
+        override_root = temp_root / ".local" / "share" / "Steam" / "controller_config"
+        assert (override_root / "app_2562475268.vdf").read_bytes() == b"N3DS_TEMPLATE"
 
         configset_payload = vdf.loads((template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
         controller_config = configset_payload.get("controller_config", {})
@@ -1191,7 +1198,17 @@ def test_apply_deck_steam_input_templates_preserves_existing_managed_file_withou
             lambda system_name: {"Wii": seed_wii}.get(system_name),
         )
 
-        template_root = temp_root / "steam-config-root"
+        template_root = (
+            temp_root
+            / ".local"
+            / "share"
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Steam Controller Configs"
+            / "95402412"
+            / "config"
+        )
         template_root.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(deck_template_sync, "resolve_deck_steam_input_roots", lambda context: [template_root])
 
@@ -1230,6 +1247,9 @@ def test_apply_deck_steam_input_templates_preserves_existing_managed_file_withou
         appid_target = template_root / "3366254221" / "gamehub_wii.vdf"
         appid_target.parent.mkdir(parents=True, exist_ok=True)
         appid_target.write_bytes(b"USER_CUSTOMIZED_TEMPLATE")
+        override_target = temp_root / ".local" / "share" / "Steam" / "controller_config" / "app_3366254221.vdf"
+        override_target.parent.mkdir(parents=True, exist_ok=True)
+        override_target.write_bytes(b"USER_CUSTOMIZED_TEMPLATE")
 
         first = apply_deck_steam_input_templates(context, index, shortcut_result)
 
@@ -1238,6 +1258,7 @@ def test_apply_deck_steam_input_templates_preserves_existing_managed_file_withou
         assert first.unchanged == 1
         assert target.read_bytes() == b"USER_CUSTOMIZED_TEMPLATE"
         assert appid_target.read_bytes() == b"USER_CUSTOMIZED_TEMPLATE"
+        assert override_target.read_bytes() == b"USER_CUSTOMIZED_TEMPLATE"
 
         second = apply_deck_steam_input_templates(context, index, shortcut_result, overwrite_existing=True)
         assert second.targets == 1
@@ -1245,6 +1266,7 @@ def test_apply_deck_steam_input_templates_preserves_existing_managed_file_withou
         assert second.unchanged == 0
         assert target.read_bytes() == seed_payload
         assert appid_target.read_bytes() == seed_payload
+        assert override_target.read_bytes() == seed_payload
 
 
 def test_apply_deck_steam_input_templates_reseed_rewrites_even_when_bytes_match(
@@ -1274,7 +1296,17 @@ def test_apply_deck_steam_input_templates_reseed_rewrites_even_when_bytes_match(
             lambda system_name: {"Wii": seed_wii}.get(system_name),
         )
 
-        template_root = temp_root / "steam-config-root"
+        template_root = (
+            temp_root
+            / ".local"
+            / "share"
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Steam Controller Configs"
+            / "95402412"
+            / "config"
+        )
         template_root.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(deck_template_sync, "resolve_deck_steam_input_roots", lambda context: [template_root])
 
@@ -1322,6 +1354,9 @@ def test_apply_deck_steam_input_templates_reseed_rewrites_even_when_bytes_match(
         appid_target = template_root / "3366254221" / "gamehub_wii.vdf"
         appid_target.parent.mkdir(parents=True, exist_ok=True)
         appid_target.write_bytes(seed_payload)
+        override_target = temp_root / ".local" / "share" / "Steam" / "controller_config" / "app_3366254221.vdf"
+        override_target.parent.mkdir(parents=True, exist_ok=True)
+        override_target.write_bytes(seed_payload)
 
         first = apply_deck_steam_input_templates(context, index, shortcut_result)
         assert first.targets == 1
@@ -1333,9 +1368,10 @@ def test_apply_deck_steam_input_templates_reseed_rewrites_even_when_bytes_match(
         assert second.targets == 1
         assert second.written == 1
         assert second.unchanged == 0
-        assert writes == [target, appid_target]
+        assert writes == [target, appid_target, override_target]
         assert target.read_bytes() == seed_payload
         assert appid_target.read_bytes() == seed_payload
+        assert override_target.read_bytes() == seed_payload
 
 
 def test_deck_template_seeds_axis_inversion_matches_wii_and_n3ds_targets() -> None:

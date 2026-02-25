@@ -54,6 +54,9 @@
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
   - `Steam Controller Configs/<steamid>/config/<unsigned_appid>/gamehub_wii.vdf` (`Wii` alias)
   - `Steam Controller Configs/<steamid>/config/<unsigned_appid>/gamehub_3ds.vdf` (`N3DS` alias)
+- GAMEHUB also writes Steam local override payloads for managed Deck-template titles:
+  - for example: `~/.local/share/Steam/controller_config/app_<unsigned_appid>.vdf`
+  - writes only when missing by default; with `--reseed-profiles`, force rewrites even when files already exist
 - Selection metadata is updated in:
   - `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`
   - active `Steam Controller Configs/<steamid>/config/configset_*.vdf` files (including `configset_controller_*.vdf` variants)

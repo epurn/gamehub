@@ -81,11 +81,13 @@ Steam close behavior:
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
         - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
         - plus appid alias directories: `.../config/<unsigned_appid>/gamehub_wii.vdf|gamehub_3ds.vdf`
+      - writes Steam local override payloads under each detected Steam root `controller_config/` directory (for example `~/.local/share/Steam/controller_config/app_<unsigned_appid>.vdf`)
       - updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files so managed title keys point to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds` and numeric appid/signed aliases point to `template=CLOUD_<unsigned_appid>/gamehub_wii|gamehub_3ds`
       - when present, mirrors the same template/configset writes into `userdata/<steamid>/241100/remote/*/config/` to align Deck startup local+cloud Steam Input sources
       - uses committed seed files from `src/gamehub_cli/steam/template_seeds/steamdeck/` as authoritative payloads
       - writes raw seed bytes without runtime metadata rewriting
       - is deterministic fail-fast: missing required roots/seeds fail the Steam apply stage
+      - without `--reseed-profiles`, existing managed per-title files and override payloads are preserved; `--reseed-profiles` force-rewrites them
       - managed app overrides are always repaired so `UseSteamControllerConfig = 1` for managed app entries
       - managed `Wii`/`N3DS` app entries are written with `DisableCloud = 1`
     - Linux Steam Deck zero-controller detection in `controller-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
