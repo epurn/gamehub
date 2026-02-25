@@ -25,6 +25,7 @@ from gamehub_cli.steam import (
     reopen_steam,
     repair_managed_steam_input_overrides,
     steam_id64_from_userdata_id,
+    steam_input_title_dir_aliases,
     update_cloud_collections,
     update_collections,
     upsert_shortcuts,
@@ -907,6 +908,97 @@ def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_
         controller_config = configset_payload.get("controller_config", {})
         assert controller_config["super mario galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
         assert controller_config["3366254221"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
+
+
+def test_apply_deck_steam_input_templates_handles_apostrophe_title_aliases(
+    monkeypatch,
+    workspace_tempdir,
+) -> None:
+    from gamehub_cli.steam.deck_templates import roots as deck_template_roots
+    from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
+
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "95402412" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="95402412",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+
+        seed_n3ds = temp_root / "seeds" / "n3ds.vdf"
+        seed_n3ds.parent.mkdir(parents=True, exist_ok=True)
+        seed_n3ds.write_bytes(b"N3DS_TEMPLATE")
+        monkeypatch.setattr(
+            deck_template_seeds,
+            "seed_path_for_system",
+            lambda system_name: {"N3DS": seed_n3ds}.get(system_name),
+        )
+        monkeypatch.setattr(deck_template_roots.Path, "home", staticmethod(lambda: temp_root))
+
+        title_name = "Legend of Zelda, The - Majora's Mask 3D"
+        index = LibraryIndex(
+            index_version=1,
+            systems=(),
+            titles=(
+                TitleEntry(
+                    title_id="title_n3ds",
+                    system="N3DS",
+                    title_name=title_name,
+                    title_rel_dir="N3DS/Legend of Zelda, The - Majora's Mask 3D.3ds",
+                    emulator="azahar",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="rom_n3ds",
+                        rel_path="roms/N3DS/Legend of Zelda, The - Majora's Mask 3D.3ds",
+                        sha256="c" * 64,
+                        size_bytes=1,
+                        extension=".3ds",
+                    ),
+                    assets=(),
+                ),
+            ),
+        )
+        shortcut_result = ShortcutSyncResult(
+            app_ids_by_title={"title_n3ds": "2562475268"},
+            app_ids_by_system={"N3DS": ["2562475268"]},
+            total_shortcuts=1,
+        )
+
+        template_root = (
+            temp_root
+            / ".local"
+            / "share"
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Steam Controller Configs"
+            / "95402412"
+            / "config"
+        )
+        template_root.mkdir(parents=True, exist_ok=True)
+
+        result = apply_deck_steam_input_templates(context, index, shortcut_result)
+
+        title_aliases = steam_input_title_dir_aliases(title_name)
+        assert len(title_aliases) == 2
+        assert title_aliases[0] == "legend of zelda, the - majora's mask 3d"
+        assert title_aliases[1] == "legend of zelda, the - majora s mask 3d"
+        assert result.targets == 1
+        assert result.written == 1
+        assert (template_root / title_aliases[0] / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
+        assert (template_root / title_aliases[1] / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
+
+        configset_payload = vdf.loads((template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
+        controller_config = configset_payload.get("controller_config", {})
+        expected_template = "CLOUD_legend of zelda, the - majora s mask 3d/gamehub_3ds"
+        assert controller_config["2562475268"]["template"] == expected_template
+        assert controller_config["Legend of Zelda, The - Majora's Mask 3D"]["template"] == expected_template
+        assert controller_config["legend of zelda, the - majora's mask 3d"]["template"] == expected_template
+        assert controller_config["Legend of Zelda, The - Majora s Mask 3D"]["template"] == expected_template
+        assert controller_config["legend of zelda, the - majora s mask 3d"]["template"] == expected_template
 
 
 def test_apply_deck_steam_input_templates_fails_when_required_seed_missing(

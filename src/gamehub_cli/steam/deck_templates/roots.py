@@ -10,6 +10,7 @@ from ..types import SteamContext
 
 _STEAM_INPUT_CLOUD_APP_ID = "241100"
 _WHITESPACE_RE = re.compile(r"\s+")
+_APOSTROPHE_RE = re.compile(r"['\u2019]")
 _PathIdentity: TypeAlias = tuple[str, int, int] | tuple[str, str]
 
 
@@ -17,6 +18,15 @@ def normalize_steam_input_title_dir(title_name: str) -> str:
     normalized = title_name.casefold().strip().replace("/", " ").replace("\\", " ")
     normalized = _WHITESPACE_RE.sub(" ", normalized).strip()
     return normalized or "untitled"
+
+
+def steam_input_title_dir_aliases(title_name: str) -> tuple[str, ...]:
+    normalized = normalize_steam_input_title_dir(title_name)
+    aliases = [normalized]
+    apostrophe_safe = _WHITESPACE_RE.sub(" ", _APOSTROPHE_RE.sub(" ", normalized)).strip()
+    if apostrophe_safe and apostrophe_safe != normalized:
+        aliases.append(apostrophe_safe)
+    return tuple(aliases)
 
 
 def discover_deck_steam_input_roots(steam_id: str) -> list[Path]:

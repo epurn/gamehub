@@ -94,8 +94,9 @@ Steam mutation behavior notes:
   - per-title destinations:
     - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
     - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
+    - apostrophe-containing titles also get an apostrophe-safe alias directory (apostrophes converted to spaces)
   - existing managed per-title template files are preserved unless `--reseed-profiles` is used
-  - sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files (`controller_config`) so normalized title keys and companion aliases (`appid`/signed/title variants) select `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
+  - sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files (`controller_config`) so normalized title keys and companion aliases (`appid`/signed/title variants) select `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds` (apostrophe titles use the apostrophe-safe alias for `<normalized_title>`)
   - when present, those per-title/configset writes are mirrored to `userdata/<steamid>/241100/remote/*/config/` to keep Deck startup Steam Input cloud/local roots aligned
   - seed source: `src/gamehub_cli/steam/template_seeds/steamdeck/`
   - GAMEHUB writes raw seed bytes without runtime metadata rewriting.
