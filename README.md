@@ -125,6 +125,7 @@ More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbo
 - Sync behavior: [docs/cli-sync.md](docs/cli-sync.md)
 - Config + env overrides: [docs/config-and-state.md](docs/config-and-state.md)
 - Platform support + templates: [docs/platform-support.md](docs/platform-support.md)
+- Linux support audit + reuse plan: [docs/linux-support-audit.md](docs/linux-support-audit.md)
 - Architecture: [docs/architecture.md](docs/architecture.md)
 - Steam behavior: [docs/steam-integration.md](docs/steam-integration.md)
 - Server API: [docs/server-api.md](docs/server-api.md)
