@@ -776,7 +776,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button SHOULDER_RIGHT, , "
+							"binding"		"xinput_button SHOULDER_LEFT, , "
 						}
 					}
 				}
@@ -792,7 +792,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button SHOULDER_LEFT, , "
+							"binding"		"xinput_button SHOULDER_RIGHT, , "
 						}
 					}
 				}

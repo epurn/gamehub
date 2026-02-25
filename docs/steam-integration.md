@@ -52,13 +52,16 @@
 - Files are written by normalized title path, not appid path:
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
   - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
+- GAMEHUB also writes Steam local override payloads for managed Deck-template titles:
+  - for example: `~/.local/share/Steam/controller_config/app_<unsigned_appid>.vdf`
+  - writes only when missing by default; with `--reseed-profiles`, force rewrites even when files already exist
 - Selection metadata is updated in:
   - `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf`
   - active `Steam Controller Configs/<steamid>/config/configset_*.vdf` files (including `configset_controller_*.vdf` variants)
   - when present, mirrored app-remote roots under `userdata/<steamid>/241100/remote/*/config/` receive the same `configset_*.vdf` updates
   - `controller_config` entries set both normalized title keys and companion alias keys (`appid`/signed/title variants) to `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
 - Managed template sync force-overwrites per-title selection aliases (appid/title variants) for `Wii` and `N3DS`.
-- Managed per-title template payload files (`gamehub_wii.vdf`/`gamehub_3ds.vdf`) are preserved by default and only overwritten when sync runs with `--reseed-profiles`.
+- Managed per-title template payload files (`gamehub_wii.vdf`/`gamehub_3ds.vdf`) are preserved by default and only overwritten when sync runs with `--reseed-profiles` (force rewrite even when bytes already match).
 - Managed template sync does not delete legacy per-title template variant files; only managed `gamehub_wii.vdf`/`gamehub_3ds.vdf` payloads and selection configsets are updated.
 - Managed per-title template files are also mirrored to present app-remote roots under `userdata/<steamid>/241100/remote/*/config/<normalized_title>/`.
 - Deck app override repair sets `UseSteamControllerConfig=1` and `DisableCloud=1` for managed `Wii`/`N3DS` app entries.

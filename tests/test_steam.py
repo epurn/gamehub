@@ -822,6 +822,9 @@ def test_apply_deck_steam_input_templates_writes_per_title_and_is_idempotent(
         remote_n3ds_template = remote_template_root / normalize_steam_input_title_dir("Tomodachi Life")
         assert (remote_wii_template / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
         assert (remote_n3ds_template / "gamehub_3ds.vdf").read_bytes() == b"N3DS_TEMPLATE"
+        override_root = temp_root / ".local" / "share" / "Steam" / "controller_config"
+        assert (override_root / "app_3366254221.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        assert (override_root / "app_4290272364.vdf").read_bytes() == b"N3DS_TEMPLATE"
         remote_configset_payload = vdf.loads(
             (remote_template_root / "configset_controller_neptune.vdf").read_text(encoding="utf-8")
         )
@@ -903,6 +906,8 @@ def test_apply_deck_steam_input_templates_writes_parent_root_when_config_subdir_
         assert result.targets == 1
         assert result.written == 1
         assert (title_dir / "gamehub_wii.vdf").read_bytes() == b"WII_GC_TEMPLATE"
+        override_root = temp_root / ".local" / "share" / "Steam" / "controller_config"
+        assert (override_root / "app_3366254221.vdf").read_bytes() == b"WII_GC_TEMPLATE"
         configset_payload = vdf.loads((root_parent / "configset_controller_neptune.vdf").read_text(encoding="utf-8"))
         controller_config = configset_payload.get("controller_config", {})
         assert controller_config["super mario galaxy"]["template"] == "CLOUD_super mario galaxy/gamehub_wii"
@@ -1130,6 +1135,107 @@ def test_apply_deck_steam_input_templates_preserves_existing_managed_file_withou
         assert second.written == 1
         assert second.unchanged == 0
         assert target.read_bytes() == seed_payload
+
+
+def test_apply_deck_steam_input_templates_reseed_rewrites_even_when_bytes_match(
+    monkeypatch, workspace_tempdir
+) -> None:
+    from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
+    from gamehub_cli.steam.deck_templates import sync as deck_template_sync
+
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "95402412" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="95402412",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+
+        seed_payload = b"SEED_WII_TEMPLATE_PAYLOAD"
+        seed_wii = temp_root / "seeds" / "wii_gc.vdf"
+        seed_wii.parent.mkdir(parents=True, exist_ok=True)
+        seed_wii.write_bytes(seed_payload)
+        monkeypatch.setattr(
+            deck_template_seeds,
+            "seed_path_for_system",
+            lambda system_name: {"Wii": seed_wii}.get(system_name),
+        )
+
+        template_root = (
+            temp_root
+            / ".local"
+            / "share"
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Steam Controller Configs"
+            / "95402412"
+            / "config"
+        )
+        template_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(deck_template_sync, "resolve_deck_steam_input_roots", lambda context: [template_root])
+
+        writes: list[Path] = []
+        original_atomic_write_bytes = deck_template_sync._atomic_write_bytes
+
+        def _tracking_write(path: Path, payload: bytes) -> None:
+            writes.append(path)
+            original_atomic_write_bytes(path, payload)
+
+        monkeypatch.setattr(deck_template_sync, "_atomic_write_bytes", _tracking_write)
+
+        index = LibraryIndex(
+            index_version=1,
+            systems=(),
+            titles=(
+                TitleEntry(
+                    title_id="title_wii",
+                    system="Wii",
+                    title_name="Super Mario Galaxy",
+                    title_rel_dir="Wii/Super Mario Galaxy.rvz",
+                    emulator="dolphin",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="rom_wii",
+                        rel_path="roms/Wii/Super Mario Galaxy.rvz",
+                        sha256="a" * 64,
+                        size_bytes=1,
+                        extension=".rvz",
+                    ),
+                    assets=(),
+                ),
+            ),
+        )
+        shortcut_result = ShortcutSyncResult(
+            app_ids_by_title={"title_wii": "3366254221"},
+            app_ids_by_system={"Wii": ["3366254221"]},
+            total_shortcuts=1,
+        )
+
+        title_dir = template_root / normalize_steam_input_title_dir("Super Mario Galaxy")
+        title_dir.mkdir(parents=True, exist_ok=True)
+        target = title_dir / "gamehub_wii.vdf"
+        target.write_bytes(seed_payload)
+        override_target = temp_root / ".local" / "share" / "Steam" / "controller_config" / "app_3366254221.vdf"
+        override_target.parent.mkdir(parents=True, exist_ok=True)
+        override_target.write_bytes(seed_payload)
+
+        first = apply_deck_steam_input_templates(context, index, shortcut_result)
+        assert first.targets == 1
+        assert first.written == 0
+        assert first.unchanged == 1
+        assert writes == []
+
+        second = apply_deck_steam_input_templates(context, index, shortcut_result, overwrite_existing=True)
+        assert second.targets == 1
+        assert second.written == 1
+        assert second.unchanged == 0
+        assert writes == [target, override_target]
+        assert target.read_bytes() == seed_payload
+        assert override_target.read_bytes() == seed_payload
 
 
 def test_deck_template_seeds_axis_inversion_matches_wii_and_n3ds_targets() -> None:

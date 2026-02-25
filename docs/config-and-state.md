@@ -94,7 +94,9 @@ Steam mutation behavior notes:
   - per-title destinations:
     - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_wii.vdf` (`Wii`)
     - `Steam Controller Configs/<steamid>/config/<normalized_title>/gamehub_3ds.vdf` (`N3DS`)
+    - local override destinations under detected Steam roots `controller_config/` directories (for example `~/.local/share/Steam/controller_config/app_<unsigned_appid>.vdf`)
   - existing managed per-title template files are preserved unless `--reseed-profiles` is used
+  - with `--reseed-profiles`, managed per-title template files and override payloads are force-rewritten even when seed bytes already match
   - sync also updates `Steam Controller Configs/<steamid>/config/configset_controller_neptune.vdf` and active `configset_*.vdf` files (`controller_config`) so normalized title keys and companion aliases (`appid`/signed/title variants) select `template=CLOUD_<normalized_title>/gamehub_wii|gamehub_3ds`
   - when present, those per-title/configset writes are mirrored to `userdata/<steamid>/241100/remote/*/config/` to keep Deck startup Steam Input cloud/local roots aligned
   - seed source: `src/gamehub_cli/steam/template_seeds/steamdeck/`
@@ -194,11 +196,12 @@ Controller launch autoconfig:
   - `<root>/dolphin/<profile>/Hotkeys.ini`
   - `<root>/azahar/<profile>/qt-config.ini`
 - Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
-- Use `--reseed-profiles` to overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
+- Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
 - If you used older branch builds before these controller profile changes, run one non-dry sync with `--reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
+  - with `--reseed-profiles`, managed files are rewritten even when bytes already match
 - If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
 Windows Dolphin defaults:
