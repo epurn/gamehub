@@ -5,6 +5,11 @@ Command:
 .\venv\Scripts\python.exe -m gamehub_cli.main sync [flags]
 ```
 
+Controller doctor command:
+```powershell
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor --controllers [--apply]
+```
+
 ## Flags
 - `--dry-run`: build and print plan only
 - `--verbose`: longer network timeout and extra output context
@@ -64,8 +69,13 @@ Steam close behavior:
    - write to `*.part`, verify SHA-256, atomic rename
    - download execution uses a shared HTTP connection pool and configurable parallel workers (`[server].max_parallel_downloads` / `GAMEHUB_MAX_PARALLEL_DOWNLOADS`, default `4`)
 8. Deploy firmware files into emulator-native BIOS locations (copy/link from `<gamehub_dir>/firmware/...`)
-9. Discover Steam userdata + SteamID
-10. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
+9. Controller convergence stage (after runtime/bootstrap setup, before Steam mutation):
+   - validates managed controller profile templates under `<gamehub_dir>/controller_profiles`
+   - records per-directory `.gamehub-managed.json` metadata markers (schema version, source profile/template, timestamp, fingerprint, ownership)
+   - applies assisted emulator config key convergence for known-safe controller sections (`PCSX2.ini`, `Dolphin.ini`, Azahar `qt-config.ini`) using minimal key/section edits
+   - does not choose a fixed profile; runtime selection remains launch-time autodetect (`0 -> kbm`, `1 -> xbox_1p`, `2+ -> xbox_2p`)
+10. Discover Steam userdata + SteamID
+11. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
    - managed shortcuts persist stable `appid` values on write, so first-run artwork/category mapping does not depend on a later Steam rewrite pass
    - collection membership appids are canonicalized to unsigned numeric values in both localconfig and cloud payloads
     - when `[controllers].launch_autoconfig = true`, GAMEHUB wraps `PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `controller-launch` command that:
@@ -92,7 +102,7 @@ Steam close behavior:
     - Linux Steam Deck zero-controller detection in `controller-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
     - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later release
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
-11. Save `state.json`
+12. Save `state.json`
 
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.

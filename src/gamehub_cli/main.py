@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .common.config import load_config
+from .controllers.convergence import run_controller_doctor
 from .controllers.launch import run_controller_launch
 from .sync import run_sync
 
@@ -76,6 +77,21 @@ if typer is not None:
         audit: bool = typer.Option(False, "--audit", help="Print controller profile apply diagnostics."),
     ) -> None:
         raise typer.Exit(code=run_controller_launch(payload_token=payload, config_path=config, audit=audit))
+
+    @app.command()
+    def doctor(
+        config: Path | None = typer.Option(
+            None,
+            "--config",
+            help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+        ),
+        controllers: bool = typer.Option(False, "--controllers", help="Run controller convergence diagnostics."),
+        apply: bool = typer.Option(False, "--apply", help="Apply safe controller repairs."),
+    ) -> None:
+        if not controllers:
+            raise typer.BadParameter("No doctor checks selected. Use --controllers.")
+        loaded = load_config(config)
+        raise typer.Exit(code=run_controller_doctor(loaded, apply=apply))
 else:
     app = None
 
@@ -107,6 +123,15 @@ def main() -> None:
     controller_launch_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--audit", action="store_true", help=argparse.SUPPRESS)
+    doctor_parser = subparsers.add_parser("doctor")
+    doctor_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    )
+    doctor_parser.add_argument("--controllers", action="store_true")
+    doctor_parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     if args.command == "sync":
         loaded = load_config(args.config)
@@ -124,6 +149,11 @@ def main() -> None:
         )
     if args.command == "controller-launch":
         raise SystemExit(run_controller_launch(payload_token=args.payload, config_path=args.config, audit=args.audit))
+    if args.command == "doctor":
+        if not args.controllers:
+            parser.error("doctor requires at least one check selector (use --controllers)")
+        loaded = load_config(args.config)
+        raise SystemExit(run_controller_doctor(loaded, apply=args.apply))
 
 
 if __name__ == "__main__":
