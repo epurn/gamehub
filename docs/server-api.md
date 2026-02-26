@@ -43,8 +43,11 @@ Base URL: `http://<host>:8000`
 
 ## Index refresh policy
 - The server keeps the latest index snapshot in memory and serves `/v1/index`, `/v1/files/{file_id}`, and `/v1/assets/{asset_id}` from that cached snapshot.
-- `GAMEHUB_INDEX_REFRESH_SECONDS` controls automatic refresh:
-  - `0` (default): no TTL refresh; rebuild only on first load after startup and on explicit refresh requests
-  - `>0`: rebuild on the next request after the cached snapshot age reaches this TTL
+- The server automatically rebuilds on the next request when files are added/removed/updated under:
+  - `roms/<system>/`
+  - `firmware/<system>/`
+- `GAMEHUB_INDEX_REFRESH_SECONDS` is optional TTL-based refresh on top of change detection:
+  - `0` (default): change-detection refresh only
+  - `>0`: also rebuild on the next request after the cached snapshot age reaches this TTL
 - Operators can force a manual rebuild at any time with:
   - `GET /v1/index?refresh=1`

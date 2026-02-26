@@ -32,7 +32,7 @@ Required values in `docker/.env`:
 - `GAMEHUB_IMAGE_TAG`: image tag to run
   - `latest` for most recent release
   - `v1.2.0` (or any release tag) for pinned deploys
-- Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`, meaning startup/manual refresh only)
+- Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`; change-based refresh still runs when ROM/firmware files change)
 - Optional: `GAMEHUB_HASH_CACHE_PATH` (path for persistent SHA256 cache DB; default is `/app/.cache/gamehub/hash-cache.sqlite3`)
 
 ## 2) Pull released server image

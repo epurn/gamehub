@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import logging
 import os
+import stat
 import threading
 import time
 from pathlib import Path
@@ -17,18 +19,83 @@ app = FastAPI(title="GAMEHUB Server", version="1.3.0")
 logger = logging.getLogger(__name__)
 
 
+def _path_signature_fields(path: Path, data_root: Path) -> tuple[str, str, int, int] | None:
+    try:
+        stat_result = path.stat()
+    except OSError:
+        return None
+
+    mode = stat_result.st_mode
+    if stat.S_ISDIR(mode):
+        kind = "dir"
+    elif stat.S_ISREG(mode):
+        kind = "file"
+    else:
+        kind = "other"
+
+    try:
+        relative = path.relative_to(data_root).as_posix()
+    except ValueError:
+        relative = path.resolve().as_posix()
+    return relative, kind, int(stat_result.st_size), int(stat_result.st_mtime_ns)
+
+
+def _sorted_children(path: Path) -> list[Path]:
+    try:
+        children = list(path.iterdir())
+    except OSError:
+        return []
+    return sorted(children, key=lambda item: item.name.casefold())
+
+
+def _snapshot_data_signature(data_root: Path) -> str:
+    digest = hashlib.blake2s(digest_size=16)
+
+    def _update(relative: str, kind: str, size_bytes: int, mtime_ns: int) -> None:
+        digest.update(f"{relative}|{kind}|{size_bytes}|{mtime_ns}\n".encode("utf-8"))
+
+    for root_name in ("roms", FIRMWARE_ROOT_NAME):
+        root = data_root / root_name
+        root_fields = _path_signature_fields(root, data_root)
+        if root_fields is None:
+            _update(root_name, "missing", 0, 0)
+            continue
+        _update(*root_fields)
+        if root_fields[1] != "dir":
+            continue
+
+        for system_entry in _sorted_children(root):
+            system_fields = _path_signature_fields(system_entry, data_root)
+            if system_fields is None:
+                continue
+            _update(*system_fields)
+            if system_fields[1] != "dir":
+                continue
+
+            for child_entry in _sorted_children(system_entry):
+                child_fields = _path_signature_fields(child_entry, data_root)
+                if child_fields is None:
+                    continue
+                _update(*child_fields)
+
+    return digest.hexdigest()
+
+
 class IndexRepository:
     def __init__(self, data_root: Path, refresh_seconds: float = 0.0) -> None:
         self._data_root = data_root
         self._cache: IndexBundle | None = None
         self._payload_json: bytes | None = None
         self._payload_gzip: bytes | None = None
+        self._source_signature: str | None = None
         self._loaded_at: float | None = None
         self._refresh_seconds = max(0.0, float(refresh_seconds))
         self._lock = threading.Lock()
 
-    def _should_refresh(self) -> bool:
+    def _should_refresh(self, source_signature: str | None = None) -> bool:
         if self._cache is None:
+            return True
+        if source_signature is not None and source_signature != self._source_signature:
             return True
         if self._refresh_seconds <= 0:
             return False
@@ -37,17 +104,25 @@ class IndexRepository:
         age_seconds = time.monotonic() - self._loaded_at
         return age_seconds >= self._refresh_seconds
 
-    def load(self, force_refresh: bool = False) -> IndexBundle:
-        if not force_refresh and not self._should_refresh():
+    def load(self, force_refresh: bool = False, *, check_sources: bool = True) -> IndexBundle:
+        source_signature: str | None = None
+        if not force_refresh and check_sources:
+            source_signature = _snapshot_data_signature(self._data_root)
+        if not force_refresh and not self._should_refresh(source_signature=source_signature):
             if self._cache is None:
                 raise RuntimeError("Index cache was expected but is missing")
             return self._cache
 
         with self._lock:
-            if force_refresh or self._should_refresh():
+            if not force_refresh and check_sources:
+                source_signature = _snapshot_data_signature(self._data_root)
+            if force_refresh or self._should_refresh(source_signature=source_signature):
                 self._cache = build_index(self._data_root)
                 self._payload_json = self._cache.index.model_dump_json().encode("utf-8")
                 self._payload_gzip = gzip.compress(self._payload_json, compresslevel=5)
+                if source_signature is None:
+                    source_signature = _snapshot_data_signature(self._data_root)
+                self._source_signature = source_signature
                 self._loaded_at = time.monotonic()
         if self._cache is None:
             raise RuntimeError("Index cache was expected but is missing")
@@ -123,7 +198,7 @@ def get_index(request: Request, refresh: bool = Query(default=False)) -> Respons
 
 @app.get("/v1/files/{file_id}")
 def get_file(file_id: str) -> FileResponse:
-    bundle = INDEX_REPO.load()
+    bundle = INDEX_REPO.load(check_sources=False)
     path = bundle.file_paths.get(file_id)
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail=f"Unknown file_id: {file_id}")
@@ -132,7 +207,7 @@ def get_file(file_id: str) -> FileResponse:
 
 @app.get("/v1/assets/{asset_id}")
 def get_asset(asset_id: str) -> FileResponse:
-    bundle = INDEX_REPO.load()
+    bundle = INDEX_REPO.load(check_sources=False)
     path = bundle.asset_paths.get(asset_id)
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail=f"Unknown asset_id: {asset_id}")

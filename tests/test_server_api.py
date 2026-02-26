@@ -57,6 +57,28 @@ def test_index_and_files_endpoints(api_client: TestClient) -> None:
     assert file_response.content == b"rom-bytes"
 
 
+def test_index_endpoint_auto_refreshes_when_rom_and_firmware_are_added(api_client: TestClient) -> None:
+    first = api_client.get("/v1/index")
+    assert first.status_code == 200
+    first_payload = first.json()
+    assert len(first_payload["titles"]) == 1
+
+    nes_first = next(system for system in first_payload["systems"] if system["name"] == "NES")
+    assert {entry["filename"] for entry in nes_first["firmware"]} == {"dummy.bin"}
+
+    _write_file(server_main.DATA_ROOT / "roms" / "NES" / "MegaMan2.nes", b"rom-2")
+    _write_file(server_main.DATA_ROOT / "firmware" / "NES" / "addon.bin", b"fw-addon")
+
+    second = api_client.get("/v1/index")
+    assert second.status_code == 200
+    second_payload = second.json()
+    assert len(second_payload["titles"]) == 2
+    assert {entry["title_name"] for entry in second_payload["titles"]} == {"SuperMarioBros", "MegaMan2"}
+
+    nes_second = next(system for system in second_payload["systems"] if system["name"] == "NES")
+    assert {entry["filename"] for entry in nes_second["firmware"]} == {"dummy.bin", "addon.bin"}
+
+
 def test_unknown_file_and_asset_ids_return_404(api_client: TestClient) -> None:
     file_response = api_client.get("/v1/files/file_missing")
     assert file_response.status_code == 404
@@ -131,6 +153,25 @@ def test_index_repository_refreshes_when_ttl_expires(monkeypatch) -> None:
     assert calls["count"] == 2
 
 
+def test_index_repository_refreshes_when_data_signature_changes(monkeypatch) -> None:
+    calls = {"count": 0}
+    signatures = iter(["sig-a", "sig-a", "sig-a", "sig-b", "sig-b"])
+
+    def fake_build_index(_data_root: Path) -> server_main.IndexBundle:
+        calls["count"] += 1
+        return _empty_index_bundle()
+
+    monkeypatch.setattr(server_main, "build_index", fake_build_index)
+    monkeypatch.setattr(server_main, "_snapshot_data_signature", lambda _data_root: next(signatures))
+    repo = IndexRepository(Path("unused"), refresh_seconds=0)
+
+    repo.load()
+    repo.load()
+    repo.load()
+
+    assert calls["count"] == 2
+
+
 def test_index_endpoint_refresh_query_forces_reload(api_client: TestClient, monkeypatch) -> None:
     original_build_index = server_main.build_index
     calls = {"count": 0}
@@ -154,13 +195,20 @@ def test_index_endpoint_refresh_query_forces_reload(api_client: TestClient, monk
 
 def test_file_and_asset_routes_use_cached_snapshot(api_client: TestClient, monkeypatch) -> None:
     original_build_index = server_main.build_index
+    original_snapshot = server_main._snapshot_data_signature
     calls = {"count": 0}
+    signature_calls = {"count": 0}
 
     def counting_build_index(data_root: Path) -> server_main.IndexBundle:
         calls["count"] += 1
         return original_build_index(data_root)
 
+    def counting_snapshot(data_root: Path) -> str:
+        signature_calls["count"] += 1
+        return original_snapshot(data_root)
+
     monkeypatch.setattr(server_main, "build_index", counting_build_index)
+    monkeypatch.setattr(server_main, "_snapshot_data_signature", counting_snapshot)
     server_main.INDEX_REPO = IndexRepository(server_main.DATA_ROOT, refresh_seconds=0)
 
     index_response = api_client.get("/v1/index")
@@ -172,6 +220,7 @@ def test_file_and_asset_routes_use_cached_snapshot(api_client: TestClient, monke
     assert file_response.status_code == 200
     assert asset_response.status_code == 404
     assert calls["count"] == 1
+    assert signature_calls["count"] == 2
 
 
 def test_warm_index_cache_logs_start_and_completion(monkeypatch, caplog) -> None:
