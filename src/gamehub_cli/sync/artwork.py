@@ -14,11 +14,13 @@ from gamehub_common.models import TitleEntry
 from ..common.fsops import replace_file
 
 httpx: Any
-_httpx: Any | None
+_httpx: Any | None = None
 try:
-    import httpx as _httpx
+    import httpx as _httpx_module
 except ModuleNotFoundError:  # pragma: no cover
-    _httpx = None
+    pass
+else:
+    _httpx = _httpx_module
 httpx = _httpx
 
 SGDB_ART_KINDS = ("grid", "hero", "logo", "icon")

@@ -12,11 +12,13 @@ from .sync import run_init, run_sync
 from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor
 
 typer: Any
-_typer: Any | None
+_typer: Any | None = None
 try:
-    import typer as _typer
+    import typer as _typer_module
 except ModuleNotFoundError:
-    _typer = None
+    pass
+else:
+    _typer = _typer_module
 typer = _typer
 
 

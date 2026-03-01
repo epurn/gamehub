@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from urllib.parse import urljoin
 
 from gamehub_common.models import LibraryIndex
@@ -223,7 +223,7 @@ def _load_validated_index(config: GamehubConfig, *, transfer_timeout: float, ver
         retry_backoff_seconds=config.index_retry_backoff_seconds,
         verbose=verbose,
     )
-    return LibraryIndex.model_validate(raw_index)
+    return cast(LibraryIndex, LibraryIndex.model_validate(raw_index))
 
 
 def _bootstrap_runtime(
