@@ -33,7 +33,11 @@ if typer is not None:
             "--config",
             help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
         ),
-        dry_run: bool = typer.Option(False, "--dry-run", help="Plan only; do not download or modify Steam"),
+        dry_run: bool = typer.Option(
+            False,
+            "--dry-run",
+            help="Plan only; do not download or modify Steam (includes save-sync planning when enabled)",
+        ),
         verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
         verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
         skip_steam: bool = typer.Option(False, "--skip-steam", help="Skip Steam lifecycle and update hooks"),
@@ -156,7 +160,7 @@ def main() -> None:
         default=None,
         help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
     )
-    sync_parser.add_argument("--dry-run", action="store_true")
+    sync_parser.add_argument("--dry-run", action="store_true", help="Plan only; no downloads or Steam writes")
     sync_parser.add_argument("--verbose", action="store_true")
     sync_parser.add_argument("--verify", action="store_true")
     sync_parser.add_argument("--skip-steam", action="store_true")
