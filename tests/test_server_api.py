@@ -26,6 +26,7 @@ def api_client(workspace_tempdir):
         root = temp_dir
         _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom-bytes")
         _write_file(root / "firmware" / "NES" / "dummy.bin", b"firmware-bytes")
+        _write_file(root / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav", b"save-bytes")
 
         original_data_root = server_main.DATA_ROOT
         original_repo = server_main.INDEX_REPO
@@ -82,6 +83,36 @@ def test_index_endpoint_auto_refreshes_when_rom_and_firmware_are_added(api_clien
 
     nes_second = next(system for system in second_payload["systems"] if system["name"] == "NES")
     assert {entry["filename"] for entry in nes_second["firmware"]} == {"dummy.bin", "addon.bin"}
+
+
+def test_save_endpoint_returns_file_and_404_for_unknown(api_client: TestClient) -> None:
+    index_response = api_client.get("/v1/index")
+    assert index_response.status_code == 200
+
+    payload = index_response.json()
+    assert len(payload["saves"]) == 1
+
+    save_id = payload["saves"][0]["save_id"]
+    save_response = api_client.get(f"/v1/saves/{save_id}")
+    assert save_response.status_code == 200
+    assert save_response.content == b"save-bytes"
+
+    missing_response = api_client.get("/v1/saves/save_missing")
+    assert missing_response.status_code == 404
+    assert missing_response.json()["detail"] == "Unknown save_id: save_missing"
+
+
+def test_save_endpoint_blocks_traversal_style_targets_with_id_lookup(api_client: TestClient) -> None:
+    traversal_response = api_client.get("/v1/saves/..%5Csecret.sav")
+    assert traversal_response.status_code == 404
+    assert traversal_response.json()["detail"] == r"Unknown save_id: ..\secret.sav"
+
+
+def test_save_upload_contract_route_is_present_and_not_implemented(api_client: TestClient) -> None:
+    response = api_client.put("/v1/saves/save_missing", content=b"new-save")
+
+    assert response.status_code == 501
+    assert "Save upload is not implemented in this rollout" in response.json()["detail"]
 
 
 def test_unknown_file_and_asset_ids_return_404(api_client: TestClient) -> None:

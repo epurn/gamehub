@@ -14,6 +14,13 @@ Base URL: `http://<host>:8000`
 - `GET /v1/assets/{asset_id}`
   - Streams asset file content for IDs present in `/v1/index`
   - `404` for unknown `asset_id`
+- `GET /v1/saves/{save_id}`
+  - Streams save file content for `save_id` values present in the active in-memory `/v1/index` snapshot
+  - `404` for unknown `save_id` (including traversal-like target strings, because lookup is ID-based only)
+- `PUT /v1/saves/{save_id}`
+  - Upload contract placeholder for bidirectional save sync
+  - Current rollout returns `501 Not Implemented`
+  - Frozen target semantics for implementation stories: stream to temporary `.part`, atomically replace the target save file, then refresh the in-memory index snapshot before responding
 - `GET /v1/firmware/{system}/{filename}`
   - Streams raw firmware file from `firmware/<system>/<filename>`
   - `404` when file is missing
@@ -42,7 +49,7 @@ Base URL: `http://<host>:8000`
 - Initial canonical systems: `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`.
 
 ## Index refresh policy
-- The server keeps the latest index snapshot in memory and serves `/v1/index`, `/v1/files/{file_id}`, and `/v1/assets/{asset_id}` from that cached snapshot.
+- The server keeps the latest index snapshot in memory and serves `/v1/index`, `/v1/files/{file_id}`, `/v1/assets/{asset_id}`, and `/v1/saves/{save_id}` from that cached snapshot.
 - The server automatically detects files added/removed/updated under:
   - `roms/<system>/`
   - `firmware/<system>/`
