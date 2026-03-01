@@ -1,16 +1,36 @@
-# CLI Sync
+# CLI Flow
 
-Command:
+Init command:
+```powershell
+.\venv\Scripts\python.exe -m gamehub_cli.main init [flags]
+```
+
+Sync command:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main sync [flags]
 ```
 
 Controller doctor command:
 ```powershell
-.\venv\Scripts\python.exe -m gamehub_cli.main doctor --controllers [--apply] [--force]
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor controllers [--apply] [--force]
 ```
 
-## Flags
+Managed content doctor commands:
+```powershell
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor roms [--verify] [--verbose]
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor firmware [--verify] [--verbose]
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor all [--verify] [--verbose]
+```
+
+Fresh installs must run `gamehub init` before the first `gamehub sync`.
+
+## Init Flags
+- `--dry-run`: inspect bootstrap actions only
+- `--verbose`: longer network timeout and extra output context
+- `--reseed-profiles`: force-overwrite managed profile/template files during init (even when bytes already match)
+- `--config <path>`: TOML config path override (required to exist for `init`)
+
+## Sync Flags
 - `--dry-run`: build and print plan only
 - `--verbose`: longer network timeout and extra output context
 - `--verify`: re-hash local files before diff decisions
@@ -26,12 +46,25 @@ Steam close behavior:
   - with `--require-steam-closed`: sync fails
   - without it: Steam update stage is skipped for safety
 
-## Pipeline order
+## Init Flow
 1. Load config and local state
 2. Fetch and validate `/v1/index`
+3. Ensure required emulators are available
+4. Ensure required RetroArch cores are available
+5. Create local firmware layout for indexed systems
+6. Deploy firmware into emulator-native runtime locations and apply runtime bootstrap config
+7. Seed and converge managed controller profiles when controller autoconfig is enabled
+8. Save `state.json` with `bootstrap_version`
+
+`init` does not download ROMs/assets, touch Steam, or set `last_sync`.
+
+## Sync Pipeline Order
+1. Load config and local state
+2. Fail fast on fresh installs when `bootstrap_version` is missing and no legacy sync evidence exists
+3. Fetch and validate `/v1/index`
    - transient index fetch failures are retried with exponential backoff (`[server].index_fetch_attempts`, `[server].index_retry_backoff_seconds`)
    - per-attempt index timeout can be set via `[server].index_timeout_seconds` (defaults to current transport timeout behavior)
-3. Ensure required emulators are available:
+4. Ensure required emulators are available:
    - detects missing emulator binaries from index metadata
    - Windows detection checks executable PATH, common install locations, and uninstall registry locations (not only winget package metadata)
    - on Windows non-dry-run, attempts auto-install via `winget` for known emulators (`retroarch`, `pcsx2`)
@@ -47,16 +80,16 @@ Steam close behavior:
      - `none`: disable Linux auto-install (sync prints actionable missing emulator output)
    - when Linux backend is flatpak-preferred (`flatpak`, or immutable-host `auto`), Dolphin and Azahar are treated as Flatpak-required; native installs are not used as substitutes for `org.DolphinEmu.dolphin-emu` / `org.azahar_emu.Azahar`, and sync fails fast if those Flatpak apps are unavailable
    - Steam shortcuts resolve emulator executable paths to concrete binaries when available
-4. Ensure required RetroArch cores are available:
+5. Ensure required RetroArch cores are available:
    - detects required cores from index launch templates (`-L cores/<core>`)
    - auto-downloads missing cores from Libretro buildbot on Windows/Linux x86_64
    - auto-installs matching `.info` metadata from `assets/frontend/info.zip`
    - dry-run reports missing core/info files without writing
-5. Build plan:
+6. Build plan:
    - firmware actions first
    - missing required firmware blocks title sync for that system
    - size mismatch detection for local ROM/assets runs even when `--verify` is off
-6. SGDB artwork phase (only when SGDB API key is configured):
+7. SGDB artwork phase (only when SGDB API key is configured):
    - `--dry-run`: prints planned SGDB lookups/downloads for titles missing required cached kinds only (no cache writes)
    - real sync: if all configured kinds already exist in local SGDB cache for a title, skip SGDB API calls for that title
    - for titles with missing required cached kinds, look up titles, fetch configured artwork kinds, and cache to local files with safe writes
@@ -64,18 +97,18 @@ Steam close behavior:
    - SGDB lookup/download failures emit warnings and do not abort unaffected titles
    - if SGDB lookups are unavailable, cached artwork is reused when present (self-heals missing Steam artwork)
    - SGDB URL selection prefers Steam-friendly formats (`png`/`jpg`/`ico`) before `webp`
-7. If not `--dry-run`:
+8. If not `--dry-run`:
    - download firmware then ROM/assets
    - write to `*.part`, verify SHA-256, atomic rename
    - download execution uses a shared HTTP connection pool and configurable parallel workers (`[server].max_parallel_downloads` / `GAMEHUB_MAX_PARALLEL_DOWNLOADS`, default `4`)
-8. Deploy firmware files into emulator-native BIOS locations (copy/link from `<gamehub_dir>/firmware/...`)
-9. Controller convergence stage (after runtime/bootstrap setup, before Steam mutation):
+9. Deploy firmware files into emulator-native BIOS locations (copy/link from `<gamehub_dir>/firmware/...`)
+10. Controller convergence stage (after runtime/bootstrap setup, before Steam mutation):
    - validates managed controller profile templates under `<gamehub_dir>/controller_profiles`
    - records per-directory `.gamehub-managed.json` metadata markers (schema version, source profile/template, timestamp, fingerprint, ownership)
    - applies assisted emulator config key convergence for known-safe controller sections (`PCSX2.ini`, `Dolphin.ini`, Azahar `qt-config.ini`) using minimal key/section edits
    - does not choose a fixed profile; runtime selection remains launch-time autodetect (`0 -> kbm`, `1 -> xbox_1p`, `2+ -> xbox_2p`)
-10. Discover Steam userdata + SteamID
-11. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
+11. Discover Steam userdata + SteamID
+12. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
    - managed shortcuts persist stable `appid` values on write, so first-run artwork/category mapping does not depend on a later Steam rewrite pass
    - collection membership appids are canonicalized to unsigned numeric values in both localconfig and cloud payloads
     - when `[controllers].launch_autoconfig = true`, GAMEHUB wraps `PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `controller-launch` command that:
@@ -102,13 +135,13 @@ Steam close behavior:
     - Linux Steam Deck zero-controller detection in `controller-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
     - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later release
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
-12. Save `state.json`
+13. Save `state.json`
 
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.
 
 ## Local layout bootstrap
-- Sync auto-creates firmware directories under `<gamehub_dir>/firmware` for indexed systems (non-dry-run).
+- `gamehub init` and non-dry `gamehub sync` auto-create firmware directories under `<gamehub_dir>/firmware` for indexed systems.
 - Dry-run prints intended firmware directory creation in verbose mode, but does not mutate local directories.
 
 ## Firmware Deployment Targets
@@ -171,9 +204,9 @@ Windows path notes:
   - can be disabled by setting `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false`
 Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
-- Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
+- Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
-- If you used older branch builds before these controller profile changes, run one non-dry sync with `--reseed-profiles` before retesting.
+- If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used

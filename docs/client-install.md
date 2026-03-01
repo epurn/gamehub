@@ -23,6 +23,7 @@ python3 -m pip uninstall gamehub
 ### Smoke check
 ```bash
 gamehub --help
+gamehub init --help
 gamehub sync --help
 ```
 
@@ -39,28 +40,32 @@ gamehub sync --help
    - `emulator_install_backend = "flatpak"` (good default for immutable Linux hosts)
    - `emulator_install_backend = "dnf"`, `"apt"`, or `"command"` as needed
 3. Optional: set `[linux]` path overrides (`retroarch_*`, `pcsx2_*`, `dolphin_user_path`) when your emulator profile paths are non-standard.
-4. Run:
+4. Run bootstrap dry-run:
 ```bash
-gamehub sync --dry-run --skip-steam --verbose
+gamehub init --dry-run --verbose
 ```
-5. Run first non-`--skip-steam` sync from a desktop session so Steam can relaunch after config mutation.
-6. If you used older preview/branch builds before recent controller profile fixes, run one reseed sync to refresh defaults:
+5. Run bootstrap:
 ```bash
-gamehub sync --reseed-profiles
+gamehub init
 ```
-7. If RetroArch games do not launch, set `[linux].retroarch_cfg_path` or `[linux].retroarch_cores_dir` explicitly and re-run sync.
-8. For Flatpak PCSX2, sync writes `PCSX2.ini` and mirrors BIOS into `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` by default (unless you set an explicit BIOS override). Verify with:
+6. Run first non-`--skip-steam` sync from a desktop session so Steam can relaunch after config mutation.
+7. If you used older preview/branch builds before recent controller profile fixes, run one reseed init to refresh defaults:
+```bash
+gamehub init --reseed-profiles
+```
+8. If RetroArch games do not launch, set `[linux].retroarch_cfg_path` or `[linux].retroarch_cores_dir` explicitly and re-run sync.
+9. For Flatpak PCSX2, sync writes `PCSX2.ini` and mirrors BIOS into `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` by default (unless you set an explicit BIOS override). Verify with:
 ```bash
 grep -n "Bios" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ls ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios
 ```
-9. PCSX2 controller bindings and hotkeys are applied at launch via controller profiles when `launch_autoconfig` is enabled. After launching a PS2 title once via Steam, verify with:
+10. PCSX2 controller bindings and hotkeys are applied at launch via controller profiles when `launch_autoconfig` is enabled. After launching a PS2 title once via Steam, verify with:
 ```bash
 grep -nE "^\[Pad1\]|^\[Pad2\]|^Type =|^Cross =|^Start =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 grep -n "^OpenPauseMenu =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ```
    - Use `--reseed-profiles` to overwrite the default profile files if you need to reset them.
-10. Dolphin runtime bootstrap (GC/Wii) writes display/confirm/background input flags in `Dolphin.ini`. Controller profiles apply input + hotkey config at launch. Flatpak example:
+11. Dolphin runtime bootstrap (GC/Wii) writes display/confirm/background input flags in `Dolphin.ini`. Controller profiles apply input + hotkey config at launch. Flatpak example:
 ```bash
 grep -nE "^\[Display\]|^Fullscreen =|^\[Interface\]|^(ConfirmStop|BackgroundInput) =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Config/Dolphin.ini
 ```
@@ -73,11 +78,11 @@ grep -n "^Device =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Confi
    - On Linux, controller profiles prefer evdev device roots (for example `evdev/0/Xbox Wireless Controller`) and fall back to `SDL/<n>/Gamepad` when evdev cannot be detected.
    - Dolphin Xbox profile defaults now include Wii quick actions `R1 -> A` and `R2 -> B`; GameCube keeps `R2` on the right trigger path.
    - Existing Dolphin input files are preserved once present; controller profile apply reconciles managed stop/exit hotkeys.
-11. RetroArch menu combo bootstrap sets `Start+Select` when a writable RetroArch config file is discovered. Verify with:
+12. RetroArch menu combo bootstrap sets `Start+Select` when a writable RetroArch config file is discovered. Verify with:
 ```bash
 grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg ~/.config/retroarch/retroarch.cfg 2>/dev/null
 ```
-12. N3DS Azahar runtime bootstrap sets `fullscreen=true` and `confirmClose=false` in `qt-config.ini`. Flatpak example:
+13. N3DS Azahar runtime bootstrap sets `fullscreen=true` and `confirmClose=false` in `qt-config.ini`. Flatpak example:
 ```bash
 grep -nE "^(fullscreen|confirmClose)=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
 ```
@@ -98,7 +103,7 @@ print("runtime_guid:", ca._probe_azahar_flatpak_guid(port=port))
 print("host_guid:", ca._discover_linux_sdl_guid(port=port))
 PY
 ```
-13. N3DS Linux native controller mode uses an Azahar wrapper hook by default:
+14. N3DS Linux native controller mode uses an Azahar wrapper hook by default:
 ```bash
 gamehub sync --config ./config.bazzite.toml --verbose --skip-steam
 ```
@@ -113,7 +118,7 @@ export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
 # Optional explicit joystick device:
 # export GAMEHUB_AZAHAR_EXIT_JS_DEVICE=/dev/input/js0
 ```
-14. N3DS Steam Input templates on Steam Deck:
+15. N3DS Steam Input templates on Steam Deck:
    - GAMEHUB auto-syncs managed per-title Steam Input templates for `N3DS` shortcuts during non-dry sync.
    - Use `gamehub sync --reseed-profiles` to refresh managed Deck template seeds when needed.
 
@@ -139,11 +144,13 @@ flatpak_remote = "flathub"
 
 ```powershell
 .\gamehub-windows-amd64.exe --help
-.\gamehub-windows-amd64.exe sync --help
+.\gamehub-windows-amd64.exe init --help
+.\gamehub-windows-amd64.exe init --config .\config.toml --dry-run
 .\gamehub-windows-amd64.exe sync --config .\config.toml --dry-run --skip-steam
 ```
 
 ## Notes
+- `gamehub init` is the required first-run bootstrap command on fresh installs.
 - `--skip-steam` is recommended for first validation runs.
 - `--skip-steam-relaunch` keeps Steam updates enabled but leaves Steam closed after sync.
 - For strict Steam update safety, include `--require-steam-closed`.
