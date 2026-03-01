@@ -30,7 +30,8 @@ This repo is "GAMEHUB": a Docker-first home-server + client CLI that syncs emula
 - `tests/` cross-platform unit/integration tests
 - `scripts/` release/readiness/util scripts
 - `docs/` schemas, templates, and integration notes
-- `kanban/` local planning artifacts (epics/stories/checklists)
+- `PLANS/` AI-first planning artifacts (plan files + story contracts)
+- `kanban/` deprecated legacy planning artifacts (read-only; do not add new work)
 - `docker/` container assets for server/runtime flows
 
 Refactor guardrail:
@@ -46,15 +47,30 @@ Refactor guardrail:
 - Keep `__init__.py` exports minimal and intentional; do not expose internal helpers as public API unless required.
 - Do not add new root-level legacy-style modules under `src/gamehub_cli/` that duplicate package domains.
 
-## Kanban folder rules
-- Keep planning in `kanban/`:
-  - `kanban/epics/EPIC-###-short-title.md`
-  - `kanban/stories/STORY-###-short-title.md`
-  - `kanban/notes/*.md`
-- Every story must include:
-  - Goal, Acceptance Criteria, Implementation Notes, Test Notes.
-- Keep stories junior-dev readable, but precise.
-- Stories should reference code locations and exact files touched.
+## AI-first planning workflow (authoritative)
+- All new planning artifacts live in `PLANS/`.
+- Flow is mandatory and deterministic: `Plan -> Milestones -> Story Contracts -> PR`.
+- Story Contracts must be executable, independently mergeable, and scoped for minimal diff overlap.
+- Domain isolation is required by default:
+  - `SERVER` stories touch server code/docs only.
+  - `CLI` stories touch CLI code/docs only.
+  - `COMMON` stories touch shared package/docs only.
+  - `DOCS` stories touch docs/process files only.
+  - touching both server and CLI requires a `CROSS-BOUNDARY` contract.
+- Parallel conflict avoidance is mandatory:
+  - keep diffs minimal and scoped to story contract files
+  - no dependency/lockfile/packaging version bumps unless the story explicitly requires them
+  - no repo-wide formatting in story PRs
+- Contract-first rule for cross-boundary changes:
+  - define and freeze the contract surface before implementation changes
+  - implement boundary participants in separate, reviewable commits when practical
+- Orientation pass is required before edits:
+  - list intended files/directories to create or modify
+  - explain approach, risks, and planned validation commands
+  - only begin edits after orientation output is complete
+- Keep stories junior-dev readable, deterministic, and explicit about acceptance criteria and tests.
+
+For daily work: read `docs/codex.md` and implement STORY IDs from `PLANS/*.md`. Prompts should be one-liners.
 
 ## Technical stack (v1)
 - Python 3.12+
@@ -199,7 +215,7 @@ Refactor guardrail:
 - Acceptance criteria met
 - Tests added/updated
 - Docs updated if touching schemas or Steam behavior
-- Kanban story updated with outcome notes
+- Story contract and PR notes updated with outcome notes
 
 ## Implementation baseline (evergreen)
 - Server:
