@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import gzip
-import logging
 import os
-import threading
 import time
 from pathlib import Path
 
@@ -11,70 +8,25 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
-from .indexer import FIRMWARE_ROOT_NAME, IndexBundle, build_index
+from .index_repository import (
+    IndexRepository,
+    read_index_poll_seconds,
+    read_index_refresh_seconds,
+    read_index_stable_seconds,
+)
+from .indexer import FIRMWARE_ROOT_NAME
+from .logging_utils import get_server_logger
 
 app = FastAPI(title="GAMEHUB Server", version="1.3.1")
-logger = logging.getLogger(__name__)
-
-
-class IndexRepository:
-    def __init__(self, data_root: Path, refresh_seconds: float = 0.0) -> None:
-        self._data_root = data_root
-        self._cache: IndexBundle | None = None
-        self._payload_json: bytes | None = None
-        self._payload_gzip: bytes | None = None
-        self._loaded_at: float | None = None
-        self._refresh_seconds = max(0.0, float(refresh_seconds))
-        self._lock = threading.Lock()
-
-    def _should_refresh(self) -> bool:
-        if self._cache is None:
-            return True
-        if self._refresh_seconds <= 0:
-            return False
-        if self._loaded_at is None:
-            return True
-        age_seconds = time.monotonic() - self._loaded_at
-        return age_seconds >= self._refresh_seconds
-
-    def load(self, force_refresh: bool = False) -> IndexBundle:
-        if not force_refresh and not self._should_refresh():
-            if self._cache is None:
-                raise RuntimeError("Index cache was expected but is missing")
-            return self._cache
-
-        with self._lock:
-            if force_refresh or self._should_refresh():
-                self._cache = build_index(self._data_root)
-                self._payload_json = self._cache.index.model_dump_json().encode("utf-8")
-                self._payload_gzip = gzip.compress(self._payload_json, compresslevel=5)
-                self._loaded_at = time.monotonic()
-        if self._cache is None:
-            raise RuntimeError("Index cache was expected but is missing")
-        return self._cache
-
-    def load_payload(self, force_refresh: bool = False, *, prefer_gzip: bool = False) -> tuple[bytes, bool]:
-        self.load(force_refresh=force_refresh)
-        if prefer_gzip and self._payload_gzip is not None:
-            return self._payload_gzip, True
-        if self._payload_json is None:
-            raise RuntimeError("Index payload cache was expected but is missing")
-        return self._payload_json, False
-
-
-def _read_index_refresh_seconds() -> float:
-    raw = os.environ.get("GAMEHUB_INDEX_REFRESH_SECONDS", "0").strip()
-    try:
-        seconds = float(raw)
-    except (TypeError, ValueError):
-        return 0.0
-    if seconds < 0:
-        return 0.0
-    return seconds
-
+logger = get_server_logger(__name__)
 
 DATA_ROOT = Path(os.environ.get("GAMEHUB_DATA_DIR", "/data")).resolve()
-INDEX_REPO = IndexRepository(DATA_ROOT, refresh_seconds=_read_index_refresh_seconds())
+INDEX_REPO = IndexRepository(
+    DATA_ROOT,
+    refresh_seconds=read_index_refresh_seconds(),
+    poll_seconds=read_index_poll_seconds(),
+    stable_seconds=read_index_stable_seconds(),
+)
 
 
 def _is_safe_segment(value: str) -> bool:
@@ -109,6 +61,16 @@ def warm_index_cache() -> None:
     )
 
 
+@app.on_event("startup")
+def start_index_poller() -> None:
+    INDEX_REPO.start_polling()
+
+
+@app.on_event("shutdown")
+def stop_index_poller() -> None:
+    INDEX_REPO.stop_polling()
+
+
 @app.get("/v1/index")
 def get_index(request: Request, refresh: bool = Query(default=False)) -> Response:
     accept_encoding = request.headers.get("accept-encoding", "")
@@ -123,7 +85,7 @@ def get_index(request: Request, refresh: bool = Query(default=False)) -> Respons
 
 @app.get("/v1/files/{file_id}")
 def get_file(file_id: str) -> FileResponse:
-    bundle = INDEX_REPO.load()
+    bundle = INDEX_REPO.load(check_sources=False)
     path = bundle.file_paths.get(file_id)
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail=f"Unknown file_id: {file_id}")
@@ -132,7 +94,7 @@ def get_file(file_id: str) -> FileResponse:
 
 @app.get("/v1/assets/{asset_id}")
 def get_asset(asset_id: str) -> FileResponse:
-    bundle = INDEX_REPO.load()
+    bundle = INDEX_REPO.load(check_sources=False)
     path = bundle.asset_paths.get(asset_id)
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail=f"Unknown asset_id: {asset_id}")
