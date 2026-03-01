@@ -5,16 +5,18 @@ import sqlite3
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, cast
 
-from gamehub_common.ids import make_file_id, make_title_id, sha256_file
-from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SystemSpec, TitleEntry
+from gamehub_common.ids import make_file_id, make_save_id, make_title_id, sha256_file
+from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SaveSpec, SystemSpec, TitleEntry
 
 from .logging_utils import get_server_logger
 
 FIRMWARE_ROOT_NAME = "firmware"
 ROMS_ROOT_NAME = "roms"
+SAVES_ROOT_NAME = "saves"
 _DEFAULT_HASH_CACHE_FILENAME = "gamehub-hash-cache.sqlite3"
 logger = get_server_logger(__name__)
 
@@ -116,6 +118,23 @@ class IndexBundle:
     index: LibraryIndex
     file_paths: dict[str, Path]
     asset_paths: dict[str, Path]
+    save_paths: dict[str, Path]
+
+
+SaveKind = Literal["battery", "memory_card", "per_game"]
+
+
+SAVE_KIND_PORTABILITY: dict[SaveKind, bool] = {
+    "battery": True,
+    "memory_card": True,
+    "per_game": False,
+}
+
+
+@dataclass(frozen=True)
+class _SaveBinding:
+    title_id: str
+    system: str
 
 
 @dataclass
@@ -246,13 +265,16 @@ def _scan_firmware_specs(
 def build_index(data_root: Path) -> IndexBundle:
     roms_root = data_root / ROMS_ROOT_NAME
     if not roms_root.exists():
-        return IndexBundle(index=LibraryIndex(), file_paths={}, asset_paths={})
+        return IndexBundle(index=LibraryIndex(), file_paths={}, asset_paths={}, save_paths={})
 
     hash_cache = _HashCache.open(data_root)
     systems: list[SystemSpec] = []
     titles: list[TitleEntry] = []
+    saves: list[SaveSpec] = []
     file_paths: dict[str, Path] = {}
     asset_paths: dict[str, Path] = {}
+    save_paths: dict[str, Path] = {}
+    title_bindings: dict[tuple[str, str], _SaveBinding] = {}
     try:
         for system_name in sorted(SYSTEM_CATALOG):
             system_dir = roms_root / system_name
@@ -306,6 +328,8 @@ def build_index(data_root: Path) -> IndexBundle:
 
                 title_rel_dir = _relative_unix(rom_path, roms_root)
                 title_id = make_title_id(system_name, title_rel_dir)
+                title_rel_stem = str(Path(title_rel_dir).with_suffix(""))
+                title_bindings[(system_name, title_rel_stem)] = _SaveBinding(title_id=title_id, system=system_name)
 
                 system_titles.append(
                     TitleEntry(
@@ -341,11 +365,84 @@ def build_index(data_root: Path) -> IndexBundle:
             )
             titles.extend(system_titles)
 
+        saves_root = data_root / SAVES_ROOT_NAME
+        if saves_root.exists() and not saves_root.is_dir():
+            raise ValueError(f"Saves path is not a directory: {saves_root}")
+
+        if saves_root.is_dir():
+            for system_dir in sorted(saves_root.iterdir(), key=lambda item: item.name.lower()):
+                if not system_dir.is_dir():
+                    raise ValueError(f"Malformed save layout: expected system directory in {saves_root}, got {system_dir.name}")
+                system_name = system_dir.name
+                if system_name not in SYSTEM_CATALOG:
+                    raise ValueError(f"Malformed save layout: unknown system in saves root: {system_name}")
+
+                for title_dir in sorted(system_dir.iterdir(), key=lambda item: item.name.lower()):
+                    if not title_dir.is_dir():
+                        raise ValueError(
+                            "Malformed save layout: expected title directory under "
+                            f"{system_dir}, got file {title_dir.name}. Expected saves/<system>/<title_rel_stem>/<kind>/<file>"
+                        )
+                    title_rel_stem = f"{system_name}/{title_dir.name}"
+                    binding = title_bindings.get((system_name, title_rel_stem))
+                    if binding is None:
+                        raise ValueError(
+                            f"Malformed save layout: save title directory does not map to indexed title: {title_rel_stem}"
+                        )
+
+                    for kind_dir in sorted(title_dir.iterdir(), key=lambda item: item.name.lower()):
+                        if not kind_dir.is_dir():
+                            raise ValueError(
+                                "Malformed save layout: expected save kind directory under "
+                                f"{title_dir}, got file {kind_dir.name}."
+                            )
+                        save_kind = kind_dir.name
+                        portable = SAVE_KIND_PORTABILITY.get(cast(SaveKind, save_kind))
+                        if portable is None:
+                            allowed = ", ".join(sorted(SAVE_KIND_PORTABILITY))
+                            raise ValueError(
+                                f"Malformed save layout: unknown save kind '{save_kind}' in {kind_dir}. Allowed: {allowed}"
+                            )
+
+                        for save_path in sorted(kind_dir.iterdir(), key=lambda item: item.name.lower()):
+                            if save_path.is_dir():
+                                raise ValueError(
+                                    f"Malformed save layout: nested directories are not allowed under {kind_dir}: {save_path.name}"
+                                )
+                            if not save_path.is_file():
+                                continue
+
+                            save_rel = _relative_unix(save_path, data_root)
+                            save_stat = save_path.stat()
+                            save_sha = hash_cache.get_sha256(
+                                save_path,
+                                save_rel,
+                                size_bytes=save_stat.st_size,
+                                mtime_ns=save_stat.st_mtime_ns,
+                            )
+                            save_id = make_save_id(save_rel, save_sha)
+                            save_paths[save_id] = save_path
+                            save_kind_typed = cast(SaveKind, save_kind)
+                            saves.append(
+                                SaveSpec(
+                                    save_id=save_id,
+                                    title_id=binding.title_id,
+                                    system=binding.system,
+                                    kind=save_kind_typed,
+                                    rel_path=save_rel,
+                                    sha256=save_sha,
+                                    size_bytes=save_stat.st_size,
+                                    updated_at=datetime.fromtimestamp(save_stat.st_mtime, tz=UTC),
+                                    portable=portable,
+                                )
+                            )
+
         index = LibraryIndex(
             index_version=1,
             systems=tuple(sorted(systems, key=lambda item: item.name)),
             titles=tuple(sorted(titles, key=lambda item: (item.system, item.title_rel_dir))),
+            saves=tuple(sorted(saves, key=lambda item: (item.system, item.rel_path))),
         )
-        return IndexBundle(index=index, file_paths=file_paths, asset_paths=asset_paths)
+        return IndexBundle(index=index, file_paths=file_paths, asset_paths=asset_paths, save_paths=save_paths)
     finally:
         hash_cache.close()

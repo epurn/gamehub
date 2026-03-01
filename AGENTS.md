@@ -195,8 +195,9 @@ For daily work: read `docs/codex.md` and implement STORY IDs from `PLANS/*.md`. 
 - Integration test harness:
   - use a temp "fake Steam userdata" directory fixture.
 - Codex execution policy for this repo:
-  - do not run test suites from the agent environment; always provide the exact test commands for the user to run locally
-  - treat user-provided test output as the source of truth for pass/fail
+  - Codex is allowed to run test suites from the agent environment when validating changes.
+  - For local Windows development, pytest can be unreliable; manually run and verify tests locally when needed.
+  - Treat local developer test output as the source of truth for Windows-specific pass/fail confirmation.
 - Pytest execution rule:
   - preferred local invocation from an activated venv: `pytest . -p no:cacheprovider`
   - always disable pytest cache provider (`-p no:cacheprovider`)
