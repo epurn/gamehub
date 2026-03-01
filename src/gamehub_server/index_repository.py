@@ -387,6 +387,13 @@ class IndexRepository:
             raise RuntimeError("Index payload cache was expected but is missing")
         return self._payload_json, False
 
+    def resolve_save_path(self, save_id: str) -> Path | None:
+        bundle = self.load(check_sources=False)
+        path = bundle.save_paths.get(save_id)
+        if path is None or not path.exists() or not path.is_file():
+            return None
+        return path
+
     def _poll_loop(self) -> None:
         logger.info(
             "index poller started interval_seconds=%.3f stable_seconds=%.3f data_root=%s",

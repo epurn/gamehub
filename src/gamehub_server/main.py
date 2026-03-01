@@ -103,6 +103,26 @@ def get_asset(asset_id: str) -> FileResponse:
     return FileResponse(path)
 
 
+@app.get("/v1/saves/{save_id}")
+def get_save(save_id: str) -> FileResponse:
+    path = INDEX_REPO.resolve_save_path(save_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"Unknown save_id: {save_id}")
+    return FileResponse(path)
+
+
+@app.put("/v1/saves/{save_id}")
+def put_save(save_id: str) -> Response:
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Save upload is not implemented in this rollout. "
+            "Planned semantics: upload to a temporary file, atomically replace target save, "
+            "then refresh the in-memory index snapshot before returning."
+        ),
+    )
+
+
 @app.get("/v1/firmware/{system}/{filename}")
 def get_firmware(system: str, filename: str) -> FileResponse:
     if not _is_safe_segment(system) or not _is_safe_segment(filename):
