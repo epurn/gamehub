@@ -7,6 +7,8 @@ services:
     restart: unless-stopped
     environment:
       GAMEHUB_DATA_DIR: /data
+      GAMEHUB_INDEX_POLL_SECONDS: ${GAMEHUB_INDEX_POLL_SECONDS:-1}
+      GAMEHUB_INDEX_STABLE_SECONDS: ${GAMEHUB_INDEX_STABLE_SECONDS:-2}
       GAMEHUB_INDEX_REFRESH_SECONDS: ${GAMEHUB_INDEX_REFRESH_SECONDS:-0}
       GAMEHUB_HASH_CACHE_PATH: ${GAMEHUB_HASH_CACHE_PATH:-/app/.cache/gamehub/hash-cache.sqlite3}
     ports:

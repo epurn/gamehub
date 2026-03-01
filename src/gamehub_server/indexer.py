@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import sqlite3
 import tempfile
@@ -12,10 +11,12 @@ from typing import NotRequired, TypedDict
 from gamehub_common.ids import make_file_id, make_title_id, sha256_file
 from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
+from .logging_utils import get_server_logger
+
 FIRMWARE_ROOT_NAME = "firmware"
 ROMS_ROOT_NAME = "roms"
 _DEFAULT_HASH_CACHE_FILENAME = "gamehub-hash-cache.sqlite3"
-logger = logging.getLogger(__name__)
+logger = get_server_logger(__name__)
 
 
 class _SystemCatalogEntry(TypedDict):
