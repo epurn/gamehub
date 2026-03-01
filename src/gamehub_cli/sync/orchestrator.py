@@ -15,7 +15,7 @@ from ..emulators import ensure_emulators
 from ..firmware.deploy import deploy_firmware_to_emulators
 from ..firmware.retroarch_cores import ensure_retroarch_cores
 from ..steam import SteamContext, SteamShortcutSpec, steam_id64_from_userdata_id
-from . import artwork_stage, steam_stage, transfer_stage
+from . import artwork_stage, save_stage, steam_stage, transfer_stage
 from . import index as sync_index
 from .planner import create_sync_plan
 from .state import (
@@ -350,6 +350,14 @@ def run_sync(
         verbose=verbose,
     )
     if dry_run:
+        save_stage.apply_save_stage(
+            server_url=config.server_url,
+            plan=plan,
+            state=state,
+            timeout_seconds=transfer_timeout,
+            dry_run=True,
+            verbose=verbose,
+        )
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=verbose)
         _converge_bootstrap_controller_state(
             config,
@@ -367,6 +375,14 @@ def run_sync(
         timeout_seconds=transfer_timeout,
         verbose=verbose,
         max_parallel_downloads=config.max_parallel_downloads,
+    )
+    save_stage.apply_save_stage(
+        server_url=config.server_url,
+        plan=plan,
+        state=state,
+        timeout_seconds=transfer_timeout,
+        dry_run=False,
+        verbose=verbose,
     )
     deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=verbose)
     _converge_bootstrap_controller_state(

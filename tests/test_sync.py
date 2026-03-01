@@ -14,7 +14,7 @@ from gamehub_cli.sync.orchestrator import (
     _build_artwork_assignments,
     run_sync,
 )
-from gamehub_cli.sync.planner import PlanAction, SyncPlan
+from gamehub_cli.sync.planner import PlanAction, SavePlanAction, SyncPlan
 from gamehub_cli.sync.state import SyncState
 from gamehub_cli.sync.steam_stage import build_shortcut_specs as _build_shortcut_specs
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
@@ -722,9 +722,12 @@ def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
     monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
-        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
-            steam_called.__setitem__("value", True)
-        ),
+        lambda _config,
+        index,
+        require_steam_closed,
+        artwork_by_title,
+        reopen_steam_after_update=True,
+        reseed_profiles=False: (steam_called.__setitem__("value", True)),
     )
 
     exit_code = run_sync(
@@ -772,7 +775,12 @@ def test_run_sync_skip_steam_relaunch_still_applies_steam_updates(monkeypatch) -
     monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
-        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
+        lambda _config,
+        index,
+        require_steam_closed,
+        artwork_by_title,
+        reopen_steam_after_update=True,
+        reseed_profiles=False: (
             received.update({"called": True, "reopen": reopen_steam_after_update, "reseed_profiles": reseed_profiles})
         ),
     )
@@ -831,9 +839,12 @@ def test_run_sync_reseed_profiles_propagates_to_steam_updates(monkeypatch) -> No
     monkeypatch.setattr("gamehub_cli.sync.orchestrator._resolve_steam_context", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
-        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
-            captured.update({"reseed_profiles": reseed_profiles})
-        ),
+        lambda _config,
+        index,
+        require_steam_closed,
+        artwork_by_title,
+        reopen_steam_after_update=True,
+        reseed_profiles=False: (captured.update({"reseed_profiles": reseed_profiles})),
     )
 
     exit_code = run_sync(
@@ -1290,9 +1301,12 @@ def test_run_sync_applies_steam_updates_even_when_no_downloads(monkeypatch) -> N
     monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
-        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
-            steam_called.__setitem__("value", True)
-        ),
+        lambda _config,
+        index,
+        require_steam_closed,
+        artwork_by_title,
+        reopen_steam_after_update=True,
+        reseed_profiles=False: (steam_called.__setitem__("value", True)),
     )
 
     exit_code = run_sync(
@@ -2581,3 +2595,156 @@ def test_build_shortcut_specs_dolphin_skips_config_arg_when_parser_is_legacy(mon
         assert "Dolphin.Display.Fullscreen=True" not in specs[0].launch_options
         assert "-b -u" in specs[0].launch_options
         assert "-e" in specs[0].launch_options
+
+
+def test_run_sync_dry_run_executes_save_stage_without_writes(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": [], "saves": []}
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-dry-run-save-stage.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+    received: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.save_stage.apply_save_stage",
+        lambda **kwargs: received.update(kwargs),
+    )
+
+    exit_code = run_sync(
+        config=config,
+        dry_run=True,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=True,
+    )
+
+    assert exit_code == 0
+    assert received["dry_run"] is True
+
+
+def test_run_sync_save_stage_failure_skips_state_write(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": [], "saves": []}
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-save-stage-fail.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.save_stage.apply_save_stage",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("save transfer failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="save transfer failed"):
+        run_sync(
+            config=config,
+            dry_run=False,
+            verbose=False,
+            verify=False,
+            require_steam_closed=False,
+            skip_steam=True,
+        )
+
+    assert not config.state_path.exists()
+
+
+def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.sync import save_stage
+
+    state = SyncState()
+    with workspace_tempdir("gamehub-save-stage-") as temp_root:
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_a",
+                    title_id="title_a",
+                    system="N64",
+                    kind="battery",
+                    decision="download",
+                    reason="local-missing",
+                    url="/v1/saves/a",
+                    destination=temp_root / "a.sav",
+                    expected_sha256="a" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                ),
+                SavePlanAction(
+                    save_id="save_b",
+                    title_id="title_b",
+                    system="N64",
+                    kind="battery",
+                    decision="download",
+                    reason="local-missing",
+                    url="/v1/saves/b",
+                    destination=temp_root / "b.sav",
+                    expected_sha256="b" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                ),
+            ]
+        )
+
+    calls: list[str] = []
+
+    def _fake_transfer(**kwargs) -> None:
+        calls.append(kwargs["url"])
+        if kwargs["url"].endswith("/b"):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr("gamehub_cli.sync.save_stage.stream_to_destination_atomic", _fake_transfer)
+
+    with pytest.raises(save_stage.SaveStageError, match="Save sync failed"):
+        save_stage.apply_save_stage(
+            server_url="http://localhost:8000",
+            plan=plan,
+            state=state,
+            timeout_seconds=20.0,
+            dry_run=False,
+            verbose=False,
+        )
+
+    assert calls == ["/v1/saves/a", "/v1/saves/b"]
+    assert state.save_checksums == {"save_a": "a" * 64}
+    assert "save_b" not in state.save_checksums
