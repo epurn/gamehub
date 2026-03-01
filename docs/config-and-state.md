@@ -202,6 +202,19 @@ Controller launch autoconfig:
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
   - with `--reseed-profiles`, managed files are rewritten even when bytes already match
+- Managed profile directories include `.gamehub-managed.json` markers for drift-safe ownership tracking:
+  - schema version
+  - source profile/template
+  - timestamp
+  - fingerprint/hash
+  - ownership tier (`managed`)
+- Sync convergence applies assisted controller safety keys before Steam mutation and never fixes controller count to a single profile.
+- Doctor mode for controller convergence:
+  - inspect only: `gamehub doctor --controllers`
+  - safe repair: `gamehub doctor --controllers --apply`
+  - unmanaged drift is report-only by default
+  - force cleanup: `gamehub doctor --controllers --apply --force`
+  - force cleanup archives unmanaged profile files under `.gamehub-unmanaged-backups/` before removing them from active profile directories
 - If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
 Windows Dolphin defaults:

@@ -843,6 +843,86 @@ def test_run_sync_reseed_profiles_propagates_to_steam_updates(monkeypatch) -> No
     assert captured.get("reseed_profiles") is True
 
 
+def test_run_sync_converges_controllers_before_steam_updates(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {
+                "index_version": 1,
+                "systems": [],
+                "titles": [
+                    {
+                        "title_id": "title_ps2_gt4",
+                        "system": "PS2",
+                        "title_name": "Gran Turismo 4",
+                        "title_rel_dir": "PS2/Gran Turismo 4.iso",
+                        "emulator": "pcsx2",
+                        "launch_template": '"{emulator}" "{rom}"',
+                        "rom": {
+                            "file_id": "rom_ps2_gt4",
+                            "rel_path": "roms/PS2/Gran Turismo 4.iso",
+                            "sha256": "a" * 64,
+                            "size_bytes": 3,
+                            "extension": ".iso",
+                        },
+                        "assets": [],
+                    }
+                ],
+            }
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-controller-stage-order.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=True),
+    )
+    order: list[str] = []
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_emulators", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_retroarch_cores", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator._apply_downloads", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator._build_artwork_assignments", lambda *args, **kwargs: {})
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator._resolve_steam_context", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator.seed_default_profiles", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        "gamehub_cli.sync.orchestrator._converge_controller_state",
+        lambda *args, **kwargs: order.append("converge"),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.orchestrator._apply_steam_updates",
+        lambda *args, **kwargs: order.append("steam"),
+    )
+
+    exit_code = run_sync(
+        config=config,
+        dry_run=False,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=False,
+    )
+
+    assert exit_code == 0
+    assert order == ["converge", "steam"]
+
+
 def test_run_sync_reseed_profiles_forces_defaults(monkeypatch) -> None:
     class FakeResponse:
         def raise_for_status(self) -> None:

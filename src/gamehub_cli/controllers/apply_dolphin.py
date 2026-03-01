@@ -28,6 +28,10 @@ def _dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
     return paths
 
 
+def dolphin_target_config_dirs(config: GamehubConfig) -> list[Path]:
+    return _dolphin_target_config_dirs(config)
+
+
 def _is_xbox_like_name(name: str) -> bool:
     normalized = name.casefold()
     return any(marker in normalized for marker in ("xbox", "x-box", "xinput", "microsoft x-box"))

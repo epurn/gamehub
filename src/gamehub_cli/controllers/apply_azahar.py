@@ -76,6 +76,10 @@ def _azahar_target_config_paths() -> list[Path]:
     return [_default_azahar_qt_config_path()]
 
 
+def azahar_target_config_paths() -> list[Path]:
+    return _azahar_target_config_paths()
+
+
 def _is_azahar_flatpak_config_path(path: Path) -> bool:
     flatpak_root = Path.home() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID
     return flatpak_root in path.parents
