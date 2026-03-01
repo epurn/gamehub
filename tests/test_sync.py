@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig
 from gamehub_cli.controllers.launch import parse_controller_payload
 from gamehub_cli.sync.orchestrator import (
@@ -20,6 +22,11 @@ from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
 def _normalize_path_token(value: str) -> str:
     return value.strip().strip('"').replace("\\", "/")
+
+
+@pytest.fixture(autouse=True)
+def _default_initialized_sync_state(monkeypatch) -> None:
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator.load_state", lambda _path: SyncState(bootstrap_version=1))
 
 
 def test_apply_downloads_runs_firmware_before_content(monkeypatch) -> None:

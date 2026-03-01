@@ -18,6 +18,7 @@ python -m venv venv
 
 ## Run CLI
 ```powershell
+.\venv\Scripts\python.exe -m gamehub_cli.main init --dry-run
 .\venv\Scripts\python.exe -m gamehub_cli.main sync --dry-run
 ```
 
@@ -27,6 +28,7 @@ python -m venv venv
 - `src/gamehub_cli/sync/orchestrator.py`: orchestration and dependency wiring only.
 - `src/gamehub_cli/sync/index.py`: index fetch/retry policy.
 - `src/gamehub_cli/sync/planner.py`: index/state diff and action planning.
+- `src/gamehub_cli/sync/diagnostics.py`: doctor/audit helpers built on sync planning.
 - `src/gamehub_cli/sync/state.py`: persisted sync-state load/save/mark helpers.
 - `src/gamehub_cli/sync/downloads.py`: streamed atomic download primitive.
 - `src/gamehub_cli/sync/artwork.py`: SteamGridDB client/pipeline/cache primitives.

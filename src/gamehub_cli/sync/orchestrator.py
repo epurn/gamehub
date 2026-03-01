@@ -18,7 +18,15 @@ from ..steam import SteamContext, SteamShortcutSpec, steam_id64_from_userdata_id
 from . import artwork_stage, steam_stage, transfer_stage
 from . import index as sync_index
 from .planner import create_sync_plan
-from .state import load_state, mark_synced, save_state_atomic
+from .state import (
+    SyncState,
+    has_bootstrap_marker,
+    has_legacy_sync_evidence,
+    load_state,
+    mark_bootstrapped,
+    mark_synced,
+    save_state_atomic,
+)
 
 
 @dataclass(frozen=True)
@@ -183,29 +191,28 @@ def _fetch_index_with_retries(
     )
 
 
-def run_sync(
-    config: GamehubConfig,
-    dry_run: bool,
-    verbose: bool,
-    verify: bool,
-    require_steam_closed: bool,
-    skip_steam: bool = False,
-    skip_steam_relaunch: bool = False,
-    reseed_profiles: bool = False,
-) -> int:
-    if verbose:
-        print(
-            "Effective config: "
-            f"server={config.server_url} "
-            f"gamehub_dir={config.library_dir} "
-            f"firmware_dir={config.firmware_dir} "
-            f"state={config.state_path} "
-            f"steam_userdata={config.steam_userdata_dir or '<auto>'} "
-            f"steam_id={config.steam_id or '<auto>'}"
-        )
+def _print_effective_config(config: GamehubConfig) -> None:
+    print(
+        "Effective config: "
+        f"server={config.server_url} "
+        f"gamehub_dir={config.library_dir} "
+        f"firmware_dir={config.firmware_dir} "
+        f"state={config.state_path} "
+        f"steam_userdata={config.steam_userdata_dir or '<auto>'} "
+        f"steam_id={config.steam_id or '<auto>'}"
+    )
+
+
+def _load_sync_state(config: GamehubConfig) -> SyncState:
     print("Loading local sync state...")
-    state = load_state(config.state_path)
-    transfer_timeout = 60.0 if verbose else 30.0
+    return load_state(config.state_path)
+
+
+def _transfer_timeout_seconds(verbose: bool) -> float:
+    return 60.0 if verbose else 30.0
+
+
+def _load_validated_index(config: GamehubConfig, *, transfer_timeout: float, verbose: bool) -> LibraryIndex:
     index_timeout = config.index_timeout_seconds if config.index_timeout_seconds is not None else transfer_timeout
     index_url = urljoin(config.server_url.rstrip("/") + "/", "v1/index")
     print(f"Fetching index: {index_url}")
@@ -216,8 +223,16 @@ def run_sync(
         retry_backoff_seconds=config.index_retry_backoff_seconds,
         verbose=verbose,
     )
+    return LibraryIndex.model_validate(raw_index)
 
-    index = LibraryIndex.model_validate(raw_index)
+
+def _bootstrap_runtime(
+    config: GamehubConfig,
+    *,
+    index: LibraryIndex,
+    dry_run: bool,
+    verbose: bool,
+) -> None:
     ensure_emulators(
         index=index,
         dry_run=dry_run,
@@ -236,6 +251,88 @@ def run_sync(
         explicit_cfg_path=config.linux.retroarch_cfg_path,
     )
     _bootstrap_firmware_dirs(config=config, index=index, dry_run=dry_run, verbose=verbose)
+
+
+def _converge_bootstrap_controller_state(
+    config: GamehubConfig,
+    *,
+    index: LibraryIndex,
+    dry_run: bool,
+    verbose: bool,
+    reseed_profiles: bool,
+) -> None:
+    if not config.controllers.launch_autoconfig:
+        return
+    if not dry_run:
+        seeded_profiles = seed_default_profiles(
+            config=config,
+            verbose=verbose,
+            force=reseed_profiles,
+            allow_custom=True,
+        )
+        if verbose and seeded_profiles:
+            print(f"Seeded controller profile defaults: {len(seeded_profiles)}")
+    _converge_controller_state(
+        config,
+        index=index,
+        dry_run=dry_run,
+        verbose=verbose,
+        force_managed=reseed_profiles,
+    )
+
+
+def _sync_requires_init(state: SyncState) -> bool:
+    return not has_bootstrap_marker(state) and not has_legacy_sync_evidence(state)
+
+
+def run_init(
+    config: GamehubConfig,
+    dry_run: bool,
+    verbose: bool,
+    reseed_profiles: bool = False,
+) -> int:
+    if verbose:
+        _print_effective_config(config)
+    state = _load_sync_state(config)
+    transfer_timeout = _transfer_timeout_seconds(verbose)
+    index = _load_validated_index(config, transfer_timeout=transfer_timeout, verbose=verbose)
+    _bootstrap_runtime(config, index=index, dry_run=dry_run, verbose=verbose)
+    deploy_firmware_to_emulators(config=config, index=index, dry_run=dry_run, verbose=verbose)
+    _converge_bootstrap_controller_state(
+        config,
+        index=index,
+        dry_run=dry_run,
+        verbose=verbose,
+        reseed_profiles=reseed_profiles,
+    )
+    if dry_run:
+        print("Init dry-run completed")
+        return 0
+    mark_bootstrapped(state)
+    save_state_atomic(config.state_path, state)
+    print("Init completed")
+    return 0
+
+
+def run_sync(
+    config: GamehubConfig,
+    dry_run: bool,
+    verbose: bool,
+    verify: bool,
+    require_steam_closed: bool,
+    skip_steam: bool = False,
+    skip_steam_relaunch: bool = False,
+    reseed_profiles: bool = False,
+) -> int:
+    if verbose:
+        _print_effective_config(config)
+    state = _load_sync_state(config)
+    if _sync_requires_init(state):
+        print("GAMEHUB is not initialized. Run 'gamehub init' before the first sync.")
+        return 1
+    transfer_timeout = _transfer_timeout_seconds(verbose)
+    index = _load_validated_index(config, transfer_timeout=transfer_timeout, verbose=verbose)
+    _bootstrap_runtime(config, index=index, dry_run=dry_run, verbose=verbose)
     plan = create_sync_plan(index=index, config=config, state=state, verify=verify)
     _print_plan(plan)
     steam_context = _resolve_steam_context(config)
@@ -254,26 +351,14 @@ def run_sync(
     )
     if dry_run:
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=verbose)
-        if config.controllers.launch_autoconfig:
-            _converge_controller_state(
-                config,
-                index=index,
-                dry_run=True,
-                verbose=verbose,
-                force_managed=reseed_profiles,
-            )
-        return 0
-
-    if config.controllers.launch_autoconfig:
-        seeded_profiles = seed_default_profiles(
-            config=config,
+        _converge_bootstrap_controller_state(
+            config,
+            index=index,
+            dry_run=True,
             verbose=verbose,
-            force=reseed_profiles,
-            allow_custom=True,
+            reseed_profiles=reseed_profiles,
         )
-        if verbose:
-            if seeded_profiles:
-                print(f"Seeded controller profile defaults: {len(seeded_profiles)}")
+        return 0
 
     _apply_downloads(
         config.server_url,
@@ -284,14 +369,13 @@ def run_sync(
         max_parallel_downloads=config.max_parallel_downloads,
     )
     deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=verbose)
-    if config.controllers.launch_autoconfig:
-        _converge_controller_state(
-            config,
-            index=index,
-            dry_run=False,
-            verbose=verbose,
-            force_managed=reseed_profiles,
-        )
+    _converge_bootstrap_controller_state(
+        config,
+        index=index,
+        dry_run=False,
+        verbose=verbose,
+        reseed_profiles=reseed_profiles,
+    )
 
     if skip_steam:
         print("Skipping Steam lifecycle and config updates (--skip-steam)")
@@ -306,6 +390,7 @@ def run_sync(
             reseed_profiles=reseed_profiles,
         )
     mark_synced(state)
+    mark_bootstrapped(state)
     save_state_atomic(config.state_path, state)
     print("Sync completed")
     return 0

@@ -42,10 +42,10 @@ Details: [Platform Support (v1)](docs/platform-support.md)
 - SGDB artwork cache with cache-first lookups and portrait+landscape grid support.
 - Steam lifecycle safety: close -> backup -> write -> reopen.
 - Launch-time controller autoconfig for `PCSX2`, `Dolphin`, and `Azahar` with user-overridable profile files (including Steam Deck built-in controller defaults).
-- Controller state convergence for managed profile templates and assisted emulator controller keys, with metadata markers and `doctor --controllers` repair flow.
+- Controller state convergence for managed profile templates and assisted emulator controller keys, with metadata markers and `doctor controllers` repair flow.
 - On Steam Deck, managed `Wii`/`N3DS` shortcuts auto-sync Steam Input template seeds and repair app override flags for native-first controller behavior.
 
-Supported systems in v1.3.1:
+Supported systems in current release:
 - `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
 
 ## 👤 User Install (Latest Release)
@@ -67,15 +67,19 @@ LATEST_VER="${LATEST_TAG}"
 python3 -m pip install --user --upgrade "https://github.com/epurn/gamehub/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
 ```
 
-Linux sync:
+Linux first run + sync:
 ```bash
+gamehub init --dry-run
+gamehub init
 gamehub sync --dry-run --require-steam-closed
 gamehub sync --require-steam-closed --skip-steam-relaunch
 ```
 
-Windows install + sync:
+Windows install + first run:
 ```powershell
 Invoke-WebRequest https://github.com/epurn/gamehub/releases/latest/download/gamehub-windows-amd64.exe -OutFile .\gamehub-windows-amd64.exe
+.\gamehub-windows-amd64.exe init --dry-run
+.\gamehub-windows-amd64.exe init
 .\gamehub-windows-amd64.exe sync --dry-run --require-steam-closed
 .\gamehub-windows-amd64.exe sync --require-steam-closed
 ```
@@ -84,18 +88,18 @@ More detail: [docs/client-install.md](docs/client-install.md), [docs/config-and-
 
 ### Controller Autoconfig Quick Start (PCSX2/Dolphin/Azahar)
 - Ensure `[controllers].launch_autoconfig = true` (or `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG=true`).
-- Run one non-dry sync to seed default controller profiles.
-- If you used older preview/branch builds before recent controller profile fixes, run one sync with:
-  - `gamehub sync --reseed-profiles`
+- Run one `gamehub init` pass to seed default controller profiles.
+- If you used older preview/branch builds before recent controller profile fixes, run one bootstrap refresh with:
+  - `gamehub init --reseed-profiles`
 - Launch emulator shortcuts from Steam (not directly from emulator executables) so launch-time profile apply runs.
 - Profile selection is automatic by detected Xbox count:
   - `0` controllers -> `kbm`
   - `1` controller -> `xbox_1p`
   - `2+` controllers -> `xbox_2p`
 - Inspect controller drift without launching games:
-  - `gamehub doctor --controllers`
-  - `gamehub doctor --controllers --apply` (safe ownership-tier repairs only)
-  - `gamehub doctor --controllers --apply --force` (archives and cleans unmanaged profile files too)
+  - `gamehub doctor controllers`
+  - `gamehub doctor controllers --apply` (safe ownership-tier repairs only)
+  - `gamehub doctor controllers --apply --force` (archives and cleans unmanaged profile files too)
 - On Linux Flatpak Azahar paths, GUID injection prefers Flatpak runtime detection; if runtime GUID discovery is unavailable, GAMEHUB preserves existing GUIDs and otherwise keeps port-only SDL mappings.
 
 ## 🖥️ Server Deployment (Latest Release)
