@@ -378,12 +378,26 @@ def test_state_round_trip_with_atomic_save(workspace_tempdir) -> None:
             firmware_checksums={"PSX/scph5501.bin": "b" * 64},
             tombstones=["title_old"],
             last_sync="2026-02-14T18:00:00+00:00",
+            bootstrap_version=1,
         )
 
         save_state_atomic(state_path, state)
         loaded = load_state(state_path)
 
         assert loaded.to_dict() == state.to_dict()
+
+
+def test_load_state_defaults_bootstrap_version_when_missing(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-state-") as temp_root:
+        state_path = temp_root / "state.json"
+        state_path.write_text(
+            '{\n  "downloaded_checksums": {},\n  "firmware_checksums": {},\n  "tombstones": [],\n  "last_sync": null\n}\n',
+            encoding="utf-8",
+        )
+
+        loaded = load_state(state_path)
+
+        assert loaded.bootstrap_version is None
 
 
 def test_load_config_supports_roms_dir(workspace_tempdir) -> None:

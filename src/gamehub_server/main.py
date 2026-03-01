@@ -8,6 +8,8 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
+from gamehub_common.version import __version__
+
 from .index_repository import (
     IndexRepository,
     read_index_poll_seconds,
@@ -17,7 +19,7 @@ from .index_repository import (
 from .indexer import FIRMWARE_ROOT_NAME
 from .logging_utils import get_server_logger
 
-app = FastAPI(title="GAMEHUB Server", version="1.3.1")
+app = FastAPI(title="GAMEHUB Server", version=__version__)
 logger = get_server_logger(__name__)
 
 DATA_ROOT = Path(os.environ.get("GAMEHUB_DATA_DIR", "/data")).resolve()

@@ -4,11 +4,12 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from .common.config import GamehubConfig, load_config
+from .common.config import GamehubConfig, default_config_path, load_config
 from .controllers.convergence import run_controller_doctor
 from .controllers.launch import run_controller_launch
 from .steam import build_context, discover_deck_steam_input_roots, discover_steam_id, discover_userdata_dir
-from .sync import run_sync
+from .sync import run_init, run_sync
+from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor
 
 typer: Any
 _typer: Any | None
@@ -18,13 +19,153 @@ except ModuleNotFoundError:
     _typer = None
 typer = _typer
 
+
+def _resolve_existing_config_path(config_path: Path | None) -> Path:
+    resolved = config_path or default_config_path()
+    if resolved.exists():
+        return resolved
+    raise ValueError(f"Config file not found: {resolved}. Create a config file before running 'gamehub init'.")
+
+
+def _load_existing_config(config_path: Path | None) -> GamehubConfig:
+    return load_config(_resolve_existing_config_path(config_path))
+
+
+def _run_init_command(
+    *,
+    config_path: Path | None,
+    dry_run: bool,
+    verbose: bool,
+    reseed_profiles: bool,
+) -> int:
+    loaded = _load_existing_config(config_path)
+    return run_init(
+        config=loaded,
+        dry_run=dry_run,
+        verbose=verbose,
+        reseed_profiles=reseed_profiles,
+    )
+
+
+def _run_sync_command(
+    *,
+    config_path: Path | None,
+    dry_run: bool,
+    verbose: bool,
+    verify: bool,
+    require_steam_closed: bool,
+    skip_steam: bool,
+    skip_steam_relaunch: bool,
+    reseed_profiles: bool,
+) -> int:
+    loaded = load_config(config_path)
+    return run_sync(
+        config=loaded,
+        dry_run=dry_run,
+        verbose=verbose,
+        verify=verify,
+        require_steam_closed=require_steam_closed,
+        skip_steam=skip_steam,
+        skip_steam_relaunch=skip_steam_relaunch,
+        reseed_profiles=reseed_profiles,
+    )
+
+
+def _run_doctor_controllers_command(
+    *,
+    config_path: Path | None,
+    apply: bool,
+    force: bool,
+) -> int:
+    if force and not apply:
+        raise ValueError("--force requires --apply.")
+    loaded = load_config(config_path)
+    roots, note = _discover_controller_doctor_steam_roots(loaded)
+    return run_controller_doctor(
+        loaded,
+        apply=apply,
+        force=force,
+        steam_roots=roots,
+        steam_discovery_note=note,
+    )
+
+
+def _run_doctor_roms_command(
+    *,
+    config_path: Path | None,
+    verbose: bool,
+    verify: bool,
+) -> int:
+    loaded = load_config(config_path)
+    return run_roms_doctor(loaded, verify=verify, verbose=verbose)
+
+
+def _run_doctor_firmware_command(
+    *,
+    config_path: Path | None,
+    verbose: bool,
+    verify: bool,
+) -> int:
+    loaded = load_config(config_path)
+    return run_firmware_doctor(loaded, verify=verify, verbose=verbose)
+
+
+def _run_doctor_all_command(
+    *,
+    config_path: Path | None,
+    verbose: bool,
+    verify: bool,
+) -> int:
+    loaded = load_config(config_path)
+    roots, note = _discover_controller_doctor_steam_roots(loaded)
+    controller_code = run_controller_doctor(
+        loaded,
+        apply=False,
+        force=False,
+        steam_roots=roots,
+        steam_discovery_note=note,
+    )
+    snapshot = build_sync_diagnostics_snapshot(loaded, verify=verify, verbose=verbose)
+    firmware_code = run_firmware_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
+    roms_code = run_roms_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
+    return 1 if any(code != 0 for code in (controller_code, firmware_code, roms_code)) else 0
+
+
 if typer is not None:
     app = typer.Typer(add_completion=False, no_args_is_help=True)
+    doctor_app = typer.Typer(add_completion=False, no_args_is_help=True)
+    app.add_typer(doctor_app, name="doctor")
 
     @app.callback()
     def root() -> None:
         """GAMEHUB CLI entrypoint."""
         return
+
+    @app.command()
+    def init(
+        config: Path | None = typer.Option(
+            None,
+            "--config",
+            help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+        ),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Plan only; do not mutate local bootstrap state"),
+        verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
+        reseed_profiles: bool = typer.Option(
+            False,
+            "--reseed-profiles",
+            help="Overwrite managed profile/template files during init",
+        ),
+    ) -> None:
+        try:
+            code = _run_init_command(
+                config_path=config,
+                dry_run=dry_run,
+                verbose=verbose,
+                reseed_profiles=reseed_profiles,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        raise typer.Exit(code=code)
 
     @app.command()
     def sync(
@@ -57,10 +198,9 @@ if typer is not None:
             help="Overwrite managed profile/template files during sync",
         ),
     ) -> None:
-        loaded = load_config(config)
         raise typer.Exit(
-            code=run_sync(
-                config=loaded,
+            code=_run_sync_command(
+                config_path=config,
                 dry_run=dry_run,
                 verbose=verbose,
                 verify=verify,
@@ -83,14 +223,13 @@ if typer is not None:
     ) -> None:
         raise typer.Exit(code=run_controller_launch(payload_token=payload, config_path=config, audit=audit))
 
-    @app.command()
-    def doctor(
+    @doctor_app.command("controllers")
+    def doctor_controllers(
         config: Path | None = typer.Option(
             None,
             "--config",
             help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
         ),
-        controllers: bool = typer.Option(False, "--controllers", help="Run controller convergence diagnostics."),
         apply: bool = typer.Option(False, "--apply", help="Apply safe controller repairs."),
         force: bool = typer.Option(
             False,
@@ -98,21 +237,47 @@ if typer is not None:
             help="With --apply, archive and clean up unmanaged profile files as well.",
         ),
     ) -> None:
-        if not controllers:
-            raise typer.BadParameter("No doctor checks selected. Use --controllers.")
-        if force and not apply:
-            raise typer.BadParameter("--force requires --apply.")
-        loaded = load_config(config)
-        roots, note = _discover_controller_doctor_steam_roots(loaded)
-        raise typer.Exit(
-            code=run_controller_doctor(
-                loaded,
-                apply=apply,
-                force=force,
-                steam_roots=roots,
-                steam_discovery_note=note,
-            )
-        )
+        try:
+            code = _run_doctor_controllers_command(config_path=config, apply=apply, force=force)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        raise typer.Exit(code=code)
+
+    @doctor_app.command("roms")
+    def doctor_roms(
+        config: Path | None = typer.Option(
+            None,
+            "--config",
+            help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+        ),
+        verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
+        verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
+    ) -> None:
+        raise typer.Exit(code=_run_doctor_roms_command(config_path=config, verbose=verbose, verify=verify))
+
+    @doctor_app.command("firmware")
+    def doctor_firmware(
+        config: Path | None = typer.Option(
+            None,
+            "--config",
+            help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+        ),
+        verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
+        verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
+    ) -> None:
+        raise typer.Exit(code=_run_doctor_firmware_command(config_path=config, verbose=verbose, verify=verify))
+
+    @doctor_app.command("all")
+    def doctor_all(
+        config: Path | None = typer.Option(
+            None,
+            "--config",
+            help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+        ),
+        verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
+        verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
+    ) -> None:
+        raise typer.Exit(code=_run_doctor_all_command(config_path=config, verbose=verbose, verify=verify))
 else:
     app = None
 
@@ -153,6 +318,22 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(prog="gamehub")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subparsers.add_parser("init")
+    init_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    )
+    init_parser.add_argument("--dry-run", action="store_true")
+    init_parser.add_argument("--verbose", action="store_true")
+    init_parser.add_argument(
+        "--reseed-profiles",
+        action="store_true",
+        help="Overwrite managed profile/template files during init",
+    )
+
     sync_parser = subparsers.add_parser("sync")
     sync_parser.add_argument(
         "--config",
@@ -169,26 +350,72 @@ def main() -> None:
     sync_parser.add_argument(
         "--reseed-profiles", action="store_true", help="Overwrite managed profile/template files during sync"
     )
+
     controller_launch_parser = subparsers.add_parser("controller-launch", help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     controller_launch_parser.add_argument("--audit", action="store_true", help=argparse.SUPPRESS)
+
     doctor_parser = subparsers.add_parser("doctor")
-    doctor_parser.add_argument(
+    doctor_subparsers = doctor_parser.add_subparsers(dest="doctor_command", required=True)
+
+    doctor_controllers_parser = doctor_subparsers.add_parser("controllers")
+    doctor_controllers_parser.add_argument(
         "--config",
         type=Path,
         default=None,
         help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
     )
-    doctor_parser.add_argument("--controllers", action="store_true")
-    doctor_parser.add_argument("--apply", action="store_true")
-    doctor_parser.add_argument("--force", action="store_true")
+    doctor_controllers_parser.add_argument("--apply", action="store_true")
+    doctor_controllers_parser.add_argument("--force", action="store_true")
+
+    doctor_roms_parser = doctor_subparsers.add_parser("roms")
+    doctor_roms_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    )
+    doctor_roms_parser.add_argument("--verbose", action="store_true")
+    doctor_roms_parser.add_argument("--verify", action="store_true")
+
+    doctor_firmware_parser = doctor_subparsers.add_parser("firmware")
+    doctor_firmware_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    )
+    doctor_firmware_parser.add_argument("--verbose", action="store_true")
+    doctor_firmware_parser.add_argument("--verify", action="store_true")
+
+    doctor_all_parser = doctor_subparsers.add_parser("all")
+    doctor_all_parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    )
+    doctor_all_parser.add_argument("--verbose", action="store_true")
+    doctor_all_parser.add_argument("--verify", action="store_true")
+
     args = parser.parse_args()
+    if args.command == "init":
+        try:
+            raise SystemExit(
+                _run_init_command(
+                    config_path=args.config,
+                    dry_run=args.dry_run,
+                    verbose=args.verbose,
+                    reseed_profiles=args.reseed_profiles,
+                )
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.command == "sync":
-        loaded = load_config(args.config)
         raise SystemExit(
-            run_sync(
-                config=loaded,
+            _run_sync_command(
+                config_path=args.config,
                 dry_run=args.dry_run,
                 verbose=args.verbose,
                 verify=args.verify,
@@ -201,21 +428,41 @@ def main() -> None:
     if args.command == "controller-launch":
         raise SystemExit(run_controller_launch(payload_token=args.payload, config_path=args.config, audit=args.audit))
     if args.command == "doctor":
-        if not args.controllers:
-            parser.error("doctor requires at least one check selector (use --controllers)")
-        if args.force and not args.apply:
-            parser.error("doctor --force requires --apply")
-        loaded = load_config(args.config)
-        roots, note = _discover_controller_doctor_steam_roots(loaded)
-        raise SystemExit(
-            run_controller_doctor(
-                loaded,
-                apply=args.apply,
-                force=args.force,
-                steam_roots=roots,
-                steam_discovery_note=note,
+        if args.doctor_command == "controllers":
+            try:
+                raise SystemExit(
+                    _run_doctor_controllers_command(
+                        config_path=args.config,
+                        apply=args.apply,
+                        force=args.force,
+                    )
+                )
+            except ValueError as exc:
+                parser.error(str(exc))
+        if args.doctor_command == "roms":
+            raise SystemExit(
+                _run_doctor_roms_command(
+                    config_path=args.config,
+                    verbose=args.verbose,
+                    verify=args.verify,
+                )
             )
-        )
+        if args.doctor_command == "firmware":
+            raise SystemExit(
+                _run_doctor_firmware_command(
+                    config_path=args.config,
+                    verbose=args.verbose,
+                    verify=args.verify,
+                )
+            )
+        if args.doctor_command == "all":
+            raise SystemExit(
+                _run_doctor_all_command(
+                    config_path=args.config,
+                    verbose=args.verbose,
+                    verify=args.verify,
+                )
+            )
 
 
 if __name__ == "__main__":

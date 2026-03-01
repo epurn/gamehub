@@ -12,6 +12,8 @@ Sample templates:
 - Steam Deck (verified): [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 - General Linux: [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
 
+Fresh installs must have a real config file in place before running `gamehub init`.
+
 Platform validation status is tracked in [platform-support.md](platform-support.md).
 
 Example:
@@ -212,11 +214,11 @@ Controller launch autoconfig:
   - `<root>/dolphin/<profile>/WiimoteNew.ini`
   - `<root>/dolphin/<profile>/Hotkeys.ini`
   - `<root>/azahar/<profile>/qt-config.ini`
-- Non-dry sync seeds missing default profiles on first sync when `launch_autoconfig` is enabled.
+- Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
-- If you used older branch builds before these controller profile changes, run one non-dry sync with `--reseed-profiles` before retesting.
+- If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
-  - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
+  - non-dry `gamehub init` and non-dry `gamehub sync` seed any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
   - with `--reseed-profiles`, managed files are rewritten even when bytes already match
 - Managed profile directories include `.gamehub-managed.json` markers for drift-safe ownership tracking:
@@ -227,10 +229,10 @@ Controller launch autoconfig:
   - ownership tier (`managed`)
 - Sync convergence applies assisted controller safety keys before Steam mutation and never fixes controller count to a single profile.
 - Doctor mode for controller convergence:
-  - inspect only: `gamehub doctor --controllers`
-  - safe repair: `gamehub doctor --controllers --apply`
+  - inspect only: `gamehub doctor controllers`
+  - safe repair: `gamehub doctor controllers --apply`
   - unmanaged drift is report-only by default
-  - force cleanup: `gamehub doctor --controllers --apply --force`
+  - force cleanup: `gamehub doctor controllers --apply --force`
   - force cleanup archives unmanaged profile files under `.gamehub-unmanaged-backups/` before removing them from active profile directories
 - If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
@@ -268,5 +270,12 @@ N3DS Azahar defaults:
   - `firmware_checksums` (`system/filename` -> checksum)
   - `tombstones`
   - `last_sync` (UTC timestamp)
+  - `bootstrap_version` (local bootstrap marker written by `gamehub init`; current value `1`)
+
+Bootstrap notes:
+- Fresh installs must run `gamehub init` before the first `gamehub sync`.
+- `gamehub sync` fails fast on fresh installs when `bootstrap_version` is missing and no legacy sync evidence exists.
+- Existing installs upgrade in place:
+  - if older `state.json` files do not include `bootstrap_version` but do include prior sync evidence (`last_sync`, downloaded checksums, or firmware checksums), `gamehub sync` still runs and backfills `bootstrap_version` after a successful non-dry sync.
 
 Writes are atomic (`.tmp` then rename).
