@@ -343,7 +343,9 @@ def _evaluate_managed_target(
         )
     current_sha = sha256_text(current_text)
     metadata_owned = _metadata_is_managed_target(metadata_entry, spec)
-    metadata_fingerprint_ok = metadata_owned and metadata_entry is not None and metadata_entry.fingerprint_sha256 == current_sha
+    metadata_fingerprint_ok = (
+        metadata_owned and metadata_entry is not None and metadata_entry.fingerprint_sha256 == current_sha
+    )
 
     if current_sha == expected_sha:
         if metadata_fingerprint_ok:
