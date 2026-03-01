@@ -45,7 +45,7 @@ Details: [Platform Support (v1)](docs/platform-support.md)
 - Controller state convergence for managed profile templates and assisted emulator controller keys, with metadata markers and `doctor --controllers` repair flow.
 - On Steam Deck, managed `Wii`/`N3DS` shortcuts auto-sync Steam Input template seeds and repair app override flags for native-first controller behavior.
 
-Supported systems in v1.3.1:
+Supported systems in current release:
 - `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
 
 ## 👤 User Install (Latest Release)
