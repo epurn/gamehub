@@ -323,7 +323,9 @@ class IndexRepository:
                 if not refresh_for_source_change and self._pending_source_signature is None:
                     refresh_for_ttl = self._should_refresh_for_ttl(observed_at)
                 if refresh_for_source_change:
-                    self._rebuild_locked(source_signature=source_signature, reason="source_change", raise_on_error=False)
+                    self._rebuild_locked(
+                        source_signature=source_signature, reason="source_change", raise_on_error=False
+                    )
                 elif refresh_for_ttl:
                     self._rebuild_locked(source_signature=source_signature, reason="ttl", raise_on_error=False)
         if self._cache is None:
