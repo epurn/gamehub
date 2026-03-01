@@ -4,7 +4,7 @@ import os
 import sqlite3
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, TypedDict, cast
@@ -120,7 +120,7 @@ class IndexBundle:
     index: LibraryIndex
     file_paths: dict[str, Path]
     asset_paths: dict[str, Path]
-    save_paths: dict[str, Path]
+    save_paths: dict[str, Path] = field(default_factory=dict)
 
 
 SaveKind = Literal["battery", "memory_card", "per_game"]
