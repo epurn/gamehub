@@ -18,6 +18,7 @@ Controller doctor command:
 - `--skip-steam-relaunch`: apply Steam updates but do not relaunch Steam at end
 - `--require-steam-closed`: fail if Steam cannot be closed before config writes
 - `--reseed-profiles`: force-overwrite managed profile/template files during sync (even when bytes already match)
+- Save sync remains config-driven in this phase (`[save_sync]` in `config.toml`); no additional CLI flags are required.
 - `--config <path>`: TOML config path override
 
 Steam close behavior:
@@ -103,6 +104,8 @@ Steam close behavior:
     - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later release
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 12. Save `state.json`
+
+Save sync stays disabled by default unless `[save_sync].enabled = true` is set in config.
 
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.

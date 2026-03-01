@@ -67,6 +67,17 @@ launch_autoconfig = true
 # Optional explicit profile root.
 # Default when omitted: <paths.gamehub_dir>/controller_profiles
 profiles_dir = "~/.gamehub/controller_profiles"
+
+[save_sync]
+# Rollout default is disabled.
+enabled = false
+# download | bidirectional
+mode = "download"
+# prefer_server | prefer_local | manual
+conflict_policy = "prefer_server"
+# Optional allow-list of systems; empty means all supported systems.
+systems = ["PS2", "Wii"]
+
 ```
 
 Secret policy:
@@ -161,6 +172,12 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_INDEX_FETCH_ATTEMPTS`: overrides `[server].index_fetch_attempts`.
 - `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
 - `GAMEHUB_MAX_PARALLEL_DOWNLOADS`: overrides `[server].max_parallel_downloads` (clamped to `1..16`).
+
+Save sync config keys (TOML only for now):
+- `[save_sync].enabled`: default `false` (safe rollout).
+- `[save_sync].mode`: `download` (default) or `bidirectional`.
+- `[save_sync].conflict_policy`: `prefer_server` (default), `prefer_local`, or `manual`.
+- `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase).
 
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
