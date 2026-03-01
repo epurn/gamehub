@@ -99,7 +99,9 @@ def run_firmware_doctor(
 ) -> int:
     active_snapshot = snapshot or build_sync_diagnostics_snapshot(config, verify=verify, verbose=verbose)
     plan = active_snapshot.plan
-    print(f"firmware-doctor\tfirmware_actions={len(plan.firmware_actions)}\tblocked_systems={len(plan.blocked_systems)}")
+    print(
+        f"firmware-doctor\tfirmware_actions={len(plan.firmware_actions)}\tblocked_systems={len(plan.blocked_systems)}"
+    )
     _print_plan_actions("firmware-doctor", plan.firmware_actions)
     for system_name, reason in sorted(plan.blocked_systems.items()):
         print(f"firmware-doctor\tblocked-system\tsystem={system_name}\treason={reason}")
