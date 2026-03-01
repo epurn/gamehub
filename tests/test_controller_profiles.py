@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -53,6 +54,10 @@ def test_seed_default_profiles_creates_profile_tree(workspace_tempdir) -> None:
         assert (root / "dolphin" / "kbm" / "GCPadNew.ini").exists()
         assert (root / "dolphin" / "xbox_1p" / "WiimoteNew.ini").exists()
         assert (root / "azahar" / "xbox_2p" / "qt-config.ini").exists()
+        metadata = json.loads((root / "pcsx2" / "kbm" / ".gamehub-managed.json").read_text(encoding="utf-8"))
+        assert metadata["schema_version"] == 1
+        assert metadata["entries"]["PCSX2.ini"]["ownership"] == "managed"
+        assert metadata["entries"]["PCSX2.ini"]["source_profile"] == "kbm"
 
         pcsx2_xbox_1p = (root / "pcsx2" / "xbox_1p" / "PCSX2.ini").read_text(encoding="utf-8")
         assert "Cross = SDL-0/A" in pcsx2_xbox_1p

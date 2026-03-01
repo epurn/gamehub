@@ -9,6 +9,7 @@ from typing import Callable
 from ..common.config import GamehubConfig
 from ..common.fsops import replace_file
 from ..firmware.pcsx2_ini import pcsx2_pad_bindings
+from .managed_metadata import ManagedMetadataEntry, sha256_text, utc_now_iso, write_managed_metadata_entry
 
 PROFILE_KBM = "kbm"
 PROFILE_XBOX_1P = "xbox_1p"
@@ -38,6 +39,10 @@ def _atomic_write_text(path: Path, text: str) -> None:
         os.fsync(tmp.fileno())
         tmp_path = path.parent / os.path.basename(tmp.name)
     replace_file(tmp_path, path)
+
+
+def _managed_source_template(*, emulator_name: str, profile_name: str, filename: str) -> str:
+    return f"profile://{emulator_name}/{profile_name}/{filename}"
 
 
 def _build_ini_text(sections: dict[str, dict[str, str]]) -> str:
@@ -560,6 +565,20 @@ def seed_default_profiles(
                 if target.exists() and not force:
                     continue
                 _atomic_write_text(target, payload)
+                write_managed_metadata_entry(
+                    target,
+                    ManagedMetadataEntry(
+                        source_profile=profile_name,
+                        source_template=_managed_source_template(
+                            emulator_name=emulator_name,
+                            profile_name=profile_name,
+                            filename=filename,
+                        ),
+                        timestamp_utc=utc_now_iso(),
+                        fingerprint_sha256=sha256_text(payload),
+                        ownership="managed",
+                    ),
+                )
                 created.append(target)
                 if verbose:
                     writer(f"controller-profile\tseeded\t{target}")

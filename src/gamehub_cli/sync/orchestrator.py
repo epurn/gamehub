@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 from gamehub_common.models import LibraryIndex
 
 from ..common.config import GamehubConfig
+from ..controllers.convergence import converge_controller_state
 from ..controllers.profiles import seed_default_profiles
 from ..emulators import ensure_emulators
 from ..firmware.deploy import deploy_firmware_to_emulators
@@ -26,6 +27,7 @@ class SyncDependencies:
     print_plan: Callable[[Any], None]
     apply_downloads: Callable[..., None]
     bootstrap_firmware_dirs: Callable[[GamehubConfig, LibraryIndex, bool, bool], None]
+    converge_controller_state: Callable[..., object]
     build_artwork_assignments: Callable[..., dict[str, dict[str, Path]]]
     build_shortcut_specs: Callable[[LibraryIndex, GamehubConfig], list[SteamShortcutSpec]]
     resolve_steam_context: Callable[[GamehubConfig], SteamContext | None]
@@ -38,6 +40,7 @@ def _default_dependencies() -> SyncDependencies:
         print_plan=transfer_stage.print_plan,
         apply_downloads=transfer_stage.apply_downloads,
         bootstrap_firmware_dirs=transfer_stage.bootstrap_firmware_dirs,
+        converge_controller_state=converge_controller_state,
         build_artwork_assignments=artwork_stage.build_artwork_assignments,
         build_shortcut_specs=steam_stage.build_shortcut_specs,
         resolve_steam_context=steam_stage.resolve_steam_context,
@@ -54,6 +57,7 @@ def configure_dependencies(
     print_plan: Callable[[object], None] | None = None,
     apply_downloads: Callable[..., None] | None = None,
     bootstrap_firmware_dirs: Callable[[GamehubConfig, LibraryIndex, bool, bool], None] | None = None,
+    converge_controller_state: Callable[..., object] | None = None,
     build_artwork_assignments: Callable[..., dict[str, dict[str, Path]]] | None = None,
     build_shortcut_specs: Callable[[LibraryIndex, GamehubConfig], list[SteamShortcutSpec]] | None = None,
     resolve_steam_context: Callable[[GamehubConfig], SteamContext | None] | None = None,
@@ -67,6 +71,7 @@ def configure_dependencies(
         print_plan=print_plan or _DEPS.print_plan,
         apply_downloads=apply_downloads or _DEPS.apply_downloads,
         bootstrap_firmware_dirs=bootstrap_firmware_dirs or _DEPS.bootstrap_firmware_dirs,
+        converge_controller_state=converge_controller_state or _DEPS.converge_controller_state,
         build_artwork_assignments=build_artwork_assignments or _DEPS.build_artwork_assignments,
         build_shortcut_specs=build_shortcut_specs or _DEPS.build_shortcut_specs,
         resolve_steam_context=resolve_steam_context or _DEPS.resolve_steam_context,
@@ -98,6 +103,23 @@ def _apply_downloads(
 
 def _bootstrap_firmware_dirs(config: GamehubConfig, index: LibraryIndex, dry_run: bool, verbose: bool) -> None:
     _DEPS.bootstrap_firmware_dirs(config, index, dry_run, verbose)
+
+
+def _converge_controller_state(
+    config: GamehubConfig,
+    *,
+    index: LibraryIndex,
+    dry_run: bool,
+    verbose: bool,
+    force_managed: bool,
+) -> object:
+    return _DEPS.converge_controller_state(
+        config,
+        index=index,
+        dry_run=dry_run,
+        verbose=verbose,
+        force_managed=force_managed,
+    )
 
 
 def _build_artwork_assignments(
@@ -232,6 +254,14 @@ def run_sync(
     )
     if dry_run:
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=verbose)
+        if config.controllers.launch_autoconfig:
+            _converge_controller_state(
+                config,
+                index=index,
+                dry_run=True,
+                verbose=verbose,
+                force_managed=reseed_profiles,
+            )
         return 0
 
     if config.controllers.launch_autoconfig:
@@ -254,6 +284,14 @@ def run_sync(
         max_parallel_downloads=config.max_parallel_downloads,
     )
     deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=verbose)
+    if config.controllers.launch_autoconfig:
+        _converge_controller_state(
+            config,
+            index=index,
+            dry_run=False,
+            verbose=verbose,
+            force_managed=reseed_profiles,
+        )
 
     if skip_steam:
         print("Skipping Steam lifecycle and config updates (--skip-steam)")
