@@ -8,6 +8,17 @@ def _normalized_posix_parts(rel_path: str) -> tuple[str, ...]:
     return tuple(part for part in rel.parts if part not in {"", "."})
 
 
+def normalized_local_path(value: str | Path) -> Path:
+    raw = str(value).strip().strip('"')
+    if not raw:
+        return Path()
+    posix = PurePosixPath(raw.replace("\\", "/"))
+    parts = tuple(part for part in posix.parts if part not in {"", "."})
+    if not parts:
+        return Path()
+    return Path(*parts)
+
+
 def from_rel_path(base: Path, rel_path: str, *, preferred_root: str | None = None) -> Path:
     parts = _normalized_posix_parts(rel_path)
     if preferred_root is None:
