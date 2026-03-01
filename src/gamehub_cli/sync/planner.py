@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from gamehub_common.ids import sha256_file
@@ -54,7 +54,7 @@ class SavePlanAction:
 
 
 def _save_remote_updated_at(value: object) -> str:
-    if hasattr(value, "astimezone"):
+    if isinstance(value, datetime):
         return value.astimezone(timezone.utc).isoformat()
     return str(value)
 
