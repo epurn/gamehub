@@ -43,11 +43,19 @@ Base URL: `http://<host>:8000`
 
 ## Index refresh policy
 - The server keeps the latest index snapshot in memory and serves `/v1/index`, `/v1/files/{file_id}`, and `/v1/assets/{asset_id}` from that cached snapshot.
-- The server automatically rebuilds on the next request when files are added/removed/updated under:
+- The server automatically detects files added/removed/updated under:
   - `roms/<system>/`
   - `firmware/<system>/`
+- A background poller checks for changes by default:
+  - `GAMEHUB_INDEX_POLL_SECONDS=1` by default
+  - set `GAMEHUB_INDEX_POLL_SECONDS=0` to disable background polling
+- Automatic rebuilds wait until a detected change remains unchanged for `GAMEHUB_INDEX_STABLE_SECONDS` seconds (default `2`) before replacing the cached snapshot.
+- `GET /v1/index` also checks for pending changes, but it keeps serving the last good cached snapshot until the changed files have stayed stable long enough to rebuild safely.
+- If an automatic rebuild fails after a previous snapshot already exists, the server keeps serving the last good cached snapshot and retries later.
+- When a rebuild changes the indexed contents, the server logs a summary plus per-file lines for added, updated, and removed ROM/firmware entries.
 - `GAMEHUB_INDEX_REFRESH_SECONDS` is optional TTL-based refresh on top of change detection:
-  - `0` (default): change-detection refresh only
-  - `>0`: also rebuild on the next request after the cached snapshot age reaches this TTL
+  - `0` (default): no TTL-based rebuilds
+  - `>0`: also rebuild after the cached snapshot age reaches this TTL when no source change is still settling
 - Operators can force a manual rebuild at any time with:
   - `GET /v1/index?refresh=1`
+  - forced refresh bypasses the stability wait and returns an error immediately if the library is invalid

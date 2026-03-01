@@ -32,7 +32,9 @@ Required values in `docker/.env`:
 - `GAMEHUB_IMAGE_TAG`: image tag to run
   - `latest` for most recent release
   - `v1.2.0` (or any release tag) for pinned deploys
-- Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`; change-based refresh still runs when ROM/firmware files change)
+- Optional: `GAMEHUB_INDEX_POLL_SECONDS` (defaults to `1`; set `0` to disable background polling)
+- Optional: `GAMEHUB_INDEX_STABLE_SECONDS` (defaults to `2`; changed files must stop changing for this long before auto-reindex)
+- Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`; adds TTL-based rebuilds on top of change detection)
 - Optional: `GAMEHUB_HASH_CACHE_PATH` (path for persistent SHA256 cache DB; default is `/app/.cache/gamehub/hash-cache.sqlite3`)
 
 ## 2) Pull released server image
@@ -62,6 +64,8 @@ docker compose -f docker/compose.yaml --env-file docker/.env config
 - Container restart policy is `unless-stopped`.
 - Healthcheck targets `GET /health`.
 - Server performs index/hash warmup during startup; large libraries can increase startup time.
+- Server runs a background index poller by default and waits for changed files to stay stable before rebuilding, which helps avoid hashing partially copied large files.
+- Source-change rebuilds write explicit index-change lines to container logs for added, updated, and removed ROM/firmware entries.
 - Rebuilds reuse cached SHA256 values for unchanged files (metadata-keyed), which significantly reduces repeated hash work on large libraries.
 - Startup logs include explicit warmup start/completion lines with elapsed time and indexed system/title counts.
 - Scope is LAN-only in this phase (no TLS/auth in-container).
