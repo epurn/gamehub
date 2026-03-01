@@ -374,7 +374,9 @@ def build_index(data_root: Path) -> IndexBundle:
         if saves_root.is_dir():
             for system_dir in sorted(saves_root.iterdir(), key=lambda item: item.name.lower()):
                 if not system_dir.is_dir():
-                    raise ValueError(f"Malformed save layout: expected system directory in {saves_root}, got {system_dir.name}")
+                    raise ValueError(
+                        f"Malformed save layout: expected system directory in {saves_root}, got {system_dir.name}"
+                    )
                 system_name = system_dir.name
                 if system_name not in SYSTEM_CATALOG:
                     raise ValueError(f"Malformed save layout: unknown system in saves root: {system_name}")
