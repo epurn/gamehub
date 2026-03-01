@@ -14,7 +14,6 @@ from ..common.config_edit import read_qsettings_key, upsert_qsettings_key
 from ..common.fsops import replace_file
 from ..firmware.pcsx2_ini import read_ini_lines, write_ini_atomic
 from ..firmware.targets import default_pcsx2_ini_path
-from ..steam import build_context, discover_deck_steam_input_roots, discover_steam_id, discover_userdata_dir
 from .apply_azahar import azahar_target_config_paths
 from .apply_dolphin import dolphin_target_config_dirs
 from .apply_ini import apply_managed_ini_sections, parse_ini_sections
@@ -158,28 +157,12 @@ def _unique_paths(paths: list[Path]) -> tuple[Path, ...]:
     return tuple(unique)
 
 
-def _discover_steam_roots(config: GamehubConfig) -> tuple[tuple[Path, ...], str | None]:
-    userdata_dir = discover_userdata_dir(config.steam_userdata_dir)
-    if userdata_dir is None:
-        return (), "Steam userdata root not found"
-    roots: list[Path] = [userdata_dir]
-    try:
-        steam_id = discover_steam_id(userdata_dir, preferred_steam_id=config.steam_id)
-    except ValueError as exc:
-        return _unique_paths(roots), str(exc)
-    if steam_id is None:
-        return _unique_paths(roots), "Steam ID not found"
-    context = build_context(userdata_dir, steam_id, config.steam_exe)
-    roots.append(context.userdata_dir / context.steam_id / "config")
-    roots.extend(discover_deck_steam_input_roots(steam_id))
-    return _unique_paths(roots), None
-
-
 def build_controller_convergence_plan(
     config: GamehubConfig,
     *,
     emulator_families: set[str] | None = None,
-    include_steam_roots: bool = False,
+    steam_roots: tuple[Path, ...] = (),
+    steam_discovery_note: str | None = None,
 ) -> ControllerConvergencePlan:
     families = (
         {value.casefold() for value in emulator_families if value.casefold() in _KNOWN_EMULATOR_FAMILIES}
@@ -251,17 +234,12 @@ def build_controller_convergence_plan(
                 )
             )
 
-    steam_roots: tuple[Path, ...] = ()
-    steam_discovery_note: str | None = None
-    if include_steam_roots:
-        steam_roots, steam_discovery_note = _discover_steam_roots(config)
-
     return ControllerConvergencePlan(
         runtime_selection=_runtime_selection_rules(),
         managed_profile_targets=tuple(managed_profile_targets),
         assisted_ini_targets=tuple(assisted_ini_targets),
         assisted_qsettings_targets=tuple(assisted_qsettings_targets),
-        steam_roots=steam_roots,
+        steam_roots=_unique_paths(list(steam_roots)),
         steam_discovery_note=steam_discovery_note,
     )
 
@@ -606,7 +584,7 @@ def converge_controller_state(
     families = emulator_families_for_index(index)
     if not families:
         return ControllerConvergenceResult()
-    plan = build_controller_convergence_plan(config, emulator_families=families, include_steam_roots=False)
+    plan = build_controller_convergence_plan(config, emulator_families=families)
     if verbose:
         writer(
             "controller-convergence\t"
@@ -636,9 +614,15 @@ def run_controller_doctor(
     config: GamehubConfig,
     *,
     apply: bool,
+    steam_roots: tuple[Path, ...] = (),
+    steam_discovery_note: str | None = None,
     writer: Callable[[str], None] = print,
 ) -> int:
-    plan = build_controller_convergence_plan(config, include_steam_roots=True)
+    plan = build_controller_convergence_plan(
+        config,
+        steam_roots=steam_roots,
+        steam_discovery_note=steam_discovery_note,
+    )
     writer(
         "controller-doctor\t"
         f"runtime_rules={format_runtime_selection_rules(plan.runtime_selection)}\t"

@@ -4,9 +4,10 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from .common.config import load_config
+from .common.config import GamehubConfig, load_config
 from .controllers.convergence import run_controller_doctor
 from .controllers.launch import run_controller_launch
+from .steam import build_context, discover_deck_steam_input_roots, discover_steam_id, discover_userdata_dir
 from .sync import run_sync
 
 typer: Any
@@ -91,9 +92,39 @@ if typer is not None:
         if not controllers:
             raise typer.BadParameter("No doctor checks selected. Use --controllers.")
         loaded = load_config(config)
-        raise typer.Exit(code=run_controller_doctor(loaded, apply=apply))
+        roots, note = _discover_controller_doctor_steam_roots(loaded)
+        raise typer.Exit(code=run_controller_doctor(loaded, apply=apply, steam_roots=roots, steam_discovery_note=note))
 else:
     app = None
+
+
+def _unique_paths(paths: list[Path]) -> tuple[Path, ...]:
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        marker = str(path).replace("\\", "/").casefold()
+        if marker in seen:
+            continue
+        seen.add(marker)
+        unique.append(path)
+    return tuple(unique)
+
+
+def _discover_controller_doctor_steam_roots(config: GamehubConfig) -> tuple[tuple[Path, ...], str | None]:
+    userdata_dir = discover_userdata_dir(config.steam_userdata_dir)
+    if userdata_dir is None:
+        return (), "Steam userdata root not found"
+    roots: list[Path] = [userdata_dir]
+    try:
+        steam_id = discover_steam_id(userdata_dir, preferred_steam_id=config.steam_id)
+    except ValueError as exc:
+        return _unique_paths(roots), str(exc)
+    if steam_id is None:
+        return _unique_paths(roots), "Steam ID not found"
+    context = build_context(userdata_dir, steam_id, config.steam_exe)
+    roots.append(context.userdata_dir / context.steam_id / "config")
+    roots.extend(discover_deck_steam_input_roots(steam_id))
+    return _unique_paths(roots), None
 
 
 def main() -> None:
@@ -153,7 +184,8 @@ def main() -> None:
         if not args.controllers:
             parser.error("doctor requires at least one check selector (use --controllers)")
         loaded = load_config(args.config)
-        raise SystemExit(run_controller_doctor(loaded, apply=args.apply))
+        roots, note = _discover_controller_doctor_steam_roots(loaded)
+        raise SystemExit(run_controller_doctor(loaded, apply=args.apply, steam_roots=roots, steam_discovery_note=note))
 
 
 if __name__ == "__main__":
