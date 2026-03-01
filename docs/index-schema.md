@@ -7,6 +7,7 @@
 - `generated_at`: UTC timestamp
 - `systems`: list of `SystemSpec`
 - `titles`: list of `TitleEntry`
+- `saves`: list of `SaveSpec` (may be empty during phased rollout)
 
 ## `SystemSpec`
 - `name`: canonical system name (for Steam collections)
@@ -30,6 +31,18 @@
 - `rom`: one `RomSpec` for each file in `roms/<system>/` matching allowed extensions
 - `assets`: currently empty in flat-ROM layout; reserved for artwork ingestion workflow
 
+
+## `SaveSpec`
+- `save_id`: deterministic from canonical server-relative save path plus save checksum
+- `title_id`: deterministic title binding (must reference a known title)
+- `system`: canonical system name (for strict matching / filtering)
+- `kind`: one of `battery`, `memory_card`, `per_game`
+- `rel_path`: canonical server-relative save path
+- `sha256`: lowercase 64-char hex digest for save content
+- `size_bytes`: save file size in bytes
+- `updated_at`: server UTC timestamp for save artifact freshness
+- `portable`: whether the save format is expected to be portable across clients/emulator variants
+
 ## Validation guarantees
 - Unknown fields are rejected (`extra=forbid`)
 - SHA-256 fields must be lowercase 64-char hex
@@ -42,3 +55,9 @@
 - `title_id`: `make_title_id(system, title_rel_dir)`
 - `file_id`: `make_file_id(server_relative_path, sha256)`
 - `asset_id`: `make_asset_id(server_relative_path, sha256)`
+- `save_id`: `make_save_id(server_relative_path, sha256)`
+
+## Index versioning expectation for save-sync contract freeze
+- Save artifacts are additive contract surface in `index_version=1` for the current rollout phase.
+- Existing clients that ignore unknown fields continue to parse legacy sections, while strict save-aware clients must validate `SaveSpec` when `saves` are present.
+- Any future breaking save contract change must bump `index_version` in a dedicated contract story before implementation.

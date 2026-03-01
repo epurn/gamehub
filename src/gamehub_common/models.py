@@ -66,8 +66,21 @@ class TitleEntry(StrictBaseModel):
     assets: tuple[AssetSpec, ...] = ()
 
 
+class SaveSpec(StrictBaseModel):
+    save_id: str = Field(min_length=1)
+    title_id: str = Field(min_length=1)
+    system: str = Field(min_length=1)
+    kind: Literal["battery", "memory_card", "per_game"]
+    rel_path: str = Field(min_length=1)
+    sha256: str = Field(pattern=HEX_SHA256)
+    size_bytes: int = Field(ge=0)
+    updated_at: datetime
+    portable: bool
+
+
 class LibraryIndex(StrictBaseModel):
     index_version: Literal[1] = 1
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     systems: tuple[SystemSpec, ...] = ()
     titles: tuple[TitleEntry, ...] = ()
+    saves: tuple[SaveSpec, ...] = ()
