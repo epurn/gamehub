@@ -30,6 +30,14 @@ class ControllersConfig:
 
 
 @dataclass(frozen=True)
+class SaveSyncConfig:
+    enabled: bool = False
+    mode: str = "download"
+    conflict_policy: str = "prefer_server"
+    systems: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class GamehubConfig:
     server_url: str
     library_dir: Path
@@ -48,10 +56,13 @@ class GamehubConfig:
     max_parallel_downloads: int = 4
     linux: LinuxConfig = field(default_factory=LinuxConfig)
     controllers: ControllersConfig = field(default_factory=ControllersConfig)
+    save_sync: SaveSyncConfig = field(default_factory=SaveSyncConfig)
     config_path: Path | None = None
 
 
 _VALID_SGDB_KINDS = ("grid", "hero", "logo", "icon")
+_VALID_SAVE_SYNC_MODES = ("download", "bidirectional")
+_VALID_SAVE_SYNC_CONFLICT_POLICIES = ("prefer_server", "prefer_local", "manual")
 _REMOVED_PATH_KEYS = {
     "library_dir": "paths.gamehub_dir",
     "firmware_dir": "paths.gamehub_dir (firmware path is <gamehub_dir>/firmware)",
@@ -99,6 +110,42 @@ def _normalize_sgdb_kinds(raw: object) -> tuple[str, ...]:
         if kind in _VALID_SGDB_KINDS and kind not in normalized:
             normalized.append(kind)
     return tuple(normalized) if normalized else _VALID_SGDB_KINDS
+
+
+def _normalize_save_sync_mode(raw: object) -> str:
+    if not isinstance(raw, str):
+        return "download"
+    value = raw.strip().lower().replace("-", "_")
+    if value == "download_only":
+        value = "download"
+    return value if value in _VALID_SAVE_SYNC_MODES else "download"
+
+
+def _normalize_save_sync_conflict_policy(raw: object) -> str:
+    if not isinstance(raw, str):
+        return "prefer_server"
+    value = raw.strip().lower().replace("-", "_")
+    return value if value in _VALID_SAVE_SYNC_CONFLICT_POLICIES else "prefer_server"
+
+
+def _normalize_system_filter(raw: object) -> tuple[str, ...]:
+    if isinstance(raw, str):
+        candidates = [raw]
+    elif isinstance(raw, (list, tuple)):
+        candidates = list(raw)
+    else:
+        return ()
+    normalized: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        value = candidate.strip()
+        if not value:
+            continue
+        system = value.upper()
+        if system not in normalized:
+            normalized.append(system)
+    return tuple(normalized)
 
 
 def _normalize_secret(raw: object) -> str | None:
@@ -235,6 +282,7 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     sgdb = _as_section(data.get("sgdb"))
     linux = _as_section(data.get("linux"))
     controllers = _as_section(data.get("controllers"))
+    save_sync = _as_section(data.get("save_sync"))
     _reject_removed_path_keys(paths)
     _reject_removed_env_aliases()
 
@@ -296,6 +344,10 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     )
     config_controller_profiles_dir = _normalize_optional_path(controllers.get("profiles_dir"))
     env_controller_profiles_dir = _normalize_optional_path(_first_env_value("GAMEHUB_CONTROLLER_PROFILES_DIR"))
+    config_save_sync_enabled = _normalize_optional_bool(save_sync.get("enabled"))
+    config_save_sync_mode = _normalize_save_sync_mode(save_sync.get("mode"))
+    config_save_sync_conflict_policy = _normalize_save_sync_conflict_policy(save_sync.get("conflict_policy"))
+    config_save_sync_systems = _normalize_system_filter(save_sync.get("systems"))
     server_url = _normalize_optional_text(server.get("url")) or "http://127.0.0.1:8000"
     steam_id = _normalize_optional_text(steam.get("steam_id"))
     steam_exe = _normalize_optional_path(steam.get("steam_exe"))
@@ -368,6 +420,12 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
                 if env_controller_profiles_dir is not None
                 else config_controller_profiles_dir
             ),
+        ),
+        save_sync=SaveSyncConfig(
+            enabled=config_save_sync_enabled if config_save_sync_enabled is not None else False,
+            mode=config_save_sync_mode,
+            conflict_policy=config_save_sync_conflict_policy,
+            systems=config_save_sync_systems,
         ),
         config_path=path,
     )
