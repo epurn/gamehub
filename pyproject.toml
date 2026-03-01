@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gamehub"
-version = "1.3.1"
+dynamic = ["version"]
 description = "GAMEHUB server and CLI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -31,6 +31,9 @@ dev = [
 [project.scripts]
 gamehub = "gamehub_cli.main:main"
 gamehub-server = "gamehub_server.main:run"
+
+[tool.setuptools.dynamic]
+version = { attr = "gamehub_common.version.__version__" }
 
 [tool.setuptools]
 package-dir = { "" = "src" }
