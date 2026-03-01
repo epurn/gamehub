@@ -212,7 +212,9 @@ Controller launch autoconfig:
 - Doctor mode for controller convergence:
   - inspect only: `gamehub doctor --controllers`
   - safe repair: `gamehub doctor --controllers --apply`
-  - unmanaged drift is report-only
+  - unmanaged drift is report-only by default
+  - force cleanup: `gamehub doctor --controllers --apply --force`
+  - force cleanup archives unmanaged profile files under `.gamehub-unmanaged-backups/` before removing them from active profile directories
 - If controller detection or profile application fails, GAMEHUB continues launch and attempts `kbm` fallback.
 
 Windows Dolphin defaults:

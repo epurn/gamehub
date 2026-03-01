@@ -7,7 +7,7 @@ Command:
 
 Controller doctor command:
 ```powershell
-.\venv\Scripts\python.exe -m gamehub_cli.main doctor --controllers [--apply]
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor --controllers [--apply] [--force]
 ```
 
 ## Flags

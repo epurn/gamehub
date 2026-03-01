@@ -12,7 +12,12 @@ from gamehub_cli.controllers.convergence import (
     converge_controller_state,
     format_runtime_selection_rules,
 )
-from gamehub_cli.controllers.profiles import PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P, profile_name_for_controller_count
+from gamehub_cli.controllers.profiles import (
+    PROFILE_KBM,
+    PROFILE_XBOX_1P,
+    PROFILE_XBOX_2P,
+    profile_name_for_controller_count,
+)
 from gamehub_common.models import LibraryIndex, RomSpec, TitleEntry
 
 
@@ -183,6 +188,55 @@ def test_controller_convergence_does_not_overwrite_unmanaged_profile_without_mar
         assert finding.status == ControllerTargetStatus.UNMANAGED
         assert finding.repaired is False
         assert "[Custom]" in profile_file.read_text(encoding="utf-8")
+
+
+def test_controller_convergence_force_replaces_unmanaged_profile_with_backup(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
+        base = _config(temp_root)
+        pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
+        config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        profile_file = config.library_dir / "controller_profiles" / "pcsx2" / "kbm" / "PCSX2.ini"
+        profile_file.parent.mkdir(parents=True, exist_ok=True)
+        profile_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")
+
+        plan = build_controller_convergence_plan(config, emulator_families={"pcsx2"})
+        result = apply_controller_convergence_plan(plan, apply=True, force_unmanaged=True)
+        finding = next(item for item in result.findings if item.target_path == profile_file)
+        backup_root = profile_file.parent / ".gamehub-unmanaged-backups"
+
+        assert finding.status == ControllerTargetStatus.REPAIRED
+        assert finding.repaired is True
+        assert "OpenPauseMenu = Keyboard/Escape" in profile_file.read_text(encoding="utf-8")
+        backups = list(backup_root.glob("PCSX2.ini.*.bak"))
+        assert backups
+        assert "[Custom]" in backups[0].read_text(encoding="utf-8")
+
+
+def test_controller_convergence_force_archives_extra_unmanaged_profile_file(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
+        base = _config(temp_root)
+        pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
+        config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        extra_file = config.library_dir / "controller_profiles" / "pcsx2" / "kbm" / "custom.ini"
+        extra_file.parent.mkdir(parents=True, exist_ok=True)
+        extra_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")
+
+        plan = build_controller_convergence_plan(config, emulator_families={"pcsx2"})
+        result = apply_controller_convergence_plan(
+            plan,
+            apply=True,
+            force_unmanaged=True,
+            include_unmanaged_scan=True,
+        )
+        finding = next(item for item in result.findings if item.target_path == extra_file)
+        backup_root = extra_file.parent / ".gamehub-unmanaged-backups"
+
+        assert finding.status == ControllerTargetStatus.REPAIRED
+        assert finding.repaired is True
+        assert not extra_file.exists()
+        backups = list(backup_root.glob("custom.ini.*.bak"))
+        assert backups
+        assert "[Custom]" in backups[0].read_text(encoding="utf-8")
 
 
 def test_controller_convergence_runtime_selection_rules_remain_autodetect() -> None:

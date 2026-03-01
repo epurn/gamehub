@@ -88,12 +88,27 @@ if typer is not None:
         ),
         controllers: bool = typer.Option(False, "--controllers", help="Run controller convergence diagnostics."),
         apply: bool = typer.Option(False, "--apply", help="Apply safe controller repairs."),
+        force: bool = typer.Option(
+            False,
+            "--force",
+            help="With --apply, archive and clean up unmanaged profile files as well.",
+        ),
     ) -> None:
         if not controllers:
             raise typer.BadParameter("No doctor checks selected. Use --controllers.")
+        if force and not apply:
+            raise typer.BadParameter("--force requires --apply.")
         loaded = load_config(config)
         roots, note = _discover_controller_doctor_steam_roots(loaded)
-        raise typer.Exit(code=run_controller_doctor(loaded, apply=apply, steam_roots=roots, steam_discovery_note=note))
+        raise typer.Exit(
+            code=run_controller_doctor(
+                loaded,
+                apply=apply,
+                force=force,
+                steam_roots=roots,
+                steam_discovery_note=note,
+            )
+        )
 else:
     app = None
 
@@ -163,6 +178,7 @@ def main() -> None:
     )
     doctor_parser.add_argument("--controllers", action="store_true")
     doctor_parser.add_argument("--apply", action="store_true")
+    doctor_parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     if args.command == "sync":
         loaded = load_config(args.config)
@@ -183,9 +199,19 @@ def main() -> None:
     if args.command == "doctor":
         if not args.controllers:
             parser.error("doctor requires at least one check selector (use --controllers)")
+        if args.force and not args.apply:
+            parser.error("doctor --force requires --apply")
         loaded = load_config(args.config)
         roots, note = _discover_controller_doctor_steam_roots(loaded)
-        raise SystemExit(run_controller_doctor(loaded, apply=args.apply, steam_roots=roots, steam_discovery_note=note))
+        raise SystemExit(
+            run_controller_doctor(
+                loaded,
+                apply=args.apply,
+                force=args.force,
+                steam_roots=roots,
+                steam_discovery_note=note,
+            )
+        )
 
 
 if __name__ == "__main__":

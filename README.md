@@ -95,6 +95,7 @@ More detail: [docs/client-install.md](docs/client-install.md), [docs/config-and-
 - Inspect controller drift without launching games:
   - `gamehub doctor --controllers`
   - `gamehub doctor --controllers --apply` (safe ownership-tier repairs only)
+  - `gamehub doctor --controllers --apply --force` (archives and cleans unmanaged profile files too)
 - On Linux Flatpak Azahar paths, GUID injection prefers Flatpak runtime detection; if runtime GUID discovery is unavailable, GAMEHUB preserves existing GUIDs and otherwise keeps port-only SDL mappings.
 
 ## 🖥️ Server Deployment (Latest Release)

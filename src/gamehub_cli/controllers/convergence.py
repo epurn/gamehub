@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Callable
@@ -28,6 +29,7 @@ from .managed_metadata import (
 from .profiles import DEFAULT_PROFILE_TEXTS, PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P, resolve_profiles_root
 
 _KNOWN_EMULATOR_FAMILIES = ("pcsx2", "dolphin", "azahar")
+_UNMANAGED_BACKUP_DIRNAME = ".gamehub-unmanaged-backups"
 
 
 class ControllerOwnership(str, Enum):
@@ -258,6 +260,19 @@ def _atomic_write_text(path: Path, payload: str) -> None:
     replace_file(tmp_path, path)
 
 
+def _archive_unmanaged_profile_file(path: Path) -> Path:
+    backup_root = path.parent / _UNMANAGED_BACKUP_DIRNAME
+    backup_root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    candidate = backup_root / f"{path.name}.{stamp}.bak"
+    suffix = 1
+    while candidate.exists():
+        candidate = backup_root / f"{path.name}.{stamp}.{suffix}.bak"
+        suffix += 1
+    replace_file(path, candidate)
+    return candidate
+
+
 def _record_managed_metadata(target: Path, spec: ManagedProfileTarget) -> None:
     write_managed_metadata_entry(
         target,
@@ -288,6 +303,7 @@ def _evaluate_managed_target(
     *,
     apply: bool,
     force_managed: bool,
+    force_unmanaged: bool,
 ) -> ControllerConvergenceFinding:
     path = spec.destination
     expected_sha = sha256_text(spec.payload)
@@ -385,6 +401,19 @@ def _evaluate_managed_target(
             repaired=False,
         )
 
+    if apply and force_unmanaged:
+        backup_path = _archive_unmanaged_profile_file(path)
+        _atomic_write_text(path, spec.payload)
+        _record_managed_metadata(path, spec)
+        return ControllerConvergenceFinding(
+            ownership=ControllerOwnership.MANAGED,
+            status=ControllerTargetStatus.REPAIRED,
+            target_path=path,
+            detail=f"unmanaged profile archived to {backup_path} and replaced with managed baseline",
+            repairable=True,
+            repaired=True,
+        )
+
     detail = "profile differs from managed baseline but is not marked as managed"
     if metadata_error:
         detail = f"{detail} ({metadata_error})"
@@ -393,7 +422,7 @@ def _evaluate_managed_target(
         status=ControllerTargetStatus.UNMANAGED,
         target_path=path,
         detail=detail,
-        repairable=False,
+        repairable=force_unmanaged,
         repaired=False,
     )
 
@@ -508,7 +537,12 @@ def _evaluate_assisted_qsettings_target(
     )
 
 
-def _unmanaged_profile_findings(plan: ControllerConvergencePlan) -> list[ControllerConvergenceFinding]:
+def _unmanaged_profile_findings(
+    plan: ControllerConvergencePlan,
+    *,
+    apply: bool,
+    force_unmanaged: bool,
+) -> list[ControllerConvergenceFinding]:
     findings: list[ControllerConvergenceFinding] = []
     expected_by_dir: dict[Path, set[str]] = {}
     for target in plan.managed_profile_targets:
@@ -523,13 +557,26 @@ def _unmanaged_profile_findings(plan: ControllerConvergencePlan) -> list[Control
                 continue
             if candidate.name in expected_files:
                 continue
+            if apply and force_unmanaged:
+                backup_path = _archive_unmanaged_profile_file(candidate)
+                findings.append(
+                    ControllerConvergenceFinding(
+                        ownership=ControllerOwnership.UNMANAGED,
+                        status=ControllerTargetStatus.REPAIRED,
+                        target_path=candidate,
+                        detail=f"unmanaged profile archived to {backup_path}",
+                        repairable=True,
+                        repaired=True,
+                    )
+                )
+                continue
             findings.append(
                 ControllerConvergenceFinding(
                     ownership=ControllerOwnership.UNMANAGED,
                     status=ControllerTargetStatus.UNMANAGED,
                     target_path=candidate,
                     detail="unmanaged profile file present",
-                    repairable=False,
+                    repairable=force_unmanaged,
                     repaired=False,
                 )
             )
@@ -541,17 +588,25 @@ def apply_controller_convergence_plan(
     *,
     apply: bool,
     force_managed: bool = False,
+    force_unmanaged: bool = False,
     include_unmanaged_scan: bool = False,
 ) -> ControllerConvergenceResult:
     findings: list[ControllerConvergenceFinding] = []
     for managed_target in plan.managed_profile_targets:
-        findings.append(_evaluate_managed_target(managed_target, apply=apply, force_managed=force_managed))
+        findings.append(
+            _evaluate_managed_target(
+                managed_target,
+                apply=apply,
+                force_managed=force_managed,
+                force_unmanaged=force_unmanaged,
+            )
+        )
     for assisted_ini_target in plan.assisted_ini_targets:
         findings.append(_evaluate_assisted_ini_target(assisted_ini_target, apply=apply))
     for assisted_qsettings_target in plan.assisted_qsettings_targets:
         findings.append(_evaluate_assisted_qsettings_target(assisted_qsettings_target, apply=apply))
     if include_unmanaged_scan:
-        findings.extend(_unmanaged_profile_findings(plan))
+        findings.extend(_unmanaged_profile_findings(plan, apply=apply, force_unmanaged=force_unmanaged))
 
     result = ControllerConvergenceResult(findings=findings, total_targets=plan.total_targets)
     for finding in findings:
@@ -614,10 +669,13 @@ def run_controller_doctor(
     config: GamehubConfig,
     *,
     apply: bool,
+    force: bool = False,
     steam_roots: tuple[Path, ...] = (),
     steam_discovery_note: str | None = None,
     writer: Callable[[str], None] = print,
 ) -> int:
+    if force and not apply:
+        raise ValueError("controller doctor force mode requires apply mode")
     plan = build_controller_convergence_plan(
         config,
         steam_roots=steam_roots,
@@ -639,6 +697,7 @@ def run_controller_doctor(
         plan,
         apply=apply,
         force_managed=False,
+        force_unmanaged=force,
         include_unmanaged_scan=True,
     )
     for finding in sorted(
