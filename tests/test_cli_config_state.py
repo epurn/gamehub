@@ -450,7 +450,6 @@ def test_load_config_rejects_removed_output_dir_env_alias(monkeypatch, workspace
             load_config(config_path)
 
 
-
 def test_load_config_save_sync_defaults_disabled(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-config-") as temp_root:
         monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
@@ -507,3 +506,57 @@ def test_load_config_normalizes_invalid_save_sync_values(workspace_tempdir) -> N
         assert loaded.save_sync.mode == "download"
         assert loaded.save_sync.conflict_policy == "prefer_server"
         assert loaded.save_sync.systems == ("NES",)
+
+
+def test_load_state_defaults_save_sync_keys_when_missing(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-state-") as temp_root:
+        state_path = temp_root / "state.json"
+        state_path.write_text(
+            "\n".join(
+                [
+                    "{",
+                    '  "downloaded_checksums": {},',
+                    '  "firmware_checksums": {},',
+                    '  "tombstones": [],',
+                    '  "last_sync": null,',
+                    '  "bootstrap_version": 1',
+                    "}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        loaded = load_state(state_path)
+
+        assert loaded.save_checksums == {}
+        assert loaded.save_lineage == {}
+        assert loaded.unresolved_save_conflicts == {}
+
+
+def test_state_round_trip_persists_save_sync_lineage(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-state-") as temp_root:
+        state_path = temp_root / "state.json"
+        state = SyncState(
+            downloaded_checksums={"file_1": "a" * 64},
+            firmware_checksums={"PSX/scph5501.bin": "b" * 64},
+            save_checksums={"save_1": "c" * 64},
+            save_lineage={
+                "save_1": {
+                    "local_sha256": "d" * 64,
+                    "remote_sha256": "c" * 64,
+                    "local_updated_at": "2026-02-14T18:00:00+00:00",
+                    "remote_updated_at": "2026-02-14T18:30:00+00:00",
+                    "synced_at": "2026-02-14T19:00:00+00:00",
+                }
+            },
+            unresolved_save_conflicts={"save_2": "both-changed-manual"},
+            tombstones=["title_old"],
+            last_sync="2026-02-14T18:00:00+00:00",
+            bootstrap_version=1,
+        )
+
+        save_state_atomic(state_path, state)
+        loaded = load_state(state_path)
+
+        assert loaded.to_dict() == state.to_dict()

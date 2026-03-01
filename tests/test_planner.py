@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 
-from gamehub_cli.common.config import GamehubConfig
+from gamehub_cli.common.config import GamehubConfig, SaveSyncConfig
 from gamehub_cli.sync.planner import create_sync_plan
 from gamehub_cli.sync.state import SyncState
-from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SystemSpec, TitleEntry
+from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SaveSpec, SystemSpec, TitleEntry
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -354,3 +355,121 @@ def test_planner_uses_configurable_roms_output_dir(workspace_tempdir) -> None:
 
         assert len(plan.content_actions) == 1
         assert plan.content_actions[0].destination == temp_root / "sdcard" / "roms" / "NES" / "SuperMarioBros.nes"
+
+
+def test_save_planner_classifies_download_upload_conflict_and_skip(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        remote_bytes = [b"remote-0", b"remote-1", b"remote-2", b"remote-3"]
+        saves = tuple(
+            SaveSpec(
+                save_id=f"save_{index}",
+                title_id="title_ps2_ffx",
+                system="PS2",
+                kind="memory_card",
+                rel_path=f"saves/PS2/ffx_{index}.ps2",
+                sha256=_sha256_bytes(payload),
+                size_bytes=len(payload),
+                updated_at=datetime(2026, 1, 1, 12, index, tzinfo=timezone.utc),
+                portable=True,
+            )
+            for index, payload in enumerate(remote_bytes)
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=saves)
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="manual"),
+        )
+
+        save_one_path = config.library_dir / "saves" / "PS2" / "ffx_1.ps2"
+        save_one_path.parent.mkdir(parents=True, exist_ok=True)
+        save_one_path.write_bytes(remote_bytes[1])
+
+        save_two_path = config.library_dir / "saves" / "PS2" / "ffx_2.ps2"
+        save_two_path.write_bytes(b"local-edited")
+
+        save_three_path = config.library_dir / "saves" / "PS2" / "ffx_3.ps2"
+        save_three_path.write_bytes(b"both-edited")
+
+        state = SyncState(
+            save_lineage={
+                "save_2": {
+                    "local_sha256": _sha256_bytes(remote_bytes[2]),
+                    "remote_sha256": _sha256_bytes(remote_bytes[2]),
+                },
+                "save_3": {
+                    "local_sha256": _sha256_bytes(b"lineage-local"),
+                    "remote_sha256": _sha256_bytes(b"lineage-remote"),
+                },
+            }
+        )
+
+        plan = create_sync_plan(index=index, config=config, state=state, verify=False)
+        by_id = {action.save_id: action for action in plan.save_actions}
+
+        assert by_id["save_0"].decision == "download"
+        assert by_id["save_0"].reason == "local-missing"
+        assert by_id["save_1"].decision == "skip"
+        assert by_id["save_1"].reason == "already-synced"
+        assert by_id["save_2"].decision == "upload"
+        assert by_id["save_2"].reason == "local-changed-remote-unchanged"
+        assert by_id["save_3"].decision == "conflict"
+        assert by_id["save_3"].reason == "both-changed-manual"
+
+
+def test_save_planner_respects_disabled_and_system_filters(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save = SaveSpec(
+            save_id="save_wii_1",
+            title_id="title_wii_mg",
+            system="Wii",
+            kind="per_game",
+            rel_path="saves/Wii/MarioGalaxy.sav",
+            sha256=_sha256_bytes(b"remote"),
+            size_bytes=6,
+            updated_at=datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc),
+            portable=True,
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=(save,))
+        config_disabled = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library-disabled",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=False),
+        )
+        config_filtered = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library-filtered",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, systems=("PS2",)),
+        )
+
+        plan_disabled = create_sync_plan(index=index, config=config_disabled, state=SyncState(), verify=False)
+        plan_filtered = create_sync_plan(index=index, config=config_filtered, state=SyncState(), verify=False)
+
+        assert plan_disabled.save_actions[0].decision == "skip"
+        assert plan_disabled.save_actions[0].reason == "save-sync-disabled"
+        assert plan_filtered.save_actions[0].decision == "skip"
+        assert plan_filtered.save_actions[0].reason == "system-filtered"

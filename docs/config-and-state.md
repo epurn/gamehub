@@ -180,6 +180,7 @@ Save sync config keys (TOML only for now):
 - `[save_sync].mode`: `download` (default) or `bidirectional`.
 - `[save_sync].conflict_policy`: `prefer_server` (default), `prefer_local`, or `manual`.
 - `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase).
+- Save planning decisions are deterministic per indexed save and include explicit reasons for `download`, `upload`, `conflict`, and `skip` paths (for example: `local-missing`, `both-changed-manual`, `save-sync-disabled`).
 
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
@@ -268,6 +269,9 @@ N3DS Azahar defaults:
 - Tracks:
   - `downloaded_checksums` (`file_id`/`asset_id` -> checksum)
   - `firmware_checksums` (`system/filename` -> checksum)
+  - `save_checksums` (`save_id` -> checksum)
+  - `save_lineage` (`save_id` -> last synced local/remote checksum and timestamps)
+  - `unresolved_save_conflicts` (`save_id` -> last unresolved deterministic conflict reason)
   - `tombstones`
   - `last_sync` (UTC timestamp)
   - `bootstrap_version` (local bootstrap marker written by `gamehub init`; current value `1`)
