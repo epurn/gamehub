@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import gamehub_server.indexer as indexer_module
-from gamehub_common.ids import make_file_id, make_title_id, sha256_file
+from gamehub_common.ids import make_file_id, make_save_id, make_title_id, sha256_file
 from gamehub_server.indexer import SYSTEM_CATALOG, build_index
 
 INITIAL_SYSTEM_SET = {
@@ -51,6 +51,7 @@ def test_build_index_scans_single_title(workspace_tempdir) -> None:
         assert title.rom.file_id in bundle.file_paths
         assert title.assets == ()
         assert bundle.asset_paths == {}
+        assert bundle.save_paths == {}
 
 
 def test_build_index_rejects_nested_title_directories(workspace_tempdir) -> None:
@@ -253,3 +254,50 @@ def test_build_index_rehashes_changed_files(monkeypatch, workspace_tempdir) -> N
         build_index(root)
 
         assert calls == [rom_path]
+
+
+def test_build_index_includes_canonical_save_metadata(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        rom_path = root / "roms" / "NES" / "SuperMarioBros.nes"
+        save_path = root / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.srm"
+        _write_file(rom_path, b"rom")
+        _write_file(save_path, b"save")
+
+        bundle = build_index(root)
+
+        assert len(bundle.index.saves) == 1
+        save = bundle.index.saves[0]
+        save_rel = "saves/NES/SuperMarioBros/battery/slot1.srm"
+        save_sha = sha256_file(save_path)
+        assert save.rel_path == save_rel
+        assert save.save_id == make_save_id(save_rel, save_sha)
+        assert save.title_id == make_title_id("NES", "NES/SuperMarioBros.nes")
+        assert save.kind == "battery"
+        assert save.portable is True
+        assert save.save_id in bundle.save_paths
+
+
+def test_build_index_rejects_save_unknown_system(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "saves" / "UNKNOWN" / "Title" / "battery" / "slot1.srm", b"save")
+
+        with pytest.raises(ValueError, match="unknown system"):
+            build_index(root)
+
+
+def test_build_index_rejects_save_without_title_binding(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom")
+        _write_file(root / "saves" / "NES" / "WrongTitle" / "battery" / "slot1.srm", b"save")
+
+        with pytest.raises(ValueError, match="does not map to indexed title"):
+            build_index(root)
+
+
+def test_build_index_rejects_unknown_save_kind(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom")
+        _write_file(root / "saves" / "NES" / "SuperMarioBros" / "state" / "slot1.state", b"save")
+
+        with pytest.raises(ValueError, match="unknown save kind"):
+            build_index(root)

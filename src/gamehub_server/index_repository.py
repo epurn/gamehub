@@ -10,7 +10,7 @@ from pathlib import Path
 
 from gamehub_common.models import FirmwareSpec, LibraryIndex, TitleEntry
 
-from .indexer import FIRMWARE_ROOT_NAME, IndexBundle, build_index
+from .indexer import FIRMWARE_ROOT_NAME, SAVES_ROOT_NAME, IndexBundle, build_index
 from .logging_utils import get_server_logger
 
 logger = get_server_logger(__name__)
@@ -53,7 +53,7 @@ def _snapshot_data_signature(data_root: Path) -> str:
     def _update(relative: str, kind: str, size_bytes: int, mtime_ns: int) -> None:
         digest.update(f"{relative}|{kind}|{size_bytes}|{mtime_ns}\n".encode("utf-8"))
 
-    for root_name in ("roms", FIRMWARE_ROOT_NAME):
+    for root_name in ("roms", FIRMWARE_ROOT_NAME, SAVES_ROOT_NAME):
         root = data_root / root_name
         root_fields = _path_signature_fields(root, data_root)
         if root_fields is None:
@@ -101,6 +101,8 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
     current_roms = _rom_entries_by_rel_path(current_cache.index)
     previous_firmware = _firmware_entries_by_rel_path(previous_cache.index)
     current_firmware = _firmware_entries_by_rel_path(current_cache.index)
+    previous_saves = {save.rel_path: save for save in previous_cache.index.saves}
+    current_saves = {save.rel_path: save for save in current_cache.index.saves}
 
     added_rom_paths = sorted(set(current_roms) - set(previous_roms))
     updated_rom_paths = sorted(
@@ -117,6 +119,13 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
         if current_firmware[path][1].sha256 != previous_firmware[path][1].sha256
     )
     removed_firmware_paths = sorted(set(previous_firmware) - set(current_firmware))
+    added_save_paths = sorted(set(current_saves) - set(previous_saves))
+    updated_save_paths = sorted(
+        path
+        for path in set(current_saves) & set(previous_saves)
+        if current_saves[path].sha256 != previous_saves[path].sha256
+    )
+    removed_save_paths = sorted(set(previous_saves) - set(current_saves))
 
     if not any(
         (
@@ -126,13 +135,17 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
             added_firmware_paths,
             updated_firmware_paths,
             removed_firmware_paths,
+            added_save_paths,
+            updated_save_paths,
+            removed_save_paths,
         )
     ):
         return
 
     logger.info(
         "index contents changed reason=%s roms_added=%d roms_updated=%d roms_removed=%d "
-        "firmware_added=%d firmware_updated=%d firmware_removed=%d",
+        "firmware_added=%d firmware_updated=%d firmware_removed=%d "
+        "saves_added=%d saves_updated=%d saves_removed=%d",
         reason,
         len(added_rom_paths),
         len(updated_rom_paths),
@@ -140,6 +153,9 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
         len(added_firmware_paths),
         len(updated_firmware_paths),
         len(removed_firmware_paths),
+        len(added_save_paths),
+        len(updated_save_paths),
+        len(removed_save_paths),
     )
 
     for rel_path in added_rom_paths:
@@ -195,6 +211,37 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
             reason,
             system_name,
             spec.filename,
+            rel_path,
+        )
+
+    for rel_path in added_save_paths:
+        save = current_saves[rel_path]
+        logger.info(
+            "indexed new save file reason=%s system=%s title_id=%s kind=%s rel_path=%s",
+            reason,
+            save.system,
+            save.title_id,
+            save.kind,
+            rel_path,
+        )
+    for rel_path in updated_save_paths:
+        save = current_saves[rel_path]
+        logger.info(
+            "reindexed save file reason=%s system=%s title_id=%s kind=%s rel_path=%s",
+            reason,
+            save.system,
+            save.title_id,
+            save.kind,
+            rel_path,
+        )
+    for rel_path in removed_save_paths:
+        save = previous_saves[rel_path]
+        logger.info(
+            "removed save file from index reason=%s system=%s title_id=%s kind=%s rel_path=%s",
+            reason,
+            save.system,
+            save.title_id,
+            save.kind,
             rel_path,
         )
 

@@ -1,6 +1,4 @@
-# AGENTS.md – shared guardrails and core objectives
-
-# GAMEHUB — AGENTS.md
+# GAMEHUB — AGENTS.md – shared guardrails and core objectives
 
 GAMEHUB is a Docker-first home-server and CLI that synchronises emulator libraries into Steam as non-Steam games with deterministic behaviour and safety-first file handling. This file defines the shared guardrails and high-level architecture for both web and IDE workflows.
 
