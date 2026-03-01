@@ -5,9 +5,11 @@ import sqlite3
 import tempfile
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import Literal, TypedDict, cast
+
+from typing_extensions import NotRequired
 
 from gamehub_common.ids import make_file_id, make_save_id, make_title_id, sha256_file
 from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SaveSpec, SystemSpec, TitleEntry
@@ -264,7 +266,8 @@ def _scan_firmware_specs(
 
 def build_index(data_root: Path) -> IndexBundle:
     roms_root = data_root / ROMS_ROOT_NAME
-    if not roms_root.exists():
+    saves_root = data_root / SAVES_ROOT_NAME
+    if not roms_root.exists() and not saves_root.exists():
         return IndexBundle(index=LibraryIndex(), file_paths={}, asset_paths={}, save_paths={})
 
     hash_cache = _HashCache.open(data_root)
@@ -365,7 +368,6 @@ def build_index(data_root: Path) -> IndexBundle:
             )
             titles.extend(system_titles)
 
-        saves_root = data_root / SAVES_ROOT_NAME
         if saves_root.exists() and not saves_root.is_dir():
             raise ValueError(f"Saves path is not a directory: {saves_root}")
 
@@ -432,7 +434,7 @@ def build_index(data_root: Path) -> IndexBundle:
                                     rel_path=save_rel,
                                     sha256=save_sha,
                                     size_bytes=save_stat.st_size,
-                                    updated_at=datetime.fromtimestamp(save_stat.st_mtime, tz=UTC),
+                                    updated_at=datetime.fromtimestamp(save_stat.st_mtime, tz=timezone.utc),
                                     portable=portable,
                                 )
                             )
