@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -19,7 +21,6 @@ from .index_repository import (
 from .indexer import FIRMWARE_ROOT_NAME
 from .logging_utils import get_server_logger
 
-app = FastAPI(title="GAMEHUB Server", version=__version__)
 logger = get_server_logger(__name__)
 
 DATA_ROOT = Path(os.environ.get("GAMEHUB_DATA_DIR", "/data")).resolve()
@@ -37,12 +38,6 @@ def _is_safe_segment(value: str) -> bool:
     return "/" not in value and "\\" not in value
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-@app.on_event("startup")
 def warm_index_cache() -> None:
     # Preload the index so first /v1/index request does not trigger full-library hashing.
     logger.info("index warmup started data_root=%s", DATA_ROOT)
@@ -63,14 +58,30 @@ def warm_index_cache() -> None:
     )
 
 
-@app.on_event("startup")
 def start_index_poller() -> None:
     INDEX_REPO.start_polling()
 
 
-@app.on_event("shutdown")
 def stop_index_poller() -> None:
     INDEX_REPO.stop_polling()
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    warm_index_cache()
+    start_index_poller()
+    try:
+        yield
+    finally:
+        stop_index_poller()
+
+
+app = FastAPI(title="GAMEHUB Server", version=__version__, lifespan=_lifespan)
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 @app.get("/v1/index")

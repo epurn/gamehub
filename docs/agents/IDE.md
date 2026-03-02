@@ -149,7 +149,7 @@ Add or update tests when behaviour changes.
 
 ## Configuration tips
 
-Use configuration and environment variables documented in `docs/client-install.md`.
+Use configuration and environment variables documented in [docs/client-install.md](../client-install.md).
 
 Examples:
 

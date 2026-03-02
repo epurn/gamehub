@@ -65,7 +65,10 @@ def apply_save_stage(
             skipped += 1
             continue
         if action.decision == "upload":
-            uploaded += 1
+            if dry_run:
+                uploaded += 1
+                continue
+            failures.append((action.save_id, "upload-not-implemented"))
             continue
         if action.decision == "conflict":
             conflicts += 1

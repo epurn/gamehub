@@ -722,12 +722,9 @@ def test_run_sync_skip_steam_avoids_steam_updates(monkeypatch, capsys) -> None:
     monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
-        lambda _config,
-        index,
-        require_steam_closed,
-        artwork_by_title,
-        reopen_steam_after_update=True,
-        reseed_profiles=False: (steam_called.__setitem__("value", True)),
+        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
+            steam_called.__setitem__("value", True)
+        ),
     )
 
     exit_code = run_sync(
@@ -775,12 +772,7 @@ def test_run_sync_skip_steam_relaunch_still_applies_steam_updates(monkeypatch) -
     monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
-        lambda _config,
-        index,
-        require_steam_closed,
-        artwork_by_title,
-        reopen_steam_after_update=True,
-        reseed_profiles=False: (
+        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
             received.update({"called": True, "reopen": reopen_steam_after_update, "reseed_profiles": reseed_profiles})
         ),
     )
@@ -839,12 +831,9 @@ def test_run_sync_reseed_profiles_propagates_to_steam_updates(monkeypatch) -> No
     monkeypatch.setattr("gamehub_cli.sync.orchestrator._resolve_steam_context", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
-        lambda _config,
-        index,
-        require_steam_closed,
-        artwork_by_title,
-        reopen_steam_after_update=True,
-        reseed_profiles=False: (captured.update({"reseed_profiles": reseed_profiles})),
+        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
+            captured.update({"reseed_profiles": reseed_profiles})
+        ),
     )
 
     exit_code = run_sync(
@@ -1301,12 +1290,9 @@ def test_run_sync_applies_steam_updates_even_when_no_downloads(monkeypatch) -> N
     monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
     monkeypatch.setattr(
         "gamehub_cli.sync.orchestrator._apply_steam_updates",
-        lambda _config,
-        index,
-        require_steam_closed,
-        artwork_by_title,
-        reopen_steam_after_update=True,
-        reseed_profiles=False: (steam_called.__setitem__("value", True)),
+        lambda _config, index, require_steam_closed, artwork_by_title, reopen_steam_after_update=True, reseed_profiles=False: (
+            steam_called.__setitem__("value", True)
+        ),
     )
 
     exit_code = run_sync(
@@ -2688,6 +2674,50 @@ def test_run_sync_save_stage_failure_skips_state_write(monkeypatch) -> None:
         )
 
     assert not config.state_path.exists()
+
+
+def test_apply_save_stage_fails_when_upload_action_is_not_implemented(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.sync import save_stage
+
+    state = SyncState()
+    with workspace_tempdir("gamehub-save-stage-upload-") as temp_root:
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_upload",
+                    title_id="title_upload",
+                    system="N64",
+                    kind="battery",
+                    decision="upload",
+                    reason="local-changed-remote-unchanged",
+                    url="/v1/saves/upload",
+                    destination=temp_root / "upload.sav",
+                    expected_sha256="c" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                )
+            ]
+        )
+
+    transfer_calls: list[str] = []
+
+    def _unexpected_transfer(**kwargs) -> None:
+        transfer_calls.append(kwargs["url"])
+
+    monkeypatch.setattr("gamehub_cli.sync.save_stage.stream_to_destination_atomic", _unexpected_transfer)
+
+    with pytest.raises(save_stage.SaveStageError, match="upload-not-implemented"):
+        save_stage.apply_save_stage(
+            server_url="http://localhost:8000",
+            plan=plan,
+            state=state,
+            timeout_seconds=20.0,
+            dry_run=False,
+            verbose=False,
+        )
+
+    assert transfer_calls == []
+    assert state.save_checksums == {}
 
 
 def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatch, workspace_tempdir) -> None:
