@@ -32,6 +32,7 @@ _SYSTEM_DEFAULT_EMULATOR = {
     "GEN_MD": "retroarch",
     "N64": "retroarch",
     "NDS": "retroarch",
+    "N3DS": "azahar",
     "NES": "retroarch",
     "PSX": "retroarch",
     "SNES": "retroarch",

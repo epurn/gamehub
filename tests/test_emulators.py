@@ -902,6 +902,7 @@ def test_resolve_emulator_executable_linux_uses_azahar_flatpak_export(monkeypatc
 def test_default_emulator_for_system_returns_expected_values() -> None:
     assert default_emulator_for_system("PS2") == "pcsx2"
     assert default_emulator_for_system("wii") == "dolphin"
+    assert default_emulator_for_system("n3ds") == "azahar"
     assert default_emulator_for_system("UNKNOWN") is None
 
 
