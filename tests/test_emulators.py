@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
 from gamehub_cli.emulators import ensure_emulators, resolve_emulator_executable
+from gamehub_cli.emulators.save_resolution import (
+    default_emulator_for_system,
+    resolve_emulator_save_root,
+    resolve_system_save_root,
+)
 from gamehub_common.models import LibraryIndex, SystemSpec
 
 
@@ -891,3 +897,66 @@ def test_resolve_emulator_executable_linux_uses_azahar_flatpak_export(monkeypatc
         resolved = resolve_emulator_executable("azahar")
 
         assert resolved == str(azahar_export)
+
+
+def test_default_emulator_for_system_returns_expected_values() -> None:
+    assert default_emulator_for_system("PS2") == "pcsx2"
+    assert default_emulator_for_system("wii") == "dolphin"
+    assert default_emulator_for_system("UNKNOWN") is None
+
+
+def test_resolve_emulator_save_root_windows_pcsx2_memcards(monkeypatch) -> None:
+    with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
+        temp_root = Path(temp_dir)
+        memcards = temp_root / "Documents" / "PCSX2" / "memcards"
+        memcards.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
+        monkeypatch.setenv("USERPROFILE", str(temp_root))
+
+        resolved = resolve_emulator_save_root("pcsx2", resolve_executable=lambda _name: "")
+
+        assert resolved == memcards
+
+
+def test_resolve_emulator_save_root_returns_none_when_runtime_path_missing(monkeypatch) -> None:
+    with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
+        temp_root = Path(temp_dir)
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
+        monkeypatch.setenv("USERPROFILE", str(temp_root))
+
+        resolved = resolve_emulator_save_root("dolphin", resolve_executable=lambda _name: "")
+
+        assert resolved is None
+
+
+def test_resolve_emulator_save_root_linux_flatpak_retroarch(monkeypatch) -> None:
+    with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
+        temp_root = Path(temp_dir)
+        saves = temp_root / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "saves"
+        saves.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: temp_root)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: temp_root))
+
+        resolved = resolve_emulator_save_root(
+            "retroarch",
+            resolve_executable=lambda _name: str(
+                temp_root / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.libretro.RetroArch"
+            ),
+        )
+
+        assert resolved == saves
+
+
+def test_resolve_system_save_root_uses_default_emulator(monkeypatch) -> None:
+    with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
+        temp_root = Path(temp_dir)
+        gc_root = temp_root / ".local" / "share" / "dolphin-emu" / "GC"
+        gc_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: temp_root)
+
+        resolved = resolve_system_save_root("GC", resolve_executable=lambda _name: "")
+
+        assert resolved == gc_root
