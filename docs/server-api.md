@@ -66,3 +66,8 @@ Base URL: `http://<host>:8000`
 - Operators can force a manual rebuild at any time with:
   - `GET /v1/index?refresh=1`
   - forced refresh bypasses the stability wait and returns an error immediately if the library is invalid
+
+## Save endpoint behavior by rollout mode
+- Download mode clients call `GET /v1/saves/{save_id}` only for saves selected by planner policy and checksum lineage.
+- Bidirectional mode is contract-frozen but not yet active on the server until `PUT /v1/saves/{save_id}` is implemented; clients must treat current `501` as expected server capability limitation.
+- Unknown IDs always return `404`; clients must not attempt path-like probing or filename-based fallback lookups.

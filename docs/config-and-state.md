@@ -182,6 +182,18 @@ Save sync config keys (TOML only for now):
 - `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase).
 - Save planning decisions are deterministic per indexed save and include explicit reasons for `download`, `upload`, `conflict`, and `skip` paths (for example: `local-missing`, `both-changed-manual`, `save-sync-disabled`).
 
+Mode behavior reference:
+- `enabled=false`: planner emits deterministic `skip` reasons (for example `save-sync-disabled`) and performs no save transfers.
+- `mode=download`: planner may emit `download` or `skip`; `upload` actions are suppressed.
+- `mode=bidirectional`: planner may emit `download`, `upload`, `conflict`, or `skip` based on checksum lineage and `conflict_policy`.
+- `conflict_policy=prefer_server`: conflict path converges to server copy (planned `download`).
+- `conflict_policy=prefer_local`: conflict path converges to local copy (planned `upload` once upload endpoint support exists).
+- `conflict_policy=manual`: planner emits `conflict` and records unresolved entries in state until operator intervention.
+
+Dry-run expectations for save sync:
+- Dry-run never writes local save files and never mutates remote save artifacts.
+- Dry-run output should include explicit per-save decision reasons so operators can audit why each save is `download`, `upload`, `conflict`, or `skip`.
+
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
 - PCSX2 controller bindings and hotkeys are managed at launch via controller profiles when `launch_autoconfig` is enabled.
@@ -275,6 +287,12 @@ N3DS Azahar defaults:
   - `tombstones`
   - `last_sync` (UTC timestamp)
   - `bootstrap_version` (local bootstrap marker written by `gamehub init`; current value `1`)
+
+Save sync state semantics:
+- Missing save keys in older `state.json` files load as empty defaults for backward compatibility.
+- `save_checksums` tracks last-known local checksum by `save_id` for deterministic planner comparisons.
+- `save_lineage` captures last-synced local/remote checksum snapshots and timestamps.
+- `unresolved_save_conflicts` persists manual-resolution-required conflicts between runs.
 
 Bootstrap notes:
 - Fresh installs must run `gamehub init` before the first `gamehub sync`.
