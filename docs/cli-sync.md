@@ -140,6 +140,14 @@ Steam close behavior:
 
 Save sync stays disabled by default unless `[save_sync].enabled = true` is set in config.
 
+### Save sync dry-run and conflict interpretation
+- In `mode = "download"`, save planning is server-authoritative: expected actions are `download` or `skip` only.
+- In `mode = "bidirectional"`, planner decisions may include `upload` and `conflict` in addition to `download`/`skip` according to checksum lineage and `conflict_policy`.
+- `conflict_policy = "prefer_server"` resolves conflict paths toward download decisions.
+- `conflict_policy = "prefer_local"` resolves conflict paths toward upload decisions when server upload capability is available.
+- `conflict_policy = "manual"` preserves explicit `conflict` outcomes for operator review.
+- `--dry-run` performs no save writes and no remote mutations; it is the required safety preview for save plan auditing before enabling non-dry execution.
+
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.
 

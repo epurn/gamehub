@@ -43,6 +43,11 @@
 - `updated_at`: server UTC timestamp for save artifact freshness
 - `portable`: whether the save format is expected to be portable across clients/emulator variants
 
+Save sync matching rules:
+- Clients must match saves by `save_id`/`title_id` only (never by fuzzy title names or filename heuristics).
+- `system` is part of strict filtering behavior (`[save_sync].systems`) and must use canonical uppercase names.
+- `portable=false` indicates the server indexed a known non-portable format; clients should still parse it but may choose conservative conflict behavior.
+
 ## Validation guarantees
 - Unknown fields are rejected (`extra=forbid`)
 - SHA-256 fields must be lowercase 64-char hex
@@ -61,3 +66,7 @@
 - Save artifacts are additive contract surface in `index_version=1` for the current rollout phase.
 - Existing clients that ignore unknown fields continue to parse legacy sections, while strict save-aware clients must validate `SaveSpec` when `saves` are present.
 - Any future breaking save contract change must bump `index_version` in a dedicated contract story before implementation.
+
+## Rollout interpretation
+- `saves` may be an empty list during staged rollout even when save sync config is enabled client-side.
+- Empty `saves` is a valid deterministic state and should produce no save transfer actions.
