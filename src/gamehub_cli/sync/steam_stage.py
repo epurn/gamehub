@@ -20,7 +20,7 @@ from ..common.platform_paths import (
     is_flatpak_command,
 )
 from ..controllers.detection import is_steam_deck_linux
-from ..controllers.launch import encode_controller_payload
+from ..controllers.launch import encode_shortcut_payload
 from ..emulators import resolve_emulator_executable
 from ..firmware.retroarch_cores import resolve_retroarch_paths
 from ..firmware.targets import resolve_dolphin_runtime_user_dir
@@ -256,12 +256,12 @@ def _wrapper_executable_and_args() -> tuple[str, list[str]]:
     executable_name = exe_path.replace("\\", "/").rsplit("/", 1)[-1].casefold()
     is_frozen = bool(getattr(sys, "frozen", False))
     if is_frozen or ("python" not in executable_name and executable_name.endswith(".exe")):
-        return exe_path, ["controller-launch"]
+        return exe_path, ["shortcut-launch"]
     if sys.platform.startswith("win"):
         candidate = Path(sys.executable).with_name("pythonw.exe")
         if candidate.exists():
-            return str(candidate), ["-m", "gamehub_cli.main", "controller-launch"]
-    return exe_path, ["-m", "gamehub_cli.main", "controller-launch"]
+            return str(candidate), ["-m", "gamehub_cli.main", "shortcut-launch"]
+    return exe_path, ["-m", "gamehub_cli.main", "shortcut-launch"]
 
 
 def _split_launch_options(value: str) -> list[str]:
@@ -278,23 +278,27 @@ def _join_launch_options(args: list[str]) -> str:
     return shlex.join(args)
 
 
-def _wrap_shortcut_for_controller_launch(
+def _wrap_shortcut_for_managed_launch(
     spec: SteamShortcutSpec,
     *,
     emulator_name: str,
     config: GamehubConfig,
+    rom_rel_path: str,
 ) -> SteamShortcutSpec:
     target_args = _split_launch_options(spec.launch_options)
     payload: dict[str, object] = {
         "v": 1,
         "emulator": emulator_name.casefold(),
+        "title_id": spec.title_id,
+        "system": spec.system,
+        "rom_rel_path": rom_rel_path,
         "target_exe": spec.exe,
         "target_args": target_args,
         "start_dir": spec.start_dir,
     }
     if config.config_path is not None:
         payload["config_path"] = str(config.config_path)
-    payload_token = encode_controller_payload(payload)
+    payload_token = encode_shortcut_payload(payload)
 
     wrapper_exe, wrapper_args = _wrapper_executable_and_args()
     launch_args = [*wrapper_args, "--payload", payload_token]
@@ -363,7 +367,12 @@ def build_shortcut_specs(
                 allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
-                spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
+                spec = _wrap_shortcut_for_managed_launch(
+                    spec,
+                    emulator_name=title.emulator,
+                    config=config,
+                    rom_rel_path=title.rom.rel_path,
+                )
             specs.append(spec)
             continue
         if pcsx2_flatpak:
@@ -381,7 +390,12 @@ def build_shortcut_specs(
                 allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
-                spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
+                spec = _wrap_shortcut_for_managed_launch(
+                    spec,
+                    emulator_name=title.emulator,
+                    config=config,
+                    rom_rel_path=title.rom.rel_path,
+                )
             specs.append(spec)
             continue
         if azahar_flatpak:
@@ -403,7 +417,12 @@ def build_shortcut_specs(
                     allow_desktop_config=allow_desktop_config,
                 )
                 if _should_wrap_shortcut(title.emulator, config):
-                    spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
+                    spec = _wrap_shortcut_for_managed_launch(
+                        spec,
+                        emulator_name=title.emulator,
+                        config=config,
+                        rom_rel_path=title.rom.rel_path,
+                    )
                 specs.append(spec)
                 continue
             spec = SteamShortcutSpec(
@@ -419,7 +438,12 @@ def build_shortcut_specs(
                 allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
-                spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
+                spec = _wrap_shortcut_for_managed_launch(
+                    spec,
+                    emulator_name=title.emulator,
+                    config=config,
+                    rom_rel_path=title.rom.rel_path,
+                )
             specs.append(spec)
             continue
         launch_template = title.launch_template
@@ -455,7 +479,12 @@ def build_shortcut_specs(
             allow_desktop_config=allow_desktop_config,
         )
         if _should_wrap_shortcut(title.emulator, config):
-            spec = _wrap_shortcut_for_controller_launch(spec, emulator_name=title.emulator, config=config)
+            spec = _wrap_shortcut_for_managed_launch(
+                spec,
+                emulator_name=title.emulator,
+                config=config,
+                rom_rel_path=title.rom.rel_path,
+            )
         specs.append(spec)
     return specs
 

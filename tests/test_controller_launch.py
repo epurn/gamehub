@@ -6,9 +6,9 @@ from pathlib import Path
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig
 from gamehub_cli.controllers.detection import XboxController
 from gamehub_cli.controllers.launch import (
-    encode_controller_payload,
-    parse_controller_payload,
-    run_controller_launch,
+    encode_shortcut_payload,
+    parse_shortcut_payload,
+    run_shortcut_launch,
 )
 
 
@@ -29,7 +29,7 @@ def _config() -> GamehubConfig:
 
 
 def test_parse_controller_payload_round_trip() -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "pcsx2",
@@ -37,20 +37,26 @@ def test_parse_controller_payload_round_trip() -> None:
             "target_args": ["run", "--file-forwarding", "net.pcsx2.PCSX2"],
             "start_dir": "",
             "config_path": "D:/GameHub/config.toml",
+            "title_id": "title_ps2_ffx",
+            "system": "PS2",
+            "rom_rel_path": "roms/PS2/Final Fantasy X.iso",
         }
     )
 
-    payload = parse_controller_payload(token)
+    payload = parse_shortcut_payload(token)
 
     assert payload.version == 1
     assert payload.emulator == "pcsx2"
     assert payload.target_exe == "flatpak"
     assert payload.target_args == ("run", "--file-forwarding", "net.pcsx2.PCSX2")
     assert payload.config_path == "D:/GameHub/config.toml"
+    assert payload.title_id == "title_ps2_ffx"
+    assert payload.system == "PS2"
+    assert payload.rom_rel_path == "roms/PS2/Final Fantasy X.iso"
 
 
 def test_parse_controller_payload_strips_wrapping_quotes_from_args() -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "dolphin",
@@ -60,7 +66,7 @@ def test_parse_controller_payload_strips_wrapping_quotes_from_args() -> None:
         }
     )
 
-    payload = parse_controller_payload(token)
+    payload = parse_shortcut_payload(token)
 
     assert payload.target_exe == '"C:/Emu/Dolphin.exe"'
     assert payload.target_args == ("-b", "C:/Games/Path With Spaces/game.iso")
@@ -73,7 +79,7 @@ def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch, workspace_te
         azahar_exe = azahar_dir / "azahar.exe"
         azahar_exe.write_text("", encoding="utf-8")
 
-        token = encode_controller_payload(
+        token = encode_shortcut_payload(
             {
                 "v": 1,
                 "emulator": "azahar",
@@ -94,13 +100,13 @@ def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch, workspace_te
         monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
         monkeypatch.delenv("GAMEHUB_AZAHAR_SDL_DIR", raising=False)
 
-        run_controller_launch(payload_token=token)
+        run_shortcut_launch(payload_token=token)
 
         assert observed["sdl_dir"] == str(azahar_dir)
 
 
 def test_run_controller_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "dolphin",
@@ -127,14 +133,14 @@ def test_run_controller_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
     )
     monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 7)
 
-    exit_code = run_controller_launch(payload_token=token)
+    exit_code = run_shortcut_launch(payload_token=token)
 
     assert exit_code == 7
     assert fallback_calls == ["dolphin:kbm"]
 
 
 def test_run_controller_launch_detection_failure_falls_back_to_kbm_profile_selection(monkeypatch) -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "pcsx2",
@@ -158,14 +164,14 @@ def test_run_controller_launch_detection_failure_falls_back_to_kbm_profile_selec
     )
     monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 3)
 
-    exit_code = run_controller_launch(payload_token=token)
+    exit_code = run_shortcut_launch(payload_token=token)
 
     assert exit_code == 3
     assert applied_counts == [0]
 
 
 def test_run_controller_launch_uses_azahar_windows_exit_hook(monkeypatch) -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "azahar",
@@ -191,14 +197,14 @@ def test_run_controller_launch_uses_azahar_windows_exit_hook(monkeypatch) -> Non
         lambda payload: (_ for _ in ()).throw(AssertionError("direct launch should not be used")),
     )
 
-    exit_code = run_controller_launch(payload_token=token)
+    exit_code = run_shortcut_launch(payload_token=token)
 
     assert exit_code == 11
     assert hook_calls == ["azahar"]
 
 
 def test_run_controller_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypatch) -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "dolphin",
@@ -223,14 +229,14 @@ def test_run_controller_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypa
         lambda payload: (_ for _ in ()).throw(AssertionError("direct launch should not be used")),
     )
 
-    exit_code = run_controller_launch(payload_token=token)
+    exit_code = run_shortcut_launch(payload_token=token)
 
     assert exit_code == 9
     assert hook_calls == ["dolphin"]
 
 
 def test_run_controller_launch_audit_enables_verbose_profile_logs(monkeypatch) -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "dolphin",
@@ -252,14 +258,14 @@ def test_run_controller_launch_audit_enables_verbose_profile_logs(monkeypatch) -
     monkeypatch.setattr("gamehub_cli.controllers.launch.apply_controller_profile", _fake_apply)
     monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
 
-    exit_code = run_controller_launch(payload_token=token, audit=True)
+    exit_code = run_shortcut_launch(payload_token=token, audit=True)
 
     assert exit_code == 0
     assert observed["verbose"] is True
 
 
 def test_run_controller_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "dolphin",
@@ -281,13 +287,13 @@ def test_run_controller_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) 
     )
     monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 4)
 
-    exit_code = run_controller_launch(payload_token=token)
+    exit_code = run_shortcut_launch(payload_token=token)
 
     assert exit_code == 4
 
 
 def test_run_controller_launch_deck_zero_detect_defaults_to_xbox_1p(monkeypatch, capsys) -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "dolphin",
@@ -314,7 +320,7 @@ def test_run_controller_launch_deck_zero_detect_defaults_to_xbox_1p(monkeypatch,
     )
     monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
 
-    exit_code = run_controller_launch(payload_token=token, audit=True)
+    exit_code = run_shortcut_launch(payload_token=token, audit=True)
 
     assert exit_code == 0
     assert observed["count"] == 1
@@ -324,7 +330,7 @@ def test_run_controller_launch_deck_zero_detect_defaults_to_xbox_1p(monkeypatch,
 
 
 def test_run_controller_launch_non_deck_zero_detect_behavior_unchanged(monkeypatch) -> None:
-    token = encode_controller_payload(
+    token = encode_shortcut_payload(
         {
             "v": 1,
             "emulator": "dolphin",
@@ -351,7 +357,7 @@ def test_run_controller_launch_non_deck_zero_detect_behavior_unchanged(monkeypat
     )
     monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
 
-    exit_code = run_controller_launch(payload_token=token)
+    exit_code = run_shortcut_launch(payload_token=token)
 
     assert exit_code == 0
     assert observed["count"] == 0

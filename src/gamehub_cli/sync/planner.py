@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 
 from gamehub_common.ids import sha256_file
@@ -9,6 +8,12 @@ from gamehub_common.models import LibraryIndex
 
 from ..common.config import GamehubConfig
 from ..common.paths import from_rel_path, resolve_rom_destination
+from ..common.save_sync import (
+    classify_save_action,
+    local_file_sha256,
+    to_utc_timestamp,
+)
+from ..emulators.save_resolution import resolve_local_save_destination
 from .state import SyncState
 
 
@@ -46,58 +51,11 @@ class SavePlanAction:
     decision: str
     reason: str
     url: str
-    destination: Path
+    destination: Path | None
     expected_sha256: str
     size_bytes: int
     remote_updated_at: str
     local_sha256: str | None = None
-
-
-def _save_remote_updated_at(value: object) -> str:
-    if isinstance(value, datetime):
-        return value.astimezone(timezone.utc).isoformat()
-    return str(value)
-
-
-def _classify_save_action(
-    *,
-    save_sha256: str,
-    local_sha256: str | None,
-    mode: str,
-    conflict_policy: str,
-    lineage_local_sha: str | None,
-    lineage_remote_sha: str | None,
-) -> tuple[str, str]:
-    if local_sha256 is None:
-        return "download", "local-missing"
-    if local_sha256 == save_sha256:
-        return "skip", "already-synced"
-    if mode == "download":
-        return "download", "download-mode-local-drift"
-
-    lineage_present = lineage_local_sha is not None or lineage_remote_sha is not None
-    if not lineage_present:
-        if conflict_policy == "prefer_local":
-            return "upload", "lineage-missing-prefer-local"
-        if conflict_policy == "prefer_server":
-            return "download", "lineage-missing-prefer-server"
-        return "conflict", "lineage-missing-manual"
-
-    local_changed = lineage_local_sha is not None and local_sha256 != lineage_local_sha
-    remote_changed = lineage_remote_sha is not None and save_sha256 != lineage_remote_sha
-
-    if local_changed and not remote_changed:
-        return "upload", "local-changed-remote-unchanged"
-    if remote_changed and not local_changed:
-        return "download", "remote-changed-local-unchanged"
-    if local_changed and remote_changed:
-        if conflict_policy == "prefer_local":
-            return "upload", "both-changed-prefer-local"
-        if conflict_policy == "prefer_server":
-            return "download", "both-changed-prefer-server"
-        return "conflict", "both-changed-manual"
-
-    return "download", "lineage-ambiguous-default-download"
 
 
 def _is_file_valid(path: Path, expected_sha256: str, verify: bool, expected_size_bytes: int | None = None) -> bool:
@@ -188,17 +146,20 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
             )
 
     for save in sorted(index.saves, key=lambda item: (item.system, item.title_id, item.rel_path, item.save_id)):
-        destination = from_rel_path(config.library_dir, save.rel_path)
+        save_destination = resolve_local_save_destination(save)
         if not config.save_sync.enabled:
             decision, reason = "skip", "save-sync-disabled"
             local_sha = None
         elif config.save_sync.systems and save.system.upper() not in config.save_sync.systems:
             decision, reason = "skip", "system-filtered"
             local_sha = None
+        elif save_destination is None:
+            decision, reason = "skip", "save-path-unavailable"
+            local_sha = None
         else:
-            local_sha = sha256_file(destination) if destination.exists() else None
+            local_sha = local_file_sha256(save_destination)
             lineage = state.save_lineage.get(save.save_id, {})
-            decision, reason = _classify_save_action(
+            decision, reason = classify_save_action(
                 save_sha256=save.sha256,
                 local_sha256=local_sha,
                 mode=config.save_sync.mode,
@@ -216,10 +177,10 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
                 decision=decision,
                 reason=reason,
                 url=f"/v1/saves/{save.save_id}",
-                destination=destination,
+                destination=save_destination,
                 expected_sha256=save.sha256,
                 size_bytes=save.size_bytes,
-                remote_updated_at=_save_remote_updated_at(save.updated_at),
+                remote_updated_at=to_utc_timestamp(save.updated_at),
                 local_sha256=local_sha,
             )
         )

@@ -33,7 +33,7 @@
 
 
 ## `SaveSpec`
-- `save_id`: deterministic from canonical server-relative save path plus save checksum
+- `save_id`: deterministic from canonical server-relative save path only (stable across content changes)
 - `title_id`: deterministic title binding (must reference a known title)
 - `system`: canonical system name (for strict matching / filtering)
 - `kind`: one of `battery`, `memory_card`, `per_game`
@@ -45,6 +45,7 @@
 
 Save sync matching rules:
 - Clients must match saves by `save_id`/`title_id` only (never by fuzzy title names or filename heuristics).
+- `save_id` is the stable identity key; `sha256` is the mutable freshness/version signal used for planner decisions.
 - `system` is part of strict filtering behavior (`[save_sync].systems`) and must use canonical uppercase names.
 - `portable=false` indicates the server indexed a known non-portable format; clients should still parse it but may choose conservative conflict behavior.
 
@@ -60,7 +61,7 @@ Save sync matching rules:
 - `title_id`: `make_title_id(system, title_rel_dir)`
 - `file_id`: `make_file_id(server_relative_path, sha256)`
 - `asset_id`: `make_asset_id(server_relative_path, sha256)`
-- `save_id`: `make_save_id(server_relative_path, sha256)`
+- `save_id`: `make_save_id(server_relative_path)`
 
 ## Index versioning expectation for save-sync contract freeze
 - Save artifacts are additive contract surface in `index_version=1` for the current rollout phase.

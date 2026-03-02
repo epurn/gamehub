@@ -1137,9 +1137,7 @@ def test_apply_deck_steam_input_templates_preserves_existing_managed_file_withou
         assert target.read_bytes() == seed_payload
 
 
-def test_apply_deck_steam_input_templates_reseed_rewrites_even_when_bytes_match(
-    monkeypatch, workspace_tempdir
-) -> None:
+def test_apply_deck_steam_input_templates_reseed_rewrites_even_when_bytes_match(monkeypatch, workspace_tempdir) -> None:
     from gamehub_cli.steam.deck_templates import seeds as deck_template_seeds
     from gamehub_cli.steam.deck_templates import sync as deck_template_sync
 

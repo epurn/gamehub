@@ -112,11 +112,13 @@ Steam close behavior:
 12. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
    - managed shortcuts persist stable `appid` values on write, so first-run artwork/category mapping does not depend on a later Steam rewrite pass
    - collection membership appids are canonicalized to unsigned numeric values in both localconfig and cloud payloads
-    - when `[controllers].launch_autoconfig = true`, GAMEHUB wraps `PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `controller-launch` command that:
+    - when `[controllers].launch_autoconfig = true`, GAMEHUB wraps `PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `shortcut-launch` command that:
       - decodes target emulator command payload
       - detects attached controllers (Xbox on non-Deck platforms; built-in controller on Steam Deck)
       - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
+      - runs title-scoped pre-launch save reconciliation when save sync is enabled
       - launches the original emulator command
+      - runs title-scoped post-exit save upload when `save_sync.mode = "bidirectional"` and the remote save did not change during play
    - Linux Steam Deck default shortcut policy:
      - managed shortcuts default to `AllowDesktopConfig = 0` (native-first controller path)
      - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`
@@ -133,7 +135,7 @@ Steam close behavior:
       - without `--reseed-profiles`, existing managed per-title files and override payloads are preserved; `--reseed-profiles` force-rewrites them
       - managed app overrides are always repaired so `UseSteamControllerConfig = 1` for managed app entries
       - managed `Wii`/`N3DS` app entries are written with `DisableCloud = 1`
-    - Linux Steam Deck zero-controller detection in `controller-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
+    - Linux Steam Deck zero-controller detection in `shortcut-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
     - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later release
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 13. Save `state.json`
@@ -144,9 +146,14 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - In `mode = "download"`, save planning is server-authoritative: expected actions are `download` or `skip` only.
 - In `mode = "bidirectional"`, planner decisions may include `upload` and `conflict` in addition to `download`/`skip` according to checksum lineage and `conflict_policy`.
 - `conflict_policy = "prefer_server"` resolves conflict paths toward download decisions.
-- `conflict_policy = "prefer_local"` resolves conflict paths toward upload decisions when server upload capability is available.
+- `conflict_policy = "prefer_local"` resolves conflict paths toward upload decisions.
 - `conflict_policy = "manual"` preserves explicit `conflict` outcomes for operator review.
 - `--dry-run` performs no save writes and no remote mutations; it is the required safety preview for save plan auditing before enabling non-dry execution.
+- Managed shortcut launches use launch-session save sync only; there is no resident background watcher in this release.
+- Pre-launch shortcut sync never auto-uploads.
+- Post-exit shortcut sync uploads only when the local save changed during the session and the remote save is unchanged from the pre-launch snapshot.
+- If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
+- After upgrading to the build that introduces `shortcut-launch`, run one non-dry `gamehub sync` before starting managed shortcuts so Steam commands are rewritten.
 
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.
@@ -203,10 +210,10 @@ Linux path notes:
     - joystick path (`/dev/input/js*`) using configured Azahar button indices
     - evdev fallback (`/dev/input/event*`) using `BTN_SELECT` + `BTN_START`
   - can be disabled by setting `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false` (falls back to direct flatpak launch)
-- Linux Flatpak Dolphin launches wrapped by `controller-launch` include a fail-open `Select+Start` exit hook by default:
+- Linux Flatpak Dolphin launches wrapped by `shortcut-launch` include a fail-open `Select+Start` exit hook by default:
   - monitors `/dev/input/js*` (configurable button indices) and `/dev/input/event*` (`BTN_SELECT` + `BTN_START`)
   - on combo press, issues `flatpak kill org.DolphinEmu.dolphin-emu`
-- Windows Azahar launches wrapped by `controller-launch` include a fail-open `Start+Select` XInput exit hook by default (disable with `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false`).
+- Windows Azahar launches wrapped by `shortcut-launch` include a fail-open `Start+Select` XInput exit hook by default (disable with `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false`).
 
 Windows path notes:
 - If Dolphin is installed by GAMEHUB (default `LOCALAPPDATA/Programs/Dolphin`), the runtime user dir is pinned to `<dolphin-install>/User`.

@@ -357,8 +357,11 @@ def test_planner_uses_configurable_roms_output_dir(workspace_tempdir) -> None:
         assert plan.content_actions[0].destination == temp_root / "sdcard" / "roms" / "NES" / "SuperMarioBros.nes"
 
 
-def test_save_planner_classifies_download_upload_conflict_and_skip(workspace_tempdir) -> None:
+def test_save_planner_classifies_download_upload_conflict_and_skip(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save_root = temp_root / "memcards"
+        save_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.resolve_system_save_root", lambda _system: save_root)
         remote_bytes = [b"remote-0", b"remote-1", b"remote-2", b"remote-3"]
         saves = tuple(
             SaveSpec(
@@ -366,7 +369,7 @@ def test_save_planner_classifies_download_upload_conflict_and_skip(workspace_tem
                 title_id="title_ps2_ffx",
                 system="PS2",
                 kind="memory_card",
-                rel_path=f"saves/PS2/ffx_{index}.ps2",
+                rel_path=f"saves/PS2/Final Fantasy X/memory_card/ffx_{index}.ps2",
                 sha256=_sha256_bytes(payload),
                 size_bytes=len(payload),
                 updated_at=datetime(2026, 1, 1, 12, index, tzinfo=timezone.utc),
@@ -389,14 +392,14 @@ def test_save_planner_classifies_download_upload_conflict_and_skip(workspace_tem
             save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="manual"),
         )
 
-        save_one_path = config.library_dir / "saves" / "PS2" / "ffx_1.ps2"
+        save_one_path = save_root / "ffx_1.ps2"
         save_one_path.parent.mkdir(parents=True, exist_ok=True)
         save_one_path.write_bytes(remote_bytes[1])
 
-        save_two_path = config.library_dir / "saves" / "PS2" / "ffx_2.ps2"
+        save_two_path = save_root / "ffx_2.ps2"
         save_two_path.write_bytes(b"local-edited")
 
-        save_three_path = config.library_dir / "saves" / "PS2" / "ffx_3.ps2"
+        save_three_path = save_root / "ffx_3.ps2"
         save_three_path.write_bytes(b"both-edited")
 
         state = SyncState(

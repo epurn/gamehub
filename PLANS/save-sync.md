@@ -23,7 +23,7 @@
 - No dependency/lockfile/packaging changes unless explicitly required.
 - No repo-wide formatting.
 - Save sync must preserve deterministic behavior, strict matching, atomic writes, and fail-fast schema validation.
-- Initial rollout should default to safe behavior: `save_sync.enabled = false` and download-focused operation until the feature is hardened.
+- Initial rollout should default to safe behavior: `save_sync.enabled = false`, with launch-session bidirectional upload only when explicitly enabled and used through managed shortcuts.
 
 ## Contract Surface
 - Existing contracts touched:
@@ -33,19 +33,19 @@
   - Sync planner action classification and dry-run reporting
 - New/updated contract artifacts:
   - Save artifact schema with `save_id`, `title_id`, `system`, `kind`, `rel_path`, `sha256`, `size_bytes`, `updated_at`, and `portable`
-  - Dedicated save endpoint contract at `/v1/saves/{save_id}` with a frozen upload method before implementation
+  - Dedicated save endpoints at `/v1/saves/{save_id}` for deterministic download and upload
   - Save-specific config keys: `save_sync.enabled`, `save_sync.mode`, `save_sync.conflict_policy`, plus optional system filters
   - Save-specific state keys for checksums, last-sync lineage, and unresolved conflicts
   - Emulator save-path resolver interface for stable local save roots
 - Cross-boundary implications:
   - Common schema and field names must freeze before server and CLI stories proceed in parallel.
-  - Server upload semantics and index refresh behavior must freeze before bidirectional sync stories begin.
+  - Server upload semantics and index refresh behavior must remain aligned with the client lineage contract.
   - Documentation must land in the same work item as any contract or behavior change.
 
 ## Milestones
 1. M1: Freeze the shared save-sync contract surface (schema, IDs, config keys, planner action kinds, and state keys) and document the agreed API/index shape.
 2. M2: Deliver the read path for download-first save sync: server save indexing, server read endpoint, CLI config surface, and planner/state support for deterministic download planning.
-3. M3: Deliver execution and rollout hardening: local save-path resolution, transfer execution, bidirectional upload/conflict handling, and operator-ready docs.
+3. M3: Deliver execution and rollout hardening: local save-path resolution, transfer execution, bidirectional upload/conflict handling, managed shortcut lifecycle sync, and operator-ready docs.
 
 ## Story Contracts
 
@@ -55,7 +55,7 @@
 - Goal: Define and freeze the shared save artifact schema and deterministic save ID contract.
 - Acceptance Criteria (deterministic):
   - [ ] Save artifact models validate strict required fields, enums, and types for index payload consumption.
-  - [ ] A deterministic `save_id` helper is added and documented using canonical server-relative path plus checksum inputs.
+  - [ ] A deterministic `save_id` helper is added and documented using the canonical server-relative path only.
   - [ ] Field names and any index versioning expectations are documented in `docs/index-schema.md`.
 - Non-Goals:
   - Server indexing or HTTP route implementation.
@@ -84,11 +84,11 @@
 ### STORY SAVE-SYNC-SERVER-02
 - Type: SERVER
 - Scope (explicit files/modules allowed): `src/gamehub_server/main.py`, `src/gamehub_server/index_repository.py`, `docs/server-api.md`, `tests/test_server_api.py`
-- Goal: Add the dedicated save API surface for downloading saves and the upload contract needed for later bidirectional sync.
+- Goal: Add the dedicated save API surface for downloading saves and executing uploads for bidirectional sync.
 - Acceptance Criteria (deterministic):
   - [ ] `GET /v1/saves/{save_id}` resolves IDs from the active index snapshot only and streams the matching save artifact.
   - [ ] Unknown IDs return `404` and traversal-style targets are rejected through ID-based lookup only.
-  - [ ] The upload route and snapshot refresh semantics are documented, even if client upload behavior lands later.
+  - [ ] `PUT /v1/saves/{save_id}` writes atomically, refreshes the snapshot, and returns refreshed `SaveSpec` metadata.
 - Non-Goals:
   - Local save discovery or client upload execution.
   - Non-save API refactors.
@@ -133,10 +133,11 @@
 ### STORY SAVE-SYNC-CLI-03
 - Type: CLI
 - Scope (explicit files/modules allowed): `src/gamehub_cli/sync/orchestrator.py`, `src/gamehub_cli/sync/save_stage.py`, `src/gamehub_cli/sync/transfer.py`, `tests/test_sync.py`, `tests/test_downloads.py`
-- Goal: Execute planned save transfers in a dedicated sync stage with atomic writes, dry-run safety, and clear error isolation.
+- Goal: Execute planned save transfers in a dedicated sync stage with atomic writes, dry-run safety, clear error isolation, and managed shortcut session upload support.
 - Acceptance Criteria (deterministic):
   - [ ] Dry-run performs zero save writes while reporting planned save actions.
   - [ ] Non-dry runs stream save transfers through temporary files and commit with atomic rename semantics.
+  - [ ] Bidirectional mode executes real uploads and clears or records conflict state deterministically.
   - [ ] State updates happen only after successful save writes, and partial failures do not corrupt existing save files.
 - Non-Goals:
   - Save path discovery rules for specific emulators.
@@ -150,9 +151,10 @@
 ### STORY SAVE-SYNC-CLI-04
 - Type: CLI
 - Scope (explicit files/modules allowed): `src/gamehub_cli/emulators/`, `src/gamehub_cli/common/paths.py`, `tests/test_emulators.py`, `tests/test_paths.py`
-- Goal: Isolate local save-path resolution per emulator/platform behind a stable resolver surface used by save planning and execution.
+- Goal: Isolate local save-path resolution per emulator/platform behind a stable resolver surface used by save planning, execution, and managed shortcut launches.
 - Acceptance Criteria (deterministic):
   - [ ] Supported emulator/system combinations resolve stable local save roots through a dedicated resolver interface.
+  - [ ] Save planning targets emulator-native save destinations instead of writing under `<gamehub_dir>/saves`.
   - [ ] Platform-specific branches remain isolated and fail open when the expected runtime path is unavailable.
   - [ ] Path normalization remains deterministic across native Windows and Linux test runs.
 - Non-Goals:

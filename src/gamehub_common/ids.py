@@ -29,5 +29,5 @@ def make_asset_id(server_relative_path: str, sha256: str) -> str:
     return _stable_id("asset", f"{server_relative_path}:{sha256}")
 
 
-def make_save_id(server_relative_path: str, sha256: str) -> str:
-    return _stable_id("save", f"{server_relative_path}:{sha256}")
+def make_save_id(server_relative_path: str) -> str:
+    return _stable_id("save", server_relative_path)

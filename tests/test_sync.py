@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig
-from gamehub_cli.controllers.launch import parse_controller_payload
+from gamehub_cli.controllers.launch import parse_shortcut_payload
 from gamehub_cli.sync.orchestrator import (
     _apply_downloads,
     _apply_steam_updates,
@@ -1733,10 +1733,10 @@ def test_build_shortcut_specs_wraps_pcsx2_when_controller_autoconfig_enabled(mon
 
         assert len(specs) == 1
         assert _normalize_path_token(specs[0].exe) == "/usr/bin/python3"
-        assert specs[0].launch_options.startswith("-m gamehub_cli.main controller-launch --payload ")
-        assert "controller-launch --payload" in specs[0].launch_options
+        assert specs[0].launch_options.startswith("-m gamehub_cli.main shortcut-launch --payload ")
+        assert "shortcut-launch --payload" in specs[0].launch_options
         payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
-        payload = parse_controller_payload(payload_token)
+        payload = parse_shortcut_payload(payload_token)
         assert payload.emulator == "pcsx2"
         assert payload.config_path == str(temp_root / "custom-config.toml")
         assert payload.target_exe == "flatpak"
@@ -1785,9 +1785,9 @@ def test_build_shortcut_specs_wrapper_uses_direct_command_for_frozen_exe(monkeyp
 
         assert len(specs) == 1
         assert _normalize_path_token(specs[0].exe) == "C:/GameHub/gamehub-windows-amd64.exe"
-        assert specs[0].launch_options.startswith("controller-launch --payload ")
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
         payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
-        payload = parse_controller_payload(payload_token)
+        payload = parse_shortcut_payload(payload_token)
         assert payload.emulator == "pcsx2"
         assert _normalize_path_token(payload.target_exe) == "C:/PCSX2/pcsx2-qt.exe"
 
@@ -2287,7 +2287,7 @@ def test_build_shortcut_specs_deck_wrapped_shortcuts_preserve_allow_desktop_conf
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert "controller-launch --payload" in specs[0].launch_options
+        assert "shortcut-launch --payload" in specs[0].launch_options
         assert specs[0].allow_desktop_config is False
 
 
@@ -2676,11 +2676,13 @@ def test_run_sync_save_stage_failure_skips_state_write(monkeypatch) -> None:
     assert not config.state_path.exists()
 
 
-def test_apply_save_stage_fails_when_upload_action_is_not_implemented(monkeypatch, workspace_tempdir) -> None:
+def test_apply_save_stage_uploads_and_updates_state(monkeypatch, workspace_tempdir) -> None:
     from gamehub_cli.sync import save_stage
 
     state = SyncState()
     with workspace_tempdir("gamehub-save-stage-upload-") as temp_root:
+        destination = temp_root / "upload.sav"
+        destination.write_bytes(b"local-upload")
         plan = SyncPlan(
             save_actions=[
                 SavePlanAction(
@@ -2691,7 +2693,7 @@ def test_apply_save_stage_fails_when_upload_action_is_not_implemented(monkeypatc
                     decision="upload",
                     reason="local-changed-remote-unchanged",
                     url="/v1/saves/upload",
-                    destination=temp_root / "upload.sav",
+                    destination=destination,
                     expected_sha256="c" * 64,
                     size_bytes=1,
                     remote_updated_at="2026-01-01T00:00:00+00:00",
@@ -2699,15 +2701,26 @@ def test_apply_save_stage_fails_when_upload_action_is_not_implemented(monkeypatc
             ]
         )
 
-    transfer_calls: list[str] = []
+        remote_sha = "d" * 64
+        upload_calls: list[str] = []
 
-    def _unexpected_transfer(**kwargs) -> None:
-        transfer_calls.append(kwargs["url"])
+        def _fake_upload(**kwargs) -> dict[str, object]:
+            upload_calls.append(kwargs["url"])
+            return {
+                "save_id": "save_upload",
+                "title_id": "title_upload",
+                "system": "N64",
+                "kind": "battery",
+                "rel_path": "saves/N64/Example/battery/upload.sav",
+                "sha256": remote_sha,
+                "size_bytes": 12,
+                "updated_at": "2026-01-02T00:00:00+00:00",
+                "portable": True,
+            }
 
-    monkeypatch.setattr("gamehub_cli.sync.save_stage.stream_to_destination_atomic", _unexpected_transfer)
+        monkeypatch.setattr("gamehub_cli.sync.save_stage.upload_file_to_server", _fake_upload)
 
-    with pytest.raises(save_stage.SaveStageError, match="upload-not-implemented"):
-        save_stage.apply_save_stage(
+        result = save_stage.apply_save_stage(
             server_url="http://localhost:8000",
             plan=plan,
             state=state,
@@ -2716,8 +2729,11 @@ def test_apply_save_stage_fails_when_upload_action_is_not_implemented(monkeypatc
             verbose=False,
         )
 
-    assert transfer_calls == []
-    assert state.save_checksums == {}
+        assert result.uploaded == 1
+        assert upload_calls == ["/v1/saves/upload"]
+        assert state.save_checksums == {"save_upload": save_stage.local_file_sha256(destination)}
+        assert state.save_lineage["save_upload"]["remote_sha256"] == remote_sha
+        assert "save_upload" not in state.unresolved_save_conflicts
 
 
 def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatch, workspace_tempdir) -> None:

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import shutil
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import uvicorn
@@ -36,6 +38,21 @@ def _is_safe_segment(value: str) -> bool:
     if not value or value in {".", ".."}:
         return False
     return "/" not in value and "\\" not in value
+
+
+def _backup_existing_save(path: Path) -> Path | None:
+    if not path.exists() or not path.is_file():
+        return None
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    candidate = path.with_name(f"{path.name}.{stamp}.bak")
+    suffix = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}.{stamp}.{suffix}.bak")
+        suffix += 1
+
+    shutil.copy2(path, candidate)
+    return candidate
 
 
 def warm_index_cache() -> None:
@@ -123,15 +140,39 @@ def get_save(save_id: str) -> FileResponse:
 
 
 @app.put("/v1/saves/{save_id}")
-def put_save(save_id: str) -> Response:
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "Save upload is not implemented in this rollout. "
-            "Planned semantics: upload to a temporary file, atomically replace target save, "
-            "then refresh the in-memory index snapshot before returning."
-        ),
-    )
+async def put_save(save_id: str, request: Request) -> dict[str, object]:
+    path = INDEX_REPO.resolve_save_path(save_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"Unknown save_id: {save_id}")
+
+    part_path = path.with_suffix(f"{path.suffix}.part")
+    bytes_written = 0
+    try:
+        backup_path = _backup_existing_save(path)
+        if backup_path is not None:
+            logger.info("save upload backup created save_id=%s rel_path=%s backup=%s", save_id, path, backup_path)
+        with part_path.open("wb") as handle:
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                handle.write(chunk)
+                bytes_written += len(chunk)
+            handle.flush()
+            os.fsync(handle.fileno())
+        part_path.replace(path)
+    except Exception as exc:
+        logger.exception("save upload failed save_id=%s rel_path=%s", save_id, path)
+        try:
+            part_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to store save upload: {exc}") from exc
+
+    save = INDEX_REPO.resolve_save_spec(save_id, force_refresh=True)
+    if save is None:
+        raise HTTPException(status_code=500, detail=f"Uploaded save missing after refresh: {save_id}")
+    logger.info("save upload completed save_id=%s rel_path=%s bytes=%d", save_id, save.rel_path, bytes_written)
+    return save.model_dump(mode="json")
 
 
 @app.get("/v1/firmware/{system}/{filename}")

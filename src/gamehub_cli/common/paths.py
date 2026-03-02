@@ -3,6 +3,13 @@ from __future__ import annotations
 import re
 from pathlib import Path, PurePosixPath
 
+__all__ = [
+    "from_rel_path",
+    "normalized_local_path",
+    "resolve_rom_destination",
+    "strip_rel_path_root",
+]
+
 
 def _normalized_posix_parts(rel_path: str) -> tuple[str, ...]:
     rel = PurePosixPath(rel_path)

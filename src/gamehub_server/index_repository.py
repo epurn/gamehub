@@ -8,7 +8,7 @@ import threading
 import time
 from pathlib import Path
 
-from gamehub_common.models import FirmwareSpec, LibraryIndex, TitleEntry
+from gamehub_common.models import FirmwareSpec, LibraryIndex, SaveSpec, TitleEntry
 
 from .indexer import FIRMWARE_ROOT_NAME, SAVES_ROOT_NAME, IndexBundle, build_index
 from .logging_utils import get_server_logger
@@ -393,6 +393,13 @@ class IndexRepository:
         if path is None or not path.exists() or not path.is_file():
             return None
         return path
+
+    def resolve_save_spec(self, save_id: str, *, force_refresh: bool = False) -> SaveSpec | None:
+        bundle = self.load(force_refresh=force_refresh) if force_refresh else self.load(check_sources=False)
+        for save in bundle.index.saves:
+            if save.save_id == save_id:
+                return save
+        return None
 
     def _poll_loop(self) -> None:
         logger.info(

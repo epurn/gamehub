@@ -18,9 +18,9 @@ Base URL: `http://<host>:8000`
   - Streams save file content for `save_id` values present in the active in-memory `/v1/index` snapshot
   - `404` for unknown `save_id` (including traversal-like target strings, because lookup is ID-based only)
 - `PUT /v1/saves/{save_id}`
-  - Upload contract placeholder for bidirectional save sync
-  - Current rollout returns `501 Not Implemented`
-  - Frozen target semantics for implementation stories: stream to temporary `.part`, atomically replace the target save file, then refresh the in-memory index snapshot before responding
+  - Accepts raw save bytes for the indexed `save_id`
+  - Streams to a temporary `.part` file, atomically replaces the target save file, refreshes the in-memory index snapshot, then returns the refreshed `SaveSpec` JSON
+  - `404` for unknown `save_id`
 - `GET /v1/firmware/{system}/{filename}`
   - Streams raw firmware file from `firmware/<system>/<filename>`
   - `404` when file is missing
@@ -69,5 +69,5 @@ Base URL: `http://<host>:8000`
 
 ## Save endpoint behavior by rollout mode
 - Download mode clients call `GET /v1/saves/{save_id}` only for saves selected by planner policy and checksum lineage.
-- Bidirectional mode is contract-frozen but not yet active on the server until `PUT /v1/saves/{save_id}` is implemented; clients must treat current `501` as expected server capability limitation.
+- Bidirectional mode uses `PUT /v1/saves/{save_id}` for upload actions selected by client policy.
 - Unknown IDs always return `404`; clients must not attempt path-like probing or filename-based fallback lookups.

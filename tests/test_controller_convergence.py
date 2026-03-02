@@ -240,7 +240,9 @@ def test_controller_convergence_force_archives_extra_unmanaged_profile_file(work
 
 
 def test_controller_convergence_runtime_selection_rules_remain_autodetect() -> None:
-    rules = format_runtime_selection_rules(build_controller_convergence_plan(_config(Path("gamehub"))).runtime_selection)
+    rules = format_runtime_selection_rules(
+        build_controller_convergence_plan(_config(Path("gamehub"))).runtime_selection
+    )
     assert rules == "0->kbm,1->xbox_1p,2+->xbox_2p"
     assert profile_name_for_controller_count(0) == PROFILE_KBM
     assert profile_name_for_controller_count(1) == PROFILE_XBOX_1P

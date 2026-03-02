@@ -886,9 +886,7 @@ def test_apply_controller_profile_azahar_rebinds_managed_buttons_from_keyboard_t
         text = qt_config.read_text(encoding="utf-8")
 
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
-        assert (
-            r'profiles\1\button_select="button:4,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
-        )
+        assert r'profiles\1\button_select="button:4,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
         assert r'profiles\1\touch_device="engine:mouse,index:0"' in text
 
 

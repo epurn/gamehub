@@ -268,9 +268,8 @@ def test_build_index_includes_canonical_save_metadata(workspace_tempdir) -> None
         assert len(bundle.index.saves) == 1
         save = bundle.index.saves[0]
         save_rel = "saves/NES/SuperMarioBros/battery/slot1.srm"
-        save_sha = sha256_file(save_path)
         assert save.rel_path == save_rel
-        assert save.save_id == make_save_id(save_rel, save_sha)
+        assert save.save_id == make_save_id(save_rel)
         assert save.title_id == make_title_id("NES", "NES/SuperMarioBros.nes")
         assert save.kind == "battery"
         assert save.portable is True
@@ -301,3 +300,18 @@ def test_build_index_rejects_unknown_save_kind(workspace_tempdir) -> None:
 
         with pytest.raises(ValueError, match="unknown save kind"):
             build_index(root)
+
+
+def test_build_index_allows_nested_per_game_save_trees(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
+        _write_file(root / "saves" / "Wii" / "MarioGalaxy" / "per_game" / "title" / "banner.bin", b"banner")
+        _write_file(root / "saves" / "Wii" / "MarioGalaxy" / "per_game" / "profiles" / "slot1.dat", b"profile")
+
+        bundle = build_index(root)
+
+        rel_paths = {save.rel_path for save in bundle.index.saves}
+        assert rel_paths == {
+            "saves/Wii/MarioGalaxy/per_game/profiles/slot1.dat",
+            "saves/Wii/MarioGalaxy/per_game/title/banner.bin",
+        }

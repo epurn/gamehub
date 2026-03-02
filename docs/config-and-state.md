@@ -160,7 +160,7 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Azahar exit hook (default `6`).
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Azahar exit hook (for example `/dev/input/js0`).
 - `GAMEHUB_AZAHAR_SDL_DIR`: optional directory containing Azahar's `SDL2.dll` for Windows GUID discovery.
-- `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`: enables/disables Linux Dolphin Flatpak `Select+Start` exit hook wrapper in `controller-launch` (`true` by default).
+- `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`: enables/disables Linux Dolphin Flatpak `Select+Start` exit hook wrapper in `shortcut-launch` (`true` by default).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
@@ -187,8 +187,10 @@ Mode behavior reference:
 - `mode=download`: planner may emit `download` or `skip`; `upload` actions are suppressed.
 - `mode=bidirectional`: planner may emit `download`, `upload`, `conflict`, or `skip` based on checksum lineage and `conflict_policy`.
 - `conflict_policy=prefer_server`: conflict path converges to server copy (planned `download`).
-- `conflict_policy=prefer_local`: conflict path converges to local copy (planned `upload` once upload endpoint support exists).
+- `conflict_policy=prefer_local`: conflict path converges to local copy (planned `upload`).
 - `conflict_policy=manual`: planner emits `conflict` and records unresolved entries in state until operator intervention.
+- In `mode=bidirectional`, managed `shortcut-launch` sessions run pre-launch download/skip/conflict reconciliation, then attempt post-exit upload only when the remote save did not change during play.
+- There is no background save watcher service in this release; unmanaged emulator launches reconcile on the next `gamehub sync` or next managed launch.
 
 Dry-run expectations for save sync:
 - Dry-run never writes local save files and never mutates remote save artifacts.
@@ -212,11 +214,12 @@ RetroArch note:
 - GAMEHUB also ensures `swanstation_Controller1.Type = "AnalogController"` and `swanstation_Controller2.Type = "AnalogController"` in `retroarch-core-options.cfg` so PSX games default to DualShock-style pads.
 - On Windows, GAMEHUB keeps PSX controller overrides out of `retroarch.cfg` and applies them only via the Swanstation core remap file.
 
-Controller launch autoconfig:
+Managed shortcut launch autoconfig:
 - Applies to Steam shortcut launches for `PCSX2`, `Dolphin`, and `Azahar`.
 - Does not wrap `RetroArch` launches.
 - Runtime flow: detect Xbox controller count (`0`, `1`, `2+`) -> choose profile (`kbm`, `xbox_1p`, `xbox_2p`) -> apply managed keys -> launch emulator.
-- Linux Steam Deck controller-launch uses a single detect pass and applies `xbox_1p` when detection returns zero.
+- The hidden wrapper command is `shortcut-launch`; older `controller-launch` shortcuts must be rewritten by a non-dry `gamehub sync` after upgrade.
+- Linux Steam Deck `shortcut-launch` uses a single detect pass and applies `xbox_1p` when detection returns zero.
 - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later update.
 - Non-Deck platforms keep standard behavior (`0 -> kbm`).
 - Azahar controller-mode apply keeps pointer/touch keys preservation-first, while managed button keys are always normalized from profile mappings.
@@ -273,8 +276,8 @@ N3DS Azahar defaults:
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
 - On Linux, GAMEHUB uses a wrapper launch hook by default to close Azahar when `Select+Start` is pressed (native-controller mode).
-- On Windows, GAMEHUB uses a controller-launch XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
-- On Linux Flatpak Dolphin launches wrapped by `controller-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
+- On Windows, GAMEHUB uses a `shortcut-launch` XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
+- On Linux Flatpak Dolphin launches wrapped by `shortcut-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
 
 ## State file
 - Format: JSON

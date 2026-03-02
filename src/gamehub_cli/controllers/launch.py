@@ -11,9 +11,23 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
+from typing import Any, Callable
+from urllib.parse import urljoin
 
-from ..common.config import load_config
+from gamehub_common.models import LibraryIndex, SaveSpec
+
+from ..common.config import GamehubConfig, load_config
+from ..common.save_sync import (
+    build_save_lineage_record,
+    classify_save_action,
+    local_file_sha256,
+    local_file_updated_at,
+    timestamp_now_utc,
+    to_utc_timestamp,
+)
+from ..emulators.save_resolution import resolve_local_save_destination
 from . import azahar_exit_hook
 from .apply import apply_controller_profile, apply_named_controller_profile
 from .detection import detect_xbox_controllers, is_steam_deck_linux
@@ -120,16 +134,19 @@ def _monitor_windows_azahar_exit_combo(process: subprocess.Popen[bytes]) -> None
 
 
 @dataclass(frozen=True)
-class ControllerLaunchPayload:
+class ShortcutLaunchPayload:
     version: int
     emulator: str
     target_exe: str
     target_args: tuple[str, ...]
     start_dir: str = ""
     config_path: str | None = None
+    title_id: str | None = None
+    system: str | None = None
+    rom_rel_path: str | None = None
 
 
-def encode_controller_payload(payload: dict[str, object]) -> str:
+def encode_shortcut_payload(payload: dict[str, object]) -> str:
     raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     token = base64.urlsafe_b64encode(raw).decode("ascii")
     return token.rstrip("=")
@@ -140,7 +157,7 @@ def _decode_payload_token(token: str) -> dict[str, object]:
     raw = base64.urlsafe_b64decode(padded.encode("ascii"))
     decoded = json.loads(raw.decode("utf-8"))
     if not isinstance(decoded, dict):
-        raise ValueError("Controller launch payload must decode to a JSON object")
+        raise ValueError("Shortcut launch payload must decode to a JSON object")
     return decoded
 
 
@@ -170,15 +187,15 @@ def _parse_payload_version(raw: object) -> int:
     return 1
 
 
-def parse_controller_payload(token: str) -> ControllerLaunchPayload:
+def parse_shortcut_payload(token: str) -> ShortcutLaunchPayload:
     payload = _decode_payload_token(token)
     version = _parse_payload_version(payload.get("v", 1))
     emulator = str(payload.get("emulator", "")).strip().casefold()
     target_exe = str(payload.get("target_exe", "")).strip()
     if not emulator:
-        raise ValueError("Controller launch payload missing emulator")
+        raise ValueError("Shortcut launch payload missing emulator")
     if not target_exe:
-        raise ValueError("Controller launch payload missing target_exe")
+        raise ValueError("Shortcut launch payload missing target_exe")
 
     target_args = _parse_target_args(payload.get("target_args"))
     if not target_args and isinstance(payload.get("target_launch_options"), str):
@@ -186,13 +203,24 @@ def parse_controller_payload(token: str) -> ControllerLaunchPayload:
     start_dir = _strip_wrapping_quotes(str(payload.get("start_dir", "")).strip())
     config_path = payload.get("config_path")
     config_path_str = str(config_path).strip() if isinstance(config_path, str) and config_path.strip() else None
-    return ControllerLaunchPayload(
+    title_id_raw = payload.get("title_id")
+    system_raw = payload.get("system")
+    rom_rel_path_raw = payload.get("rom_rel_path")
+    title_id = str(title_id_raw).strip() if isinstance(title_id_raw, str) and title_id_raw.strip() else None
+    system = str(system_raw).strip() if isinstance(system_raw, str) and system_raw.strip() else None
+    rom_rel_path = (
+        str(rom_rel_path_raw).strip() if isinstance(rom_rel_path_raw, str) and rom_rel_path_raw.strip() else None
+    )
+    return ShortcutLaunchPayload(
         version=version,
         emulator=emulator,
         target_exe=target_exe,
         target_args=target_args,
         start_dir=start_dir,
         config_path=config_path_str,
+        title_id=title_id,
+        system=system,
+        rom_rel_path=rom_rel_path,
     )
 
 
@@ -210,7 +238,7 @@ def _strip_wrapping_quotes(value: str) -> str:
     return stripped
 
 
-def _resolve_config_path(override_config_path: Path | None, payload: ControllerLaunchPayload) -> Path | None:
+def _resolve_config_path(override_config_path: Path | None, payload: ShortcutLaunchPayload) -> Path | None:
     if override_config_path is not None:
         return override_config_path.expanduser()
     if payload.config_path:
@@ -254,7 +282,7 @@ def _discover_js_devices(env_name: str) -> list[str]:
     return devices
 
 
-def _payload_targets_flatpak_app(payload: ControllerLaunchPayload, *, app_id: str) -> bool:
+def _payload_targets_flatpak_app(payload: ShortcutLaunchPayload, *, app_id: str) -> bool:
     target_exe = _unquote_executable(payload.target_exe).strip().casefold()
     if target_exe != "flatpak":
         return False
@@ -262,7 +290,7 @@ def _payload_targets_flatpak_app(payload: ControllerLaunchPayload, *, app_id: st
     return "run" in args_folded and app_id.casefold() in args_folded
 
 
-def _should_use_windows_azahar_exit_hook(payload: ControllerLaunchPayload) -> bool:
+def _should_use_windows_azahar_exit_hook(payload: ShortcutLaunchPayload) -> bool:
     if not sys.platform.startswith("win"):
         return False
     if "azahar" not in payload.emulator:
@@ -270,7 +298,7 @@ def _should_use_windows_azahar_exit_hook(payload: ControllerLaunchPayload) -> bo
     return _env_enabled(_AZAHAR_WINDOWS_EXIT_HOOK_ENV, default=True)
 
 
-def _should_use_linux_dolphin_exit_hook(payload: ControllerLaunchPayload) -> bool:
+def _should_use_linux_dolphin_exit_hook(payload: ShortcutLaunchPayload) -> bool:
     if not sys.platform.startswith("linux"):
         return False
     if "dolphin" not in payload.emulator:
@@ -280,7 +308,7 @@ def _should_use_linux_dolphin_exit_hook(payload: ControllerLaunchPayload) -> boo
     return _payload_targets_flatpak_app(payload, app_id=_DOLPHIN_FLATPAK_APP_ID)
 
 
-def _run_linux_dolphin_target_with_exit_hook(payload: ControllerLaunchPayload) -> int:
+def _run_linux_dolphin_target_with_exit_hook(payload: ShortcutLaunchPayload) -> int:
     executable = _unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
     cwd = None
@@ -307,7 +335,7 @@ def _run_linux_dolphin_target_with_exit_hook(payload: ControllerLaunchPayload) -
     return int(azahar_exit_hook._wait_for_session_exit(process, _DOLPHIN_FLATPAK_APP_ID))
 
 
-def _run_windows_azahar_target_with_exit_hook(payload: ControllerLaunchPayload) -> int:
+def _run_windows_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> int:
     executable = _unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
     cwd = None
@@ -321,7 +349,7 @@ def _run_windows_azahar_target_with_exit_hook(payload: ControllerLaunchPayload) 
     return int(process.wait())
 
 
-def _run_target(payload: ControllerLaunchPayload) -> int:
+def _run_target(payload: ShortcutLaunchPayload) -> int:
     executable = _unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
     cwd = None
@@ -333,7 +361,7 @@ def _run_target(payload: ControllerLaunchPayload) -> int:
     return int(process.wait())
 
 
-def _run_target_with_optional_exit_hook(payload: ControllerLaunchPayload) -> int:
+def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:
     if _should_use_windows_azahar_exit_hook(payload):
         try:
             return _run_windows_azahar_target_with_exit_hook(payload)
@@ -354,10 +382,260 @@ def _detect_controller_count_once(*, max_devices: int = 2) -> tuple[int, Excepti
         return 0, exc
 
 
-def run_controller_launch(*, payload_token: str, config_path: Path | None = None, audit: bool = False) -> int:
-    payload = parse_controller_payload(payload_token)
+@dataclass(frozen=True)
+class _ShortcutSaveSnapshot:
+    destination: Path | None
+    local_sha256: str | None
+    remote_sha256: str
+    allow_postexit_upload: bool
+
+
+def _load_shortcut_index(config: GamehubConfig, *, verbose: bool) -> LibraryIndex | None:
+    try:
+        index_module = import_module("gamehub_cli.sync.index")
+        fetch_index_with_retries = index_module.fetch_index_with_retries
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: save sync could not load index fetch helper ({exc})")
+        return None
+
+    timeout_seconds = config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0
+    index_url = urljoin(config.server_url.rstrip("/") + "/", "v1/index")
+    try:
+        raw_index = fetch_index_with_retries(
+            index_url=index_url,
+            timeout_seconds=timeout_seconds,
+            attempts=config.index_fetch_attempts,
+            retry_backoff_seconds=config.index_retry_backoff_seconds,
+            verbose=verbose,
+        )
+        return LibraryIndex.model_validate(raw_index)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: save sync index fetch failed ({exc})")
+        return None
+
+
+def _load_shortcut_state(path: Path) -> Any:
+    state_module = import_module("gamehub_cli.sync.state")
+    return state_module.load_state(path)
+
+
+def _save_shortcut_state(path: Path, state: Any) -> None:
+    state_module = import_module("gamehub_cli.sync.state")
+    state_module.save_state_atomic(path, state)
+
+
+def _download_save_to_destination(
+    *,
+    server_url: str,
+    save_id: str,
+    destination: Path,
+    expected_sha256: str,
+    timeout_seconds: float,
+) -> None:
+    transfer_module = import_module("gamehub_cli.sync.transfer")
+    transfer_module.stream_to_destination_atomic(
+        server_url=server_url,
+        url=f"/v1/saves/{save_id}",
+        destination=destination,
+        expected_sha256=expected_sha256,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _upload_save_from_path(
+    *,
+    server_url: str,
+    save_id: str,
+    source: Path,
+    timeout_seconds: float,
+) -> SaveSpec:
+    transfer_module = import_module("gamehub_cli.sync.transfer")
+    payload = transfer_module.upload_file_to_server(
+        server_url=server_url,
+        url=f"/v1/saves/{save_id}",
+        source=source,
+        timeout_seconds=timeout_seconds,
+    )
+    return SaveSpec.model_validate(payload)
+
+
+def _iter_title_saves(index: LibraryIndex, title_id: str) -> tuple[SaveSpec, ...]:
+    return tuple(
+        sorted(
+            (save for save in index.saves if save.title_id == title_id),
+            key=lambda item: (item.system, item.rel_path, item.save_id),
+        )
+    )
+
+
+def _record_shortcut_save_sync(state: Any, save: SaveSpec, destination: Path, *, local_sha256: str) -> None:
+    state.save_checksums[save.save_id] = local_sha256
+    state.save_lineage[save.save_id] = build_save_lineage_record(
+        local_sha256=local_sha256,
+        remote_sha256=save.sha256,
+        local_updated_at=local_file_updated_at(destination),
+        remote_updated_at=to_utc_timestamp(save.updated_at),
+        synced_at=timestamp_now_utc(),
+    )
+    state.unresolved_save_conflicts.pop(save.save_id, None)
+
+
+def _should_sync_shortcut_saves(payload: ShortcutLaunchPayload, config: GamehubConfig) -> bool:
+    if not config.save_sync.enabled:
+        return False
+    if not payload.title_id:
+        return False
+    if config.save_sync.systems and payload.system and payload.system.upper() not in config.save_sync.systems:
+        return False
+    return True
+
+
+def _run_shortcut_prelaunch_save_sync(
+    *,
+    payload: ShortcutLaunchPayload,
+    config: GamehubConfig,
+    state: Any,
+    verbose: bool,
+    audit: bool,
+) -> tuple[dict[str, _ShortcutSaveSnapshot], bool]:
+    snapshots: dict[str, _ShortcutSaveSnapshot] = {}
+    if not _should_sync_shortcut_saves(payload, config):
+        return snapshots, False
+
+    index = _load_shortcut_index(config, verbose=verbose)
+    if index is None or payload.title_id is None:
+        return snapshots, False
+
+    state_changed = False
+    for save in _iter_title_saves(index, payload.title_id):
+        destination = resolve_local_save_destination(save)
+        local_sha = local_file_sha256(destination) if destination is not None else None
+        allow_postexit_upload = True
+        if destination is None:
+            reason = "save-path-unavailable"
+            snapshots[save.save_id] = _ShortcutSaveSnapshot(
+                destination=None,
+                local_sha256=None,
+                remote_sha256=save.sha256,
+                allow_postexit_upload=False,
+            )
+            if verbose or audit:
+                print(f"shortcut-save\tprelaunch\tskip\t{save.save_id}\t{reason}")
+            continue
+
+        lineage = state.save_lineage.get(save.save_id, {})
+        decision, reason = classify_save_action(
+            save_sha256=save.sha256,
+            local_sha256=local_sha,
+            mode=config.save_sync.mode,
+            conflict_policy=config.save_sync.conflict_policy,
+            lineage_local_sha=lineage.get("local_sha256"),
+            lineage_remote_sha=lineage.get("remote_sha256"),
+        )
+        if decision == "conflict":
+            state.unresolved_save_conflicts[save.save_id] = reason
+            allow_postexit_upload = False
+            state_changed = True
+        elif decision == "download":
+            try:
+                _download_save_to_destination(
+                    server_url=config.server_url,
+                    save_id=save.save_id,
+                    destination=destination,
+                    expected_sha256=save.sha256,
+                    timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
+                )
+                local_sha = local_file_sha256(destination)
+                if local_sha is not None:
+                    _record_shortcut_save_sync(state, save, destination, local_sha256=local_sha)
+                    state_changed = True
+            except Exception as exc:  # noqa: BLE001
+                print(f"Warning: pre-launch save sync failed for {save.save_id} ({exc})")
+        if verbose or audit:
+            action_label = "keep-local" if decision == "upload" else decision
+            print(f"shortcut-save\tprelaunch\t{action_label}\t{save.save_id}\t{reason}")
+        snapshots[save.save_id] = _ShortcutSaveSnapshot(
+            destination=destination,
+            local_sha256=local_sha,
+            remote_sha256=save.sha256,
+            allow_postexit_upload=allow_postexit_upload,
+        )
+    return snapshots, state_changed
+
+
+def _run_shortcut_postexit_save_sync(
+    *,
+    payload: ShortcutLaunchPayload,
+    config: GamehubConfig,
+    state: Any,
+    snapshots: dict[str, _ShortcutSaveSnapshot],
+    verbose: bool,
+    audit: bool,
+) -> bool:
+    if config.save_sync.mode != "bidirectional" or not snapshots:
+        return False
+    if not _should_sync_shortcut_saves(payload, config):
+        return False
+
+    index = _load_shortcut_index(config, verbose=verbose)
+    if index is None or payload.title_id is None:
+        return False
+
+    current_saves = {save.save_id: save for save in _iter_title_saves(index, payload.title_id)}
+    state_changed = False
+    for save_id, snapshot in snapshots.items():
+        if snapshot.destination is None or not snapshot.allow_postexit_upload:
+            continue
+        local_sha = local_file_sha256(snapshot.destination)
+        if local_sha is None or local_sha == snapshot.local_sha256:
+            continue
+        save = current_saves.get(save_id)
+        if save is None or save.sha256 != snapshot.remote_sha256:
+            state.unresolved_save_conflicts[save_id] = "remote-changed-during-session"
+            state_changed = True
+            if verbose or audit:
+                print(f"shortcut-save\tpostexit\tconflict\t{save_id}\tremote-changed-during-session")
+            continue
+        try:
+            updated_save = _upload_save_from_path(
+                server_url=config.server_url,
+                save_id=save_id,
+                source=snapshot.destination,
+                timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
+            )
+            state.save_checksums[save_id] = local_sha
+            state.save_lineage[save_id] = build_save_lineage_record(
+                local_sha256=local_sha,
+                remote_sha256=updated_save.sha256,
+                local_updated_at=local_file_updated_at(snapshot.destination),
+                remote_updated_at=to_utc_timestamp(updated_save.updated_at),
+                synced_at=timestamp_now_utc(),
+            )
+            state.unresolved_save_conflicts.pop(save_id, None)
+            state_changed = True
+            if verbose or audit:
+                print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-upload")
+        except Exception as exc:  # noqa: BLE001
+            print(f"Warning: post-exit save upload failed for {save_id} ({exc})")
+    return state_changed
+
+
+def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, audit: bool = False) -> int:
+    payload = parse_shortcut_payload(payload_token)
     resolved_config = _resolve_config_path(config_path, payload)
     config = load_config(resolved_config)
+    state: Any = None
+    save_state: Callable[[Path, Any], None] | None = None
+    state_changed = False
+
+    if _should_sync_shortcut_saves(payload, config):
+        try:
+            state = _load_shortcut_state(config.state_path)
+            save_state = _save_shortcut_state
+        except Exception as exc:  # noqa: BLE001
+            print(f"Warning: save sync state helpers unavailable ({exc})")
+            state = None
+            save_state = None
 
     if "azahar" in payload.emulator:
         target_exe = _unquote_executable(payload.target_exe)
@@ -439,4 +717,29 @@ def run_controller_launch(*, payload_token: str, config_path: Path | None = None
                     "Warning: keyboard/mouse fallback profile application failed "
                     f"(emulator={payload.emulator}, error={fallback_exc})"
                 )
-    return _run_target_with_optional_exit_hook(payload)
+    snapshots: dict[str, _ShortcutSaveSnapshot] = {}
+    if state is not None:
+        snapshots, prelaunch_changed = _run_shortcut_prelaunch_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            verbose=False,
+            audit=audit,
+        )
+        state_changed = state_changed or prelaunch_changed
+
+    exit_code = _run_target_with_optional_exit_hook(payload)
+
+    if state is not None:
+        postexit_changed = _run_shortcut_postexit_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            snapshots=snapshots,
+            verbose=False,
+            audit=audit,
+        )
+        state_changed = state_changed or postexit_changed
+        if state_changed and save_state is not None:
+            save_state(config.state_path, state)
+    return exit_code

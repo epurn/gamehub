@@ -5,8 +5,10 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 from ..common.fsops import replace_file
+from ..common.save_sync import SaveLineageRecord
 
 BOOTSTRAP_VERSION = 1
 
@@ -16,7 +18,7 @@ class SyncState:
     downloaded_checksums: dict[str, str] = field(default_factory=dict)
     firmware_checksums: dict[str, str] = field(default_factory=dict)
     save_checksums: dict[str, str] = field(default_factory=dict)
-    save_lineage: dict[str, dict[str, str]] = field(default_factory=dict)
+    save_lineage: dict[str, SaveLineageRecord] = field(default_factory=dict)
     unresolved_save_conflicts: dict[str, str] = field(default_factory=dict)
     tombstones: list[str] = field(default_factory=list)
     last_sync: str | None = None
@@ -29,7 +31,7 @@ class SyncState:
             firmware_checksums=dict(data.get("firmware_checksums", {})),
             save_checksums=dict(data.get("save_checksums", {})),
             save_lineage={
-                save_id: dict(lineage)
+                save_id: cast(SaveLineageRecord, dict(lineage))
                 for save_id, lineage in dict(data.get("save_lineage", {})).items()
                 if isinstance(save_id, str) and isinstance(lineage, dict)
             },

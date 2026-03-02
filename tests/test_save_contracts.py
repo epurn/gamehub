@@ -55,18 +55,16 @@ def test_save_spec_requires_declared_fields() -> None:
         )
 
 
-def test_make_save_id_is_deterministic_and_checksum_sensitive() -> None:
+def test_make_save_id_is_deterministic_and_path_stable() -> None:
     path = "saves/PS2/Final Fantasy X/Mcd001.ps2"
-    checksum_a = "a" * 64
-    checksum_b = "b" * 64
 
-    first = make_save_id(path, checksum_a)
-    second = make_save_id(path, checksum_a)
-    changed = make_save_id(path, checksum_b)
+    first = make_save_id(path)
+    second = make_save_id(path)
+    moved = make_save_id("saves/PS2/Final Fantasy X/Mcd002.ps2")
 
     assert first == second
     assert first.startswith("save_")
-    assert first != changed
+    assert first != moved
 
 
 def test_library_index_accepts_saves_collection() -> None:

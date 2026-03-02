@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
-import re
+from importlib import import_module
 from pathlib import Path, PurePosixPath
-from typing import Callable
+from typing import Callable, cast
+
+from gamehub_common.models import SaveSpec
 
 from .resolution import resolve_emulator_executable
 
@@ -21,6 +23,7 @@ _SYSTEM_DEFAULT_EMULATOR = {
     "GEN_MD": "retroarch",
     "N64": "retroarch",
     "NDS": "retroarch",
+    "N3DS": "azahar",
     "NES": "retroarch",
     "PSX": "retroarch",
     "SNES": "retroarch",
@@ -30,31 +33,14 @@ _SYSTEM_DEFAULT_EMULATOR = {
 }
 
 
+def _normalized_local_path(value: str | Path) -> Path:
+    helper = import_module("gamehub_cli.common.paths")
+    normalizer = cast(Callable[[str | Path], Path], helper.normalized_local_path)
+    return normalizer(value)
+
+
 def default_emulator_for_system(system: str) -> str | None:
     return _SYSTEM_DEFAULT_EMULATOR.get(system.strip().upper())
-
-
-def _normalized_local_path(value: str | Path) -> Path:
-    raw = str(value).strip().strip('"')
-    if not raw:
-        return Path()
-
-    normalized_raw = raw.replace("\\", "/")
-    drive_match = re.match(r"^([A-Za-z]:)/(.*)$", normalized_raw)
-    if drive_match is not None:
-        drive = drive_match.group(1)
-        remainder = drive_match.group(2)
-        posix = PurePosixPath(remainder)
-        parts = tuple(part for part in posix.parts if part not in {"", "."})
-        if not parts:
-            return Path(f"{drive}/")
-        return Path(f"{drive}/", *parts)
-
-    posix = PurePosixPath(normalized_raw)
-    parts = tuple(part for part in posix.parts if part not in {"", "."})
-    if not parts:
-        return Path()
-    return Path(*parts)
 
 
 def _parse_simple_kv_config(path: Path) -> dict[str, str]:
@@ -151,20 +137,27 @@ def _pcsx2_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
     return _existing_dir(home / ".config" / "PCSX2" / "memcards")
 
 
-def _dolphin_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
+def _dolphin_data_root(resolve_executable: Callable[[str], str]) -> Path | None:
     resolved = resolve_executable("dolphin").strip().strip('"')
     if resolved and _is_flatpak_command(resolved, _DOLPHIN_FLATPAK_APP_ID):
         home = _normalized_local_path(Path.home())
-        return _existing_dir(home / ".var" / "app" / _DOLPHIN_FLATPAK_APP_ID / "data" / "dolphin-emu" / "GC")
+        return _existing_dir(home / ".var" / "app" / _DOLPHIN_FLATPAK_APP_ID / "data" / "dolphin-emu")
 
     if _OS_NAME == "nt":
         documents = os.environ.get("USERPROFILE")
         if not documents:
             return None
-        return _existing_dir(_normalized_local_path(documents) / "Documents" / "Dolphin Emulator" / "GC")
+        return _existing_dir(_normalized_local_path(documents) / "Documents" / "Dolphin Emulator")
 
     home = _normalized_local_path(Path.home())
-    return _existing_dir(home / ".local" / "share" / "dolphin-emu" / "GC")
+    return _existing_dir(home / ".local" / "share" / "dolphin-emu")
+
+
+def _dolphin_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
+    root = _dolphin_data_root(resolve_executable)
+    if root is None:
+        return None
+    return _existing_dir(root / "GC")
 
 
 def _azahar_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
@@ -181,6 +174,19 @@ def _azahar_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
 
     home = _normalized_local_path(Path.home())
     return _existing_dir(home / ".local" / "share" / "azahar-emu" / "sdmc")
+
+
+def resolve_local_save_destination(save: SaveSpec) -> Path | None:
+    root = resolve_system_save_root(save.system)
+    if root is None:
+        return None
+    parts = tuple(part for part in PurePosixPath(save.rel_path).parts if part not in {"", "."})
+    if len(parts) < 5:
+        return None
+    suffix_parts = parts[4:]
+    if save.kind in {"battery", "memory_card"}:
+        return root / suffix_parts[-1]
+    return root.joinpath(*suffix_parts)
 
 
 def resolve_emulator_save_root(
@@ -207,7 +213,18 @@ def resolve_system_save_root(
     *,
     resolve_executable: Callable[[str], str] = resolve_emulator_executable,
 ) -> Path | None:
-    default = default_emulator_for_system(system)
+    normalized = system.strip().upper()
+    if normalized == "GC":
+        root = _dolphin_data_root(resolve_executable)
+        if root is None:
+            return None
+        return _existing_dir(root / "GC")
+    if normalized == "WII":
+        root = _dolphin_data_root(resolve_executable)
+        if root is None:
+            return None
+        return _existing_dir(root / "Wii")
+    default = default_emulator_for_system(normalized)
     if default is None:
         return None
     return resolve_emulator_save_root(default, resolve_executable=resolve_executable)

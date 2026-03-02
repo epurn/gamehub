@@ -367,7 +367,9 @@ def test_deploy_firmware_configures_retroarch_steam_deck_joypad_driver(monkeypat
         cfg_path = temp_root / "retroarch" / "retroarch.cfg"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         cfg_path.write_text('input_joypad_driver = "udev"\n', encoding="utf-8")
-        monkeypatch.setattr("gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir])
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir]
+        )
         monkeypatch.setattr(
             "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
         )
@@ -391,7 +393,9 @@ def test_deploy_firmware_retroarch_non_deck_keeps_existing_joypad_driver(monkeyp
         cfg_path = temp_root / "retroarch" / "retroarch.cfg"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         cfg_path.write_text('input_joypad_driver = "udev"\n', encoding="utf-8")
-        monkeypatch.setattr("gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir])
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.deploy.target_dirs_for_system", lambda _name, config=None: [target_dir]
+        )
         monkeypatch.setattr(
             "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
         )
@@ -488,7 +492,9 @@ def test_resolve_dolphin_runtime_user_dir_ignores_legacy_linux_path(monkeypatch,
         monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "/usr/bin/dolphin")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "/usr/bin/dolphin"
+        )
 
         runtime_dir = resolve_dolphin_runtime_user_dir()
 
@@ -508,7 +514,9 @@ def test_resolve_dolphin_user_paths_exclude_legacy_linux_path(monkeypatch, works
         monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "/usr/bin/dolphin")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "/usr/bin/dolphin"
+        )
 
         user_dirs = resolve_dolphin_user_dirs()
         config_dirs = resolve_dolphin_config_dirs()

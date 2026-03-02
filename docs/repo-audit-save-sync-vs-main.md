@@ -12,6 +12,12 @@ Audit focus requested:
 - production readiness for a home-server environment
 - no drift between runtime behavior, tests, and docs
 
+Historical note:
+
+- This document reflects an earlier branch checkpoint and is no longer the current source of truth for save-sync rollout behavior.
+- Save uploads are now implemented, and the managed shortcut wrapper has been renamed to `shortcut-launch`.
+- Use the current runtime docs (`docs/server-api.md`, `docs/cli-sync.md`, `docs/config-and-state.md`) for active behavior.
+
 ## What was reviewed
 
 - Runtime deltas under `src/` for save-sync (`gamehub_common`, `gamehub_server`, `gamehub_cli`).
@@ -21,18 +27,18 @@ Audit focus requested:
 
 ## Findings
 
-### 1) Save upload decisions were being counted as completed uploads even though upload transport is not implemented
+### 1) Save upload decisions were being counted as completed uploads even though upload transport was not implemented
 
 - In `apply_save_stage`, actions with `decision == "upload"` incremented `uploaded` and continued without any transfer.
 - This could report successful upload progress and leave state perception ahead of reality.
 
 **Risk:** medium (operator trust and state/accounting correctness).
 
-**Fix applied:** non-dry-run upload actions now fail the stage with `upload-not-implemented`; dry-run still reports planned upload actions for visibility.
+**Historical fix note:** this finding has since been superseded by real upload execution and server-side `PUT /v1/saves/{save_id}` support.
 
 ## Other audit observations
 
-- Save-sync schema, planner behavior, and docs are generally aligned on rollout semantics (download implemented, upload staged for later contract completion).
+- Treat the rest of this file as historical context only; several rollout details were intentionally changed after this audit.
 - Branch remains lint-clean at rule level; repo-wide format drift exists outside this scope and should be addressed in a dedicated formatting PR.
 - Full-suite validation should run in Python 3.12 `venv/` to match repository runtime contract.
 

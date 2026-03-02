@@ -960,3 +960,29 @@ def test_resolve_system_save_root_uses_default_emulator(monkeypatch) -> None:
         resolved = resolve_system_save_root("GC", resolve_executable=lambda _name: "")
 
         assert resolved == gc_root
+
+
+def test_resolve_system_save_root_uses_wii_directory_for_wii(monkeypatch) -> None:
+    with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
+        temp_root = Path(temp_dir)
+        wii_root = temp_root / ".local" / "share" / "dolphin-emu" / "Wii"
+        wii_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: temp_root)
+
+        resolved = resolve_system_save_root("Wii", resolve_executable=lambda _name: "")
+
+        assert resolved == wii_root
+
+
+def test_resolve_system_save_root_uses_azahar_for_n3ds(monkeypatch) -> None:
+    with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
+        temp_root = Path(temp_dir)
+        sdmc_root = temp_root / ".local" / "share" / "azahar-emu" / "sdmc"
+        sdmc_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: temp_root)
+
+        resolved = resolve_system_save_root("N3DS", resolve_executable=lambda _name: "")
+
+        assert resolved == sdmc_root

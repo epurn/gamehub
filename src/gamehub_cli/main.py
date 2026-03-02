@@ -6,7 +6,7 @@ from typing import Any
 
 from .common.config import GamehubConfig, default_config_path, load_config
 from .controllers.convergence import run_controller_doctor
-from .controllers.launch import run_controller_launch
+from .controllers.launch import run_shortcut_launch
 from .steam import build_context, discover_deck_steam_input_roots, discover_steam_id, discover_userdata_dir
 from .sync import run_init, run_sync
 from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor
@@ -213,17 +213,17 @@ if typer is not None:
             )
         )
 
-    @app.command("controller-launch", hidden=True)
-    def controller_launch(
-        payload: str = typer.Option(..., "--payload", help="Encoded controller-launch payload."),
+    @app.command("shortcut-launch", hidden=True)
+    def shortcut_launch(
+        payload: str = typer.Option(..., "--payload", help="Encoded shortcut-launch payload."),
         config: Path | None = typer.Option(
             None,
             "--config",
-            help="Optional config TOML path override for controller launch.",
+            help="Optional config TOML path override for shortcut launch.",
         ),
         audit: bool = typer.Option(False, "--audit", help="Print controller profile apply diagnostics."),
     ) -> None:
-        raise typer.Exit(code=run_controller_launch(payload_token=payload, config_path=config, audit=audit))
+        raise typer.Exit(code=run_shortcut_launch(payload_token=payload, config_path=config, audit=audit))
 
     @doctor_app.command("controllers")
     def doctor_controllers(
@@ -353,10 +353,10 @@ def main() -> None:
         "--reseed-profiles", action="store_true", help="Overwrite managed profile/template files during sync"
     )
 
-    controller_launch_parser = subparsers.add_parser("controller-launch", help=argparse.SUPPRESS)
-    controller_launch_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
-    controller_launch_parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
-    controller_launch_parser.add_argument("--audit", action="store_true", help=argparse.SUPPRESS)
+    shortcut_launch_parser = subparsers.add_parser("shortcut-launch", help=argparse.SUPPRESS)
+    shortcut_launch_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
+    shortcut_launch_parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
+    shortcut_launch_parser.add_argument("--audit", action="store_true", help=argparse.SUPPRESS)
 
     doctor_parser = subparsers.add_parser("doctor")
     doctor_subparsers = doctor_parser.add_subparsers(dest="doctor_command", required=True)
@@ -427,8 +427,8 @@ def main() -> None:
                 reseed_profiles=args.reseed_profiles,
             )
         )
-    if args.command == "controller-launch":
-        raise SystemExit(run_controller_launch(payload_token=args.payload, config_path=args.config, audit=args.audit))
+    if args.command == "shortcut-launch":
+        raise SystemExit(run_shortcut_launch(payload_token=args.payload, config_path=args.config, audit=args.audit))
     if args.command == "doctor":
         if args.doctor_command == "controllers":
             try:

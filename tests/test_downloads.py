@@ -97,3 +97,6 @@ def test_stream_to_destination_atomic_preserves_existing_file_on_checksum_failur
                 )
 
         assert destination.read_bytes() == existing_payload
+        backups = list(destination.parent.glob(f"{destination.name}.*.bak"))
+        assert len(backups) == 1
+        assert backups[0].read_bytes() == existing_payload

@@ -6,7 +6,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal, TypedDict, cast
 
 from typing_extensions import NotRequired
@@ -137,6 +137,29 @@ SAVE_KIND_PORTABILITY: dict[SaveKind, bool] = {
 class _SaveBinding:
     title_id: str
     system: str
+
+
+def _save_binding_key_from_title_rel_dir(system: str, title_rel_dir: str) -> tuple[str, str]:
+    return system, PurePosixPath(title_rel_dir).with_suffix("").name
+
+
+def _save_binding_key_from_layout(system: str, title_dir_name: str) -> tuple[str, str]:
+    return system, title_dir_name
+
+
+def _iter_save_files(kind_dir: Path, save_kind: SaveKind) -> list[Path]:
+    files: list[Path] = []
+    for child in sorted(kind_dir.iterdir(), key=lambda item: item.name.lower()):
+        if child.is_dir():
+            if save_kind != "per_game":
+                raise ValueError(
+                    f"Malformed save layout: nested directories are not allowed under {save_kind} saves: {child}"
+                )
+            files.extend(_iter_save_files(child, save_kind))
+            continue
+        if child.is_file():
+            files.append(child)
+    return files
 
 
 @dataclass
@@ -331,8 +354,8 @@ def build_index(data_root: Path) -> IndexBundle:
 
                 title_rel_dir = _relative_unix(rom_path, roms_root)
                 title_id = make_title_id(system_name, title_rel_dir)
-                title_rel_stem = str(Path(title_rel_dir).with_suffix(""))
-                title_bindings[(system_name, title_rel_stem)] = _SaveBinding(title_id=title_id, system=system_name)
+                binding_key = _save_binding_key_from_title_rel_dir(system_name, title_rel_dir)
+                title_bindings[binding_key] = _SaveBinding(title_id=title_id, system=system_name)
 
                 system_titles.append(
                     TitleEntry(
@@ -387,11 +410,12 @@ def build_index(data_root: Path) -> IndexBundle:
                             "Malformed save layout: expected title directory under "
                             f"{system_dir}, got file {title_dir.name}. Expected saves/<system>/<title_rel_stem>/<kind>/<file>"
                         )
-                    title_rel_stem = f"{system_name}/{title_dir.name}"
-                    binding = title_bindings.get((system_name, title_rel_stem))
+                    binding_key = _save_binding_key_from_layout(system_name, title_dir.name)
+                    binding = title_bindings.get(binding_key)
                     if binding is None:
                         raise ValueError(
-                            f"Malformed save layout: save title directory does not map to indexed title: {title_rel_stem}"
+                            "Malformed save layout: save title directory does not map to indexed title: "
+                            f"{system_name}/{title_dir.name}"
                         )
 
                     for kind_dir in sorted(title_dir.iterdir(), key=lambda item: item.name.lower()):
@@ -408,14 +432,7 @@ def build_index(data_root: Path) -> IndexBundle:
                                 f"Malformed save layout: unknown save kind '{save_kind}' in {kind_dir}. Allowed: {allowed}"
                             )
 
-                        for save_path in sorted(kind_dir.iterdir(), key=lambda item: item.name.lower()):
-                            if save_path.is_dir():
-                                raise ValueError(
-                                    f"Malformed save layout: nested directories are not allowed under {kind_dir}: {save_path.name}"
-                                )
-                            if not save_path.is_file():
-                                continue
-
+                        for save_path in _iter_save_files(kind_dir, save_kind_typed := cast(SaveKind, save_kind)):
                             save_rel = _relative_unix(save_path, data_root)
                             save_stat = save_path.stat()
                             save_sha = hash_cache.get_sha256(
@@ -424,9 +441,8 @@ def build_index(data_root: Path) -> IndexBundle:
                                 size_bytes=save_stat.st_size,
                                 mtime_ns=save_stat.st_mtime_ns,
                             )
-                            save_id = make_save_id(save_rel, save_sha)
+                            save_id = make_save_id(save_rel)
                             save_paths[save_id] = save_path
-                            save_kind_typed = cast(SaveKind, save_kind)
                             saves.append(
                                 SaveSpec(
                                     save_id=save_id,

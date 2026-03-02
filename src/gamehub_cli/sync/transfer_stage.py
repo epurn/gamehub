@@ -22,8 +22,19 @@ def print_plan(plan: SyncPlan) -> None:
     print("kind\tsystem\titem\tdestination\tsize")
     for action in [*plan.firmware_actions, *plan.content_actions]:
         print(f"{action.kind}\t{action.system}\t{action.label}\t{action.destination}\t{action.size_bytes}")
+    for save_action in plan.save_actions:
+        destination = save_action.destination if save_action.destination is not None else "<save-path-unavailable>"
+        print(
+            "save:"
+            f"{save_action.decision}\t"
+            f"{save_action.system}\t"
+            f"{save_action.title_id}:{save_action.kind}\t"
+            f"{destination}\t"
+            f"{save_action.size_bytes}"
+        )
     print("")
     count_by_kind = Counter(action.kind for action in [*plan.firmware_actions, *plan.content_actions])
+    count_by_kind.update(f"save:{action.decision}" for action in plan.save_actions)
     print("Summary")
     print(f"Total actions: {plan.total_actions}")
     print(f"Blocked systems: {len(plan.blocked_systems)}")

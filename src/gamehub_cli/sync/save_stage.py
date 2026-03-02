@@ -2,9 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from gamehub_common.models import SaveSpec
+
+from ..common.save_sync import (
+    build_save_lineage_record,
+    local_file_sha256,
+    local_file_updated_at,
+    timestamp_now_utc,
+)
 from .planner import SavePlanAction, SyncPlan
 from .state import SyncState
-from .transfer import stream_to_destination_atomic
+from .transfer import stream_to_destination_atomic, upload_file_to_server
 
 
 @dataclass(frozen=True)
@@ -20,26 +28,29 @@ class SaveStageError(RuntimeError):
     """Raised when one or more save transfers fail."""
 
 
-def _record_downloaded_save(state: SyncState, action: SavePlanAction) -> None:
-    state.save_checksums[action.save_id] = action.expected_sha256
-    state.save_lineage[action.save_id] = {
-        "local_sha256": action.expected_sha256,
-        "remote_sha256": action.expected_sha256,
-        "remote_updated_at": action.remote_updated_at,
-    }
+def _record_converged_save(
+    state: SyncState,
+    action: SavePlanAction,
+    *,
+    local_sha256: str,
+    remote_sha256: str,
+    local_updated_at: str | None,
+    remote_updated_at: str,
+) -> None:
+    state.save_checksums[action.save_id] = local_sha256
+    state.save_lineage[action.save_id] = build_save_lineage_record(
+        local_sha256=local_sha256,
+        remote_sha256=remote_sha256,
+        local_updated_at=local_updated_at,
+        remote_updated_at=remote_updated_at,
+        synced_at=timestamp_now_utc(),
+    )
     state.unresolved_save_conflicts.pop(action.save_id, None)
 
 
 def _print_save_action(action: SavePlanAction) -> None:
-    print(
-        "save"
-        f"\t{action.decision}"
-        f"\t{action.system}"
-        f"\t{action.title_id}"
-        f"\t{action.kind}"
-        f"\t{action.reason}"
-        f"\t{action.destination}"
-    )
+    destination = action.destination if action.destination is not None else "<save-path-unavailable>"
+    print(f"save\t{action.decision}\t{action.system}\t{action.title_id}\t{action.kind}\t{action.reason}\t{destination}")
 
 
 def apply_save_stage(
@@ -68,9 +79,34 @@ def apply_save_stage(
             if dry_run:
                 uploaded += 1
                 continue
-            failures.append((action.save_id, "upload-not-implemented"))
+            if action.destination is None:
+                failures.append((action.save_id, "save-path-unavailable"))
+                continue
+            try:
+                payload = upload_file_to_server(
+                    server_url=server_url,
+                    url=action.url,
+                    source=action.destination,
+                    timeout_seconds=timeout_seconds,
+                )
+                save = SaveSpec.model_validate(payload)
+                local_sha = local_file_sha256(action.destination)
+                if local_sha is None:
+                    raise ValueError("Uploaded save missing after local upload")
+                _record_converged_save(
+                    state,
+                    action,
+                    local_sha256=local_sha,
+                    remote_sha256=save.sha256,
+                    local_updated_at=local_file_updated_at(action.destination),
+                    remote_updated_at=save.updated_at.isoformat(),
+                )
+                uploaded += 1
+            except Exception as exc:  # noqa: BLE001
+                failures.append((action.save_id, str(exc)))
             continue
         if action.decision == "conflict":
+            state.unresolved_save_conflicts[action.save_id] = action.reason
             conflicts += 1
             continue
         if action.decision != "download":
@@ -78,6 +114,9 @@ def apply_save_stage(
             continue
 
         if dry_run:
+            continue
+        if action.destination is None:
+            failures.append((action.save_id, "save-path-unavailable"))
             continue
 
         try:
@@ -88,7 +127,14 @@ def apply_save_stage(
                 expected_sha256=action.expected_sha256,
                 timeout_seconds=timeout_seconds,
             )
-            _record_downloaded_save(state, action)
+            _record_converged_save(
+                state,
+                action,
+                local_sha256=action.expected_sha256,
+                remote_sha256=action.expected_sha256,
+                local_updated_at=local_file_updated_at(action.destination),
+                remote_updated_at=action.remote_updated_at,
+            )
             downloaded += 1
         except Exception as exc:  # noqa: BLE001
             failures.append((action.save_id, str(exc)))
