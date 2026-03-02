@@ -1,326 +1,305 @@
-# GAMEHUB — AGENTS.md – shared guardrails and core objectives
+# GAMEHUB — unified agent rules
 
-GAMEHUB is a Docker-first home-server and CLI that synchronises emulator libraries into Steam as non-Steam games with deterministic behaviour and safety-first file handling. This file defines the shared guardrails and high-level architecture for both web and IDE workflows.
+`AGENTS.md` is the single source of truth for AI contributors in this repository.
 
----
+It applies equally to Codex Web, Codex in the IDE, and any future agent surface.
 
-## What you need to know
+Do not create or rely on separate workflow-specific rule files. If guidance changes, update this file.
 
-### Server
+## Project snapshot
 
-Hosts the canonical ROM, firmware and artwork library and exposes a deterministic index via `/v1/index`.
+GAMEHUB is a Docker-first home server plus local CLI for deterministic emulator library sync.
 
-The index returns stable IDs (both `title_id` and `file_id`) so that clients never rely on fuzzy matching.
+The server hosts the canonical library and exposes strict APIs:
 
-The server also serves files:
-
+- `/v1/index`
 - `/v1/files/{file_id}`
 - `/v1/assets/{asset_id}`
 - `/v1/firmware/{system}/{filename}`
+- `/v1/saves/{save_id}`
 
----
+The CLI manages:
 
-### Client
+- `init`
+- `sync`
+- `doctor`
 
-The `gamehub` CLI provides a safe and repeatable way to bootstrap and sync your library.
+Current supported systems:
 
-#### `init`
+- `GB`
+- `GBA`
+- `GBC`
+- `GEN_MD`
+- `N64`
+- `NDS`
+- `N3DS`
+- `NES`
+- `PSX`
+- `SNES`
+- `GC`
+- `Wii`
+- `PS2`
 
-Bootstrap a fresh installation.
+Core product constraints:
 
-- Loads the index  
-- Creates local firmware directories  
-- Installs required emulators and RetroArch cores  
-- Seeds controller profiles  
-- Writes a bootstrap marker into `state.json`  
+- no fuzzy title matching
+- no ROM/BIOS downloads from third-party sources
+- deterministic IDs and repeatable sync behavior
+- safety-first writes for local user data and Steam integration
 
-It does not download ROMs or touch Steam.
+## Architecture map
 
-#### `sync`
+Runtime code lives only under `src/`.
 
-- Builds a diff plan against the server index  
-- Streams downloads of firmware/ROMs/artwork  
-- Deploys firmware  
-- Converges controller profiles  
-- Safely updates Steam  
+- `src/gamehub_server/`
+  - FastAPI server
+  - owns indexing, API responses, and server-side file writes
+- `src/gamehub_cli/`
+  - Typer CLI
+  - owns config loading, planning, transfers, Steam mutation, controller/profile logic
+- `src/gamehub_common/`
+  - shared contracts only
+  - owns models, IDs, and stable cross-boundary schemas
+- `tests/`
+  - unit and integration coverage for Windows and Linux behavior
+- `docs/`
+  - operator docs, schemas, release notes, templates
+- `PLANS/`
+  - planning artifacts and story contracts
 
-Flags allow:
+Never introduce new runtime code outside `src/`.
 
-- dry-run  
-- verification  
-- skipping Steam  
-- requiring Steam to close  
-- reseeding controller/Steam profiles  
+## Hard boundaries
 
-#### `doctor`
+These are release-blocking rules, not preferences.
 
-Diagnose and optionally repair managed content.
+- `gamehub_server` must never import `gamehub_cli`.
+- `gamehub_cli` must never import `gamehub_server`.
+- Cross-boundary contracts belong in `gamehub_common` first.
+- `gamehub_cli/common/` is for reusable low-level helpers only.
+- Do not turn `common/` into a grab bag for orchestration or business logic.
+- Prefer extending existing domain modules over inventing new cross-domain files.
 
-Subcommands include:
+Preferred module ownership:
 
-- `doctor controllers`
-- `doctor roms`
-- `doctor firmware`
-- `doctor all`
+- server indexing and API:
+  - `src/gamehub_server/indexer.py`
+  - `src/gamehub_server/main.py`
+- sync orchestration and planning:
+  - `src/gamehub_cli/sync/orchestrator.py`
+  - `src/gamehub_cli/sync/planner.py`
+  - `src/gamehub_cli/sync/steam_stage.py`
+- Steam-specific IO/lifecycle:
+  - `src/gamehub_cli/steam/*.py`
+- controller launch-time behavior:
+  - `src/gamehub_cli/controllers/*.py`
+- reusable low-level helpers:
+  - `src/gamehub_cli/common/*.py`
 
----
+## Product invariants
 
-### Supported systems (v1)
+These behaviors must stay true unless a task explicitly changes them.
 
-GB, GBA, GBC, GEN_MD, N64, NDS, NES, PSX, SNES, GC, Wii and PS2.
+- The server index is canonical and strictly validated by the client.
+- `title_id`, `file_id`, `asset_id`, and `save_id` are deterministic.
+- Clients must never fall back to fuzzy matching.
+- Save sync is limited to indexed save artifacts. Save states are out of scope unless explicitly planned.
+- Managed shortcut launches may use hidden internal wrapper commands, but user-facing behavior must remain deterministic and documented.
+- Steam writes are safety-gated:
+  - detect Steam
+  - close Steam before mutation
+  - back up Steam files
+  - write atomically
+  - relaunch only after successful mutation flow
 
-There is no fuzzy matching and there are no ROM/BIOS downloads.
+## File mutation rules
 
----
+Every file operation that mutates user data must be:
 
-### Safety & determinism
+- backed up
+- atomic
+- logged
 
-- All downloads stream to temporary `.part` files then rename  
-- Every write is atomic and backed up  
-- Updates can be dry-run  
-- Steam files are never modified unless Steam is closed  
+This applies to:
 
----
+- local save overwrites
+- Steam config writes
+- state file writes
+- firmware deploy writes
+- controller profile/config writes
+- server-side save overwrites
 
-## Repo layout
+Minimum acceptable pattern:
 
-Runtime code lives under `src/` and is organised by domain:
+1. If replacing existing user-managed content, create a timestamped backup unless the file is explicitly ephemeral.
+2. Write new content to a temporary file first.
+3. Flush/fsync where appropriate for the write path.
+4. Replace the destination atomically.
+5. Emit an explicit log entry for the mutation path.
 
-```
-src/gamehub_server/      # FastAPI server (main.py, indexer.py, firmware endpoints)
-src/gamehub_cli/         # Typer CLI subdivided into common, sync, steam, controllers, firmware, emulators
-src/gamehub_common/      # Shared models and ID helpers
-tests/                   # Unit and integration tests for Windows and Linux
-docs/                    # Schemas, templates and integration notes
-PLANS/                   # AI-first planning (plan files + story contracts)
-kanban/                  # Legacy planning (read-only)
-```
+Do not silently downgrade a mutating write to a direct in-place overwrite.
 
-Never introduce new runtime code outside `src/`; the legacy `kanban/` folder is maintained for history and should not be used for new work.
+## Logging and operator UX
 
----
+Diagnostics must be intentional.
 
-## Planning & execution model
+- `--verbose` should emit structured debug-oriented logs.
+- audit pathways should be explicit (`--audit`, verbose diagnostics, dedicated doctor flows).
+- normal mode should stay user-oriented:
+  - progress reporting
+  - clear warnings
+  - final summary
 
-All new features are planned in `PLANS/` using a:
+Do not add unconditional `print()` calls inside low-level helpers.
 
-**Plan → Milestones → Story Contracts → PR**
+Low-level helpers may return data or raise errors.
+Orchestration layers decide what to print.
 
-flow.
+If a task requires new diagnostics:
 
-A Story Contract describes a self-contained change in one domain (server, client, common or docs).
+- add them in the orchestration or command path
+- keep output deterministic
+- avoid noisy per-file logs in normal mode unless the operation is user-visible
 
-CROSS-BOUNDARY stories must freeze the contract in `gamehub_common` first and implement each side in separate PRs.
+## Coding standards
 
-Story Contracts should be small, explicit and independently mergeable.
+Maintainability is a release requirement.
 
-Before you start coding:
+- Prefer small modules with clear boundaries.
+- Keep module responsibilities narrow.
+- Remove dead branches, failed experiments, and temporary fallback code as you go.
+- Avoid copy-pasting business logic across modules.
+- If logic is reused in more than one runtime path, extract a focused shared helper.
+- Shared helpers belong in the narrowest valid place:
+  - same domain module first
+  - `common/` only when the helper is truly low-level and cross-cutting
 
-1. Briefly outline what you plan to change and where.
-2. Then proceed with the implementation.
+Orchestration modules should:
+
+- coordinate calls
+- sequence stages
+- handle top-level user messaging
+
+Orchestration modules should not:
+
+- own parsing details
+- own deep file mutation logic
+- duplicate policy logic that belongs in a helper
+
+Prefer deterministic behavior over implicit side effects.
+
+- no hidden fallback behavior unless it is explicitly designed, tested, and documented
+- no “best effort” fuzzy matching to make bad inputs pass
+- fail fast on schema or contract drift
+
+Platform-specific logic must be isolated and fail-open.
+
+- gate branches behind explicit platform detection
+- preserve non-target platform behavior
+- add both positive and negative-path tests for platform branches
+
+## Planning and execution model
+
+Use `PLANS/` for non-trivial work.
+
+Expected flow:
+
+`Plan -> Milestones -> Story Contracts -> PR`
+
+Before coding:
+
+1. Briefly state what will change.
+2. Name the modules/files you expect to touch.
+3. Then implement.
 
 There is no approval gate between orientation and edits.
 
-When implementing:
+Scope discipline:
 
-- Touch only the files described in the story.
-- Avoid unrelated refactors or dependency updates.
+- touch only files needed for the task
+- avoid opportunistic refactors
+- avoid dependency or packaging churn unless the task requires it
+- if a task crosses server/client boundaries, freeze the contract in `gamehub_common` first
 
----
+## Sync pipeline contract
 
-## Boundaries & guardrails
+The default sync sequence is:
 
-### Domain separation
+`load config/state -> validate bootstrap -> fetch index -> ensure emulators/cores/firmware -> build plan -> fetch artwork -> download/apply content -> deploy firmware -> converge controllers -> update Steam -> save state`
 
-`gamehub_server` must never import `gamehub_cli` and vice versa.
+Changes to sync behavior must preserve:
 
-Shared models live in `gamehub_common`.
+- deterministic planning
+- idempotent repeat runs
+- explicit dry-run support
+- safe failure behavior when a stage errors
 
-Extract cross-runtime helpers instead of duplicating them.
+## Emulators and launch expectations
 
----
+Default runtime ownership:
 
-### Index contract
+- RetroArch for cartridge-era systems
+- PCSX2 for PS2
+- Dolphin for GC/Wii
+- Azahar for N3DS
 
-The server’s `/v1/index` must:
+Launch strings stay simple:
 
-- Return deterministic IDs
-- Include metadata for systems:
-  - firmware requirements
-  - ROM extensions
-  - default emulator
-- Include metadata for titles:
-  - relative path
-  - SHA-256
-  - emulator launch template
-  - collection name
+- emulator executable + ROM path
 
-The client must validate this schema strictly using Pydantic and fail fast.
+Launch-time controller configuration belongs in `controllers/`.
 
----
+Do not push controller profile logic into generic sync helpers.
 
-### Steam safety
+## Testing rules
 
-Steam shortcuts reside in:
+Tests must verify behavior, not just happy paths.
 
-```
-userdata/<steamid>/config/shortcuts.vdf
-```
+Required when behavior changes:
 
-Collections reside in:
+- update or add tests in the relevant domain
+- cover positive and negative paths
+- add idempotency assertions for file/config mutation where practical
+- cover platform-specific branches when introduced
 
-- `localconfig.vdf`
-- cloud JSON
+Minimum quality gates for touched work:
 
-Always:
-
-1. Detect and close Steam before writing  
-2. Back up these files  
-3. Write updates atomically  
-4. Reopen Steam afterwards  
-
-Use a proven VDF library for parsing — never hand-roll binary VDF parsing.
-
----
-
-### Sync pipeline
-
-```
-load config and state
-→ (fail fast if bootstrap marker missing)
-→ fetch index
-→ ensure emulators/cores/firmware
-→ plan downloads
-→ fetch SGDB artwork
-→ download firmware/ROMs/assets
-→ deploy firmware
-→ converge controller profiles
-→ close Steam and update shortcuts/collections/artwork
-→ reopen Steam
-→ save state.json
+```powershell
+.\venv\Scripts\python.exe -m ruff format --check .
+.\venv\Scripts\python.exe -m ruff check .
+.\venv\Scripts\python.exe -m mypy src
+.\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
 
----
+If a quality gate is intentionally deferred, document the reason in the plan or task notes.
 
-### Emulators
+## Documentation rules
 
-- RetroArch for cartridge-era systems  
-- PCSX2 for PS2  
-- Dolphin standalone for GC/Wii  
+Update docs whenever behavior, contracts, or operator-facing flows change.
 
-Launch strings are always:
+Required doc updates when applicable:
 
-```
-emulator-exe + rom path
-```
+- `docs/index-schema.md` for schema changes
+- `docs/server-api.md` for endpoint behavior changes
+- `docs/config-and-state.md` for config/state changes
+- `docs/cli-sync.md` for sync or launch behavior changes
+- release notes for migrations and operator-visible changes
 
-The `init` command installs emulators and cores if missing and seeds controller profiles:
+Docs should be:
 
-- `kbm`
-- `xbox_1p`
-- `xbox_2p`
-
----
-
-### Controller profiles
-
-Managed profiles are stored under:
-
-```
-<paths.gamehub_dir>/controller_profiles
-```
-
-Use `--reseed-profiles` to overwrite defaults.
-
-Profiles apply to:
-
-- PCSX2
-- Dolphin
-- Azahar
-
-They support Xbox controllers and keyboard/mouse combinations.
-
----
-
-## Tooling & quality
-
-### Formatting & linting
-
-Run before completing a PR:
-
-```
-ruff format .
-ruff check . --fix
-```
-
-Ruff is the single source of truth for code style.
-
----
-
-### CI
-
-All PRs must pass:
-
-- ruff
-- pytest
-- any configured CI checks
-
-Windows and Linux are both supported; tests must pass on both platforms.
-
----
-
-### Environment
-
-Develop in the local virtual environment (`venv/`).
-
-On Windows use:
-
-```
-.\u200bvenv\Scripts\python.exe -m pytest . -p no:cacheprovider
-```
-
----
-
-### Documentation
-
-Update `docs/` whenever behaviour or schema changes.
-
-Keep docs concise and copy-paste runnable.
-
----
-
-### Release
-
-Server images are published to GHCR:
-
-```
-ghcr.io/<org>/gamehub-server:vX.Y.Z
-```
-
-Client artifacts include:
-
-- Linux wheel
-- Windows executable
-
-A deploy bundle zip contains compose/env templates and verify scripts.
-
----
+- concise
+- accurate
+- copy-paste runnable where commands are shown
 
 ## Definition of done
 
-A story is complete when:
+A task is done only when:
 
-- Its acceptance criteria are met.
-- Tests are added or updated accordingly.
-- Documentation is updated if the change affects behaviour, schemas or Steam integration.
-- The codebase is ruff-clean and CI passes.
-- The PR is focused, reviewable and only touches the intended scope.
+- implementation matches the requested behavior
+- boundaries and repo rules are still respected
+- tests were added or updated as needed
+- docs were updated if behavior changed
+- `ruff`, `mypy`, and `pytest` pass
+- the diff is focused and reviewable
 
----
-
-This file provides shared guardrails for all environments.
-
-See:
-
-- `docs/agents/WEB.md`
-- `docs/agents/IDE.md`
+If any of those are not true, the task is not complete.
