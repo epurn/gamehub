@@ -83,10 +83,11 @@ Do not “fudge” values to make tests pass; fix the underlying contract instea
 
 At the start of a PR:
 
-- Briefly orient.
+- Briefly orient (1-3 short bullets).
 - List modules/files to modify.
 - Outline approach (1–2 sentences).
 
+Then continue autonomously through implementation, validation, commit, and PR creation without waiting for additional human confirmation.
 Implement immediately — there is no separate approval step.
 
 Keep changes within the declared scope.
