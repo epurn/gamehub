@@ -211,7 +211,13 @@ def _build_save_bindings(titles: tuple[TitleEntry, ...]) -> tuple[SaveBindingSpe
                     server_rel_dir=server_memory_dir,
                     local_root="retroarch_saves_psx",
                     strategy="exact_files",
-                    candidate_filenames=(f"GH_{title.title_id}_1.mcd", f"GH_{title.title_id}_2.mcd"),
+                    candidate_filenames=(
+                        f"GH_{title.title_id}_1.mcd",
+                        f"GH_{title.title_id}_2.mcd",
+                        f"{title.title_name}.srm",
+                        f"{title.title_name}_1.mcd",
+                        f"{title.title_name}_2.mcd",
+                    ),
                     learn_rule=None,
                     portable=SAVE_KIND_PORTABILITY["memory_card"],
                 )

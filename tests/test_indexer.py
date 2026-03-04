@@ -322,6 +322,8 @@ def test_build_index_emits_save_bindings_without_existing_saves(workspace_tempdi
         _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom")
         _write_file(root / "roms" / "GC" / "WindWaker.iso", b"rom")
         _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
+        _write_file(root / "roms" / "PSX" / "CrashTeamRacing.chd", b"rom")
+        _write_file(root / "firmware" / "PSX" / "scph5501.bin", b"fw")
 
         bundle = build_index(root)
 
@@ -329,11 +331,20 @@ def test_build_index_emits_save_bindings_without_existing_saves(workspace_tempdi
         nes_id = make_save_binding_id(make_title_id("NES", "NES/SuperMarioBros.nes"), "battery")
         gc_id = make_save_binding_id(make_title_id("GC", "GC/WindWaker.iso"), "per_game")
         wii_id = make_save_binding_id(make_title_id("Wii", "Wii/MarioGalaxy.iso"), "per_game")
+        psx_title_id = make_title_id("PSX", "PSX/CrashTeamRacing.chd")
+        psx_id = make_save_binding_id(psx_title_id, "memory_card")
 
         assert by_id[nes_id].candidate_filenames == ("SuperMarioBros.srm",)
         assert by_id[gc_id].local_root == "dolphin_gc"
         assert by_id[gc_id].learn_rule == "dolphin_gc_gci_tree"
         assert by_id[wii_id].learn_rule == "dolphin_wii_title_tree"
+        assert by_id[psx_id].candidate_filenames == (
+            f"GH_{psx_title_id}_1.mcd",
+            f"GH_{psx_title_id}_2.mcd",
+            "CrashTeamRacing.srm",
+            "CrashTeamRacing_1.mcd",
+            "CrashTeamRacing_2.mcd",
+        )
 
 
 def test_build_index_ignores_server_generated_save_backups(workspace_tempdir) -> None:

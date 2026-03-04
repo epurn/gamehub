@@ -159,6 +159,7 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - Post-exit shortcut sync uploads only when the local save changed during the session and the remote save is unchanged from the pre-launch snapshot.
 - First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry sync from the server-published save-binding catalog and become `upload_new` actions in `bidirectional`.
 - Managed shortcut launches also auto-create those deterministic `exact_files` saves at post-exit, so wrapped RetroArch and managed `PSX`/`PS2` sessions do not need to wait for the next full `gamehub sync`.
+  - For `PSX` Swanstation, GAMEHUB accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.
 - `download` mode stays read-only: local-only first-time saves become `skip(download-mode-local-new)` and never mutate the server.
 - If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
 - If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
