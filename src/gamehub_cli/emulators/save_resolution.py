@@ -114,8 +114,15 @@ def _retroarch_cfg_candidates(resolve_executable: Callable[[str], str]) -> tuple
             values.append(_normalized_local_path(appdata) / "RetroArch" / "retroarch.cfg")
     else:
         home = _normalized_local_path(Path.home())
-        values.append(home / ".config" / "retroarch" / "retroarch.cfg")
-        values.append(home / ".var" / "app" / _RETROARCH_FLATPAK_APP_ID / "config" / "retroarch" / "retroarch.cfg")
+        native_cfg = home / ".config" / "retroarch" / "retroarch.cfg"
+        flatpak_cfg = home / ".var" / "app" / _RETROARCH_FLATPAK_APP_ID / "config" / "retroarch" / "retroarch.cfg"
+        resolved = resolve_executable("retroarch").strip().strip('"')
+        if resolved and _is_flatpak_command(resolved, _RETROARCH_FLATPAK_APP_ID):
+            values.append(flatpak_cfg)
+            values.append(native_cfg)
+        else:
+            values.append(native_cfg)
+            values.append(flatpak_cfg)
 
     deduped: list[Path] = []
     seen: set[Path] = set()

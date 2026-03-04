@@ -114,6 +114,20 @@ def retroarch_cfg_candidates(
 
     if _OS_NAME != "nt":
         home = _safe_home_path()
-        values.append(home / ".config" / "retroarch" / "retroarch.cfg")
-        values.append(linux_flatpak_retroarch_root() / "retroarch.cfg")
+        native_cfg = home / ".config" / "retroarch" / "retroarch.cfg"
+        flatpak_cfg = linux_flatpak_retroarch_root() / "retroarch.cfg"
+        prefer_flatpak = False
+        if resolve_emulator_executable is not None:
+            try:
+                retroarch_raw = resolve_emulator_executable("retroarch").strip().strip('"')
+            except Exception:
+                retroarch_raw = ""
+            if retroarch_raw and is_flatpak_command(retroarch_raw, RETROARCH_FLATPAK_APP_ID):
+                prefer_flatpak = True
+        if prefer_flatpak:
+            values.append(flatpak_cfg)
+            values.append(native_cfg)
+        else:
+            values.append(native_cfg)
+            values.append(flatpak_cfg)
     return unique_paths(values)

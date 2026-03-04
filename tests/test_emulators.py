@@ -1064,6 +1064,41 @@ def test_resolve_exact_local_save_destination_prefers_existing_sorted_retroarch_
         assert resolved == save_path
 
 
+def test_resolve_exact_local_save_destination_prefers_flatpak_runtime_cfg_on_linux(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-root-") as temp_root:
+        home = temp_root / "home"
+        native_cfg = home / ".config" / "retroarch" / "retroarch.cfg"
+        flatpak_cfg = home / ".var" / "app" / "org.libretro.RetroArch" / "config" / "retroarch" / "retroarch.cfg"
+        native_cfg.parent.mkdir(parents=True, exist_ok=True)
+        flatpak_cfg.parent.mkdir(parents=True, exist_ok=True)
+        native_cfg.write_text(
+            'sort_savefiles_enable = "false"\n',
+            encoding="utf-8",
+        )
+        flatpak_cfg.write_text(
+            'sort_savefiles_enable = "true"\nsort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        save_root = temp_root / "saves"
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+
+        resolved = resolve_exact_local_save_destination(
+            system="PSX",
+            kind="memory_card",
+            root=save_root,
+            filename="GH_title_test_1.mcd",
+            resolve_executable=lambda _name: str(
+                home / ".local" / "share" / "flatpak" / "exports" / "bin" / "org.libretro.RetroArch"
+            ),
+        )
+
+        assert resolved == save_root / "SwanStation" / "GH_title_test_1.mcd"
+
+
 def test_learned_tree_discovers_single_dolphin_gc_root() -> None:
     binding = SaveBindingSpec(
         binding_id="savebind_gc",

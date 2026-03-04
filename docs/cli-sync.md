@@ -179,6 +179,7 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - Windows portable executable directory (`<retroarch-dir>/system`) when applicable
 - when a RetroArch config file is found, GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) for controller quick-menu access
   - on Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`
+  - on Linux, when RetroArch resolves to Flatpak, config discovery prefers the Flatpak config path before native `~/.config/retroarch/retroarch.cfg`
   - RetroArch `system_directory = ":/system"` (portable-relative) is normalized to `<retroarch.cfg dir>/system` on Windows
   - RetroArch `libretro_directory = ":/cores"` and `libretro_info_path = ":/info"` (portable-relative) are normalized to `<retroarch.cfg dir>/cores` / `<retroarch.cfg dir>/info` on Windows
   - GAMEHUB writes `config/remaps/SwanStation/SwanStation.rmp` (or the configured `input_remapping_directory`) with the tested DualShock + analog/turbo defaults
