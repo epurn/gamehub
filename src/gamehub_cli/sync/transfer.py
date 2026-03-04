@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
@@ -11,6 +12,13 @@ from ..common.fsops import backup_existing_file
 from .downloads import DEFAULT_DOWNLOAD_CHUNK_BYTES, download_with_atomic_write, httpx
 
 logger = logging.getLogger(__name__)
+
+
+class SaveUploadConflictError(RuntimeError):
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+        detail = payload.get("reason", "save-conflict")
+        super().__init__(str(detail))
 
 
 def stream_to_destination_atomic(
@@ -44,30 +52,92 @@ def _iter_file_chunks(path: Path, chunk_size_bytes: int) -> Any:
             yield chunk
 
 
+def _encode_multipart_body(
+    *,
+    fields: dict[str, str],
+    filename: str,
+    payload: bytes,
+    boundary: str,
+) -> bytes:
+    body = bytearray()
+    boundary_bytes = boundary.encode("utf-8")
+    for key, value in fields.items():
+        body.extend(b"--" + boundary_bytes + b"\r\n")
+        body.extend(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"))
+        body.extend(value.encode("utf-8"))
+        body.extend(b"\r\n")
+    body.extend(b"--" + boundary_bytes + b"\r\n")
+    body.extend(
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n".encode("utf-8")
+    )
+    body.extend(payload)
+    body.extend(b"\r\n")
+    body.extend(b"--" + boundary_bytes + b"--\r\n")
+    return bytes(body)
+
+
 def upload_file_to_server(
     *,
     server_url: str,
     url: str,
     source: Path,
+    binding_id: str,
+    canonical_suffix: str,
     timeout_seconds: float,
+    expected_remote_sha256: str | None = None,
     http_client: Any | None = None,
     chunk_size_bytes: int = DEFAULT_DOWNLOAD_CHUNK_BYTES,
 ) -> dict[str, object]:
     full_url = urljoin(server_url.rstrip("/") + "/", url.lstrip("/"))
-    chunk_size = max(1024, int(chunk_size_bytes))
+    fields = {
+        "binding_id": binding_id,
+        "canonical_suffix": canonical_suffix,
+    }
+    if expected_remote_sha256 is not None:
+        fields["expected_remote_sha256"] = expected_remote_sha256
     if httpx is not None:
         client = http_client if http_client is not None else httpx
-        response = client.put(full_url, content=_iter_file_chunks(source, chunk_size), timeout=timeout_seconds)
+        with source.open("rb") as handle:
+            response = client.put(
+                full_url,
+                data=fields,
+                files={"file": (source.name, handle, "application/octet-stream")},
+                timeout=timeout_seconds,
+            )
+        if response.status_code == 409:
+            payload = response.json()
+            if isinstance(payload, dict):
+                detail = payload.get("detail")
+                if isinstance(detail, dict):
+                    raise SaveUploadConflictError(detail)
+            response.raise_for_status()
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict):
             raise ValueError("Save upload response must be a JSON object")
         return payload
 
-    request = Request(full_url, data=source.read_bytes(), method="PUT")
-    request.add_header("Content-Type", "application/octet-stream")
-    with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
-        payload = json.loads(response.read().decode("utf-8"))
+    boundary = f"gamehub-{source.stat().st_mtime_ns}"
+    request = Request(
+        full_url,
+        data=_encode_multipart_body(
+            fields=fields, filename=source.name, payload=source.read_bytes(), boundary=boundary
+        ),
+        method="PUT",
+    )
+    request.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if int(exc.code) == 409:
+            payload = json.loads(exc.read().decode("utf-8"))
+            if isinstance(payload, dict):
+                detail = payload.get("detail")
+                if isinstance(detail, dict):
+                    raise SaveUploadConflictError(detail)
+        raise
     if not isinstance(payload, dict):
         raise ValueError("Save upload response must be a JSON object")
     return payload

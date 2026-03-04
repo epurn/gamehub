@@ -12,7 +12,7 @@ from ..common.save_sync import (
 )
 from .planner import SavePlanAction, SyncPlan
 from .state import SyncState
-from .transfer import stream_to_destination_atomic, upload_file_to_server
+from .transfer import SaveUploadConflictError, stream_to_destination_atomic, upload_file_to_server
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,7 @@ def apply_save_stage(
         if action.decision == "skip":
             skipped += 1
             continue
-        if action.decision == "upload":
+        if action.decision in {"upload_existing", "upload_new"}:
             if dry_run:
                 uploaded += 1
                 continue
@@ -87,7 +87,10 @@ def apply_save_stage(
                     server_url=server_url,
                     url=action.url,
                     source=action.destination,
+                    binding_id=action.binding_id,
+                    canonical_suffix=action.canonical_suffix,
                     timeout_seconds=timeout_seconds,
+                    expected_remote_sha256=action.expected_sha256 if action.decision == "upload_existing" else None,
                 )
                 save = SaveSpec.model_validate(payload)
                 local_sha = local_file_sha256(action.destination)
@@ -102,6 +105,23 @@ def apply_save_stage(
                     remote_updated_at=save.updated_at.isoformat(),
                 )
                 uploaded += 1
+            except SaveUploadConflictError as exc:
+                current_payload = exc.payload.get("current")
+                current = SaveSpec.model_validate(current_payload) if isinstance(current_payload, dict) else None
+                local_sha = local_file_sha256(action.destination)
+                if current is not None and local_sha is not None and current.sha256 == local_sha:
+                    _record_converged_save(
+                        state,
+                        action,
+                        local_sha256=local_sha,
+                        remote_sha256=current.sha256,
+                        local_updated_at=local_file_updated_at(action.destination),
+                        remote_updated_at=current.updated_at.isoformat(),
+                    )
+                    uploaded += 1
+                    continue
+                state.unresolved_save_conflicts[action.save_id] = str(exc)
+                conflicts += 1
             except Exception as exc:  # noqa: BLE001
                 failures.append((action.save_id, str(exc)))
             continue

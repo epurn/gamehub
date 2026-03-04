@@ -59,7 +59,7 @@ docker compose -f docker/compose.yaml --env-file docker/.env config
 
 ## Notes
 - Server distribution is GHCR image-based for releases (no separate server binary artifact on GitHub Releases).
-- Data volume is mounted read-only in container.
+- Data volume is mounted read-write in container. Bidirectional save sync, including first-time save creation, requires the server to be able to create and update files under `/data/saves`.
 - Hash cache is stored in named Docker volume `gamehub-hash-cache-v2` and persists across container restarts/recreates.
 - Container restart policy is `unless-stopped`.
 - Healthcheck targets `GET /health`.

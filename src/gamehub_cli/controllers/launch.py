@@ -4,6 +4,7 @@ import base64
 import ctypes
 import ctypes.wintypes
 import json
+import logging
 import os
 import shlex
 import subprocess
@@ -12,22 +13,32 @@ import threading
 import time
 from dataclasses import dataclass
 from importlib import import_module
-from pathlib import Path
-from typing import Any, Callable
+from pathlib import Path, PurePosixPath
+from typing import Any, Callable, Literal, cast
 from urllib.parse import urljoin
 
-from gamehub_common.models import LibraryIndex, SaveSpec
+from gamehub_common.ids import make_save_id
+from gamehub_common.models import LibraryIndex, SaveBindingCatalog, SaveBindingSpec, SaveSpec
 
 from ..common.config import GamehubConfig, load_config
 from ..common.save_sync import (
     build_save_lineage_record,
+    canonical_suffix_for_save,
     classify_save_action,
     local_file_sha256,
     local_file_updated_at,
+    save_binding_id_for_save,
     timestamp_now_utc,
     to_utc_timestamp,
 )
-from ..emulators.save_resolution import resolve_local_save_destination
+from ..emulators.save_resolution import (
+    canonical_suffix_for_learned_path,
+    learn_binding_root,
+    resolve_binding_local_root,
+    resolve_exact_local_save_destination,
+    resolve_local_save_destination,
+    snapshot_binding_tree,
+)
 from . import azahar_exit_hook
 from .apply import apply_controller_profile, apply_named_controller_profile
 from .detection import detect_xbox_controllers, is_steam_deck_linux
@@ -44,6 +55,7 @@ _XINPUT_GAMEPAD_START = 0x0010
 _XINPUT_GAMEPAD_BACK = 0x0020
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
 _WM_CLOSE = 0x0010
+logger = logging.getLogger(__name__)
 
 
 class _XInputGamepad(ctypes.Structure):
@@ -390,6 +402,25 @@ class _ShortcutSaveSnapshot:
     allow_postexit_upload: bool
 
 
+@dataclass(frozen=True)
+class _ShortcutTreeSnapshot:
+    binding: SaveBindingSpec
+    before: dict[str, str]
+
+
+@dataclass(frozen=True)
+class _ShortcutExactBindingSnapshot:
+    binding: SaveBindingSpec
+    local_sha256_by_suffix: dict[str, str | None]
+
+
+@dataclass
+class _ShortcutSaveContext:
+    save_snapshots: dict[str, _ShortcutSaveSnapshot]
+    exact_binding_snapshots: dict[str, _ShortcutExactBindingSnapshot]
+    tree_snapshots: dict[str, _ShortcutTreeSnapshot]
+
+
 def _load_shortcut_index(config: GamehubConfig, *, verbose: bool) -> LibraryIndex | None:
     try:
         index_module = import_module("gamehub_cli.sync.index")
@@ -411,6 +442,30 @@ def _load_shortcut_index(config: GamehubConfig, *, verbose: bool) -> LibraryInde
         return LibraryIndex.model_validate(raw_index)
     except Exception as exc:  # noqa: BLE001
         print(f"Warning: save sync index fetch failed ({exc})")
+        return None
+
+
+def _load_shortcut_save_bindings(config: GamehubConfig, *, verbose: bool) -> SaveBindingCatalog | None:
+    try:
+        index_module = import_module("gamehub_cli.sync.index")
+        fetch_save_bindings_with_retries = index_module.fetch_save_bindings_with_retries
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: save sync could not load save binding helper ({exc})")
+        return None
+
+    timeout_seconds = config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0
+    bindings_url = urljoin(config.server_url.rstrip("/") + "/", "v1/save-bindings")
+    try:
+        raw_bindings = fetch_save_bindings_with_retries(
+            bindings_url=bindings_url,
+            timeout_seconds=timeout_seconds,
+            attempts=config.index_fetch_attempts,
+            retry_backoff_seconds=config.index_retry_backoff_seconds,
+            verbose=verbose,
+        )
+        return SaveBindingCatalog.model_validate(raw_bindings)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: save sync binding fetch failed ({exc})")
         return None
 
 
@@ -445,7 +500,29 @@ def _download_save_to_destination(
 def _upload_save_from_path(
     *,
     server_url: str,
+    save: SaveSpec,
+    source: Path,
+    timeout_seconds: float,
+) -> SaveSpec:
+    transfer_module = import_module("gamehub_cli.sync.transfer")
+    payload = transfer_module.upload_file_to_server(
+        server_url=server_url,
+        url=f"/v1/saves/{save.save_id}",
+        source=source,
+        binding_id=save_binding_id_for_save(save),
+        canonical_suffix=canonical_suffix_for_save(save),
+        timeout_seconds=timeout_seconds,
+        expected_remote_sha256=save.sha256,
+    )
+    return SaveSpec.model_validate(payload)
+
+
+def _upload_new_save_from_path(
+    *,
+    server_url: str,
     save_id: str,
+    binding: SaveBindingSpec,
+    canonical_suffix: str,
     source: Path,
     timeout_seconds: float,
 ) -> SaveSpec:
@@ -454,7 +531,10 @@ def _upload_save_from_path(
         server_url=server_url,
         url=f"/v1/saves/{save_id}",
         source=source,
+        binding_id=binding.binding_id,
+        canonical_suffix=canonical_suffix,
         timeout_seconds=timeout_seconds,
+        expected_remote_sha256=None,
     )
     return SaveSpec.model_validate(payload)
 
@@ -480,6 +560,191 @@ def _record_shortcut_save_sync(state: Any, save: SaveSpec, destination: Path, *,
     state.unresolved_save_conflicts.pop(save.save_id, None)
 
 
+def _record_binding_root(state: Any, *, binding_id: str, canonical_root: str, materialized_root: str) -> None:
+    state.save_binding_roots[binding_id] = {
+        "canonical_root": canonical_root,
+        "materialized_root": materialized_root,
+    }
+
+
+def _changed_tree_paths(before: dict[str, str], after: dict[str, str]) -> tuple[str, ...]:
+    changed = {rel_path for rel_path, sha in after.items() if rel_path not in before or before[rel_path] != sha}
+    return tuple(sorted(changed))
+
+
+def _snapshot_exact_binding(
+    binding: SaveBindingSpec,
+    *,
+    remote_save_ids: set[str],
+) -> _ShortcutExactBindingSnapshot | None:
+    if binding.strategy != "exact_files":
+        return None
+    root = resolve_binding_local_root(binding)
+    if root is None:
+        return None
+    local_sha256_by_suffix: dict[str, str | None] = {}
+    exact_kind = cast(Literal["battery", "memory_card"], binding.kind)
+    for filename in binding.candidate_filenames:
+        save_id = make_save_id(f"{binding.server_rel_dir}/{filename}")
+        if save_id in remote_save_ids:
+            continue
+        destination = resolve_exact_local_save_destination(
+            system=binding.system,
+            kind=exact_kind,
+            root=root,
+            filename=filename,
+        )
+        local_sha256_by_suffix[filename] = local_file_sha256(destination)
+    if not local_sha256_by_suffix:
+        return None
+    return _ShortcutExactBindingSnapshot(binding=binding, local_sha256_by_suffix=local_sha256_by_suffix)
+
+
+def _run_shortcut_postexit_exact_binding_sync(
+    *,
+    state: Any,
+    current_saves: dict[str, SaveSpec],
+    exact_snapshots: dict[str, _ShortcutExactBindingSnapshot],
+    server_url: str,
+    timeout_seconds: float,
+    verbose: bool,
+    audit: bool,
+) -> bool:
+    state_changed = False
+    for exact_snapshot in exact_snapshots.values():
+        binding = exact_snapshot.binding
+        root = resolve_binding_local_root(binding)
+        if root is None:
+            continue
+        exact_kind = cast(Literal["battery", "memory_card"], binding.kind)
+        for filename in binding.candidate_filenames:
+            before_sha = exact_snapshot.local_sha256_by_suffix.get(filename)
+            if filename not in exact_snapshot.local_sha256_by_suffix:
+                continue
+            destination = resolve_exact_local_save_destination(
+                system=binding.system,
+                kind=exact_kind,
+                root=root,
+                filename=filename,
+            )
+            local_sha = local_file_sha256(destination)
+            if local_sha is None:
+                continue
+            save_id = make_save_id(f"{binding.server_rel_dir}/{filename}")
+            save = current_saves.get(save_id)
+            if save is not None:
+                if local_sha == save.sha256:
+                    _record_shortcut_save_sync(state, save, destination, local_sha256=local_sha)
+                    state_changed = True
+                    if verbose or audit:
+                        print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
+                    continue
+                state.unresolved_save_conflicts[save_id] = "create-race-content-mismatch"
+                state_changed = True
+                if verbose or audit:
+                    print(f"shortcut-save\tpostexit\tconflict\t{save_id}\tcreate-race-content-mismatch")
+                continue
+            try:
+                created_save = _upload_new_save_from_path(
+                    server_url=server_url,
+                    save_id=save_id,
+                    binding=binding,
+                    canonical_suffix=filename,
+                    source=destination,
+                    timeout_seconds=timeout_seconds,
+                )
+                state.save_checksums[save_id] = local_sha
+                state.save_lineage[save_id] = build_save_lineage_record(
+                    local_sha256=local_sha,
+                    remote_sha256=created_save.sha256,
+                    local_updated_at=local_file_updated_at(destination),
+                    remote_updated_at=to_utc_timestamp(created_save.updated_at),
+                    synced_at=timestamp_now_utc(),
+                )
+                state.unresolved_save_conflicts.pop(save_id, None)
+                state_changed = True
+                action = "auto-create" if before_sha is None else "auto-create-existing-local"
+                if verbose or audit:
+                    print(f"shortcut-save\tpostexit\tupload\t{save_id}\t{action}")
+            except Exception as exc:  # noqa: BLE001
+                state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"
+                state_changed = True
+                print(f"Warning: post-exit save upload failed for {save_id} ({exc})")
+    return state_changed
+
+
+def _ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: GamehubConfig) -> bool:
+    if not payload.title_id or payload.system not in {"PSX", "PS2"}:
+        return False
+
+    if payload.system == "PS2":
+        targets = {
+            "Slot1_Filename": f"GH_{payload.title_id}_1.ps2",
+            "Slot2_Filename": f"GH_{payload.title_id}_2.ps2",
+        }
+        targets["Slot1_Enable"] = "true"
+        targets["Slot2_Enable"] = "true"
+        firmware_targets = import_module("gamehub_cli.firmware.targets")
+        pcsx2_ini = import_module("gamehub_cli.firmware.pcsx2_ini")
+        fsops = import_module("gamehub_cli.common.fsops")
+        path = firmware_targets.default_pcsx2_ini_path(config=config)
+        lines = pcsx2_ini.read_ini_lines(path)
+        changed = False
+        for key, value in targets.items():
+            lines, key_changed = pcsx2_ini.upsert_ini_key(lines, "MemoryCards", key, value)
+            changed |= key_changed
+        if changed or not path.exists():
+            if path.exists():
+                backup = fsops.backup_existing_file(path)
+                if backup is not None:
+                    logger.info("managed memory-card backup created path=%s backup=%s", path, backup)
+            pcsx2_ini.write_ini_atomic(path, lines)
+            logger.info(
+                "managed memory-card config updated path=%s system=%s title_id=%s",
+                path,
+                payload.system,
+                payload.title_id,
+            )
+        return changed
+
+    if payload.system == "PSX":
+        firmware_targets = import_module("gamehub_cli.firmware.targets")
+        config_edit = import_module("gamehub_cli.common.config_edit")
+        pcsx2_ini = import_module("gamehub_cli.firmware.pcsx2_ini")
+        fsops = import_module("gamehub_cli.common.fsops")
+        cfg_candidates = firmware_targets.retroarch_cfg_candidates_for_config(config=config)
+        cfg_path = next(
+            (candidate for candidate in cfg_candidates if candidate.exists()),
+            cfg_candidates[0] if cfg_candidates else None,
+        )
+        if cfg_path is None:
+            return False
+        core_options_path = cfg_path.with_name("retroarch-core-options.cfg")
+        lines = pcsx2_ini.read_ini_lines(core_options_path)
+        changed = False
+        for key, value in {
+            "swanstation_MemoryCard1Path": f"GH_{payload.title_id}_1.mcd",
+            "swanstation_MemoryCard2Path": f"GH_{payload.title_id}_2.mcd",
+        }.items():
+            lines, key_changed = config_edit.upsert_simple_cfg_key(lines, key, value)
+            changed |= key_changed
+        if changed or not core_options_path.exists():
+            if core_options_path.exists():
+                backup = fsops.backup_existing_file(core_options_path)
+                if backup is not None:
+                    logger.info("managed memory-card backup created path=%s backup=%s", core_options_path, backup)
+            pcsx2_ini.write_ini_atomic(core_options_path, lines)
+            logger.info(
+                "managed memory-card config updated path=%s system=%s title_id=%s",
+                core_options_path,
+                payload.system,
+                payload.title_id,
+            )
+        return changed
+
+    return False
+
+
 def _should_sync_shortcut_saves(payload: ShortcutLaunchPayload, config: GamehubConfig) -> bool:
     if not config.save_sync.enabled:
         return False
@@ -497,23 +762,40 @@ def _run_shortcut_prelaunch_save_sync(
     state: Any,
     verbose: bool,
     audit: bool,
-) -> tuple[dict[str, _ShortcutSaveSnapshot], bool]:
-    snapshots: dict[str, _ShortcutSaveSnapshot] = {}
+) -> tuple[_ShortcutSaveContext, bool]:
+    context = _ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={})
     if not _should_sync_shortcut_saves(payload, config):
-        return snapshots, False
+        return context, False
 
     index = _load_shortcut_index(config, verbose=verbose)
     if index is None or payload.title_id is None:
-        return snapshots, False
+        return context, False
+
+    save_bindings = _load_shortcut_save_bindings(config, verbose=verbose)
+    title_saves = _iter_title_saves(index, payload.title_id)
+    remote_save_ids = {save.save_id for save in title_saves}
+    if save_bindings is not None and config.save_sync.mode == "bidirectional":
+        for binding in save_bindings.bindings:
+            if binding.title_id != payload.title_id:
+                continue
+            if binding.strategy == "learned_tree":
+                context.tree_snapshots[binding.binding_id] = _ShortcutTreeSnapshot(
+                    binding=binding,
+                    before=snapshot_binding_tree(binding),
+                )
+                continue
+            exact_snapshot = _snapshot_exact_binding(binding, remote_save_ids=remote_save_ids)
+            if exact_snapshot is not None:
+                context.exact_binding_snapshots[binding.binding_id] = exact_snapshot
 
     state_changed = False
-    for save in _iter_title_saves(index, payload.title_id):
-        destination = resolve_local_save_destination(save)
+    for save in title_saves:
+        destination = resolve_local_save_destination(save, binding_roots=state.save_binding_roots)
         local_sha = local_file_sha256(destination) if destination is not None else None
         allow_postexit_upload = True
         if destination is None:
             reason = "save-path-unavailable"
-            snapshots[save.save_id] = _ShortcutSaveSnapshot(
+            context.save_snapshots[save.save_id] = _ShortcutSaveSnapshot(
                 destination=None,
                 local_sha256=None,
                 remote_sha256=save.sha256,
@@ -552,15 +834,15 @@ def _run_shortcut_prelaunch_save_sync(
             except Exception as exc:  # noqa: BLE001
                 print(f"Warning: pre-launch save sync failed for {save.save_id} ({exc})")
         if verbose or audit:
-            action_label = "keep-local" if decision == "upload" else decision
+            action_label = "keep-local" if decision == "upload_existing" else decision
             print(f"shortcut-save\tprelaunch\t{action_label}\t{save.save_id}\t{reason}")
-        snapshots[save.save_id] = _ShortcutSaveSnapshot(
+        context.save_snapshots[save.save_id] = _ShortcutSaveSnapshot(
             destination=destination,
             local_sha256=local_sha,
             remote_sha256=save.sha256,
             allow_postexit_upload=allow_postexit_upload,
         )
-    return snapshots, state_changed
+    return context, state_changed
 
 
 def _run_shortcut_postexit_save_sync(
@@ -568,11 +850,13 @@ def _run_shortcut_postexit_save_sync(
     payload: ShortcutLaunchPayload,
     config: GamehubConfig,
     state: Any,
-    snapshots: dict[str, _ShortcutSaveSnapshot],
+    context: _ShortcutSaveContext,
     verbose: bool,
     audit: bool,
 ) -> bool:
-    if config.save_sync.mode != "bidirectional" or not snapshots:
+    if config.save_sync.mode != "bidirectional" or (
+        not context.save_snapshots and not context.exact_binding_snapshots and not context.tree_snapshots
+    ):
         return False
     if not _should_sync_shortcut_saves(payload, config):
         return False
@@ -583,7 +867,7 @@ def _run_shortcut_postexit_save_sync(
 
     current_saves = {save.save_id: save for save in _iter_title_saves(index, payload.title_id)}
     state_changed = False
-    for save_id, snapshot in snapshots.items():
+    for save_id, snapshot in context.save_snapshots.items():
         if snapshot.destination is None or not snapshot.allow_postexit_upload:
             continue
         local_sha = local_file_sha256(snapshot.destination)
@@ -599,7 +883,7 @@ def _run_shortcut_postexit_save_sync(
         try:
             updated_save = _upload_save_from_path(
                 server_url=config.server_url,
-                save_id=save_id,
+                save=save,
                 source=snapshot.destination,
                 timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
             )
@@ -617,6 +901,83 @@ def _run_shortcut_postexit_save_sync(
                 print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-upload")
         except Exception as exc:  # noqa: BLE001
             print(f"Warning: post-exit save upload failed for {save_id} ({exc})")
+
+    exact_binding_changed = _run_shortcut_postexit_exact_binding_sync(
+        state=state,
+        current_saves=current_saves,
+        exact_snapshots=context.exact_binding_snapshots,
+        server_url=config.server_url,
+        timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
+        verbose=verbose,
+        audit=audit,
+    )
+    state_changed = state_changed or exact_binding_changed
+
+    for binding_id, tree_snapshot in context.tree_snapshots.items():
+        binding = tree_snapshot.binding
+        after = snapshot_binding_tree(binding)
+        changed_paths = _changed_tree_paths(tree_snapshot.before, after)
+        if not changed_paths:
+            continue
+        learned_root = learn_binding_root(binding, changed_paths)
+        if learned_root is None:
+            state.unresolved_save_conflicts[binding_id] = "save-binding-root-ambiguous"
+            state_changed = True
+            if verbose or audit:
+                print(f"shortcut-save\tpostexit\tconflict\t{binding_id}\tsave-binding-root-ambiguous")
+            continue
+        canonical_root, materialized_root = learned_root
+        _record_binding_root(
+            state,
+            binding_id=binding.binding_id,
+            canonical_root=canonical_root,
+            materialized_root=materialized_root,
+        )
+        state.unresolved_save_conflicts.pop(binding_id, None)
+        state_changed = True
+        root = resolve_binding_local_root(binding)
+        if root is None:
+            continue
+        for rel_path in changed_paths:
+            canonical_suffix = canonical_suffix_for_learned_path(
+                binding,
+                rel_path,
+                materialized_root=materialized_root,
+            )
+            if canonical_suffix is None:
+                continue
+            save_id = make_save_id(f"{binding.server_rel_dir}/{canonical_suffix}")
+            if save_id in current_saves:
+                continue
+            source = root / Path(*PurePosixPath(rel_path).parts)
+            local_sha = local_file_sha256(source)
+            if local_sha is None:
+                continue
+            try:
+                created_save = _upload_new_save_from_path(
+                    server_url=config.server_url,
+                    save_id=save_id,
+                    binding=binding,
+                    canonical_suffix=canonical_suffix,
+                    source=source,
+                    timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
+                )
+                state.save_checksums[save_id] = local_sha
+                state.save_lineage[save_id] = build_save_lineage_record(
+                    local_sha256=local_sha,
+                    remote_sha256=created_save.sha256,
+                    local_updated_at=local_file_updated_at(source),
+                    remote_updated_at=to_utc_timestamp(created_save.updated_at),
+                    synced_at=timestamp_now_utc(),
+                )
+                state.unresolved_save_conflicts.pop(save_id, None)
+                state_changed = True
+                if verbose or audit:
+                    print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-create")
+            except Exception as exc:  # noqa: BLE001
+                state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"
+                state_changed = True
+                print(f"Warning: post-exit save upload failed for {save_id} ({exc})")
     return state_changed
 
 
@@ -717,29 +1078,40 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
                     "Warning: keyboard/mouse fallback profile application failed "
                     f"(emulator={payload.emulator}, error={fallback_exc})"
                 )
-    snapshots: dict[str, _ShortcutSaveSnapshot] = {}
+    if config.save_sync.enabled:
+        try:
+            _ensure_managed_memory_card_paths(payload, config)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Warning: managed memory-card setup failed ({exc})")
+    save_context = _ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={})
     if state is not None:
-        snapshots, prelaunch_changed = _run_shortcut_prelaunch_save_sync(
-            payload=payload,
-            config=config,
-            state=state,
-            verbose=False,
-            audit=audit,
-        )
-        state_changed = state_changed or prelaunch_changed
+        try:
+            save_context, prelaunch_changed = _run_shortcut_prelaunch_save_sync(
+                payload=payload,
+                config=config,
+                state=state,
+                verbose=False,
+                audit=audit,
+            )
+            state_changed = state_changed or prelaunch_changed
+        except Exception as exc:  # noqa: BLE001
+            print(f"Warning: pre-launch save sync failed; continuing launch ({exc})")
 
     exit_code = _run_target_with_optional_exit_hook(payload)
 
     if state is not None:
-        postexit_changed = _run_shortcut_postexit_save_sync(
-            payload=payload,
-            config=config,
-            state=state,
-            snapshots=snapshots,
-            verbose=False,
-            audit=audit,
-        )
-        state_changed = state_changed or postexit_changed
+        try:
+            postexit_changed = _run_shortcut_postexit_save_sync(
+                payload=payload,
+                config=config,
+                state=state,
+                context=save_context,
+                verbose=False,
+                audit=audit,
+            )
+            state_changed = state_changed or postexit_changed
+        except Exception as exc:  # noqa: BLE001
+            print(f"Warning: post-exit save sync failed ({exc})")
         if state_changed and save_state is not None:
             save_state(config.state_path, state)
     return exit_code

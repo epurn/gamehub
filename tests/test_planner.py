@@ -7,7 +7,16 @@ from pathlib import Path
 from gamehub_cli.common.config import GamehubConfig, SaveSyncConfig
 from gamehub_cli.sync.planner import create_sync_plan
 from gamehub_cli.sync.state import SyncState
-from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SaveSpec, SystemSpec, TitleEntry
+from gamehub_common.models import (
+    FirmwareSpec,
+    LibraryIndex,
+    RomSpec,
+    SaveBindingCatalog,
+    SaveBindingSpec,
+    SaveSpec,
+    SystemSpec,
+    TitleEntry,
+)
 
 
 def _sha256_bytes(payload: bytes) -> str:
@@ -422,7 +431,7 @@ def test_save_planner_classifies_download_upload_conflict_and_skip(monkeypatch, 
         assert by_id["save_0"].reason == "local-missing"
         assert by_id["save_1"].decision == "skip"
         assert by_id["save_1"].reason == "already-synced"
-        assert by_id["save_2"].decision == "upload"
+        assert by_id["save_2"].decision == "upload_existing"
         assert by_id["save_2"].reason == "local-changed-remote-unchanged"
         assert by_id["save_3"].decision == "conflict"
         assert by_id["save_3"].reason == "both-changed-manual"
@@ -476,3 +485,148 @@ def test_save_planner_respects_disabled_and_system_filters(workspace_tempdir) ->
         assert plan_disabled.save_actions[0].reason == "save-sync-disabled"
         assert plan_filtered.save_actions[0].decision == "skip"
         assert plan_filtered.save_actions[0].reason == "system-filtered"
+
+
+def test_save_planner_emits_upload_new_for_local_only_exact_file(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save_root = temp_root / "retroarch-saves"
+        save_root.mkdir(parents=True, exist_ok=True)
+        (save_root / "SuperMarioBros.srm").write_bytes(b"local-new")
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_emulator_save_root", lambda *args, **kwargs: save_root
+        )
+
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=())
+        bindings = SaveBindingCatalog(
+            bindings=(
+                SaveBindingSpec(
+                    binding_id="savebind_nes",
+                    title_id="title_nes",
+                    system="NES",
+                    kind="battery",
+                    server_rel_dir="saves/NES/SuperMarioBros/battery",
+                    local_root="retroarch_saves",
+                    strategy="exact_files",
+                    candidate_filenames=("SuperMarioBros.srm",),
+                    learn_rule=None,
+                    portable=True,
+                ),
+            )
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+        )
+
+        plan = create_sync_plan(index=index, config=config, state=SyncState(), save_bindings=bindings)
+
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "upload_new"
+        assert plan.save_actions[0].canonical_suffix == "SuperMarioBros.srm"
+
+
+def test_save_planner_emits_upload_new_for_nested_retroarch_exact_file(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save_root = temp_root / "retroarch-saves"
+        nested = save_root / "Gambatte" / "Pokemon.srm"
+        nested.parent.mkdir(parents=True, exist_ok=True)
+        nested.write_bytes(b"local-new")
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_emulator_save_root", lambda *args, **kwargs: save_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution._retroarch_prefers_core_subdirs", lambda **kwargs: False
+        )
+
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=())
+        bindings = SaveBindingCatalog(
+            bindings=(
+                SaveBindingSpec(
+                    binding_id="savebind_gb",
+                    title_id="title_gb",
+                    system="GB",
+                    kind="battery",
+                    server_rel_dir="saves/GB/Pokemon/battery",
+                    local_root="retroarch_saves",
+                    strategy="exact_files",
+                    candidate_filenames=("Pokemon.srm",),
+                    learn_rule=None,
+                    portable=True,
+                ),
+            )
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+        )
+
+        plan = create_sync_plan(index=index, config=config, state=SyncState(), save_bindings=bindings)
+
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "upload_new"
+        assert plan.save_actions[0].destination == nested
+
+
+def test_save_planner_keeps_download_mode_strict_for_local_only_exact_file(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save_root = temp_root / "retroarch-saves"
+        save_root.mkdir(parents=True, exist_ok=True)
+        (save_root / "SuperMarioBros.srm").write_bytes(b"local-new")
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_emulator_save_root", lambda *args, **kwargs: save_root
+        )
+
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=())
+        bindings = SaveBindingCatalog(
+            bindings=(
+                SaveBindingSpec(
+                    binding_id="savebind_nes",
+                    title_id="title_nes",
+                    system="NES",
+                    kind="battery",
+                    server_rel_dir="saves/NES/SuperMarioBros/battery",
+                    local_root="retroarch_saves",
+                    strategy="exact_files",
+                    candidate_filenames=("SuperMarioBros.srm",),
+                    learn_rule=None,
+                    portable=True,
+                ),
+            )
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, mode="download"),
+        )
+
+        plan = create_sync_plan(index=index, config=config, state=SyncState(), save_bindings=bindings)
+
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "skip"
+        assert plan.save_actions[0].reason == "download-mode-local-new"

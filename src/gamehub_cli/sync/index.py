@@ -47,13 +47,14 @@ def _is_retryable_index_fetch_error(exc: Exception, httpx_module: ModuleType | N
     return False
 
 
-def fetch_index_with_retries(
+def _fetch_json_with_retries(
     *,
-    index_url: str,
+    url: str,
     timeout_seconds: float,
     attempts: int,
     retry_backoff_seconds: float,
     verbose: bool,
+    request_label: str,
     http_client_module: ModuleType | None = None,
     sleep_func: Callable[[float], None] | None = None,
 ) -> dict:
@@ -64,18 +65,18 @@ def fetch_index_with_retries(
     for attempt in range(1, total_attempts + 1):
         try:
             if verbose and total_attempts > 1:
-                print(f"Fetching index attempt {attempt}/{total_attempts}")
+                print(f"Fetching {request_label} attempt {attempt}/{total_attempts}")
             if client is not None:
-                response = client.get(index_url, timeout=timeout_seconds)
+                response = client.get(url, timeout=timeout_seconds)
                 response.raise_for_status()
                 payload = response.json()
                 if not isinstance(payload, dict):
-                    raise ValueError("Server index response must be a JSON object")
+                    raise ValueError(f"Server {request_label} response must be a JSON object")
                 return payload
-            with urlopen(index_url, timeout=timeout_seconds) as response:  # noqa: S310
+            with urlopen(url, timeout=timeout_seconds) as response:  # noqa: S310
                 payload = json.loads(response.read().decode("utf-8"))
                 if not isinstance(payload, dict):
-                    raise ValueError("Server index response must be a JSON object")
+                    raise ValueError(f"Server {request_label} response must be a JSON object")
                 return payload
         except Exception as exc:
             last_error = exc
@@ -89,4 +90,48 @@ def fetch_index_with_retries(
             sleeper(delay)
     if last_error is not None:
         raise last_error
-    raise RuntimeError("Index fetch failed without an error")
+    raise RuntimeError(f"{request_label.capitalize()} fetch failed without an error")
+
+
+def fetch_index_with_retries(
+    *,
+    index_url: str,
+    timeout_seconds: float,
+    attempts: int,
+    retry_backoff_seconds: float,
+    verbose: bool,
+    http_client_module: ModuleType | None = None,
+    sleep_func: Callable[[float], None] | None = None,
+) -> dict:
+    return _fetch_json_with_retries(
+        url=index_url,
+        timeout_seconds=timeout_seconds,
+        attempts=attempts,
+        retry_backoff_seconds=retry_backoff_seconds,
+        verbose=verbose,
+        request_label="index",
+        http_client_module=http_client_module,
+        sleep_func=sleep_func,
+    )
+
+
+def fetch_save_bindings_with_retries(
+    *,
+    bindings_url: str,
+    timeout_seconds: float,
+    attempts: int,
+    retry_backoff_seconds: float,
+    verbose: bool,
+    http_client_module: ModuleType | None = None,
+    sleep_func: Callable[[float], None] | None = None,
+) -> dict:
+    return _fetch_json_with_retries(
+        url=bindings_url,
+        timeout_seconds=timeout_seconds,
+        attempts=attempts,
+        retry_backoff_seconds=retry_backoff_seconds,
+        verbose=verbose,
+        request_label="save bindings",
+        http_client_module=http_client_module,
+        sleep_func=sleep_func,
+    )

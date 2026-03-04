@@ -8,7 +8,7 @@ import threading
 import time
 from pathlib import Path
 
-from gamehub_common.models import FirmwareSpec, LibraryIndex, SaveSpec, TitleEntry
+from gamehub_common.models import FirmwareSpec, LibraryIndex, SaveBindingSpec, SaveSpec, TitleEntry
 
 from .indexer import FIRMWARE_ROOT_NAME, SAVES_ROOT_NAME, IndexBundle, build_index
 from .logging_utils import get_server_logger
@@ -399,6 +399,16 @@ class IndexRepository:
         for save in bundle.index.saves:
             if save.save_id == save_id:
                 return save
+        return None
+
+    def save_bindings(self, *, force_refresh: bool = False) -> tuple[SaveBindingSpec, ...]:
+        bundle = self.load(force_refresh=force_refresh) if force_refresh else self.load(check_sources=False)
+        return bundle.save_bindings
+
+    def resolve_save_binding(self, binding_id: str, *, force_refresh: bool = False) -> SaveBindingSpec | None:
+        for binding in self.save_bindings(force_refresh=force_refresh):
+            if binding.binding_id == binding_id:
+                return binding
         return None
 
     def _poll_loop(self) -> None:

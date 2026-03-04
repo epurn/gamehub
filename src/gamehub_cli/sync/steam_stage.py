@@ -56,7 +56,7 @@ _DOLPHIN_EXEC_TOKEN_RE = re.compile(r"\s(-e|--exec)(\s|=)")
 _DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
 _AZAHAR_LINUX_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_LINUX_EXIT_HOOK"
 _STEAM_ALLOW_DESKTOP_CONFIG_ENV = "GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG"
-_WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar"}
+_WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar", "retroarch"}
 
 
 def _env_enabled(name: str, *, default: bool = True) -> bool:
@@ -230,7 +230,7 @@ def _normalize_dolphin_launch_template(launch_template: str, emulator_exe: str, 
 
 
 def _should_wrap_shortcut(emulator_name: str, config: GamehubConfig) -> bool:
-    if not config.controllers.launch_autoconfig:
+    if not (config.controllers.launch_autoconfig or config.save_sync.enabled):
         return False
     normalized = emulator_name.casefold()
     for token in _WRAPPED_EMULATORS:

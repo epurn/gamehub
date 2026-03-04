@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from gamehub_cli.common.config import ControllersConfig, GamehubConfig
+from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.controllers.launch import parse_shortcut_payload
 from gamehub_cli.sync.orchestrator import (
     _apply_downloads,
@@ -1792,8 +1792,8 @@ def test_build_shortcut_specs_wrapper_uses_direct_command_for_frozen_exe(monkeyp
         assert _normalize_path_token(payload.target_exe) == "C:/PCSX2/pcsx2-qt.exe"
 
 
-def test_build_shortcut_specs_retroarch_not_wrapped_with_controller_autoconfig(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-sync-shortcuts-retroarch-nowrap-") as temp_root:
+def test_build_shortcut_specs_wraps_retroarch_with_controller_autoconfig(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-retroarch-wrap-") as temp_root:
         config = GamehubConfig(
             server_url="http://localhost:8000",
             library_dir=temp_root / "library",
@@ -1827,12 +1827,62 @@ def test_build_shortcut_specs_retroarch_not_wrapped_with_controller_autoconfig(m
         monkeypatch.setattr(
             "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
         )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "C:\\Python\\python.exe")
 
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert specs[0].exe == '"C:\\RetroArch\\retroarch.exe"'
-        assert "controller-launch" not in specs[0].launch_options
+        assert _normalize_path_token(specs[0].exe) == "C:/Python/python.exe"
+        assert specs[0].launch_options.startswith("-m gamehub_cli.main shortcut-launch --payload ")
+        payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
+        payload = parse_shortcut_payload(payload_token)
+        assert payload.emulator == "retroarch"
+        assert _normalize_path_token(payload.target_exe) == "C:/RetroArch/retroarch.exe"
+
+
+def test_build_shortcut_specs_wraps_retroarch_when_save_sync_enabled(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-retroarch-save-sync-wrap-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True),
+        )
+        title = TitleEntry(
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            title_name="Pokemon Crystal",
+            title_rel_dir="GBC/Pokemon Crystal.gbc",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/gambatte_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_gbc",
+                rel_path="roms/GBC/Pokemon Crystal.gbc",
+                sha256="b" * 64,
+                size_bytes=3,
+                extension=".gbc",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "C:\\Python\\python.exe")
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert _normalize_path_token(specs[0].exe) == "C:/Python/python.exe"
+        assert specs[0].launch_options.startswith("-m gamehub_cli.main shortcut-launch --payload ")
 
 
 def test_build_shortcut_specs_windows_azahar_uses_native_launch_template(monkeypatch, workspace_tempdir) -> None:
@@ -2687,13 +2737,15 @@ def test_apply_save_stage_uploads_and_updates_state(monkeypatch, workspace_tempd
             save_actions=[
                 SavePlanAction(
                     save_id="save_upload",
+                    binding_id="savebind_upload",
                     title_id="title_upload",
                     system="N64",
                     kind="battery",
-                    decision="upload",
+                    decision="upload_existing",
                     reason="local-changed-remote-unchanged",
                     url="/v1/saves/upload",
                     destination=destination,
+                    canonical_suffix="upload.sav",
                     expected_sha256="c" * 64,
                     size_bytes=1,
                     remote_updated_at="2026-01-01T00:00:00+00:00",
@@ -2706,6 +2758,9 @@ def test_apply_save_stage_uploads_and_updates_state(monkeypatch, workspace_tempd
 
         def _fake_upload(**kwargs) -> dict[str, object]:
             upload_calls.append(kwargs["url"])
+            assert kwargs["binding_id"] == "savebind_upload"
+            assert kwargs["canonical_suffix"] == "upload.sav"
+            assert kwargs["expected_remote_sha256"] == "c" * 64
             return {
                 "save_id": "save_upload",
                 "title_id": "title_upload",
@@ -2745,6 +2800,7 @@ def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatc
             save_actions=[
                 SavePlanAction(
                     save_id="save_a",
+                    binding_id="savebind_a",
                     title_id="title_a",
                     system="N64",
                     kind="battery",
@@ -2752,12 +2808,14 @@ def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatc
                     reason="local-missing",
                     url="/v1/saves/a",
                     destination=temp_root / "a.sav",
+                    canonical_suffix="a.sav",
                     expected_sha256="a" * 64,
                     size_bytes=1,
                     remote_updated_at="2026-01-01T00:00:00+00:00",
                 ),
                 SavePlanAction(
                     save_id="save_b",
+                    binding_id="savebind_b",
                     title_id="title_b",
                     system="N64",
                     kind="battery",
@@ -2765,6 +2823,7 @@ def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatc
                     reason="local-missing",
                     url="/v1/saves/b",
                     destination=temp_root / "b.sav",
+                    canonical_suffix="b.sav",
                     expected_sha256="b" * 64,
                     size_bytes=1,
                     remote_updated_at="2026-01-01T00:00:00+00:00",

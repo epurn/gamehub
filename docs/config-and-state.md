@@ -180,21 +180,25 @@ Save sync config keys (TOML only for now):
 - `[save_sync].mode`: `download` (default) or `bidirectional`.
 - `[save_sync].conflict_policy`: `prefer_server` (default), `prefer_local`, or `manual`.
 - `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase).
-- Save planning decisions are deterministic per indexed save and include explicit reasons for `download`, `upload`, `conflict`, and `skip` paths (for example: `local-missing`, `both-changed-manual`, `save-sync-disabled`).
+- Save planning decisions are deterministic and include explicit reasons for `download`, `upload_existing`, `upload_new`, `conflict`, and `skip` paths (for example: `local-missing`, `local-only-create`, `download-mode-local-new`, `both-changed-manual`, `save-sync-disabled`).
 
 Mode behavior reference:
 - `enabled=false`: planner emits deterministic `skip` reasons (for example `save-sync-disabled`) and performs no save transfers.
-- `mode=download`: planner may emit `download` or `skip`; `upload` actions are suppressed.
-- `mode=bidirectional`: planner may emit `download`, `upload`, `conflict`, or `skip` based on checksum lineage and `conflict_policy`.
+- `mode=download`: planner may emit `download` or `skip`; both `upload_existing` and `upload_new` actions are suppressed.
+- `mode=bidirectional`: planner may emit `download`, `upload_existing`, `upload_new`, `conflict`, or `skip` based on checksum lineage, local-only discovery, and `conflict_policy`.
 - `conflict_policy=prefer_server`: conflict path converges to server copy (planned `download`).
 - `conflict_policy=prefer_local`: conflict path converges to local copy (planned `upload`).
 - `conflict_policy=manual`: planner emits `conflict` and records unresolved entries in state until operator intervention.
 - In `mode=bidirectional`, managed `shortcut-launch` sessions run pre-launch download/skip/conflict reconciliation, then attempt post-exit upload only when the remote save did not change during play.
+- Managed `shortcut-launch` save sync is fail-open: if the server is unreachable during pre-launch or post-exit save work, GAMEHUB logs a warning and still completes the emulator launch flow.
+- First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry `gamehub sync` through `GET /v1/save-bindings`.
+- Managed `shortcut-launch` sessions also auto-create those deterministic `exact_files` saves at post-exit for wrapped titles, so first-time RetroArch battery saves and managed `PSX`/`PS2` memory cards do not need to wait for the next full sync.
+- First-time `per_game` saves are learned and uploaded by managed `shortcut-launch` post-exit when one deterministic tree root can be proven (`GC` GCI folders, `Wii` title trees, and `N3DS` title data trees).
 - There is no background save watcher service in this release; unmanaged emulator launches reconcile on the next `gamehub sync` or next managed launch.
 
 Dry-run expectations for save sync:
 - Dry-run never writes local save files and never mutates remote save artifacts.
-- Dry-run output should include explicit per-save decision reasons so operators can audit why each save is `download`, `upload`, `conflict`, or `skip`.
+- Dry-run output should include explicit per-save decision reasons so operators can audit why each save is `download`, `upload_existing`, `upload_new`, `conflict`, or `skip`.
 
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
@@ -216,7 +220,7 @@ RetroArch note:
 
 Managed shortcut launch autoconfig:
 - Applies to Steam shortcut launches for `PCSX2`, `Dolphin`, and `Azahar`.
-- Does not wrap `RetroArch` launches.
+- Wraps `RetroArch` launches when controller autoconfig or save sync is enabled.
 - Runtime flow: detect Xbox controller count (`0`, `1`, `2+`) -> choose profile (`kbm`, `xbox_1p`, `xbox_2p`) -> apply managed keys -> launch emulator.
 - The hidden wrapper command is `shortcut-launch`; older `controller-launch` shortcuts must be rewritten by a non-dry `gamehub sync` after upgrade.
 - Linux Steam Deck `shortcut-launch` uses a single detect pass and applies `xbox_1p` when detection returns zero.
@@ -286,6 +290,7 @@ N3DS Azahar defaults:
   - `firmware_checksums` (`system/filename` -> checksum)
   - `save_checksums` (`save_id` -> checksum)
   - `save_lineage` (`save_id` -> last synced local/remote checksum and timestamps)
+  - `save_binding_roots` (`binding_id` -> learned `canonical_root` + client-local `materialized_root`)
   - `unresolved_save_conflicts` (`save_id` -> last unresolved deterministic conflict reason)
   - `tombstones`
   - `last_sync` (UTC timestamp)
@@ -295,6 +300,7 @@ Save sync state semantics:
 - Missing save keys in older `state.json` files load as empty defaults for backward compatibility.
 - `save_checksums` tracks last-known local checksum by `save_id` for deterministic planner comparisons.
 - `save_lineage` captures last-synced local/remote checksum snapshots and timestamps.
+- `save_binding_roots` persists learned deterministic tree roots for `per_game` save materialization across clients and later runs.
 - `unresolved_save_conflicts` persists manual-resolution-required conflicts between runs.
 
 Bootstrap notes:

@@ -49,6 +49,19 @@ Save sync matching rules:
 - `system` is part of strict filtering behavior (`[save_sync].systems`) and must use canonical uppercase names.
 - `portable=false` indicates the server indexed a known non-portable format; clients should still parse it but may choose conservative conflict behavior.
 
+## `GET /v1/save-bindings`
+- The save-binding catalog is a companion contract for first-time local save uploads.
+- Each `SaveBindingSpec` includes:
+  - `binding_id`: deterministic from `make_save_binding_id(title_id, kind)`
+  - `title_id`, `system`, `kind`
+  - `server_rel_dir`: canonical remote namespace root used to derive `save_id`
+  - `local_root`: deterministic local save-root family
+  - `strategy`: `exact_files` or `learned_tree`
+  - `candidate_filenames`: exact allowed first-create filenames for `exact_files`
+  - `learn_rule`: structural learned-tree rule for `learned_tree` (`dolphin_gc_gci_tree`, `dolphin_wii_title_tree`, `azahar_title_data_tree`)
+  - `portable`
+- Bindings are generated from indexed titles, not from existing remote save files, so they can exist before any save artifact is uploaded.
+
 ## Validation guarantees
 - Unknown fields are rejected (`extra=forbid`)
 - SHA-256 fields must be lowercase 64-char hex
@@ -62,6 +75,7 @@ Save sync matching rules:
 - `file_id`: `make_file_id(server_relative_path, sha256)`
 - `asset_id`: `make_asset_id(server_relative_path, sha256)`
 - `save_id`: `make_save_id(server_relative_path)`
+- `binding_id`: `make_save_binding_id(title_id, kind)`
 
 ## Index versioning expectation for save-sync contract freeze
 - Save artifacts are additive contract surface in `index_version=1` for the current rollout phase.

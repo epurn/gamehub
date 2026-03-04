@@ -7,11 +7,16 @@ import pytest
 
 from gamehub_cli.emulators import ensure_emulators, resolve_emulator_executable
 from gamehub_cli.emulators.save_resolution import (
+    canonical_suffix_for_learned_path,
     default_emulator_for_system,
+    discover_local_exact_save_candidates,
+    learn_binding_root,
     resolve_emulator_save_root,
+    resolve_exact_local_save_destination,
     resolve_system_save_root,
+    snapshot_binding_tree,
 )
-from gamehub_common.models import LibraryIndex, SystemSpec
+from gamehub_common.models import LibraryIndex, SaveBindingSpec, SystemSpec
 
 
 def _index_with_emulators(*names: str) -> LibraryIndex:
@@ -919,11 +924,49 @@ def test_resolve_emulator_save_root_windows_pcsx2_memcards(monkeypatch) -> None:
         assert resolved == memcards
 
 
+def test_resolve_system_save_root_windows_prefers_portable_dolphin_user_gc(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-") as temp_root:
+        dolphin_root = temp_root / "Programs" / "Dolphin"
+        dolphin_root.mkdir(parents=True, exist_ok=True)
+        exe = dolphin_root / "Dolphin.exe"
+        exe.write_bytes(b"exe")
+        portable_gc = dolphin_root / "User" / "GC"
+        portable_gc.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
+        monkeypatch.setenv("LOCALAPPDATA", str(temp_root))
+        monkeypatch.delenv("APPDATA", raising=False)
+        monkeypatch.delenv("USERPROFILE", raising=False)
+
+        resolved = resolve_system_save_root("GC", resolve_executable=lambda _name: str(exe))
+
+        assert resolved == portable_gc
+
+
+def test_resolve_emulator_save_root_windows_retroarch_drive_relative_save_dir(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-") as temp_root:
+        exe = temp_root / "retroarch.exe"
+        exe.write_bytes(b"exe")
+        cfg = temp_root / "retroarch.cfg"
+        cfg.write_text('savefile_directory = ":\\\\saves"\n', encoding="utf-8")
+        saves = temp_root / "saves"
+        saves.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
+        monkeypatch.delenv("APPDATA", raising=False)
+
+        resolved = resolve_emulator_save_root("retroarch", resolve_executable=lambda _name: str(exe))
+
+        assert resolved == saves
+
+
 def test_resolve_emulator_save_root_returns_none_when_runtime_path_missing(monkeypatch) -> None:
     with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
         temp_root = Path(temp_dir)
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
         monkeypatch.setenv("USERPROFILE", str(temp_root))
+        monkeypatch.delenv("APPDATA", raising=False)
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
 
         resolved = resolve_emulator_save_root("dolphin", resolve_executable=lambda _name: "")
 
@@ -947,6 +990,154 @@ def test_resolve_emulator_save_root_linux_flatpak_retroarch(monkeypatch) -> None
         )
 
         assert resolved == saves
+
+
+def test_discover_local_exact_save_candidates_finds_sorted_retroarch_subdir(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-") as temp_root:
+        exe = temp_root / "retroarch.exe"
+        exe.write_bytes(b"exe")
+        cfg = temp_root / "retroarch.cfg"
+        cfg.write_text(
+            'savefile_directory = ":\\\\saves"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        save_path = temp_root / "saves" / "Gambatte" / "Pokemon.srm"
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_path.write_bytes(b"save")
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
+        monkeypatch.delenv("APPDATA", raising=False)
+
+        candidates = discover_local_exact_save_candidates(
+            (
+                SaveBindingSpec(
+                    binding_id="savebind_gb",
+                    title_id="title_gb",
+                    system="GB",
+                    kind="battery",
+                    server_rel_dir="saves/GB/Pokemon/battery",
+                    local_root="retroarch_saves",
+                    strategy="exact_files",
+                    candidate_filenames=("Pokemon.srm",),
+                    learn_rule=None,
+                    portable=True,
+                ),
+            ),
+            resolve_executable=lambda _name: str(exe),
+        )
+
+        assert len(candidates) == 1
+        assert candidates[0].path == save_path
+
+
+def test_resolve_exact_local_save_destination_prefers_existing_sorted_retroarch_subdir(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-root-") as temp_root:
+        exe = temp_root / "retroarch.exe"
+        exe.write_bytes(b"exe")
+        cfg = temp_root / "retroarch.cfg"
+        cfg.write_text(
+            'savefile_directory = ":\\\\saves"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        save_root = temp_root / "saves"
+        save_path = save_root / "Gambatte" / "Pokemon.srm"
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_path.write_bytes(b"save")
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
+        monkeypatch.delenv("APPDATA", raising=False)
+
+        resolved = resolve_exact_local_save_destination(
+            system="GB",
+            kind="battery",
+            root=save_root,
+            filename="Pokemon.srm",
+            resolve_executable=lambda _name: str(exe),
+        )
+
+        assert resolved == save_path
+
+
+def test_learned_tree_discovers_single_dolphin_gc_root() -> None:
+    binding = SaveBindingSpec(
+        binding_id="savebind_gc",
+        title_id="title_gc",
+        system="GC",
+        kind="per_game",
+        server_rel_dir="saves/GC/WindWaker/per_game",
+        local_root="dolphin_gc",
+        strategy="learned_tree",
+        candidate_filenames=(),
+        learn_rule="dolphin_gc_gci_tree",
+        portable=False,
+    )
+
+    learned = learn_binding_root(
+        binding,
+        (
+            "USA/Card A/01-GZLE-gczelda.gci",
+            "USA/Card A/01-GZLE-banner.gci",
+        ),
+    )
+
+    assert learned == ("USA/Card A", "USA/Card A")
+
+
+def test_canonical_suffix_for_dolphin_gc_learned_path() -> None:
+    binding = SaveBindingSpec(
+        binding_id="savebind_gc",
+        title_id="title_gc",
+        system="GC",
+        kind="per_game",
+        server_rel_dir="saves/GC/WindWaker/per_game",
+        local_root="dolphin_gc",
+        strategy="learned_tree",
+        candidate_filenames=(),
+        learn_rule="dolphin_gc_gci_tree",
+        portable=False,
+    )
+
+    suffix = canonical_suffix_for_learned_path(
+        binding,
+        "USA/Card A/01-GZLE-gczelda.gci",
+        materialized_root="USA/Card A",
+    )
+
+    assert suffix == "USA/Card A/01-GZLE-gczelda.gci"
+
+
+def test_snapshot_binding_tree_ignores_global_dolphin_gc_files(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-") as temp_root:
+        (temp_root / "SRAM.raw").write_bytes(b"sram")
+        save_path = temp_root / "USA" / "Card A" / "01-GP5E-MARIPA5.gci"
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_path.write_bytes(b"gci")
+        binding = SaveBindingSpec(
+            binding_id="savebind_gc",
+            title_id="title_gc",
+            system="GC",
+            kind="per_game",
+            server_rel_dir="saves/GC/MarioParty5/per_game",
+            local_root="dolphin_gc",
+            strategy="learned_tree",
+            candidate_filenames=(),
+            learn_rule="dolphin_gc_gci_tree",
+            portable=False,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_binding_local_root",
+            lambda *_args, **_kwargs: temp_root,
+        )
+
+        snapshot = snapshot_binding_tree(binding)
+
+        assert tuple(snapshot) == ("USA/Card A/01-GP5E-MARIPA5.gci",)
 
 
 def test_resolve_system_save_root_uses_default_emulator(monkeypatch) -> None:

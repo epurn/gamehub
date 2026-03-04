@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import gamehub_server.indexer as indexer_module
-from gamehub_common.ids import make_file_id, make_save_id, make_title_id, sha256_file
+from gamehub_common.ids import make_file_id, make_save_binding_id, make_save_id, make_title_id, sha256_file
 from gamehub_server.indexer import SYSTEM_CATALOG, build_index
 
 INITIAL_SYSTEM_SET = {
@@ -315,3 +315,40 @@ def test_build_index_allows_nested_per_game_save_trees(workspace_tempdir) -> Non
             "saves/Wii/MarioGalaxy/per_game/profiles/slot1.dat",
             "saves/Wii/MarioGalaxy/per_game/title/banner.bin",
         }
+
+
+def test_build_index_emits_save_bindings_without_existing_saves(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom")
+        _write_file(root / "roms" / "GC" / "WindWaker.iso", b"rom")
+        _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
+
+        bundle = build_index(root)
+
+        by_id = {binding.binding_id: binding for binding in bundle.save_bindings}
+        nes_id = make_save_binding_id(make_title_id("NES", "NES/SuperMarioBros.nes"), "battery")
+        gc_id = make_save_binding_id(make_title_id("GC", "GC/WindWaker.iso"), "per_game")
+        wii_id = make_save_binding_id(make_title_id("Wii", "Wii/MarioGalaxy.iso"), "per_game")
+
+        assert by_id[nes_id].candidate_filenames == ("SuperMarioBros.srm",)
+        assert by_id[gc_id].local_root == "dolphin_gc"
+        assert by_id[gc_id].learn_rule == "dolphin_gc_gci_tree"
+        assert by_id[wii_id].learn_rule == "dolphin_wii_title_tree"
+
+
+def test_build_index_ignores_server_generated_save_backups(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "GBC" / "PokemonCrystal.gbc", b"rom")
+        _write_file(root / "saves" / "GBC" / "PokemonCrystal" / "battery" / "PokemonCrystal.srm", b"save")
+        _write_file(
+            root / "saves" / "GBC" / "PokemonCrystal" / "battery" / "PokemonCrystal.srm.20260304001806.bak",
+            b"backup",
+        )
+        _write_file(
+            root / "saves" / "GBC" / "PokemonCrystal" / "battery" / "PokemonCrystal.srm.20260304001806.1.bak",
+            b"backup-2",
+        )
+
+        bundle = build_index(root)
+
+        assert [save.rel_path for save in bundle.index.saves] == ["saves/GBC/PokemonCrystal/battery/PokemonCrystal.srm"]

@@ -4,16 +4,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from gamehub_common.ids import sha256_file
-from gamehub_common.models import LibraryIndex
+from gamehub_common.models import LibraryIndex, SaveBindingCatalog, SaveBindingSpec
 
 from ..common.config import GamehubConfig
 from ..common.paths import from_rel_path, resolve_rom_destination
 from ..common.save_sync import (
+    canonical_suffix_for_save,
     classify_save_action,
     local_file_sha256,
+    save_binding_id_for_save,
     to_utc_timestamp,
 )
-from ..emulators.save_resolution import resolve_local_save_destination
+from ..emulators.save_resolution import (
+    LocalSaveCandidate,
+    discover_local_exact_save_candidates,
+    resolve_local_save_destination,
+)
 from .state import SyncState
 
 
@@ -45,6 +51,7 @@ class SyncPlan:
 @dataclass(frozen=True)
 class SavePlanAction:
     save_id: str
+    binding_id: str
     title_id: str
     system: str
     kind: str
@@ -52,6 +59,7 @@ class SavePlanAction:
     reason: str
     url: str
     destination: Path | None
+    canonical_suffix: str
     expected_sha256: str
     size_bytes: int
     remote_updated_at: str
@@ -68,7 +76,44 @@ def _is_file_valid(path: Path, expected_sha256: str, verify: bool, expected_size
     return True
 
 
-def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncState, verify: bool = False) -> SyncPlan:
+def _active_save_bindings(
+    save_bindings: SaveBindingCatalog | None,
+    *,
+    config: GamehubConfig,
+) -> tuple[SaveBindingSpec, ...]:
+    if save_bindings is None or not config.save_sync.enabled:
+        return ()
+    bindings = tuple(save_bindings.bindings)
+    if not config.save_sync.systems:
+        return bindings
+    return tuple(binding for binding in bindings if binding.system.upper() in config.save_sync.systems)
+
+
+def _plan_local_only_exact_saves(
+    *,
+    config: GamehubConfig,
+    remote_save_ids: set[str],
+    save_bindings: tuple[SaveBindingSpec, ...],
+) -> list[tuple[LocalSaveCandidate, str, str]]:
+    planned: list[tuple[LocalSaveCandidate, str, str]] = []
+    for candidate in discover_local_exact_save_candidates(save_bindings):
+        if candidate.save_id in remote_save_ids:
+            continue
+        if config.save_sync.mode == "download":
+            planned.append((candidate, "skip", "download-mode-local-new"))
+        else:
+            planned.append((candidate, "upload_new", "local-only-create"))
+    return planned
+
+
+def create_sync_plan(
+    index: LibraryIndex,
+    config: GamehubConfig,
+    state: SyncState,
+    verify: bool = False,
+    *,
+    save_bindings: SaveBindingCatalog | None = None,
+) -> SyncPlan:
     plan = SyncPlan()
     system_map = {system.name: system for system in index.systems}
 
@@ -145,8 +190,34 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
                 )
             )
 
+    active_bindings = _active_save_bindings(save_bindings, config=config)
+    remote_save_ids = {save.save_id for save in index.saves}
+    for candidate, decision, reason in _plan_local_only_exact_saves(
+        config=config,
+        remote_save_ids=remote_save_ids,
+        save_bindings=active_bindings,
+    ):
+        plan.save_actions.append(
+            SavePlanAction(
+                save_id=candidate.save_id,
+                binding_id=candidate.binding_id,
+                title_id=candidate.title_id,
+                system=candidate.system,
+                kind=candidate.kind,
+                decision=decision,
+                reason=reason,
+                url=f"/v1/saves/{candidate.save_id}",
+                destination=candidate.path,
+                canonical_suffix=candidate.canonical_suffix,
+                expected_sha256=candidate.sha256,
+                size_bytes=candidate.size_bytes,
+                remote_updated_at="",
+                local_sha256=candidate.sha256,
+            )
+        )
+
     for save in sorted(index.saves, key=lambda item: (item.system, item.title_id, item.rel_path, item.save_id)):
-        save_destination = resolve_local_save_destination(save)
+        save_destination = resolve_local_save_destination(save, binding_roots=state.save_binding_roots)
         if not config.save_sync.enabled:
             decision, reason = "skip", "save-sync-disabled"
             local_sha = None
@@ -171,6 +242,7 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
         plan.save_actions.append(
             SavePlanAction(
                 save_id=save.save_id,
+                binding_id=save_binding_id_for_save(save),
                 title_id=save.title_id,
                 system=save.system,
                 kind=save.kind,
@@ -178,6 +250,7 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
                 reason=reason,
                 url=f"/v1/saves/{save.save_id}",
                 destination=save_destination,
+                canonical_suffix=canonical_suffix_for_save(save),
                 expected_sha256=save.sha256,
                 size_bytes=save.size_bytes,
                 remote_updated_at=to_utc_timestamp(save.updated_at),
@@ -185,4 +258,7 @@ def create_sync_plan(index: LibraryIndex, config: GamehubConfig, state: SyncStat
             )
         )
 
+    plan.save_actions.sort(
+        key=lambda item: (item.system, item.title_id, item.kind, item.decision, item.canonical_suffix, item.save_id)
+    )
     return plan

@@ -17,10 +17,16 @@ Base URL: `http://<host>:8000`
 - `GET /v1/saves/{save_id}`
   - Streams save file content for `save_id` values present in the active in-memory `/v1/index` snapshot
   - `404` for unknown `save_id` (including traversal-like target strings, because lookup is ID-based only)
+- `GET /v1/save-bindings`
+  - Returns a strict `{ "bindings": [...] }` catalog of deterministic save-creation bindings for managed titles
+  - Bindings exist even when a title has no current remote save files
 - `PUT /v1/saves/{save_id}`
-  - Accepts raw save bytes for the indexed `save_id`
-  - Streams to a temporary `.part` file, atomically replaces the target save file, refreshes the in-memory index snapshot, then returns the refreshed `SaveSpec` JSON
-  - `404` for unknown `save_id`
+  - This is the only save write route and it now handles both create and update
+  - Requires `multipart/form-data` with `binding_id`, `canonical_suffix`, and `file`
+  - Existing-save updates also require `expected_remote_sha256`; the server returns `409` if the remote checksum changed
+  - Missing remote saves are created when `binding_id + canonical_suffix` deterministically maps to `save_id`
+  - Writes use temp-file + fsync + atomic replace, create a backup before replacing existing user data, refresh the in-memory index snapshot, then return refreshed `SaveSpec` JSON
+  - `409` responses return structured payloads in `detail`: `reason` plus `current` `SaveSpec` when a remote file already exists
 - `GET /v1/firmware/{system}/{filename}`
   - Streams raw firmware file from `firmware/<system>/<filename>`
   - `404` when file is missing
@@ -42,6 +48,7 @@ Base URL: `http://<host>:8000`
 - Firmware metadata in `/v1/index` is scanned from `firmware/<system>/` for systems with firmware scanning enabled, and includes SHA256 per file.
 - SHA256 generation uses a persistent metadata-keyed cache (`size` + `mtime_ns`) so unchanged files skip re-hash on future rebuilds.
 - Hash cache path is configurable with `GAMEHUB_HASH_CACHE_PATH` (default: OS temp dir).
+- GAMEHUB-generated save backups (`<name>.<YYYYmmddHHMMSS>[.<n>].bak`) are never indexed as canonical saves and are never advertised to clients through `/v1/index`.
 - Wii firmware directory files are ignored for indexing in v1 (no required Wii firmware).
 - N3DS firmware directory files are ignored for indexing in v1.1 (no required N3DS firmware).
 - For systems with required firmware (for example `PS2`), index generation fails if required firmware is missing while titles are present.
@@ -69,5 +76,6 @@ Base URL: `http://<host>:8000`
 
 ## Save endpoint behavior by rollout mode
 - Download mode clients call `GET /v1/saves/{save_id}` only for saves selected by planner policy and checksum lineage.
-- Bidirectional mode uses `PUT /v1/saves/{save_id}` for upload actions selected by client policy.
+- Bidirectional mode uses `GET /v1/save-bindings` plus `PUT /v1/saves/{save_id}` for both first-create and update actions.
 - Unknown IDs always return `404`; clients must not attempt path-like probing or filename-based fallback lookups.
+- Save writes require the server data root (`GAMEHUB_DATA_DIR`, default `/data`) to be mounted read-write.

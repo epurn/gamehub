@@ -112,13 +112,18 @@ Steam close behavior:
 12. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
    - managed shortcuts persist stable `appid` values on write, so first-run artwork/category mapping does not depend on a later Steam rewrite pass
    - collection membership appids are canonicalized to unsigned numeric values in both localconfig and cloud payloads
-    - when `[controllers].launch_autoconfig = true`, GAMEHUB wraps `PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `shortcut-launch` command that:
+    - when `[controllers].launch_autoconfig = true` or `[save_sync].enabled = true`, GAMEHUB wraps `RetroArch`/`PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `shortcut-launch` command that:
       - decodes target emulator command payload
       - detects attached controllers (Xbox on non-Deck platforms; built-in controller on Steam Deck)
       - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
+      - rewrites managed `PSX`/`PS2` memory-card targets to deterministic GAMEHUB filenames before launch when save sync is enabled
       - runs title-scoped pre-launch save reconciliation when save sync is enabled
+      - fails open if the server cannot be reached for save sync; launch continues after a warning
       - launches the original emulator command
-      - runs title-scoped post-exit save upload when `save_sync.mode = "bidirectional"` and the remote save did not change during play
+      - runs title-scoped post-exit save upload when `save_sync.mode = "bidirectional"`:
+        - uploads changed indexed saves when the remote save did not change during play
+        - creates remote-missing deterministic `exact_files` saves (`battery`, managed `memory_card`) automatically
+        - learns first-time `per_game` save trees for supported `GC`/`Wii`/`N3DS` bindings and uploads newly created remote save files automatically when the learned root is deterministic
    - Linux Steam Deck default shortcut policy:
      - managed shortcuts default to `AllowDesktopConfig = 0` (native-first controller path)
      - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`
@@ -144,14 +149,18 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 
 ### Save sync dry-run and conflict interpretation
 - In `mode = "download"`, save planning is server-authoritative: expected actions are `download` or `skip` only.
-- In `mode = "bidirectional"`, planner decisions may include `upload` and `conflict` in addition to `download`/`skip` according to checksum lineage and `conflict_policy`.
+- In `mode = "bidirectional"`, planner decisions may include `upload_existing`, `upload_new`, and `conflict` in addition to `download`/`skip` according to checksum lineage, binding discovery, and `conflict_policy`.
 - `conflict_policy = "prefer_server"` resolves conflict paths toward download decisions.
-- `conflict_policy = "prefer_local"` resolves conflict paths toward upload decisions.
+- `conflict_policy = "prefer_local"` resolves conflict paths toward `upload_existing` decisions.
 - `conflict_policy = "manual"` preserves explicit `conflict` outcomes for operator review.
 - `--dry-run` performs no save writes and no remote mutations; it is the required safety preview for save plan auditing before enabling non-dry execution.
 - Managed shortcut launches use launch-session save sync only; there is no resident background watcher in this release.
 - Pre-launch shortcut sync never auto-uploads.
 - Post-exit shortcut sync uploads only when the local save changed during the session and the remote save is unchanged from the pre-launch snapshot.
+- First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry sync from the server-published save-binding catalog and become `upload_new` actions in `bidirectional`.
+- Managed shortcut launches also auto-create those deterministic `exact_files` saves at post-exit, so wrapped RetroArch and managed `PSX`/`PS2` sessions do not need to wait for the next full `gamehub sync`.
+- `download` mode stays read-only: local-only first-time saves become `skip(download-mode-local-new)` and never mutate the server.
+- If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
 - If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
 - After upgrading to the build that introduces `shortcut-launch`, run one non-dry `gamehub sync` before starting managed shortcuts so Steam commands are rewritten.
 
@@ -243,7 +252,7 @@ Controller launch profile defaults:
 - GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available, otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID for Steam/Flatpak launches.
-- `RetroArch` shortcuts remain direct (not wrapped).
+- `RetroArch` shortcuts are wrapped whenever controller autoconfig or save sync is enabled, so managed launch-time battery save sync can run at post-exit.
 
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`

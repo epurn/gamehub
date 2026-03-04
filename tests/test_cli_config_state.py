@@ -531,6 +531,7 @@ def test_load_state_defaults_save_sync_keys_when_missing(workspace_tempdir) -> N
 
         assert loaded.save_checksums == {}
         assert loaded.save_lineage == {}
+        assert loaded.save_binding_roots == {}
         assert loaded.unresolved_save_conflicts == {}
 
 
@@ -548,6 +549,12 @@ def test_state_round_trip_persists_save_sync_lineage(workspace_tempdir) -> None:
                     "local_updated_at": "2026-02-14T18:00:00+00:00",
                     "remote_updated_at": "2026-02-14T18:30:00+00:00",
                     "synced_at": "2026-02-14T19:00:00+00:00",
+                }
+            },
+            save_binding_roots={
+                "savebind_1": {
+                    "canonical_root": "title/00000001/00000002/data",
+                    "materialized_root": "Nintendo 3DS/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/title/00000001/00000002/data",
                 }
             },
             unresolved_save_conflicts={"save_2": "both-changed-manual"},

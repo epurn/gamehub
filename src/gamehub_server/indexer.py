@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import tempfile
 import time
@@ -11,8 +12,16 @@ from typing import Literal, TypedDict, cast
 
 from typing_extensions import NotRequired
 
-from gamehub_common.ids import make_file_id, make_save_id, make_title_id, sha256_file
-from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SaveSpec, SystemSpec, TitleEntry
+from gamehub_common.ids import make_file_id, make_save_binding_id, make_save_id, make_title_id, sha256_file
+from gamehub_common.models import (
+    FirmwareSpec,
+    LibraryIndex,
+    RomSpec,
+    SaveBindingSpec,
+    SaveSpec,
+    SystemSpec,
+    TitleEntry,
+)
 
 from .logging_utils import get_server_logger
 
@@ -121,9 +130,15 @@ class IndexBundle:
     file_paths: dict[str, Path]
     asset_paths: dict[str, Path]
     save_paths: dict[str, Path] = field(default_factory=dict)
+    save_bindings: tuple[SaveBindingSpec, ...] = ()
 
 
 SaveKind = Literal["battery", "memory_card", "per_game"]
+SaveBindingLocalRoot = Literal[
+    "retroarch_saves", "retroarch_saves_psx", "pcsx2_memcards", "dolphin_gc", "dolphin_wii", "azahar_sdmc"
+]
+SaveBindingStrategy = Literal["exact_files", "learned_tree"]
+SaveBindingLearnRule = Literal["dolphin_gc_gci_tree", "dolphin_wii_title_tree", "azahar_title_data_tree"]
 
 
 SAVE_KIND_PORTABILITY: dict[SaveKind, bool] = {
@@ -131,6 +146,142 @@ SAVE_KIND_PORTABILITY: dict[SaveKind, bool] = {
     "memory_card": True,
     "per_game": False,
 }
+
+_BATTERY_SAVE_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "GB": (".srm",),
+    "GBA": (".srm",),
+    "GBC": (".srm",),
+    "GEN_MD": (".srm",),
+    "N64": (".srm", ".eep", ".fla", ".mpk"),
+    "NDS": (".srm",),
+    "NES": (".srm",),
+    "SNES": (".srm",),
+}
+
+_SAVE_BACKUP_NAME_RE = re.compile(r"^.+\.\d{14}(?:\.\d+)?\.bak$")
+
+
+def _save_title_dir_name(title_rel_dir: str) -> str:
+    return PurePosixPath(title_rel_dir).with_suffix("").name
+
+
+def _server_save_binding_dir(*, system: str, title_rel_dir: str, kind: SaveKind) -> str:
+    return f"{SAVES_ROOT_NAME}/{system}/{_save_title_dir_name(title_rel_dir)}/{kind}"
+
+
+def _build_save_bindings(titles: tuple[TitleEntry, ...]) -> tuple[SaveBindingSpec, ...]:
+    bindings: list[SaveBindingSpec] = []
+    for title in titles:
+        system_name = title.system.upper()
+        server_battery_dir = _server_save_binding_dir(
+            system=title.system, title_rel_dir=title.title_rel_dir, kind="battery"
+        )
+        server_memory_dir = _server_save_binding_dir(
+            system=title.system, title_rel_dir=title.title_rel_dir, kind="memory_card"
+        )
+        server_per_game_dir = _server_save_binding_dir(
+            system=title.system, title_rel_dir=title.title_rel_dir, kind="per_game"
+        )
+
+        if system_name in _BATTERY_SAVE_SUFFIXES:
+            bindings.append(
+                SaveBindingSpec(
+                    binding_id=make_save_binding_id(title.title_id, "battery"),
+                    title_id=title.title_id,
+                    system=title.system,
+                    kind="battery",
+                    server_rel_dir=server_battery_dir,
+                    local_root="retroarch_saves",
+                    strategy="exact_files",
+                    candidate_filenames=tuple(
+                        f"{title.title_name}{suffix}" for suffix in _BATTERY_SAVE_SUFFIXES[system_name]
+                    ),
+                    learn_rule=None,
+                    portable=SAVE_KIND_PORTABILITY["battery"],
+                )
+            )
+
+        if system_name == "PSX":
+            bindings.append(
+                SaveBindingSpec(
+                    binding_id=make_save_binding_id(title.title_id, "memory_card"),
+                    title_id=title.title_id,
+                    system=title.system,
+                    kind="memory_card",
+                    server_rel_dir=server_memory_dir,
+                    local_root="retroarch_saves_psx",
+                    strategy="exact_files",
+                    candidate_filenames=(f"GH_{title.title_id}_1.mcd", f"GH_{title.title_id}_2.mcd"),
+                    learn_rule=None,
+                    portable=SAVE_KIND_PORTABILITY["memory_card"],
+                )
+            )
+
+        if system_name == "PS2":
+            bindings.append(
+                SaveBindingSpec(
+                    binding_id=make_save_binding_id(title.title_id, "memory_card"),
+                    title_id=title.title_id,
+                    system=title.system,
+                    kind="memory_card",
+                    server_rel_dir=server_memory_dir,
+                    local_root="pcsx2_memcards",
+                    strategy="exact_files",
+                    candidate_filenames=(f"GH_{title.title_id}_1.ps2", f"GH_{title.title_id}_2.ps2"),
+                    learn_rule=None,
+                    portable=SAVE_KIND_PORTABILITY["memory_card"],
+                )
+            )
+
+        if system_name == "GC":
+            bindings.append(
+                SaveBindingSpec(
+                    binding_id=make_save_binding_id(title.title_id, "per_game"),
+                    title_id=title.title_id,
+                    system=title.system,
+                    kind="per_game",
+                    server_rel_dir=server_per_game_dir,
+                    local_root="dolphin_gc",
+                    strategy="learned_tree",
+                    candidate_filenames=(),
+                    learn_rule="dolphin_gc_gci_tree",
+                    portable=SAVE_KIND_PORTABILITY["per_game"],
+                )
+            )
+
+        if system_name == "WII":
+            bindings.append(
+                SaveBindingSpec(
+                    binding_id=make_save_binding_id(title.title_id, "per_game"),
+                    title_id=title.title_id,
+                    system=title.system,
+                    kind="per_game",
+                    server_rel_dir=server_per_game_dir,
+                    local_root="dolphin_wii",
+                    strategy="learned_tree",
+                    candidate_filenames=(),
+                    learn_rule="dolphin_wii_title_tree",
+                    portable=SAVE_KIND_PORTABILITY["per_game"],
+                )
+            )
+
+        if system_name == "N3DS":
+            bindings.append(
+                SaveBindingSpec(
+                    binding_id=make_save_binding_id(title.title_id, "per_game"),
+                    title_id=title.title_id,
+                    system=title.system,
+                    kind="per_game",
+                    server_rel_dir=server_per_game_dir,
+                    local_root="azahar_sdmc",
+                    strategy="learned_tree",
+                    candidate_filenames=(),
+                    learn_rule="azahar_title_data_tree",
+                    portable=SAVE_KIND_PORTABILITY["per_game"],
+                )
+            )
+
+    return tuple(sorted(bindings, key=lambda item: (item.system, item.title_id, item.kind, item.binding_id)))
 
 
 @dataclass(frozen=True)
@@ -140,7 +291,7 @@ class _SaveBinding:
 
 
 def _save_binding_key_from_title_rel_dir(system: str, title_rel_dir: str) -> tuple[str, str]:
-    return system, PurePosixPath(title_rel_dir).with_suffix("").name
+    return system, _save_title_dir_name(title_rel_dir)
 
 
 def _save_binding_key_from_layout(system: str, title_dir_name: str) -> tuple[str, str]:
@@ -158,6 +309,8 @@ def _iter_save_files(kind_dir: Path, save_kind: SaveKind) -> list[Path]:
             files.extend(_iter_save_files(child, save_kind))
             continue
         if child.is_file():
+            if _SAVE_BACKUP_NAME_RE.match(child.name):
+                continue
             files.append(child)
     return files
 
@@ -457,12 +610,19 @@ def build_index(data_root: Path) -> IndexBundle:
                                 )
                             )
 
+        ordered_titles = tuple(sorted(titles, key=lambda item: (item.system, item.title_rel_dir)))
         index = LibraryIndex(
             index_version=1,
             systems=tuple(sorted(systems, key=lambda item: item.name)),
-            titles=tuple(sorted(titles, key=lambda item: (item.system, item.title_rel_dir))),
+            titles=ordered_titles,
             saves=tuple(sorted(saves, key=lambda item: (item.system, item.rel_path))),
         )
-        return IndexBundle(index=index, file_paths=file_paths, asset_paths=asset_paths, save_paths=save_paths)
+        return IndexBundle(
+            index=index,
+            file_paths=file_paths,
+            asset_paths=asset_paths,
+            save_paths=save_paths,
+            save_bindings=_build_save_bindings(ordered_titles),
+        )
     finally:
         hash_cache.close()

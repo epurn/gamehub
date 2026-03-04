@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 import os
+from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
-from gamehub_cli.common.config import ControllersConfig, GamehubConfig
+import gamehub_cli.controllers.launch as launch_module
+from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.controllers.detection import XboxController
 from gamehub_cli.controllers.launch import (
     encode_shortcut_payload,
     parse_shortcut_payload,
     run_shortcut_launch,
 )
+from gamehub_common.ids import make_save_id
+from gamehub_common.models import SaveBindingSpec, SaveSpec
 
 
 def _config() -> GamehubConfig:
@@ -26,6 +32,10 @@ def _config() -> GamehubConfig:
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
         controllers=ControllersConfig(launch_autoconfig=True),
     )
+
+
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
 
 
 def test_parse_controller_payload_round_trip() -> None:
@@ -361,3 +371,180 @@ def test_run_controller_launch_non_deck_zero_detect_behavior_unchanged(monkeypat
 
     assert exit_code == 0
     assert observed["count"] == 0
+
+
+def test_snapshot_exact_binding_tracks_remote_missing_local_file(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-launch-save-") as temp_root:
+        save_path = temp_root / "GH_title_ps2_test_1.ps2"
+        save_path.write_bytes(b"memcard")
+        binding = SaveBindingSpec(
+            binding_id="savebind_ps2",
+            title_id="title_ps2_test",
+            system="PS2",
+            kind="memory_card",
+            server_rel_dir="saves/PS2/Test/memory_card",
+            local_root="pcsx2_memcards",
+            strategy="exact_files",
+            candidate_filenames=("GH_title_ps2_test_1.ps2", "GH_title_ps2_test_2.ps2"),
+            learn_rule=None,
+            portable=True,
+        )
+
+        monkeypatch.setattr("gamehub_cli.controllers.launch.resolve_binding_local_root", lambda _binding: temp_root)
+
+        snapshot = launch_module._snapshot_exact_binding(binding, remote_save_ids=set())
+
+        assert snapshot is not None
+        assert snapshot.local_sha256_by_suffix["GH_title_ps2_test_1.ps2"] == _sha256_bytes(b"memcard")
+        assert snapshot.local_sha256_by_suffix["GH_title_ps2_test_2.ps2"] is None
+
+
+def test_shortcut_postexit_exact_binding_sync_creates_remote_missing_save(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-launch-save-") as temp_root:
+        save_path = temp_root / "Pokemon - Crystal Version.srm"
+        save_path.write_bytes(b"battery")
+        binding = SaveBindingSpec(
+            binding_id="savebind_gbc",
+            title_id="title_gbc_test",
+            system="GBC",
+            kind="battery",
+            server_rel_dir="saves/GBC/Pokemon - Crystal Version/battery",
+            local_root="retroarch_saves",
+            strategy="exact_files",
+            candidate_filenames=("Pokemon - Crystal Version.srm",),
+            learn_rule=None,
+            portable=True,
+        )
+        state = SimpleNamespace(save_checksums={}, save_lineage={}, unresolved_save_conflicts={})
+        created_ids: list[str] = []
+
+        monkeypatch.setattr("gamehub_cli.controllers.launch.resolve_binding_local_root", lambda _binding: temp_root)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.launch.resolve_exact_local_save_destination",
+            lambda **kwargs: temp_root / kwargs["filename"],
+        )
+
+        def _fake_upload_new(**kwargs):
+            created_ids.append(kwargs["save_id"])
+            return SaveSpec(
+                save_id=kwargs["save_id"],
+                title_id=binding.title_id,
+                system=binding.system,
+                kind=binding.kind,
+                rel_path=f"{binding.server_rel_dir}/{kwargs['canonical_suffix']}",
+                sha256=_sha256_bytes(b"battery"),
+                size_bytes=len(b"battery"),
+                updated_at=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+                portable=True,
+            )
+
+        monkeypatch.setattr("gamehub_cli.controllers.launch._upload_new_save_from_path", _fake_upload_new)
+
+        changed = launch_module._run_shortcut_postexit_exact_binding_sync(
+            state=state,
+            current_saves={},
+            exact_snapshots={
+                binding.binding_id: launch_module._ShortcutExactBindingSnapshot(
+                    binding=binding,
+                    local_sha256_by_suffix={"Pokemon - Crystal Version.srm": None},
+                )
+            },
+            server_url="http://localhost:8000",
+            timeout_seconds=30.0,
+            verbose=False,
+            audit=False,
+        )
+
+        save_id = make_save_id("saves/GBC/Pokemon - Crystal Version/battery/Pokemon - Crystal Version.srm")
+        assert changed is True
+        assert created_ids == [save_id]
+        assert state.save_checksums[save_id] == _sha256_bytes(b"battery")
+
+
+def test_run_shortcut_launch_prelaunch_save_sync_failure_does_not_block_launch(monkeypatch, capsys) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "C:/RetroArch/retroarch.exe",
+            "target_args": ["-f", "game.gbc"],
+            "title_id": "title_gbc_pokemon",
+            "system": "GBC",
+            "rom_rel_path": "roms/GBC/Pokemon Crystal.gbc",
+        }
+    )
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch._load_shortcut_state", lambda path: state)
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch._run_shortcut_prelaunch_save_sync",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("server unavailable")),
+    )
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_shortcut_postexit_save_sync", lambda **kwargs: False)
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target_with_optional_exit_hook", lambda payload: 17)
+
+    exit_code = run_shortcut_launch(payload_token=token)
+
+    assert exit_code == 17
+    assert "pre-launch save sync failed; continuing launch" in capsys.readouterr().out
+
+
+def test_run_shortcut_launch_postexit_save_sync_failure_does_not_replace_exit_code(monkeypatch, capsys) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "C:/RetroArch/retroarch.exe",
+            "target_args": ["-f", "game.gbc"],
+            "title_id": "title_gbc_pokemon",
+            "system": "GBC",
+            "rom_rel_path": "roms/GBC/Pokemon Crystal.gbc",
+        }
+    )
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.controllers.launch._load_shortcut_state", lambda path: state)
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch._run_shortcut_prelaunch_save_sync",
+        lambda **kwargs: (launch_module._ShortcutSaveContext({}, {}, {}), False),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch._run_shortcut_postexit_save_sync",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("upload failed")),
+    )
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target_with_optional_exit_hook", lambda payload: 23)
+
+    exit_code = run_shortcut_launch(payload_token=token)
+
+    assert exit_code == 23
+    assert "post-exit save sync failed" in capsys.readouterr().out

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from ..common.fsops import replace_file
-from ..common.save_sync import SaveLineageRecord
+from ..common.save_sync import SaveBindingRootRecord, SaveLineageRecord
 
 BOOTSTRAP_VERSION = 1
 
@@ -19,6 +19,7 @@ class SyncState:
     firmware_checksums: dict[str, str] = field(default_factory=dict)
     save_checksums: dict[str, str] = field(default_factory=dict)
     save_lineage: dict[str, SaveLineageRecord] = field(default_factory=dict)
+    save_binding_roots: dict[str, SaveBindingRootRecord] = field(default_factory=dict)
     unresolved_save_conflicts: dict[str, str] = field(default_factory=dict)
     tombstones: list[str] = field(default_factory=list)
     last_sync: str | None = None
@@ -35,6 +36,11 @@ class SyncState:
                 for save_id, lineage in dict(data.get("save_lineage", {})).items()
                 if isinstance(save_id, str) and isinstance(lineage, dict)
             },
+            save_binding_roots={
+                binding_id: cast(SaveBindingRootRecord, dict(root))
+                for binding_id, root in dict(data.get("save_binding_roots", {})).items()
+                if isinstance(binding_id, str) and isinstance(root, dict)
+            },
             unresolved_save_conflicts=dict(data.get("unresolved_save_conflicts", {})),
             tombstones=list(data.get("tombstones", [])),
             last_sync=data.get("last_sync"),
@@ -47,6 +53,7 @@ class SyncState:
             "firmware_checksums": self.firmware_checksums,
             "save_checksums": self.save_checksums,
             "save_lineage": self.save_lineage,
+            "save_binding_roots": self.save_binding_roots,
             "unresolved_save_conflicts": self.unresolved_save_conflicts,
             "tombstones": self.tombstones,
             "last_sync": self.last_sync,
@@ -92,5 +99,7 @@ def has_legacy_sync_evidence(state: SyncState) -> bool:
     if state.firmware_checksums:
         return True
     if state.save_checksums:
+        return True
+    if state.save_binding_roots:
         return True
     return False
