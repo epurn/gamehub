@@ -263,6 +263,13 @@ def _wrapper_executable_and_args() -> tuple[str, list[str]]:
     exe_path = Path(sys.executable)
     executable_name = str(exe_path).replace("\\", "/").rsplit("/", 1)[-1].casefold()
     is_frozen = bool(getattr(sys, "frozen", False))
+
+    # Prefer the installed CLI entrypoint when available. This avoids inheriting
+    # unusual interpreter paths from launcher environments.
+    gamehub_from_path = shutil.which("gamehub")
+    if gamehub_from_path:
+        return gamehub_from_path, ["shortcut-launch"]
+
     if is_frozen or ("python" not in executable_name and executable_name.endswith(".exe")):
         return str(exe_path), ["shortcut-launch"]
     if sys.platform.startswith("linux"):
