@@ -6,7 +6,7 @@ from typing import Any
 
 from .common.config import GamehubConfig, default_config_path, load_config
 from .controllers.convergence import run_controller_doctor
-from .controllers.launch import run_shortcut_launch
+from .shortcuts.shortcut_launch import run_shortcut_launch
 from .steam import build_context, discover_deck_steam_input_roots, discover_steam_id, discover_userdata_dir
 from .sync import run_init, run_sync
 from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor

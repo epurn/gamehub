@@ -6,10 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-import gamehub_cli.controllers.launch as launch_module
+import gamehub_cli.shortcuts.shortcut_launch as launch_module
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.controllers.detection import XboxController
-from gamehub_cli.controllers.launch import (
+from gamehub_cli.shortcuts.shortcut_launch import (
     encode_shortcut_payload,
     parse_shortcut_payload,
     run_shortcut_launch,
@@ -38,7 +38,7 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def test_parse_controller_payload_round_trip() -> None:
+def test_parse_shortcut_payload_round_trip() -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -65,7 +65,7 @@ def test_parse_controller_payload_round_trip() -> None:
     assert payload.rom_rel_path == "roms/PS2/Final Fantasy X.iso"
 
 
-def test_parse_controller_payload_strips_wrapping_quotes_from_args() -> None:
+def test_parse_shortcut_payload_strips_wrapping_quotes_from_args() -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -82,7 +82,7 @@ def test_parse_controller_payload_strips_wrapping_quotes_from_args() -> None:
     assert payload.target_args == ("-b", "C:/Games/Path With Spaces/game.iso")
 
 
-def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch, workspace_tempdir) -> None:
+def test_run_shortcut_launch_sets_azahar_sdl_dir_env(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-azahar-sdl-") as temp_root:
         azahar_dir = temp_root / "Azahar"
         azahar_dir.mkdir(parents=True, exist_ok=True)
@@ -100,14 +100,14 @@ def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch, workspace_te
         config = _config()
         observed: dict[str, str] = {}
 
-        monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-        monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
-        monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
         monkeypatch.setattr(
-            "gamehub_cli.controllers.launch.apply_controller_profile",
+            "gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile",
             lambda *args, **kwargs: observed.setdefault("sdl_dir", os.environ.get("GAMEHUB_AZAHAR_SDL_DIR", "")),
         )
-        monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target", lambda payload: 0)
         monkeypatch.delenv("GAMEHUB_AZAHAR_SDL_DIR", raising=False)
 
         run_shortcut_launch(payload_token=token)
@@ -115,7 +115,7 @@ def test_run_controller_launch_sets_azahar_sdl_dir_env(monkeypatch, workspace_te
         assert observed["sdl_dir"] == str(azahar_dir)
 
 
-def test_run_controller_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
+def test_run_shortcut_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -127,21 +127,21 @@ def test_run_controller_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
     config = _config()
     fallback_calls: list[str] = []
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch.detect_xbox_controllers",
+        "gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers",
         lambda max_devices=2: [XboxController(slot=0, name="XInput/0", subtype=0)],
     )
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch.apply_controller_profile",
+        "gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch.apply_named_controller_profile",
+        "gamehub_cli.shortcuts.shortcut_launch.apply_named_controller_profile",
         lambda config, emulator_name, profile_name: fallback_calls.append(f"{emulator_name}:{profile_name}"),
     )
-    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 7)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target", lambda payload: 7)
 
     exit_code = run_shortcut_launch(payload_token=token)
 
@@ -149,7 +149,7 @@ def test_run_controller_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
     assert fallback_calls == ["dolphin:kbm"]
 
 
-def test_run_controller_launch_detection_failure_falls_back_to_kbm_profile_selection(monkeypatch) -> None:
+def test_run_shortcut_launch_detection_failure_falls_back_to_kbm_profile_selection(monkeypatch) -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -161,18 +161,18 @@ def test_run_controller_launch_detection_failure_falls_back_to_kbm_profile_selec
     config = _config()
     applied_counts: list[int] = []
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.is_steam_deck_linux", lambda: False)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch.detect_xbox_controllers",
+        "gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers",
         lambda max_devices=2: (_ for _ in ()).throw(RuntimeError("detect failed")),
     )
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch.apply_controller_profile",
+        "gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile",
         lambda cfg, emulator_name, controller_count: applied_counts.append(controller_count),
     )
-    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 3)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target", lambda payload: 3)
 
     exit_code = run_shortcut_launch(payload_token=token)
 
@@ -180,7 +180,7 @@ def test_run_controller_launch_detection_failure_falls_back_to_kbm_profile_selec
     assert applied_counts == [0]
 
 
-def test_run_controller_launch_uses_azahar_windows_exit_hook(monkeypatch) -> None:
+def test_run_shortcut_launch_uses_azahar_windows_exit_hook(monkeypatch) -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -192,18 +192,18 @@ def test_run_controller_launch_uses_azahar_windows_exit_hook(monkeypatch) -> Non
     config = _config()
     hook_calls: list[str] = []
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.apply_controller_profile", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "win32")
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "win32")
     monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch._run_windows_azahar_target_with_exit_hook",
+        "gamehub_cli.shortcuts.shortcut_launch._run_windows_azahar_target_with_exit_hook",
         lambda payload: hook_calls.append(payload.emulator) or 11,
     )
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch._run_target",
+        "gamehub_cli.shortcuts.shortcut_launch._run_target",
         lambda payload: (_ for _ in ()).throw(AssertionError("direct launch should not be used")),
     )
 
@@ -213,7 +213,7 @@ def test_run_controller_launch_uses_azahar_windows_exit_hook(monkeypatch) -> Non
     assert hook_calls == ["azahar"]
 
 
-def test_run_controller_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypatch) -> None:
+def test_run_shortcut_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypatch) -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -225,17 +225,17 @@ def test_run_controller_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypa
     config = _config()
     hook_calls: list[str] = []
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.apply_controller_profile", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "linux")
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch._run_linux_dolphin_target_with_exit_hook",
+        "gamehub_cli.shortcuts.shortcut_launch._run_linux_dolphin_target_with_exit_hook",
         lambda payload: hook_calls.append(payload.emulator) or 9,
     )
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch._run_target",
+        "gamehub_cli.shortcuts.shortcut_launch._run_target",
         lambda payload: (_ for _ in ()).throw(AssertionError("direct launch should not be used")),
     )
 
@@ -245,7 +245,7 @@ def test_run_controller_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypa
     assert hook_calls == ["dolphin"]
 
 
-def test_run_controller_launch_audit_enables_verbose_profile_logs(monkeypatch) -> None:
+def test_run_shortcut_launch_audit_enables_verbose_profile_logs(monkeypatch) -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -257,16 +257,16 @@ def test_run_controller_launch_audit_enables_verbose_profile_logs(monkeypatch) -
     config = _config()
     observed: dict[str, object] = {}
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
 
     def _fake_apply(*args, **kwargs):
         observed["verbose"] = kwargs.get("verbose")
         return "kbm"
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.apply_controller_profile", _fake_apply)
-    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile", _fake_apply)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target", lambda payload: 0)
 
     exit_code = run_shortcut_launch(payload_token=token, audit=True)
 
@@ -274,7 +274,7 @@ def test_run_controller_launch_audit_enables_verbose_profile_logs(monkeypatch) -
     assert observed["verbose"] is True
 
 
-def test_run_controller_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) -> None:
+def test_run_shortcut_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -285,24 +285,24 @@ def test_run_controller_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) 
     )
     config = _config()
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.apply_controller_profile", lambda *args, **kwargs: None)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "linux")
     monkeypatch.setenv("GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK", "false")
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch._run_linux_dolphin_target_with_exit_hook",
+        "gamehub_cli.shortcuts.shortcut_launch._run_linux_dolphin_target_with_exit_hook",
         lambda payload: (_ for _ in ()).throw(AssertionError("hook should be disabled")),
     )
-    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 4)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target", lambda payload: 4)
 
     exit_code = run_shortcut_launch(payload_token=token)
 
     assert exit_code == 4
 
 
-def test_run_controller_launch_deck_zero_detect_defaults_to_xbox_1p(monkeypatch, capsys) -> None:
+def test_run_shortcut_launch_deck_zero_detect_defaults_to_xbox_1p(monkeypatch, capsys) -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -314,21 +314,21 @@ def test_run_controller_launch_deck_zero_detect_defaults_to_xbox_1p(monkeypatch,
     config = _config()
     observed: dict[str, int] = {}
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.controllers.launch.is_steam_deck_linux", lambda: True)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.is_steam_deck_linux", lambda: True)
 
     def _apply(cfg, emulator_name, controller_count, verbose=False):
         observed["count"] = controller_count
         return "xbox_1p"
 
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch.apply_controller_profile",
+        "gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile",
         _apply,
     )
-    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target", lambda payload: 0)
 
     exit_code = run_shortcut_launch(payload_token=token, audit=True)
 
@@ -339,7 +339,7 @@ def test_run_controller_launch_deck_zero_detect_defaults_to_xbox_1p(monkeypatch,
     assert "effective_controller_count=1" in out
 
 
-def test_run_controller_launch_non_deck_zero_detect_behavior_unchanged(monkeypatch) -> None:
+def test_run_shortcut_launch_non_deck_zero_detect_behavior_unchanged(monkeypatch) -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -351,21 +351,21 @@ def test_run_controller_launch_non_deck_zero_detect_behavior_unchanged(monkeypat
     config = _config()
     observed: dict[str, int] = {}
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch.seed_default_profiles", lambda config: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.detect_xbox_controllers", lambda max_devices=2: [])
-    monkeypatch.setattr("gamehub_cli.controllers.launch.sys.platform", "linux")
-    monkeypatch.setattr("gamehub_cli.controllers.launch.is_steam_deck_linux", lambda: False)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.is_steam_deck_linux", lambda: False)
 
     def _apply(cfg, emulator_name, controller_count, verbose=False):
         observed["count"] = controller_count
         return "kbm"
 
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch.apply_controller_profile",
+        "gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile",
         _apply,
     )
-    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target", lambda payload: 0)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target", lambda payload: 0)
 
     exit_code = run_shortcut_launch(payload_token=token)
 
@@ -390,7 +390,9 @@ def test_snapshot_exact_binding_tracks_remote_missing_local_file(monkeypatch, wo
             portable=True,
         )
 
-        monkeypatch.setattr("gamehub_cli.controllers.launch.resolve_binding_local_root", lambda _binding: temp_root)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch.resolve_binding_local_root", lambda _binding: temp_root
+        )
 
         snapshot = launch_module._snapshot_exact_binding(binding, remote_save_ids=set())
 
@@ -418,9 +420,11 @@ def test_shortcut_postexit_exact_binding_sync_creates_remote_missing_save(monkey
         state = SimpleNamespace(save_checksums={}, save_lineage={}, unresolved_save_conflicts={})
         created_ids: list[str] = []
 
-        monkeypatch.setattr("gamehub_cli.controllers.launch.resolve_binding_local_root", lambda _binding: temp_root)
         monkeypatch.setattr(
-            "gamehub_cli.controllers.launch.resolve_exact_local_save_destination",
+            "gamehub_cli.shortcuts.shortcut_launch.resolve_binding_local_root", lambda _binding: temp_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch.resolve_exact_local_save_destination",
             lambda **kwargs: temp_root / kwargs["filename"],
         )
 
@@ -438,7 +442,7 @@ def test_shortcut_postexit_exact_binding_sync_creates_remote_missing_save(monkey
                 portable=True,
             )
 
-        monkeypatch.setattr("gamehub_cli.controllers.launch._upload_new_save_from_path", _fake_upload_new)
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._upload_new_save_from_path", _fake_upload_new)
 
         changed = launch_module._run_shortcut_postexit_exact_binding_sync(
             state=state,
@@ -489,14 +493,16 @@ def test_run_shortcut_launch_prelaunch_save_sync_failure_does_not_block_launch(m
     )
     state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch._load_shortcut_state", lambda path: state)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._load_shortcut_state", lambda path: state)
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch._run_shortcut_prelaunch_save_sync",
+        "gamehub_cli.shortcuts.shortcut_launch._run_shortcut_prelaunch_save_sync",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("server unavailable")),
     )
-    monkeypatch.setattr("gamehub_cli.controllers.launch._run_shortcut_postexit_save_sync", lambda **kwargs: False)
-    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target_with_optional_exit_hook", lambda payload: 17)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._run_shortcut_postexit_save_sync", lambda **kwargs: False
+    )
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook", lambda payload: 17)
 
     exit_code = run_shortcut_launch(payload_token=token)
 
@@ -532,17 +538,17 @@ def test_run_shortcut_launch_postexit_save_sync_failure_does_not_replace_exit_co
     )
     state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
 
-    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.controllers.launch._load_shortcut_state", lambda path: state)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._load_shortcut_state", lambda path: state)
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch._run_shortcut_prelaunch_save_sync",
+        "gamehub_cli.shortcuts.shortcut_launch._run_shortcut_prelaunch_save_sync",
         lambda **kwargs: (launch_module._ShortcutSaveContext({}, {}, {}), False),
     )
     monkeypatch.setattr(
-        "gamehub_cli.controllers.launch._run_shortcut_postexit_save_sync",
+        "gamehub_cli.shortcuts.shortcut_launch._run_shortcut_postexit_save_sync",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("upload failed")),
     )
-    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target_with_optional_exit_hook", lambda payload: 23)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook", lambda payload: 23)
 
     exit_code = run_shortcut_launch(payload_token=token)
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import errno
 import threading
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -215,7 +217,93 @@ def test_save_upload_route_rejects_expected_sha_mismatch(api_client: TestClient)
     assert response.json()["detail"]["reason"] == "remote-sha-mismatch"
 
 
-def test_write_save_bytes_reports_read_only_volume_clearly(monkeypatch, workspace_tempdir) -> None:
+def test_save_upload_route_rejects_stale_remote_mutation(api_client: TestClient) -> None:
+    index_response = api_client.get("/v1/index")
+    save = index_response.json()["saves"][0]
+    binding_id = api_client.get("/v1/save-bindings").json()["bindings"][0]["binding_id"]
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav"
+
+    _write_file(save_path, b"externally-mutated")
+
+    response = api_client.put(
+        f"/v1/saves/{save['save_id']}",
+        data={
+            "binding_id": binding_id,
+            "canonical_suffix": "slot1.sav",
+            "expected_remote_sha256": save["sha256"],
+        },
+        files={"file": ("slot1.sav", b"new-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "remote-sha-mismatch"
+    assert save_path.read_bytes() == b"externally-mutated"
+
+
+def test_save_upload_route_rejects_existing_unknown_save_without_expected_sha(api_client: TestClient) -> None:
+    binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
+    save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
+
+    _write_file(save_path, b"existing-out-of-band")
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": "SuperMarioBros.srm",
+        },
+        files={"file": ("SuperMarioBros.srm", b"first-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "expected_remote_sha256 is required for existing saves"
+    assert save_path.read_bytes() == b"existing-out-of-band"
+
+
+def test_save_upload_route_rejects_target_exists_unindexed_conflict(api_client: TestClient, monkeypatch) -> None:
+    binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
+    save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
+    _write_file(save_path, b"existing-out-of-band")
+
+    monkeypatch.setattr(server_main, "_save_spec_from_bundle", lambda bundle, lookup_save_id: None)
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": "SuperMarioBros.srm",
+        },
+        files={"file": ("SuperMarioBros.srm", b"first-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "target-exists-unindexed"
+    assert save_path.read_bytes() == b"existing-out-of-band"
+
+
+def test_save_upload_route_enforces_upload_size_limit(api_client: TestClient, monkeypatch) -> None:
+    binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
+    save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
+    monkeypatch.setattr(server_main, "MAX_SAVE_UPLOAD_BYTES", 4)
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": "SuperMarioBros.srm",
+        },
+        files={"file": ("SuperMarioBros.srm", b"too-large", "application/octet-stream")},
+    )
+
+    assert response.status_code == 413
+    assert "Save upload exceeds maximum allowed size" in response.json()["detail"]
+    assert not save_path.exists()
+
+
+def test_write_save_upload_reports_read_only_volume_clearly(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir(prefix="gamehub-api-") as temp_dir:
         target = temp_dir / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav"
         path_cls = type(target.parent)
@@ -224,9 +312,18 @@ def test_write_save_bytes_reports_read_only_volume_clearly(monkeypatch, workspac
             raise OSError(errno.EROFS, "Read-only file system")
 
         monkeypatch.setattr(path_cls, "mkdir", _readonly_mkdir)
+        upload = server_main.UploadFile(file=BytesIO(b"save"), filename="slot1.sav")
 
         with pytest.raises(HTTPException) as excinfo:
-            server_main._write_save_bytes(target, b"save", save_id="save_test", create=True)
+            asyncio.run(
+                server_main._write_save_upload(
+                    target,
+                    upload,
+                    save_id="save_test",
+                    create=True,
+                    max_upload_bytes=1024,
+                )
+            )
 
         assert excinfo.value.status_code == 500
         assert excinfo.value.detail == (

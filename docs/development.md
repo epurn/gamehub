@@ -1,4 +1,4 @@
-# Development
+﻿# Development
 
 ## Environment
 - Python: 3.12+
@@ -58,7 +58,7 @@ python -m venv venv
 - `src/gamehub_cli/controllers/apply_azahar.py`: Azahar profile and SDL identity application logic.
 - `src/gamehub_cli/controllers/sdl_guid.py`: SDL GUID discovery and normalization helpers.
 - `src/gamehub_cli/controllers/apply_ini.py`: INI section parse/apply helpers used by controller apply modules.
-- `src/gamehub_cli/controllers/launch.py`: hidden wrapper entrypoint used by wrapped Steam shortcuts.
+- `src/gamehub_cli/shortcuts/shortcut_launch.py`: hidden wrapper entrypoint used by wrapped Steam shortcuts.
 - `src/gamehub_cli/steam/types.py`: Steam dataclasses/constants.
 - `src/gamehub_cli/steam/lifecycle.py`, `src/gamehub_cli/steam/shortcuts.py`, `src/gamehub_cli/steam/collections.py`, `src/gamehub_cli/steam/artwork.py`, `src/gamehub_cli/steam/io.py`: focused Steam responsibilities.
 
@@ -95,7 +95,7 @@ To mirror CI exactly, run the emulator/controller/steam/sync slices on both Wind
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_architecture.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_launch.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
@@ -136,3 +136,4 @@ Expected output:
 Fixture layout reminder:
 - `roms/<system>/<title.ext>`
 - `firmware/<system>/<filename>`
+

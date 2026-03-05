@@ -1,4 +1,4 @@
-# Final Validation and Release Playbook
+﻿# Final Validation and Release Playbook
 
 This is the single reference for the final pre-release test flow and publish flow.
 
@@ -38,7 +38,7 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_architecture.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_launch.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
@@ -121,7 +121,7 @@ python3 -m venv venv
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_server_api.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_architecture.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_launch.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
@@ -235,4 +235,5 @@ Release is `PASS` only when all of the following are true:
 3. Real sync succeeded on Windows and Bazzite (including second idempotency pass).
 4. Manual Steam verification passed on both platforms.
 5. GitHub release workflows and artifacts are complete.
+
 

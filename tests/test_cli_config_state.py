@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -385,6 +386,22 @@ def test_state_round_trip_with_atomic_save(workspace_tempdir) -> None:
         loaded = load_state(state_path)
 
         assert loaded.to_dict() == state.to_dict()
+
+
+def test_state_overwrite_creates_backup(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-state-") as temp_root:
+        state_path = temp_root / "state.json"
+        first = SyncState(downloaded_checksums={"file_1": "a" * 64})
+        second = SyncState(downloaded_checksums={"file_2": "b" * 64})
+
+        save_state_atomic(state_path, first)
+        save_state_atomic(state_path, second)
+
+        backups = list(state_path.parent.glob("state.json.*.bak"))
+        assert len(backups) == 1
+        backup_payload = json.loads(backups[0].read_text(encoding="utf-8"))
+        assert backup_payload == first.to_dict()
+        assert load_state(state_path).to_dict() == second.to_dict()
 
 
 def test_load_state_defaults_bootstrap_version_when_missing(workspace_tempdir) -> None:

@@ -5,10 +5,9 @@ from dataclasses import dataclass
 from gamehub_common.models import SaveSpec
 
 from ..common.save_sync import (
-    build_save_lineage_record,
     local_file_sha256,
     local_file_updated_at,
-    timestamp_now_utc,
+    record_converged_save_state,
 )
 from .planner import SavePlanAction, SyncPlan
 from .state import SyncState
@@ -37,15 +36,16 @@ def _record_converged_save(
     local_updated_at: str | None,
     remote_updated_at: str,
 ) -> None:
-    state.save_checksums[action.save_id] = local_sha256
-    state.save_lineage[action.save_id] = build_save_lineage_record(
+    record_converged_save_state(
+        save_id=action.save_id,
+        save_checksums=state.save_checksums,
+        save_lineage=state.save_lineage,
+        unresolved_save_conflicts=state.unresolved_save_conflicts,
         local_sha256=local_sha256,
         remote_sha256=remote_sha256,
         local_updated_at=local_updated_at,
         remote_updated_at=remote_updated_at,
-        synced_at=timestamp_now_utc(),
     )
-    state.unresolved_save_conflicts.pop(action.save_id, None)
 
 
 def _print_save_action(action: SavePlanAction) -> None:

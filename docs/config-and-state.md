@@ -281,7 +281,7 @@ N3DS Azahar defaults:
 - GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
-- On Linux, GAMEHUB uses a wrapper launch hook by default to close Azahar when `Select+Start` is pressed (native-controller mode).
+- On Linux, GAMEHUB uses a shortcut-launch exit hook by default to close Azahar when `Select+Start` is pressed.
 - On Windows, GAMEHUB uses a `shortcut-launch` XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
 - On Linux Flatpak Dolphin launches wrapped by `shortcut-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
 
@@ -311,4 +311,4 @@ Bootstrap notes:
 - Existing installs upgrade in place:
   - if older `state.json` files do not include `bootstrap_version` but do include prior sync evidence (`last_sync`, downloaded checksums, or firmware checksums), `gamehub sync` still runs and backfills `bootstrap_version` after a successful non-dry sync.
 
-Writes are atomic (`.tmp` then rename).
+State writes back up existing `state.json`, write via `.tmp` + fsync + atomic replace, and emit explicit sync-state log records.

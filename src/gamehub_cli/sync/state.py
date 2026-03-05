@@ -4,13 +4,15 @@ import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from logging import getLogger
 from pathlib import Path
 from typing import cast
 
-from ..common.fsops import replace_file
+from ..common.fsops import backup_existing_file, replace_file
 from ..common.save_sync import SaveBindingRootRecord, SaveLineageRecord
 
 BOOTSTRAP_VERSION = 1
+logger = getLogger(__name__)
 
 
 @dataclass
@@ -70,6 +72,10 @@ def load_state(path: Path) -> SyncState:
 
 def save_state_atomic(path: Path, state: SyncState) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_existing_file(path)
+    if backup_path is not None:
+        logger.info("sync state backup created path=%s backup=%s", path, backup_path)
+
     tmp = path.with_suffix(f"{path.suffix}.tmp")
     payload = json.dumps(state.to_dict(), indent=2, sort_keys=True)
     with tmp.open("w", encoding="utf-8", newline="\n") as handle:
@@ -77,6 +83,7 @@ def save_state_atomic(path: Path, state: SyncState) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     replace_file(tmp, path)
+    logger.info("sync state saved path=%s", path)
 
 
 def mark_synced(state: SyncState) -> None:

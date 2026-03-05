@@ -4,14 +4,17 @@ import errno
 import os
 import shutil
 import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from tempfile import SpooledTemporaryFile
+from typing import BinaryIO, cast
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
+from starlette.datastructures import UploadFile
 
 from gamehub_common.ids import make_save_id
 from gamehub_common.models import SaveBindingSpec, SaveSpec
@@ -23,10 +26,12 @@ from .index_repository import (
     read_index_refresh_seconds,
     read_index_stable_seconds,
 )
-from .indexer import FIRMWARE_ROOT_NAME, SAVES_ROOT_NAME
+from .indexer import FIRMWARE_ROOT_NAME, SAVES_ROOT_NAME, IndexBundle
 from .logging_utils import get_server_logger
 
 logger = get_server_logger(__name__)
+DEFAULT_MAX_SAVE_UPLOAD_BYTES = 128 * 1024 * 1024
+SAVE_UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 DATA_ROOT = Path(os.environ.get("GAMEHUB_DATA_DIR", "/data")).resolve()
 INDEX_REPO = IndexRepository(
@@ -35,6 +40,20 @@ INDEX_REPO = IndexRepository(
     poll_seconds=read_index_poll_seconds(),
     stable_seconds=read_index_stable_seconds(),
 )
+
+
+def read_max_save_upload_bytes() -> int:
+    raw = os.environ.get("GAMEHUB_MAX_SAVE_UPLOAD_BYTES", str(DEFAULT_MAX_SAVE_UPLOAD_BYTES)).strip()
+    try:
+        limit = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_SAVE_UPLOAD_BYTES
+    if limit <= 0:
+        return DEFAULT_MAX_SAVE_UPLOAD_BYTES
+    return limit
+
+
+MAX_SAVE_UPLOAD_BYTES = read_max_save_upload_bytes()
 
 
 def _is_safe_segment(value: str) -> bool:
@@ -90,49 +109,170 @@ def _parse_disposition_params(value: str) -> dict[str, str]:
     return params
 
 
-async def _parse_multipart_save_request(request: Request) -> tuple[dict[str, str], bytes]:
+class _MultipartReader:
+    def __init__(self, stream: AsyncIterator[bytes]) -> None:
+        self._stream = stream
+        self.buffer = bytearray()
+        self.done = False
+
+    async def fill(self) -> bool:
+        if self.done:
+            return False
+        while True:
+            try:
+                chunk = await anext(self._stream)
+            except StopAsyncIteration:
+                self.done = True
+                return False
+            if not chunk:
+                continue
+            self.buffer.extend(chunk)
+            return True
+
+    async def read_line(self, *, max_bytes: int = 64 * 1024) -> bytes:
+        while True:
+            marker = self.buffer.find(b"\r\n")
+            if marker != -1:
+                line = bytes(self.buffer[:marker])
+                del self.buffer[: marker + 2]
+                return line
+            if len(self.buffer) > max_bytes:
+                raise HTTPException(status_code=400, detail="Malformed multipart payload")
+            if not await self.fill():
+                raise HTTPException(status_code=400, detail="Malformed multipart payload")
+
+
+async def _read_part_headers(reader: _MultipartReader) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    while True:
+        line = await reader.read_line(max_bytes=8 * 1024)
+        if not line:
+            return headers
+        try:
+            decoded = line.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Malformed multipart payload") from exc
+        if ":" not in decoded:
+            raise HTTPException(status_code=400, detail="Malformed multipart payload")
+        key, value = decoded.split(":", 1)
+        headers[key.strip().casefold()] = value.strip()
+
+
+async def _stream_part_payload(
+    reader: _MultipartReader,
+    boundary: bytes,
+    on_chunk: Callable[[bytes], None],
+) -> bool:
+    boundary_marker = b"\r\n--" + boundary
+    scan_keep = len(boundary_marker) + 4
+
+    while True:
+        marker = reader.buffer.find(boundary_marker)
+        if marker != -1:
+            marker_end = marker + len(boundary_marker)
+            while len(reader.buffer) < marker_end + 2 and await reader.fill():
+                pass
+            if len(reader.buffer) < marker_end + 2:
+                raise HTTPException(status_code=400, detail="Malformed multipart payload")
+            suffix = bytes(reader.buffer[marker_end : marker_end + 2])
+            if suffix in {b"\r\n", b"--"}:
+                if marker:
+                    on_chunk(bytes(reader.buffer[:marker]))
+                del reader.buffer[: marker_end + 2]
+                if suffix == b"--":
+                    if len(reader.buffer) < 2 and not reader.done:
+                        await reader.fill()
+                    if reader.buffer.startswith(b"\r\n"):
+                        del reader.buffer[:2]
+                    return True
+                return False
+
+            # False boundary marker in payload, emit one byte and keep scanning.
+            on_chunk(bytes(reader.buffer[: marker + 1]))
+            del reader.buffer[: marker + 1]
+            continue
+
+        if reader.done:
+            raise HTTPException(status_code=400, detail="Malformed multipart payload")
+        if len(reader.buffer) > scan_keep:
+            emit = len(reader.buffer) - scan_keep
+            on_chunk(bytes(reader.buffer[:emit]))
+            del reader.buffer[:emit]
+        await reader.fill()
+
+
+async def _parse_multipart_save_request(
+    request: Request, *, max_upload_bytes: int
+) -> tuple[dict[str, str], UploadFile]:
     content_type = request.headers.get("content-type", "")
     if not content_type.casefold().startswith("multipart/form-data"):
         raise HTTPException(status_code=400, detail="Save upload requires multipart/form-data")
 
-    boundary = _parse_multipart_boundary(content_type)
-    delimiter = f"--{boundary}".encode("utf-8")
-    body = await request.body()
+    boundary = _parse_multipart_boundary(content_type).encode("utf-8")
+    reader = _MultipartReader(request.stream())
+    opening = await reader.read_line()
+    if opening != (b"--" + boundary):
+        raise HTTPException(status_code=400, detail="Malformed multipart payload")
+
     fields: dict[str, str] = {}
-    file_bytes: bytes | None = None
+    file_upload: UploadFile | None = None
+    try:
+        while True:
+            headers = await _read_part_headers(reader)
+            disposition = headers.get("content-disposition")
+            if not disposition:
+                raise HTTPException(status_code=400, detail="Malformed multipart payload")
+            params = _parse_disposition_params(disposition)
+            name = params.get("name")
+            if not name:
+                raise HTTPException(status_code=400, detail="Malformed multipart payload")
 
-    for raw_chunk in body.split(delimiter):
-        chunk = raw_chunk.lstrip(b"\r\n")
-        if not chunk or chunk in {b"--", b"--\r\n"}:
-            continue
-        if chunk.endswith(b"--"):
-            chunk = chunk[:-2]
-        chunk = chunk.rstrip(b"\r\n")
-        header_blob, separator, payload = chunk.partition(b"\r\n\r\n")
-        if not separator:
-            continue
+            filename = params.get("filename")
+            if filename is not None:
+                if file_upload is not None:
+                    raise HTTPException(status_code=400, detail="Save upload must include exactly one file payload")
+                spool = SpooledTemporaryFile(max_size=SAVE_UPLOAD_CHUNK_BYTES, mode="w+b")
+                bytes_received = 0
 
-        headers: dict[str, str] = {}
-        for header_line in header_blob.decode("utf-8", errors="ignore").split("\r\n"):
-            if ":" not in header_line:
-                continue
-            key, value = header_line.split(":", 1)
-            headers[key.strip().casefold()] = value.strip()
-        disposition = headers.get("content-disposition")
-        if not disposition:
-            continue
-        params = _parse_disposition_params(disposition)
-        name = params.get("name")
-        if not name:
-            continue
-        if "filename" in params:
-            file_bytes = payload
-            continue
-        fields[name] = payload.decode("utf-8", errors="strict")
+                def _write_chunk(chunk: bytes) -> None:
+                    nonlocal bytes_received
+                    bytes_received += len(chunk)
+                    if bytes_received > max_upload_bytes:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"Save upload exceeds maximum allowed size ({max_upload_bytes} bytes)",
+                        )
+                    spool.write(chunk)
 
-    if file_bytes is None:
+                try:
+                    is_final = await _stream_part_payload(reader, boundary, _write_chunk)
+                    spool.seek(0)
+                    file_upload = UploadFile(file=cast(BinaryIO, spool), filename=filename)
+                except Exception:
+                    spool.close()
+                    raise
+            else:
+                field_bytes = bytearray()
+
+                def _append_chunk(chunk: bytes) -> None:
+                    field_bytes.extend(chunk)
+
+                is_final = await _stream_part_payload(reader, boundary, _append_chunk)
+                try:
+                    fields[name] = field_bytes.decode("utf-8", errors="strict")
+                except UnicodeDecodeError as exc:
+                    raise HTTPException(status_code=400, detail="Malformed multipart payload") from exc
+
+            if is_final:
+                break
+    except Exception:
+        if file_upload is not None:
+            await file_upload.close()
+        raise
+
+    if file_upload is None:
         raise HTTPException(status_code=400, detail="Save upload missing file payload")
-    return fields, file_bytes
+    return fields, file_upload
 
 
 def _normalize_canonical_suffix(raw: str) -> str:
@@ -211,7 +351,21 @@ def _validate_binding_suffix(binding: SaveBindingSpec, canonical_suffix: str, *,
         raise HTTPException(status_code=409, detail={"reason": "binding-root-mismatch"})
 
 
-def _write_save_bytes(path: Path, payload: bytes, *, save_id: str, create: bool) -> int:
+def _save_spec_from_bundle(bundle: IndexBundle, save_id: str) -> SaveSpec | None:
+    for save in bundle.index.saves:
+        if save.save_id == save_id:
+            return save
+    return None
+
+
+async def _write_save_upload(
+    path: Path,
+    upload: UploadFile,
+    *,
+    save_id: str,
+    create: bool,
+    max_upload_bytes: int,
+) -> int:
     part_path = path.with_suffix(f"{path.suffix}.part")
     bytes_written = 0
     try:
@@ -221,23 +375,36 @@ def _write_save_bytes(path: Path, payload: bytes, *, save_id: str, create: bool)
             if backup_path is not None:
                 logger.info("save upload backup created save_id=%s rel_path=%s backup=%s", save_id, path, backup_path)
         with part_path.open("wb") as handle:
-            handle.write(payload)
-            bytes_written = len(payload)
+            while True:
+                chunk = await upload.read(SAVE_UPLOAD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                bytes_written += len(chunk)
+                if bytes_written > max_upload_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Save upload exceeds maximum allowed size ({max_upload_bytes} bytes)",
+                    )
+                handle.write(chunk)
             handle.flush()
             os.fsync(handle.fileno())
         part_path.replace(path)
+    except HTTPException:
+        with suppress(OSError):
+            part_path.unlink(missing_ok=True)
+        raise
     except Exception as exc:
         logger.exception("save upload failed save_id=%s rel_path=%s", save_id, path)
-        try:
+        with suppress(OSError):
             part_path.unlink(missing_ok=True)
-        except OSError:
-            pass
         if isinstance(exc, OSError) and exc.errno == errno.EROFS:
             raise HTTPException(
                 status_code=500,
                 detail="Server data volume is read-only; save uploads require a writable GAMEHUB_DATA_DIR mount",
             ) from exc
         raise HTTPException(status_code=500, detail=f"Failed to store save upload: {exc}") from exc
+    finally:
+        await upload.close()
     return bytes_written
 
 
@@ -333,7 +500,7 @@ def get_save_bindings() -> dict[str, object]:
 
 @app.put("/v1/saves/{save_id}")
 async def put_save(save_id: str, request: Request, response: Response) -> dict[str, object]:
-    fields, file_bytes = await _parse_multipart_save_request(request)
+    fields, file_upload = await _parse_multipart_save_request(request, max_upload_bytes=MAX_SAVE_UPLOAD_BYTES)
     binding_id = fields.get("binding_id", "").strip()
     canonical_suffix = _normalize_canonical_suffix(fields.get("canonical_suffix", ""))
     expected_remote_sha256 = fields.get("expected_remote_sha256")
@@ -343,7 +510,8 @@ async def put_save(save_id: str, request: Request, response: Response) -> dict[s
     if not binding_id:
         raise HTTPException(status_code=400, detail="binding_id is required")
 
-    binding = INDEX_REPO.resolve_save_binding(binding_id)
+    bundle = INDEX_REPO.load(force_refresh=True)
+    binding = next((item for item in bundle.save_bindings if item.binding_id == binding_id), None)
     if binding is None:
         raise HTTPException(status_code=404, detail=f"Unknown binding_id: {binding_id}")
 
@@ -356,15 +524,28 @@ async def put_save(save_id: str, request: Request, response: Response) -> dict[s
     if not path.is_relative_to(saves_root):
         raise HTTPException(status_code=400, detail="Resolved save path escapes saves root")
 
-    current = INDEX_REPO.resolve_save_spec(save_id)
-    target_exists = current is not None and path.exists()
+    current = _save_spec_from_bundle(bundle, save_id)
+    target_path_exists = path.exists() and path.is_file()
+    if current is None and target_path_exists:
+        raise _save_conflict_response(reason="target-exists-unindexed", current=None)
+    if current is not None and not target_path_exists:
+        raise _save_conflict_response(reason="indexed-save-missing-file", current=current)
+
+    target_exists = current is not None
     _validate_binding_suffix(binding, canonical_suffix, target_exists=target_exists)
 
     if not target_exists:
         if expected_remote_sha256 is not None:
             raise HTTPException(status_code=400, detail="expected_remote_sha256 is only valid for existing saves")
-        bytes_written = _write_save_bytes(path, file_bytes, save_id=save_id, create=True)
-        save = INDEX_REPO.resolve_save_spec(save_id, force_refresh=True)
+        bytes_written = await _write_save_upload(
+            path,
+            file_upload,
+            save_id=save_id,
+            create=True,
+            max_upload_bytes=MAX_SAVE_UPLOAD_BYTES,
+        )
+        refreshed_bundle = INDEX_REPO.load(force_refresh=True)
+        save = _save_spec_from_bundle(refreshed_bundle, save_id)
         if save is None:
             raise HTTPException(status_code=500, detail=f"Uploaded save missing after refresh: {save_id}")
         logger.info("save create completed save_id=%s rel_path=%s bytes=%d", save_id, save.rel_path, bytes_written)
@@ -378,8 +559,15 @@ async def put_save(save_id: str, request: Request, response: Response) -> dict[s
     if current.sha256 != expected_remote_sha256:
         raise _save_conflict_response(reason="remote-sha-mismatch", current=current)
 
-    bytes_written = _write_save_bytes(path, file_bytes, save_id=save_id, create=False)
-    save = INDEX_REPO.resolve_save_spec(save_id, force_refresh=True)
+    bytes_written = await _write_save_upload(
+        path,
+        file_upload,
+        save_id=save_id,
+        create=False,
+        max_upload_bytes=MAX_SAVE_UPLOAD_BYTES,
+    )
+    refreshed_bundle = INDEX_REPO.load(force_refresh=True)
+    save = _save_spec_from_bundle(refreshed_bundle, save_id)
     if save is None:
         raise HTTPException(status_code=500, detail=f"Uploaded save missing after refresh: {save_id}")
     logger.info("save upload completed save_id=%s rel_path=%s bytes=%d", save_id, save.rel_path, bytes_written)

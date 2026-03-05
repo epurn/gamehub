@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import TypedDict
@@ -100,6 +101,27 @@ def build_save_lineage_record(
         "remote_updated_at": remote_updated_at,
         "synced_at": synced,
     }
+
+
+def record_converged_save_state(
+    *,
+    save_id: str,
+    save_checksums: MutableMapping[str, str],
+    save_lineage: MutableMapping[str, SaveLineageRecord],
+    unresolved_save_conflicts: MutableMapping[str, str],
+    local_sha256: str,
+    remote_sha256: str,
+    local_updated_at: str | None,
+    remote_updated_at: str,
+) -> None:
+    save_checksums[save_id] = local_sha256
+    save_lineage[save_id] = build_save_lineage_record(
+        local_sha256=local_sha256,
+        remote_sha256=remote_sha256,
+        local_updated_at=local_updated_at,
+        remote_updated_at=remote_updated_at,
+    )
+    unresolved_save_conflicts.pop(save_id, None)
 
 
 def save_binding_id_for_save(save: SaveSpec) -> str:

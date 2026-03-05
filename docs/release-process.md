@@ -1,4 +1,4 @@
-# Release Process
+﻿# Release Process
 
 Detailed end-to-end validation and publishing steps are in:
 - [release-final-validation-playbook.md](release-final-validation-playbook.md)
@@ -18,7 +18,7 @@ Detailed end-to-end validation and publishing steps are in:
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_architecture.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_launch.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
@@ -72,3 +72,4 @@ git push origin vX.Y.Z
 ## Known Scope Limits (Current Phase)
 - Architecture: `amd64` only
 - Deployment: LAN-only/no auth
+

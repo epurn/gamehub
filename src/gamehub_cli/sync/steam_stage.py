@@ -21,10 +21,10 @@ from ..common.platform_paths import (
     is_flatpak_command,
 )
 from ..controllers.detection import is_steam_deck_linux
-from ..controllers.launch import encode_shortcut_payload
 from ..emulators import resolve_emulator_executable
 from ..firmware.retroarch_cores import resolve_retroarch_paths
 from ..firmware.targets import resolve_dolphin_runtime_user_dir
+from ..shortcuts.shortcut_launch import encode_shortcut_payload
 from ..steam import (
     SteamArtworkAssignment,
     SteamContext,

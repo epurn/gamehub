@@ -23,10 +23,13 @@ Base URL: `http://<host>:8000`
 - `PUT /v1/saves/{save_id}`
   - This is the only save write route and it now handles both create and update
   - Requires `multipart/form-data` with `binding_id`, `canonical_suffix`, and `file`
+  - Upload parsing is streamed; the server does not read the entire multipart payload into memory before write
+  - Upload size is capped by `GAMEHUB_MAX_SAVE_UPLOAD_BYTES` (default `134217728` bytes / `128 MiB`); oversized uploads return `413`
   - Existing-save updates also require `expected_remote_sha256`; the server returns `409` if the remote checksum changed
   - Missing remote saves are created when `binding_id + canonical_suffix` deterministically maps to `save_id`
-  - Writes use temp-file + fsync + atomic replace, create a backup before replacing existing user data, refresh the in-memory index snapshot, then return refreshed `SaveSpec` JSON
-  - `409` responses return structured payloads in `detail`: `reason` plus `current` `SaveSpec` when a remote file already exists
+  - Save writes force-refresh index state before conflict checks so stale cache snapshots cannot silently bypass overwrite safety
+  - Writes use temp-file + fsync + atomic replace, create a backup before replacing existing user data, force-refresh after write, then return refreshed `SaveSpec` JSON
+  - `409` responses return structured payloads in `detail`: `reason` plus `current` `SaveSpec` when available (for example `remote-sha-mismatch`, `indexed-save-missing-file`, `target-exists-unindexed`)
 - `GET /v1/firmware/{system}/{filename}`
   - Streams raw firmware file from `firmware/<system>/<filename>`
   - `404` when file is missing

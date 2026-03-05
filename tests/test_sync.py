@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
-from gamehub_cli.controllers.launch import parse_shortcut_payload
+from gamehub_cli.shortcuts.shortcut_launch import parse_shortcut_payload
 from gamehub_cli.sync.orchestrator import (
     _apply_downloads,
     _apply_steam_updates,

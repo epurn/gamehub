@@ -22,15 +22,19 @@ from gamehub_common.models import LibraryIndex, SaveBindingCatalog, SaveBindingS
 
 from ..common.config import GamehubConfig, load_config
 from ..common.save_sync import (
-    build_save_lineage_record,
     canonical_suffix_for_save,
     classify_save_action,
     local_file_sha256,
     local_file_updated_at,
+    record_converged_save_state,
     save_binding_id_for_save,
-    timestamp_now_utc,
     to_utc_timestamp,
 )
+from ..controllers import azahar_exit_hook
+from ..controllers.apply import apply_controller_profile, apply_named_controller_profile
+from ..controllers.detection import detect_xbox_controllers, is_steam_deck_linux
+from ..controllers.profiles import PROFILE_KBM, profile_name_for_controller_count, seed_default_profiles
+from ..controllers.sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
 from ..emulators.save_resolution import (
     canonical_suffix_for_learned_path,
     learn_binding_root,
@@ -39,11 +43,6 @@ from ..emulators.save_resolution import (
     resolve_local_save_destination,
     snapshot_binding_tree,
 )
-from . import azahar_exit_hook
-from .apply import apply_controller_profile, apply_named_controller_profile
-from .detection import detect_xbox_controllers, is_steam_deck_linux
-from .profiles import PROFILE_KBM, profile_name_for_controller_count, seed_default_profiles
-from .sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
 
 _DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
 _DOLPHIN_LINUX_EXIT_HOOK_ENV = "GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK"
@@ -549,15 +548,16 @@ def _iter_title_saves(index: LibraryIndex, title_id: str) -> tuple[SaveSpec, ...
 
 
 def _record_shortcut_save_sync(state: Any, save: SaveSpec, destination: Path, *, local_sha256: str) -> None:
-    state.save_checksums[save.save_id] = local_sha256
-    state.save_lineage[save.save_id] = build_save_lineage_record(
+    record_converged_save_state(
+        save_id=save.save_id,
+        save_checksums=state.save_checksums,
+        save_lineage=state.save_lineage,
+        unresolved_save_conflicts=state.unresolved_save_conflicts,
         local_sha256=local_sha256,
         remote_sha256=save.sha256,
         local_updated_at=local_file_updated_at(destination),
         remote_updated_at=to_utc_timestamp(save.updated_at),
-        synced_at=timestamp_now_utc(),
     )
-    state.unresolved_save_conflicts.pop(save.save_id, None)
 
 
 def _record_binding_root(state: Any, *, binding_id: str, canonical_root: str, materialized_root: str) -> None:
@@ -653,15 +653,16 @@ def _run_shortcut_postexit_exact_binding_sync(
                     source=destination,
                     timeout_seconds=timeout_seconds,
                 )
-                state.save_checksums[save_id] = local_sha
-                state.save_lineage[save_id] = build_save_lineage_record(
+                record_converged_save_state(
+                    save_id=save_id,
+                    save_checksums=state.save_checksums,
+                    save_lineage=state.save_lineage,
+                    unresolved_save_conflicts=state.unresolved_save_conflicts,
                     local_sha256=local_sha,
                     remote_sha256=created_save.sha256,
                     local_updated_at=local_file_updated_at(destination),
                     remote_updated_at=to_utc_timestamp(created_save.updated_at),
-                    synced_at=timestamp_now_utc(),
                 )
-                state.unresolved_save_conflicts.pop(save_id, None)
                 state_changed = True
                 action = "auto-create" if before_sha is None else "auto-create-existing-local"
                 if verbose or audit:
@@ -887,15 +888,16 @@ def _run_shortcut_postexit_save_sync(
                 source=snapshot.destination,
                 timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
             )
-            state.save_checksums[save_id] = local_sha
-            state.save_lineage[save_id] = build_save_lineage_record(
+            record_converged_save_state(
+                save_id=save_id,
+                save_checksums=state.save_checksums,
+                save_lineage=state.save_lineage,
+                unresolved_save_conflicts=state.unresolved_save_conflicts,
                 local_sha256=local_sha,
                 remote_sha256=updated_save.sha256,
                 local_updated_at=local_file_updated_at(snapshot.destination),
                 remote_updated_at=to_utc_timestamp(updated_save.updated_at),
-                synced_at=timestamp_now_utc(),
             )
-            state.unresolved_save_conflicts.pop(save_id, None)
             state_changed = True
             if verbose or audit:
                 print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-upload")
@@ -962,15 +964,16 @@ def _run_shortcut_postexit_save_sync(
                     source=source,
                     timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
                 )
-                state.save_checksums[save_id] = local_sha
-                state.save_lineage[save_id] = build_save_lineage_record(
+                record_converged_save_state(
+                    save_id=save_id,
+                    save_checksums=state.save_checksums,
+                    save_lineage=state.save_lineage,
+                    unresolved_save_conflicts=state.unresolved_save_conflicts,
                     local_sha256=local_sha,
                     remote_sha256=created_save.sha256,
                     local_updated_at=local_file_updated_at(source),
                     remote_updated_at=to_utc_timestamp(created_save.updated_at),
-                    synced_at=timestamp_now_utc(),
                 )
-                state.unresolved_save_conflicts.pop(save_id, None)
                 state_changed = True
                 if verbose or audit:
                     print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-create")

@@ -1,4 +1,4 @@
-# PLAN: save-sync
+﻿# PLAN: save-sync
 
 ## Context
 - Background: Add cross-device sync for emulator save files (battery saves, memory-card style saves, per-game save data) for managed GAMEHUB titles. Save states are intentionally out of scope for the first release because they are less portable across emulator/core versions and carry a higher corruption risk.
@@ -61,7 +61,7 @@
 
 ### STORY SAVE-SYNC-CLI-05
 - Type: CLI
-- Scope (explicit files/modules allowed): `src/gamehub_cli/sync/planner.py`, `src/gamehub_cli/sync/state.py`, `src/gamehub_cli/controllers/launch.py`, `docs/config-and-state.md`, `docs/cli-sync.md`, `tests/test_planner.py`, `tests/test_controller_launch.py`, `tests/test_sync.py`
+- Scope (explicit files/modules allowed): `src/gamehub_cli/sync/planner.py`, `src/gamehub_cli/sync/state.py`, `src/gamehub_cli/shortcuts/shortcut_launch.py`, `docs/config-and-state.md`, `docs/cli-sync.md`, `tests/test_planner.py`, `tests/test_shortcut_launch.py`, `tests/test_sync.py`
 - Goal: Add smart save resolution so a missed upload during an offline or unreachable launch-session does not cause the next reconnect to overwrite a newer local save with an older remote copy.
 - Acceptance Criteria (deterministic):
   - [ ] When a managed launch cannot contact the server for a needed upload, GAMEHUB persists enough deterministic local observation data to recognize that the local save may be newer on the next connected run.
@@ -75,7 +75,7 @@
   - Save-state sync.
 - Tests Required (exact locations / names):
   - `tests/test_planner.py`
-  - `tests/test_controller_launch.py`
+  - `tests/test_shortcut_launch.py`
   - `tests/test_sync.py`
 - PR Title Template: `CLI: add smart save resolution for missed offline uploads`
 - Rollback Risk: Medium
@@ -101,3 +101,4 @@
 - Documentation updates remain implementation-accurate.
 - Save sync behavior stays deterministic and idempotent in both dry-run and non-dry-run flows.
 - Conflict handling and rollout defaults remain explicitly documented and reproducible.
+

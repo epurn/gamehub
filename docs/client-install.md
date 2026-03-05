@@ -103,11 +103,11 @@ print("runtime_guid:", ca._probe_azahar_flatpak_guid(port=port))
 print("host_guid:", ca._discover_linux_sdl_guid(port=port))
 PY
 ```
-14. N3DS Linux native controller mode uses an Azahar wrapper hook by default:
+14. N3DS Linux managed shortcut launch uses an Azahar exit hook wrapper by default:
 ```bash
 gamehub sync --config ./config.bazzite.toml --verbose --skip-steam
 ```
-   - The wrapper closes Azahar on strict `Select+Start` using:
+   - The exit hook closes Azahar on strict `Select+Start` using:
      - `/dev/input/js*` joystick events, and
      - `/dev/input/event*` fallback (`BTN_SELECT` + `BTN_START`) when needed.
    - Optional overrides:
