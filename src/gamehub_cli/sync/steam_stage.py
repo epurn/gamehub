@@ -17,6 +17,7 @@ from ..common.platform_paths import (
     AZAHAR_FLATPAK_APP_ID,
     DOLPHIN_FLATPAK_APP_ID,
     PCSX2_FLATPAK_APP_ID,
+    RETROARCH_FLATPAK_APP_ID,
     is_flatpak_command,
 )
 from ..controllers.detection import is_steam_deck_linux
@@ -251,6 +252,13 @@ def _maybe_quote_executable(value: str) -> str:
     return stripped
 
 
+def _strip_wrapping_quotes(value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
+        return stripped[1:-1]
+    return stripped
+
+
 def _wrapper_executable_and_args() -> tuple[str, list[str]]:
     exe_path = str(sys.executable)
     executable_name = exe_path.replace("\\", "/").rsplit("/", 1)[-1].casefold()
@@ -318,6 +326,24 @@ def _wrap_shortcut_for_managed_launch(
     )
 
 
+def _strip_launch_line_tokens_for_flatpak(
+    parts: list[str],
+    *,
+    emulator_exe: str,
+    rom_path: Path,
+) -> list[str]:
+    tokens = list(parts)
+    emulator_token = _strip_wrapping_quotes(emulator_exe)
+    if tokens and _strip_wrapping_quotes(tokens[0]) == emulator_token:
+        tokens = tokens[1:]
+    rom_token = str(rom_path)
+    for index in range(len(tokens) - 1, -1, -1):
+        if _strip_wrapping_quotes(tokens[index]) == rom_token:
+            del tokens[index]
+            break
+    return tokens
+
+
 def build_shortcut_specs(
     index: LibraryIndex,
     config: GamehubConfig,
@@ -350,6 +376,49 @@ def build_shortcut_specs(
             and "azahar" in title.emulator.casefold()
             and is_flatpak_command(emulator_exe, AZAHAR_FLATPAK_APP_ID)
         )
+        retroarch_flatpak = (
+            sys.platform.startswith("linux")
+            and "retroarch" in title.emulator.casefold()
+            and is_flatpak_command(emulator_exe, RETROARCH_FLATPAK_APP_ID)
+        )
+        if retroarch_flatpak:
+            launch_template = _normalize_retroarch_fullscreen_launch_template(title.launch_template)
+            launch_template = _normalize_linux_retroarch_launch_template(launch_template, config, emulator_exe)
+            launch_line = launch_template.format(emulator=emulator_exe, rom=str(rom_path))
+            parts = shlex.split(launch_line, posix=True)
+            forwarded_tokens = _strip_launch_line_tokens_for_flatpak(
+                parts,
+                emulator_exe=emulator_exe,
+                rom_path=rom_path,
+            )
+            launch_args = [
+                "run",
+                "--file-forwarding",
+                RETROARCH_FLATPAK_APP_ID,
+                *forwarded_tokens,
+                "@@",
+                rom_path.as_posix(),
+                "@@",
+            ]
+            spec = SteamShortcutSpec(
+                title_id=title.title_id,
+                system=title.system,
+                title_name=title.title_name,
+                exe="flatpak",
+                launch_options=_join_launch_options(launch_args),
+                start_dir="",
+                icon_path="",
+                allow_desktop_config=allow_desktop_config,
+            )
+            if _should_wrap_shortcut(title.emulator, config):
+                spec = _wrap_shortcut_for_managed_launch(
+                    spec,
+                    emulator_name=title.emulator,
+                    config=config,
+                    rom_rel_path=title.rom.rel_path,
+                )
+            specs.append(spec)
+            continue
         if dolphin_flatpak:
             rom_for_flatpak = rom_path.as_posix()
             dolphin_user_dir = resolve_dolphin_runtime_user_dir(config=config).as_posix()

@@ -213,6 +213,7 @@ Linux path notes:
 - PCSX2 runtime config defaults are Linux-aware and Flatpak-aware (`~/.config/PCSX2/...` or `~/.var/app/net.pcsx2.PCSX2/...`).
 - Dolphin target selection prefers explicit overrides, then existing user data roots, then a deterministic native/Flatpak default.
 - Linux RetroArch Steam launch options rewrite `-L cores/<core>.dll` templates to Linux core paths (`.so`) and prefer absolute core paths from resolved RetroArch config/overrides.
+- Linux Flatpak RetroArch Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so ROM paths (including SD-card paths) are forwarded reliably to the sandbox.
 - Linux Flatpak PCSX2 Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so host ROM paths are forwarded reliably to the sandbox.
 - Linux Flatpak Dolphin Steam launch options use `flatpak run --device=all --file-forwarding ... -e @@ <rom> @@` so controller devices and host ROM paths are consistently available in the sandbox.
 - Linux Flatpak Azahar Steam launch options default to a Linux-only wrapper (`python -m gamehub_cli.controllers.azahar_exit_hook`) that:
