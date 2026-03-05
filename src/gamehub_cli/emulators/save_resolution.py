@@ -174,6 +174,78 @@ def _retroarch_save_root(resolve_executable: Callable[[str], str]) -> Path | Non
     return _existing_dir(home / ".config" / "retroarch" / "saves")
 
 
+def _retroarch_system_roots(resolve_executable: Callable[[str], str]) -> tuple[Path, ...]:
+    values: list[Path] = []
+    for cfg_path in _retroarch_cfg_candidates(resolve_executable=resolve_executable):
+        cfg = _parse_simple_kv_config(cfg_path)
+        system_dir = cfg.get("system_directory", "").strip()
+        if system_dir:
+            if system_dir.casefold() == "default":
+                values.append(_normalized_local_path(cfg_path.parent / "system"))
+            else:
+                values.append(_resolve_retroarch_cfg_path_value(system_dir, cfg_path=cfg_path))
+        values.append(_normalized_local_path(cfg_path.parent / "system"))
+
+    if _OS_NAME == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            values.append(_normalized_local_path(appdata) / "RetroArch" / "system")
+    else:
+        home = _normalized_local_path(Path.home())
+        values.append(home / ".config" / "retroarch" / "system")
+        values.append(home / ".var" / "app" / _RETROARCH_FLATPAK_APP_ID / "config" / "retroarch" / "system")
+
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return tuple(deduped)
+
+
+def _pcsx2_ini_candidates() -> tuple[Path, ...]:
+    values: list[Path] = []
+    if _OS_NAME == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            base = _normalized_local_path(appdata) / "PCSX2"
+            values.append(base / "inis" / "PCSX2.ini")
+            values.append(base / "PCSX2.ini")
+        user_profile = os.environ.get("USERPROFILE")
+        if user_profile:
+            base = _normalized_local_path(user_profile) / "Documents" / "PCSX2"
+            values.append(base / "inis" / "PCSX2.ini")
+            values.append(base / "PCSX2.ini")
+        if not appdata and not user_profile:
+            home = _normalized_local_path(Path.home())
+            values.append(home / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
+            values.append(home / "Documents" / "PCSX2" / "PCSX2.ini")
+    else:
+        home = _normalized_local_path(Path.home())
+        values.append(home / ".config" / "PCSX2" / "inis" / "PCSX2.ini")
+        values.append(home / ".config" / "PCSX2" / "PCSX2.ini")
+        values.append(home / ".var" / "app" / _PCSX2_FLATPAK_APP_ID / "config" / "PCSX2" / "inis" / "PCSX2.ini")
+
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return tuple(deduped)
+
+
+def _resolve_pcsx2_folder_path(raw: str, *, ini_path: Path) -> Path:
+    candidate = _normalized_local_path(raw)
+    if candidate.is_absolute():
+        return candidate
+    root = ini_path.parent.parent if ini_path.parent.name.casefold() == "inis" else ini_path.parent
+    return _normalized_local_path(root / candidate)
+
+
 def _pcsx2_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
     resolved = resolve_executable("pcsx2").strip().strip('"')
     if resolved and _is_flatpak_command(resolved, _PCSX2_FLATPAK_APP_ID):
@@ -181,10 +253,29 @@ def _pcsx2_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
         return _existing_dir(home / ".var" / "app" / _PCSX2_FLATPAK_APP_ID / "config" / "PCSX2" / "memcards")
 
     if _OS_NAME == "nt":
+        for ini_path in _pcsx2_ini_candidates():
+            parsed = _parse_simple_kv_config(ini_path)
+            memcards_value = (
+                parsed.get("memorycards")
+                or parsed.get("folders.memorycards")
+                or parsed.get("folders/memorycards")
+                or ""
+            ).strip()
+            if memcards_value:
+                configured = _existing_dir(_resolve_pcsx2_folder_path(memcards_value, ini_path=ini_path))
+                if configured is not None:
+                    return configured
+
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            appdata_root = _existing_dir(_normalized_local_path(appdata) / "PCSX2" / "memcards")
+            if appdata_root is not None:
+                return appdata_root
+
         documents = os.environ.get("USERPROFILE")
-        if not documents:
-            return None
-        return _existing_dir(_normalized_local_path(documents) / "Documents" / "PCSX2" / "memcards")
+        if documents:
+            return _existing_dir(_normalized_local_path(documents) / "Documents" / "PCSX2" / "memcards")
+        return None
 
     home = _normalized_local_path(Path.home())
     return _existing_dir(home / ".config" / "PCSX2" / "memcards")
@@ -364,8 +455,27 @@ def _preferred_exact_path(
     return root / filename
 
 
-def _unique_recursive_match(root: Path, filename: str) -> Path | None:
-    matches = sorted(path for path in root.rglob(filename) if path.is_file())
+def _exact_search_roots(
+    binding: SaveBindingSpec,
+    *,
+    root: Path,
+    resolve_executable: Callable[[str], str],
+) -> tuple[Path, ...]:
+    roots = [root]
+    if binding.local_root == "retroarch_saves_psx":
+        roots.extend(_retroarch_system_roots(resolve_executable))
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in roots:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        deduped.append(candidate)
+    return tuple(deduped)
+
+
+def _unique_recursive_match_roots(roots: tuple[Path, ...], filename: str) -> Path | None:
+    matches = sorted({path for root in roots for path in root.rglob(filename) if path.is_file()})
     if len(matches) != 1:
         return None
     return matches[0]
@@ -378,10 +488,17 @@ def _existing_exact_path(
     filename: str,
     resolve_executable: Callable[[str], str],
 ) -> Path | None:
-    preferred = _preferred_exact_path(binding, root=root, filename=filename, resolve_executable=resolve_executable)
-    if preferred.exists() and preferred.is_file():
-        return preferred
-    return _unique_recursive_match(root, filename)
+    roots = _exact_search_roots(binding, root=root, resolve_executable=resolve_executable)
+    for search_root in roots:
+        preferred = _preferred_exact_path(
+            binding,
+            root=search_root,
+            filename=filename,
+            resolve_executable=resolve_executable,
+        )
+        if preferred.exists() and preferred.is_file():
+            return preferred
+    return _unique_recursive_match_roots(roots, filename)
 
 
 def resolve_binding_local_root(
@@ -389,8 +506,20 @@ def resolve_binding_local_root(
     *,
     resolve_executable: Callable[[str], str] = resolve_emulator_executable,
 ) -> Path | None:
-    if binding.local_root in {"retroarch_saves", "retroarch_saves_psx"}:
+    if binding.local_root == "retroarch_saves":
         return resolve_emulator_save_root("retroarch", resolve_executable=resolve_executable)
+    if binding.local_root == "retroarch_saves_psx":
+        save_root = resolve_emulator_save_root("retroarch", resolve_executable=resolve_executable)
+        if save_root is not None:
+            return save_root
+        system_roots = _retroarch_system_roots(resolve_executable)
+        for candidate in system_roots:
+            existing = _existing_dir(candidate)
+            if existing is not None:
+                return existing
+        if system_roots:
+            return system_roots[0]
+        return None
     if binding.local_root == "pcsx2_memcards":
         return resolve_emulator_save_root("pcsx2", resolve_executable=resolve_executable)
     if binding.local_root == "dolphin_gc":
@@ -490,13 +619,20 @@ def resolve_exact_local_save_destination(
     filename: str,
     resolve_executable: Callable[[str], str] = resolve_emulator_executable,
 ) -> Path:
+    system_name = system.strip().upper()
+    local_root: Literal["retroarch_saves", "retroarch_saves_psx", "pcsx2_memcards"] = "retroarch_saves"
+    if system_name == "PS2":
+        local_root = "pcsx2_memcards"
+    elif system_name == "PSX":
+        local_root = "retroarch_saves_psx"
+
     binding = SaveBindingSpec(
         binding_id="savebind_runtime_exact",
         title_id="title_runtime_exact",
         system=system,
         kind=kind,
         server_rel_dir=f"saves/{system}/runtime/{kind}",
-        local_root="pcsx2_memcards" if system.strip().upper() == "PS2" else "retroarch_saves",
+        local_root=local_root,
         strategy="exact_files",
         candidate_filenames=(filename,),
         learn_rule=None,

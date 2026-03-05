@@ -924,6 +924,41 @@ def test_resolve_emulator_save_root_windows_pcsx2_memcards(monkeypatch) -> None:
         assert resolved == memcards
 
 
+def test_resolve_emulator_save_root_windows_pcsx2_memcards_from_ini(monkeypatch) -> None:
+    with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
+        temp_root = Path(temp_dir)
+        appdata_root = temp_root / "AppData" / "Roaming"
+        ini_path = appdata_root / "PCSX2" / "inis" / "PCSX2.ini"
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text("Folders.MemoryCards = profile_memcards\n", encoding="utf-8")
+        memcards = appdata_root / "PCSX2" / "profile_memcards"
+        memcards.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
+        monkeypatch.setenv("APPDATA", str(appdata_root))
+        monkeypatch.delenv("USERPROFILE", raising=False)
+
+        resolved = resolve_emulator_save_root("pcsx2", resolve_executable=lambda _name: "")
+
+        assert resolved == memcards
+
+
+def test_resolve_emulator_save_root_windows_pcsx2_memcards_fallbacks_to_appdata(monkeypatch) -> None:
+    with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
+        temp_root = Path(temp_dir)
+        appdata_root = temp_root / "AppData" / "Roaming"
+        memcards = appdata_root / "PCSX2" / "memcards"
+        memcards.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
+        monkeypatch.setenv("APPDATA", str(appdata_root))
+        monkeypatch.delenv("USERPROFILE", raising=False)
+
+        resolved = resolve_emulator_save_root("pcsx2", resolve_executable=lambda _name: "")
+
+        assert resolved == memcards
+
+
 def test_resolve_system_save_root_windows_prefers_portable_dolphin_user_gc(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-save-root-") as temp_root:
         dolphin_root = temp_root / "Programs" / "Dolphin"
@@ -1097,6 +1132,40 @@ def test_resolve_exact_local_save_destination_prefers_flatpak_runtime_cfg_on_lin
         )
 
         assert resolved == save_root / "SwanStation" / "GH_title_test_1.mcd"
+
+
+def test_resolve_exact_local_save_destination_finds_psx_card_in_system_dir_on_windows(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-root-") as temp_root:
+        exe = temp_root / "retroarch.exe"
+        exe.write_bytes(b"exe")
+        cfg = temp_root / "retroarch.cfg"
+        cfg.write_text(
+            'savefile_directory = ":\\\\saves"\n'
+            'system_directory = ":\\\\system"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        save_root = temp_root / "saves"
+        save_root.mkdir(parents=True, exist_ok=True)
+        system_card = temp_root / "system" / "SwanStation" / "GH_title_psx_ctr_1.mcd"
+        system_card.parent.mkdir(parents=True, exist_ok=True)
+        system_card.write_bytes(b"memcard")
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "nt")
+        monkeypatch.delenv("APPDATA", raising=False)
+
+        resolved = resolve_exact_local_save_destination(
+            system="PSX",
+            kind="memory_card",
+            root=save_root,
+            filename="GH_title_psx_ctr_1.mcd",
+            resolve_executable=lambda _name: str(exe),
+        )
+
+        assert resolved == system_card
 
 
 def test_learned_tree_discovers_single_dolphin_gc_root() -> None:
