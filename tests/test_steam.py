@@ -1311,6 +1311,54 @@ def test_upsert_shortcuts_uses_persisted_appid_for_mapping(workspace_tempdir) ->
         assert result.app_ids_by_system["PSX"] == ["-602952253"]
 
 
+def test_upsert_shortcuts_rotates_appid_when_exe_seed_changes(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+        existing = {
+            "AppName": "CTR - Crash Team Racing",
+            "Exe": '"/home/deck/.local/share/flatpak/exports/bin/org.libretro.RetroArch"',
+            "LaunchOptions": "-f -L cores/swanstation_libretro.so game.chd",
+            "appid": "-1390455078",
+            "tags": {
+                "0": "GAMEHUB",
+                "1": "GAMEHUB_TITLE:title_cd2d33c2af011575",
+                "2": "GAMEHUB_SYSTEM:PSX",
+                "3": "PSX",
+            },
+        }
+        context.shortcuts_path.write_bytes(vdf.binary_dumps({"shortcuts": {"0": existing}}))
+
+        desired = [
+            SteamShortcutSpec(
+                title_id="title_cd2d33c2af011575",
+                system="PSX",
+                title_name="CTR - Crash Team Racing",
+                exe="/home/deck/gamehub/venv/bin/gamehub",
+                launch_options="shortcut-launch --payload test",
+                start_dir="/home/deck/gamehub/venv/bin",
+                icon_path="",
+            )
+        ]
+
+        result = upsert_shortcuts(context, desired)
+
+        rotated = result.app_ids_by_title["title_cd2d33c2af011575"]
+        assert rotated != "-1390455078"
+        assert rotated.lstrip("-").isdigit()
+        payload = vdf.binary_loads(context.shortcuts_path.read_bytes())
+        entry = next(iter(payload["shortcuts"].values()))
+        assert str(entry.get("Exe", "")) == "/home/deck/gamehub/venv/bin/gamehub"
+        assert str(entry.get("appid", "")) == rotated
+
+
 def test_update_collections_creates_canonical_webstorage_path_when_missing(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
