@@ -373,6 +373,39 @@ def test_run_controller_launch_non_deck_zero_detect_behavior_unchanged(monkeypat
     assert observed["count"] == 0
 
 
+def test_run_target_falls_back_to_flatpak_run_for_export_binary(monkeypatch, capsys) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "/home/deck/.local/share/flatpak/exports/bin/org.libretro.RetroArch",
+            "target_args": ["-f", "-L", "/var/home/deck/core.so", "/var/home/deck/roms/game.gbc"],
+        }
+    )
+    payload = parse_shortcut_payload(token)
+    calls: list[list[str]] = []
+
+    class _Process:
+        def wait(self) -> int:
+            return 0
+
+    def _fake_popen(command, cwd=None, stdin=None):
+        del cwd, stdin
+        calls.append(list(command))
+        if len(calls) == 1:
+            raise FileNotFoundError("missing flatpak export binary")
+        return _Process()
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.subprocess.Popen", _fake_popen)
+
+    exit_code = launch_module._run_target(payload)
+
+    assert exit_code == 0
+    assert calls[0][0] == "/home/deck/.local/share/flatpak/exports/bin/org.libretro.RetroArch"
+    assert calls[1][:3] == ["flatpak", "run", "org.libretro.RetroArch"]
+    assert "falling back to 'flatpak run org.libretro.RetroArch'" in capsys.readouterr().out
+
+
 def test_snapshot_exact_binding_tracks_remote_missing_local_file(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-launch-save-") as temp_root:
         save_path = temp_root / "GH_title_ps2_test_1.ps2"

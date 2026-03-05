@@ -369,7 +369,25 @@ def _run_target(payload: ShortcutLaunchPayload) -> int:
         candidate = Path(payload.start_dir)
         if candidate.exists():
             cwd = str(candidate)
-    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    try:
+        process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    except OSError as exc:
+        normalized = executable.replace("\\", "/")
+        flatpak_app_id = ""
+        if "/flatpak/exports/bin/" in normalized.casefold():
+            flatpak_app_id = normalized.rsplit("/", 1)[-1]
+        if flatpak_app_id:
+            fallback_command = ["flatpak", "run", flatpak_app_id, *payload.target_args]
+            try:
+                process = subprocess.Popen(fallback_command, cwd=cwd, stdin=subprocess.DEVNULL)
+                print(
+                    "Warning: direct Flatpak export launch failed "
+                    f"(target={executable}, error={exc}); falling back to 'flatpak run {flatpak_app_id}'"
+                )
+            except OSError:
+                raise exc
+        else:
+            raise
     return int(process.wait())
 
 
