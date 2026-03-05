@@ -1634,7 +1634,7 @@ def test_build_shortcut_specs_linux_normalizes_retroarch_core_token(monkeypatch,
         assert "@@" in specs[0].launch_options
         assert ".dll" not in specs[0].launch_options
         assert "fceumm_libretro.so" in specs[0].launch_options
-        assert "/var/home/deck/.var/app/org.libretro.RetroArch/config/retroarch/cores" in specs[0].launch_options
+        assert "cores/fceumm_libretro.so" in specs[0].launch_options
 
 
 def test_build_shortcut_specs_linux_flatpak_pcsx2_uses_file_forwarding(monkeypatch, workspace_tempdir) -> None:

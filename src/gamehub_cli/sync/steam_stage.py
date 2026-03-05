@@ -344,6 +344,19 @@ def _strip_launch_line_tokens_for_flatpak(
     return tokens
 
 
+def _normalize_retroarch_flatpak_tokens(tokens: list[str]) -> list[str]:
+    normalized = list(tokens)
+    for index, token in enumerate(normalized[:-1]):
+        if token != "-L":
+            continue
+        core_token = normalized[index + 1].strip().strip('"').replace("\\", "/")
+        core_name = core_token.rsplit("/", 1)[-1]
+        if core_name.endswith(".dll"):
+            core_name = f"{core_name[:-4]}.so"
+        normalized[index + 1] = f"cores/{core_name}"
+    return normalized
+
+
 def build_shortcut_specs(
     index: LibraryIndex,
     config: GamehubConfig,
@@ -386,10 +399,12 @@ def build_shortcut_specs(
             launch_template = _normalize_linux_retroarch_launch_template(launch_template, config, emulator_exe)
             launch_line = launch_template.format(emulator=emulator_exe, rom=str(rom_path))
             parts = shlex.split(launch_line, posix=True)
-            forwarded_tokens = _strip_launch_line_tokens_for_flatpak(
-                parts,
-                emulator_exe=emulator_exe,
-                rom_path=rom_path,
+            forwarded_tokens = _normalize_retroarch_flatpak_tokens(
+                _strip_launch_line_tokens_for_flatpak(
+                    parts,
+                    emulator_exe=emulator_exe,
+                    rom_path=rom_path,
+                )
             )
             launch_args = [
                 "run",
