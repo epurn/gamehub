@@ -373,6 +373,36 @@ def test_run_controller_launch_non_deck_zero_detect_behavior_unchanged(monkeypat
     assert observed["count"] == 0
 
 
+def test_run_controller_launch_skips_controller_autoconfig_for_retroarch(monkeypatch, capsys) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "retroarch",
+            "target_args": ["-f", "game.gbc"],
+        }
+    )
+    config = _config()
+    applied: list[str] = []
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.load_config", lambda path=None: config)
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch.apply_controller_profile",
+        lambda *args, **kwargs: applied.append("apply"),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.controllers.launch.apply_named_controller_profile",
+        lambda *args, **kwargs: applied.append("fallback"),
+    )
+    monkeypatch.setattr("gamehub_cli.controllers.launch._run_target_with_optional_exit_hook", lambda payload: 0)
+
+    exit_code = run_shortcut_launch(payload_token=token, audit=True)
+
+    assert exit_code == 0
+    assert applied == []
+    assert "controller-autoconfig\tskipped\temulator=retroarch\treason=unsupported" in capsys.readouterr().out
+
+
 def test_run_target_falls_back_to_flatpak_run_for_export_binary(monkeypatch, capsys) -> None:
     token = encode_shortcut_payload(
         {

@@ -412,6 +412,13 @@ def _detect_controller_count_once(*, max_devices: int = 2) -> tuple[int, Excepti
         return 0, exc
 
 
+def _supports_controller_autoconfig(emulator_name: str) -> bool:
+    normalized = emulator_name.casefold()
+    if "retroarch" in normalized:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class _ShortcutSaveSnapshot:
     destination: Path | None
@@ -1023,7 +1030,7 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
             if candidate.exists():
                 os.environ[_AZAHAR_WINDOWS_SDL_DIR_ENV] = str(candidate.parent)
 
-    if config.controllers.launch_autoconfig:
+    if config.controllers.launch_autoconfig and _supports_controller_autoconfig(payload.emulator):
         try:
             seed_default_profiles(config)
         except Exception as exc:
@@ -1096,6 +1103,8 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
                     "Warning: keyboard/mouse fallback profile application failed "
                     f"(emulator={payload.emulator}, error={fallback_exc})"
                 )
+    elif config.controllers.launch_autoconfig and audit:
+        print(f"controller-autoconfig\tskipped\temulator={payload.emulator}\treason=unsupported")
     if config.save_sync.enabled:
         try:
             _ensure_managed_memory_card_paths(payload, config)
