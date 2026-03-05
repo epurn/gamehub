@@ -46,6 +46,7 @@ from .profiles import PROFILE_KBM, profile_name_for_controller_count, seed_defau
 from .sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
 
 _DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
+_RETROARCH_FLATPAK_APP_ID = "org.libretro.RetroArch"
 _DOLPHIN_LINUX_EXIT_HOOK_ENV = "GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK"
 _DOLPHIN_EXIT_BUTTON_SELECT_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT"
 _DOLPHIN_EXIT_BUTTON_START_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_START"
@@ -302,6 +303,29 @@ def _payload_targets_flatpak_app(payload: ShortcutLaunchPayload, *, app_id: str)
     return "run" in args_folded and app_id.casefold() in args_folded
 
 
+def _is_retroarch_flatpak_payload(payload: ShortcutLaunchPayload) -> bool:
+    if "retroarch" not in payload.emulator.casefold():
+        return False
+    return _payload_targets_flatpak_app(payload, app_id=_RETROARCH_FLATPAK_APP_ID)
+
+
+def _flatpak_args_with_device_all(args: list[str]) -> list[str]:
+    updated = list(args)
+    if not updated or updated[0] != "run" or "--device=all" in updated:
+        return updated
+    updated.insert(1, "--device=all")
+    return updated
+
+
+def _flatpak_args_without_file_forwarding(args: list[str]) -> list[str]:
+    updated: list[str] = []
+    for token in args:
+        if token in {"--file-forwarding", "@@", "@@u"}:
+            continue
+        updated.append(token)
+    return updated
+
+
 def _should_use_windows_azahar_exit_hook(payload: ShortcutLaunchPayload) -> bool:
     if not sys.platform.startswith("win"):
         return False
@@ -369,8 +393,13 @@ def _run_target(payload: ShortcutLaunchPayload) -> int:
         candidate = Path(payload.start_dir)
         if candidate.exists():
             cwd = str(candidate)
+
+    def _spawn_and_wait(run_command: list[str]) -> int:
+        process = subprocess.Popen(run_command, cwd=cwd, stdin=subprocess.DEVNULL)
+        return int(process.wait())
+
     try:
-        process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+        exit_code = _spawn_and_wait(command)
     except OSError as exc:
         normalized = executable.replace("\\", "/")
         flatpak_app_id = ""
@@ -379,7 +408,7 @@ def _run_target(payload: ShortcutLaunchPayload) -> int:
         if flatpak_app_id:
             fallback_command = ["flatpak", "run", flatpak_app_id, *payload.target_args]
             try:
-                process = subprocess.Popen(fallback_command, cwd=cwd, stdin=subprocess.DEVNULL)
+                exit_code = _spawn_and_wait(fallback_command)
                 print(
                     "Warning: direct Flatpak export launch failed "
                     f"(target={executable}, error={exc}); falling back to 'flatpak run {flatpak_app_id}'"
@@ -388,7 +417,30 @@ def _run_target(payload: ShortcutLaunchPayload) -> int:
                 raise exc
         else:
             raise
-    return int(process.wait())
+    if exit_code == 0 or not _is_retroarch_flatpak_payload(payload):
+        return exit_code
+
+    base_args = list(payload.target_args)
+    retries: list[tuple[str, list[str]]] = []
+    device_args = _flatpak_args_with_device_all(base_args)
+    if device_args != base_args:
+        retries.append(("with --device=all", [executable, *device_args]))
+    no_forward_args = _flatpak_args_without_file_forwarding(device_args)
+    if no_forward_args != device_args:
+        retries.append(("without --file-forwarding", [executable, *no_forward_args]))
+
+    last_exit_code = exit_code
+    for label, retry_command in retries:
+        try:
+            retry_exit = _spawn_and_wait(retry_command)
+        except OSError as exc:
+            print(f"Warning: RetroArch Flatpak retry {label} failed to launch ({exc})")
+            continue
+        if retry_exit == 0:
+            print(f"Warning: RetroArch Flatpak launch recovered {label}")
+            return 0
+        last_exit_code = retry_exit
+    return last_exit_code
 
 
 def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:

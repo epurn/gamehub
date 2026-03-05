@@ -436,6 +436,99 @@ def test_run_target_falls_back_to_flatpak_run_for_export_binary(monkeypatch, cap
     assert "falling back to 'flatpak run org.libretro.RetroArch'" in capsys.readouterr().out
 
 
+def test_run_target_retries_retroarch_flatpak_with_device_all(monkeypatch, capsys) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "flatpak",
+            "target_args": [
+                "run",
+                "--file-forwarding",
+                "org.libretro.RetroArch",
+                "-f",
+                "-L",
+                "/home/deck/.var/app/org.libretro.RetroArch/config/retroarch/cores/swanstation_libretro.so",
+                "@@",
+                "/run/media/mmcblk0p1/GameHub/roms/PSX/CTR - Crash Team Racing.chd",
+                "@@",
+            ],
+        }
+    )
+    payload = parse_shortcut_payload(token)
+    calls: list[list[str]] = []
+    waits = [139, 0]
+
+    class _Process:
+        def __init__(self, rc: int) -> None:
+            self._rc = rc
+
+        def wait(self) -> int:
+            return self._rc
+
+    def _fake_popen(command, cwd=None, stdin=None):
+        del cwd, stdin
+        calls.append(list(command))
+        return _Process(waits.pop(0))
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.subprocess.Popen", _fake_popen)
+
+    exit_code = launch_module._run_target(payload)
+
+    assert exit_code == 0
+    assert calls[0][:4] == ["flatpak", "run", "--file-forwarding", "org.libretro.RetroArch"]
+    assert calls[1][:5] == ["flatpak", "run", "--device=all", "--file-forwarding", "org.libretro.RetroArch"]
+    assert "RetroArch Flatpak launch recovered with --device=all" in capsys.readouterr().out
+
+
+def test_run_target_retries_retroarch_flatpak_without_file_forwarding(monkeypatch, capsys) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "flatpak",
+            "target_args": [
+                "run",
+                "--file-forwarding",
+                "org.libretro.RetroArch",
+                "-f",
+                "-L",
+                "/home/deck/.var/app/org.libretro.RetroArch/config/retroarch/cores/swanstation_libretro.so",
+                "@@",
+                "/run/media/mmcblk0p1/GameHub/roms/PSX/CTR - Crash Team Racing.chd",
+                "@@",
+            ],
+        }
+    )
+    payload = parse_shortcut_payload(token)
+    calls: list[list[str]] = []
+    waits = [139, 139, 0]
+
+    class _Process:
+        def __init__(self, rc: int) -> None:
+            self._rc = rc
+
+        def wait(self) -> int:
+            return self._rc
+
+    def _fake_popen(command, cwd=None, stdin=None):
+        del cwd, stdin
+        calls.append(list(command))
+        return _Process(waits.pop(0))
+
+    monkeypatch.setattr("gamehub_cli.controllers.launch.subprocess.Popen", _fake_popen)
+
+    exit_code = launch_module._run_target(payload)
+
+    assert exit_code == 0
+    assert calls[0][:4] == ["flatpak", "run", "--file-forwarding", "org.libretro.RetroArch"]
+    assert calls[1][:5] == ["flatpak", "run", "--device=all", "--file-forwarding", "org.libretro.RetroArch"]
+    assert calls[2][:4] == ["flatpak", "run", "--device=all", "org.libretro.RetroArch"]
+    assert "--file-forwarding" not in calls[2]
+    assert "@@" not in calls[2]
+    assert "RetroArch Flatpak launch recovered without --file-forwarding" in capsys.readouterr().out
+
+
 def test_snapshot_exact_binding_tracks_remote_missing_local_file(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-launch-save-") as temp_root:
         save_path = temp_root / "GH_title_ps2_test_1.ps2"
