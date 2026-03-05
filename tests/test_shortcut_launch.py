@@ -82,6 +82,50 @@ def test_parse_shortcut_payload_strips_wrapping_quotes_from_args() -> None:
     assert payload.target_args == ("-b", "C:/Games/Path With Spaces/game.iso")
 
 
+def test_ensure_managed_memory_card_paths_prefers_payload_retroarch_cfg_on_windows(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-psx-managed-card-") as temp_root:
+        portable_root = temp_root / "portable-ra"
+        portable_root.mkdir(parents=True, exist_ok=True)
+        portable_exe = portable_root / "retroarch.exe"
+        portable_exe.write_bytes(b"exe")
+        portable_cfg = portable_root / "retroarch.cfg"
+        portable_cfg.write_text("", encoding="utf-8")
+        portable_core_options = portable_root / "retroarch-core-options.cfg"
+        portable_core_options.write_text("", encoding="utf-8")
+
+        appdata_root = temp_root / "appdata-ra"
+        appdata_root.mkdir(parents=True, exist_ok=True)
+        appdata_cfg = appdata_root / "retroarch.cfg"
+        appdata_cfg.write_text("", encoding="utf-8")
+        appdata_core_options = appdata_root / "retroarch-core-options.cfg"
+        appdata_core_options.write_text("", encoding="utf-8")
+
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.targets.retroarch_cfg_candidates_for_config",
+            lambda config=None: [appdata_cfg],
+        )
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe=str(portable_exe),
+            target_args=(),
+            title_id="title_psx_ctr",
+            system="PSX",
+            rom_rel_path="roms/PSX/Crash Team Racing.chd",
+        )
+        changed = launch_module._ensure_managed_memory_card_paths(payload, _config())
+
+        assert changed is True
+        portable_text = portable_core_options.read_text(encoding="utf-8")
+        appdata_text = appdata_core_options.read_text(encoding="utf-8")
+        assert 'swanstation_MemoryCard1Path = "GH_title_psx_ctr_1.mcd"' in portable_text
+        assert 'swanstation_MemoryCard2Path = "GH_title_psx_ctr_2.mcd"' in portable_text
+        assert "swanstation_MemoryCard1Path" not in appdata_text
+
+
 def test_run_shortcut_launch_sets_azahar_sdl_dir_env(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-azahar-sdl-") as temp_root:
         azahar_dir = temp_root / "Azahar"
@@ -373,6 +417,66 @@ def test_run_shortcut_launch_non_deck_zero_detect_behavior_unchanged(monkeypatch
     assert observed["count"] == 0
 
 
+def test_run_shortcut_launch_passes_payload_executable_resolver_to_save_sync(monkeypatch) -> None:
+    target_exe = "C:/PortableRetroArch/retroarch.exe"
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": target_exe,
+            "target_args": ["-f", "game.chd"],
+            "title_id": "title_psx_ctr",
+            "system": "PSX",
+            "rom_rel_path": "roms/PSX/Crash Team Racing.chd",
+        }
+    )
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+    observed: dict[str, str] = {}
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._load_shortcut_state", lambda path: state)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._ensure_managed_memory_card_paths",
+        lambda payload, cfg: False,
+    )
+
+    def _fake_prelaunch(**kwargs):
+        resolver = kwargs["resolve_executable"]
+        observed["prelaunch"] = resolver("retroarch")
+        return launch_module._ShortcutSaveContext(
+            save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={}
+        ), False
+
+    def _fake_postexit(**kwargs):
+        resolver = kwargs["resolve_executable"]
+        observed["postexit"] = resolver("retroarch")
+        return False
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_shortcut_prelaunch_save_sync", _fake_prelaunch)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_shortcut_postexit_save_sync", _fake_postexit)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook", lambda payload: 0)
+
+    exit_code = run_shortcut_launch(payload_token=token)
+
+    assert exit_code == 0
+    assert observed["prelaunch"] == target_exe
+    assert observed["postexit"] == target_exe
+
+
 def test_snapshot_exact_binding_tracks_remote_missing_local_file(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-launch-save-") as temp_root:
         save_path = temp_root / "GH_title_ps2_test_1.ps2"
@@ -391,10 +495,15 @@ def test_snapshot_exact_binding_tracks_remote_missing_local_file(monkeypatch, wo
         )
 
         monkeypatch.setattr(
-            "gamehub_cli.shortcuts.shortcut_launch.resolve_binding_local_root", lambda _binding: temp_root
+            "gamehub_cli.shortcuts.shortcut_launch.resolve_binding_local_root",
+            lambda _binding, **_kwargs: temp_root,
         )
 
-        snapshot = launch_module._snapshot_exact_binding(binding, remote_save_ids=set())
+        snapshot = launch_module._snapshot_exact_binding(
+            binding,
+            remote_save_ids=set(),
+            resolve_executable=lambda _name: "",
+        )
 
         assert snapshot is not None
         assert snapshot.local_sha256_by_suffix["GH_title_ps2_test_1.ps2"] == _sha256_bytes(b"memcard")
@@ -421,7 +530,8 @@ def test_shortcut_postexit_exact_binding_sync_creates_remote_missing_save(monkey
         created_ids: list[str] = []
 
         monkeypatch.setattr(
-            "gamehub_cli.shortcuts.shortcut_launch.resolve_binding_local_root", lambda _binding: temp_root
+            "gamehub_cli.shortcuts.shortcut_launch.resolve_binding_local_root",
+            lambda _binding, **_kwargs: temp_root,
         )
         monkeypatch.setattr(
             "gamehub_cli.shortcuts.shortcut_launch.resolve_exact_local_save_destination",
@@ -453,6 +563,7 @@ def test_shortcut_postexit_exact_binding_sync_creates_remote_missing_save(monkey
                     local_sha256_by_suffix={"Pokemon - Crystal Version.srm": None},
                 )
             },
+            resolve_executable=lambda _name: "",
             server_url="http://localhost:8000",
             timeout_seconds=30.0,
             verbose=False,

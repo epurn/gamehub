@@ -370,7 +370,10 @@ def test_save_planner_classifies_download_upload_conflict_and_skip(monkeypatch, 
     with workspace_tempdir("gamehub-save-plan-") as temp_root:
         save_root = temp_root / "memcards"
         save_root.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.resolve_system_save_root", lambda _system: save_root)
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_system_save_root",
+            lambda _system, **_kwargs: save_root,
+        )
         remote_bytes = [b"remote-0", b"remote-1", b"remote-2", b"remote-3"]
         saves = tuple(
             SaveSpec(

@@ -347,9 +347,12 @@ def _azahar_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
 
 
 def resolve_local_save_destination(
-    save: SaveSpec, *, binding_roots: Mapping[str, Mapping[str, object]] | None = None
+    save: SaveSpec,
+    *,
+    binding_roots: Mapping[str, Mapping[str, object]] | None = None,
+    resolve_executable: Callable[[str], str] = resolve_emulator_executable,
 ) -> Path | None:
-    root = resolve_system_save_root(save.system)
+    root = resolve_system_save_root(save.system, resolve_executable=resolve_executable)
     if root is None:
         return None
     parts = tuple(part for part in PurePosixPath(save.rel_path).parts if part not in {"", "."})
@@ -362,6 +365,7 @@ def resolve_local_save_destination(
             kind=cast(Literal["battery", "memory_card"], save.kind),
             root=root,
             filename=suffix_parts[-1],
+            resolve_executable=resolve_executable,
         )
     if save.system.strip().upper() == "N3DS":
         materialized_root = _resolve_n3ds_materialized_root(

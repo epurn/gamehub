@@ -1,4 +1,5 @@
 import vdf
+
 from gamehub_cli.common.config import load_config
 from gamehub_cli.sync.steam_stage import resolve_steam_context
 
@@ -16,7 +17,11 @@ for k, e in data.get("shortcuts", {}).items():
     if not isinstance(e, dict):
         continue
     tags = e.get("tags", {})
-    vals = [tags[t] for t in sorted(tags, key=lambda x: int(str(x)) if str(x).isdigit() else str(x))] if isinstance(tags, dict) else []
+    vals = (
+        [tags[t] for t in sorted(tags, key=lambda x: int(str(x)) if str(x).isdigit() else str(x))]
+        if isinstance(tags, dict)
+        else []
+    )
     if "GAMEHUB" not in vals:
         continue
     managed += 1
@@ -24,7 +29,7 @@ for k, e in data.get("shortcuts", {}).items():
     launch = str(e.get("LaunchOptions", "")).strip()
     has_payload = "shortcut-launch --payload" in launch
     uses_gamehub = "gamehub" in exe.lower()
-    uses_python_module = ("python" in exe.lower() and launch.startswith("-m gamehub_cli.main shortcut-launch --payload"))
+    uses_python_module = "python" in exe.lower() and launch.startswith("-m gamehub_cli.main shortcut-launch --payload")
 
     if has_payload and not (uses_gamehub or uses_python_module):
         bad_wrappers.append((k, e.get("AppName", ""), exe, launch))

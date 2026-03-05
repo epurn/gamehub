@@ -35,6 +35,7 @@ from ..controllers.apply import apply_controller_profile, apply_named_controller
 from ..controllers.detection import detect_xbox_controllers, is_steam_deck_linux
 from ..controllers.profiles import PROFILE_KBM, profile_name_for_controller_count, seed_default_profiles
 from ..controllers.sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
+from ..emulators import resolve_emulator_executable
 from ..emulators.save_resolution import (
     canonical_suffix_for_learned_path,
     learn_binding_root,
@@ -420,6 +421,31 @@ class _ShortcutSaveContext:
     tree_snapshots: dict[str, _ShortcutTreeSnapshot]
 
 
+def _shortcut_save_resolver(payload: ShortcutLaunchPayload) -> Callable[[str], str]:
+    target_exe = _unquote_executable(payload.target_exe).strip()
+    payload_emulator = payload.emulator.casefold()
+    if not target_exe:
+        return resolve_emulator_executable
+
+    expected_names: set[str] = set()
+    if "retroarch" in payload_emulator:
+        expected_names.update({"retroarch"})
+    elif "pcsx2" in payload_emulator:
+        expected_names.update({"pcsx2", "pcsx2-qt"})
+    elif "dolphin" in payload_emulator:
+        expected_names.update({"dolphin", "dolphin-emu"})
+    elif "azahar" in payload_emulator:
+        expected_names.update({"azahar", "azahar-qt"})
+
+    def _resolve(name: str) -> str:
+        normalized = name.strip().strip('"').casefold()
+        if normalized in expected_names:
+            return target_exe
+        return resolve_emulator_executable(name)
+
+    return _resolve
+
+
 def _load_shortcut_index(config: GamehubConfig, *, verbose: bool) -> LibraryIndex | None:
     try:
         index_module = import_module("gamehub_cli.sync.index")
@@ -576,10 +602,11 @@ def _snapshot_exact_binding(
     binding: SaveBindingSpec,
     *,
     remote_save_ids: set[str],
+    resolve_executable: Callable[[str], str],
 ) -> _ShortcutExactBindingSnapshot | None:
     if binding.strategy != "exact_files":
         return None
-    root = resolve_binding_local_root(binding)
+    root = resolve_binding_local_root(binding, resolve_executable=resolve_executable)
     if root is None:
         return None
     local_sha256_by_suffix: dict[str, str | None] = {}
@@ -593,6 +620,7 @@ def _snapshot_exact_binding(
             kind=exact_kind,
             root=root,
             filename=filename,
+            resolve_executable=resolve_executable,
         )
         local_sha256_by_suffix[filename] = local_file_sha256(destination)
     if not local_sha256_by_suffix:
@@ -605,6 +633,7 @@ def _run_shortcut_postexit_exact_binding_sync(
     state: Any,
     current_saves: dict[str, SaveSpec],
     exact_snapshots: dict[str, _ShortcutExactBindingSnapshot],
+    resolve_executable: Callable[[str], str],
     server_url: str,
     timeout_seconds: float,
     verbose: bool,
@@ -613,7 +642,7 @@ def _run_shortcut_postexit_exact_binding_sync(
     state_changed = False
     for exact_snapshot in exact_snapshots.values():
         binding = exact_snapshot.binding
-        root = resolve_binding_local_root(binding)
+        root = resolve_binding_local_root(binding, resolve_executable=resolve_executable)
         if root is None:
             continue
         exact_kind = cast(Literal["battery", "memory_card"], binding.kind)
@@ -626,6 +655,7 @@ def _run_shortcut_postexit_exact_binding_sync(
                 kind=exact_kind,
                 root=root,
                 filename=filename,
+                resolve_executable=resolve_executable,
             )
             local_sha = local_file_sha256(destination)
             if local_sha is None:
@@ -713,7 +743,13 @@ def _ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: Ga
         config_edit = import_module("gamehub_cli.common.config_edit")
         pcsx2_ini = import_module("gamehub_cli.firmware.pcsx2_ini")
         fsops = import_module("gamehub_cli.common.fsops")
-        cfg_candidates = firmware_targets.retroarch_cfg_candidates_for_config(config=config)
+        cfg_candidates = list(firmware_targets.retroarch_cfg_candidates_for_config(config=config))
+        target_executable = _unquote_executable(payload.target_exe).strip()
+        if target_executable and target_executable.casefold() != "flatpak":
+            target_path = Path(target_executable)
+            if target_path.suffix:
+                target_cfg = target_path.with_name("retroarch.cfg")
+                cfg_candidates = [target_cfg, *(item for item in cfg_candidates if item != target_cfg)]
         cfg_path = next(
             (candidate for candidate in cfg_candidates if candidate.exists()),
             cfg_candidates[0] if cfg_candidates else None,
@@ -761,6 +797,7 @@ def _run_shortcut_prelaunch_save_sync(
     payload: ShortcutLaunchPayload,
     config: GamehubConfig,
     state: Any,
+    resolve_executable: Callable[[str], str],
     verbose: bool,
     audit: bool,
 ) -> tuple[_ShortcutSaveContext, bool]:
@@ -782,16 +819,24 @@ def _run_shortcut_prelaunch_save_sync(
             if binding.strategy == "learned_tree":
                 context.tree_snapshots[binding.binding_id] = _ShortcutTreeSnapshot(
                     binding=binding,
-                    before=snapshot_binding_tree(binding),
+                    before=snapshot_binding_tree(binding, resolve_executable=resolve_executable),
                 )
                 continue
-            exact_snapshot = _snapshot_exact_binding(binding, remote_save_ids=remote_save_ids)
+            exact_snapshot = _snapshot_exact_binding(
+                binding,
+                remote_save_ids=remote_save_ids,
+                resolve_executable=resolve_executable,
+            )
             if exact_snapshot is not None:
                 context.exact_binding_snapshots[binding.binding_id] = exact_snapshot
 
     state_changed = False
     for save in title_saves:
-        destination = resolve_local_save_destination(save, binding_roots=state.save_binding_roots)
+        destination = resolve_local_save_destination(
+            save,
+            binding_roots=state.save_binding_roots,
+            resolve_executable=resolve_executable,
+        )
         local_sha = local_file_sha256(destination) if destination is not None else None
         allow_postexit_upload = True
         if destination is None:
@@ -852,6 +897,7 @@ def _run_shortcut_postexit_save_sync(
     config: GamehubConfig,
     state: Any,
     context: _ShortcutSaveContext,
+    resolve_executable: Callable[[str], str],
     verbose: bool,
     audit: bool,
 ) -> bool:
@@ -908,6 +954,7 @@ def _run_shortcut_postexit_save_sync(
         state=state,
         current_saves=current_saves,
         exact_snapshots=context.exact_binding_snapshots,
+        resolve_executable=resolve_executable,
         server_url=config.server_url,
         timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
         verbose=verbose,
@@ -917,7 +964,7 @@ def _run_shortcut_postexit_save_sync(
 
     for binding_id, tree_snapshot in context.tree_snapshots.items():
         binding = tree_snapshot.binding
-        after = snapshot_binding_tree(binding)
+        after = snapshot_binding_tree(binding, resolve_executable=resolve_executable)
         changed_paths = _changed_tree_paths(tree_snapshot.before, after)
         if not changed_paths:
             continue
@@ -937,7 +984,7 @@ def _run_shortcut_postexit_save_sync(
         )
         state.unresolved_save_conflicts.pop(binding_id, None)
         state_changed = True
-        root = resolve_binding_local_root(binding)
+        root = resolve_binding_local_root(binding, resolve_executable=resolve_executable)
         if root is None:
             continue
         for rel_path in changed_paths:
@@ -988,6 +1035,7 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
     payload = parse_shortcut_payload(payload_token)
     resolved_config = _resolve_config_path(config_path, payload)
     config = load_config(resolved_config)
+    save_resolver = _shortcut_save_resolver(payload)
     state: Any = None
     save_state: Callable[[Path, Any], None] | None = None
     state_changed = False
@@ -1093,6 +1141,7 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
                 payload=payload,
                 config=config,
                 state=state,
+                resolve_executable=save_resolver,
                 verbose=False,
                 audit=audit,
             )
@@ -1109,6 +1158,7 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
                 config=config,
                 state=state,
                 context=save_context,
+                resolve_executable=save_resolver,
                 verbose=False,
                 audit=audit,
             )
