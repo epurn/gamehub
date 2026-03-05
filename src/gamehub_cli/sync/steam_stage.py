@@ -252,23 +252,6 @@ def _maybe_quote_executable(value: str) -> str:
     return stripped
 
 
-def _is_python_executable_name(value: str) -> bool:
-    normalized = value.casefold()
-    if normalized.endswith(".exe"):
-        normalized = normalized[:-4]
-    return normalized == "python" or normalized.startswith("python") or normalized.startswith("pypy")
-
-
-def _is_known_emulator_flatpak_export(value: str) -> bool:
-    app_ids = (
-        RETROARCH_FLATPAK_APP_ID,
-        PCSX2_FLATPAK_APP_ID,
-        DOLPHIN_FLATPAK_APP_ID,
-        AZAHAR_FLATPAK_APP_ID,
-    )
-    return any(is_flatpak_command(value, app_id) for app_id in app_ids)
-
-
 def _strip_wrapping_quotes(value: str) -> str:
     stripped = value.strip()
     if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
@@ -277,42 +260,16 @@ def _strip_wrapping_quotes(value: str) -> str:
 
 
 def _wrapper_executable_and_args() -> tuple[str, list[str]]:
-    exe_path = Path(sys.executable)
-    executable_name = str(exe_path).replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    exe_path = str(sys.executable)
+    executable_name = exe_path.replace("\\", "/").rsplit("/", 1)[-1].casefold()
     is_frozen = bool(getattr(sys, "frozen", False))
-
-    argv0 = Path(sys.argv[0]).expanduser() if sys.argv and sys.argv[0] else None
-    if argv0 is not None:
-        argv_name = argv0.name.casefold()
-        if argv_name in {"gamehub", "gamehub.exe"} and argv0.exists():
-            return str(argv0), ["shortcut-launch"]
-
-    # Prefer the installed CLI entrypoint when available. This avoids inheriting
-    # unusual interpreter paths from launcher environments.
-    gamehub_from_path = shutil.which("gamehub")
-    if gamehub_from_path and not _is_known_emulator_flatpak_export(gamehub_from_path):
-        return gamehub_from_path, ["shortcut-launch"]
-
-    if is_frozen or (not _is_python_executable_name(executable_name) and executable_name.endswith(".exe")):
-        return str(exe_path), ["shortcut-launch"]
-    if sys.platform.startswith("linux"):
-        gamehub_cmd = exe_path.with_name("gamehub")
-        if gamehub_cmd.exists() and not _is_known_emulator_flatpak_export(str(gamehub_cmd)):
-            return str(gamehub_cmd), ["shortcut-launch"]
-    if sys.platform.startswith("win"):
-        gamehub_cmd = exe_path.with_name("gamehub.exe")
-        if gamehub_cmd.exists():
-            return str(gamehub_cmd), ["shortcut-launch"]
+    if is_frozen or ("python" not in executable_name and executable_name.endswith(".exe")):
+        return exe_path, ["shortcut-launch"]
     if sys.platform.startswith("win"):
         candidate = Path(sys.executable).with_name("pythonw.exe")
         if candidate.exists():
             return str(candidate), ["-m", "gamehub_cli.main", "shortcut-launch"]
-    if _is_python_executable_name(executable_name):
-        return str(exe_path), ["-m", "gamehub_cli.main", "shortcut-launch"]
-    python3 = shutil.which("python3")
-    if python3:
-        return python3, ["-m", "gamehub_cli.main", "shortcut-launch"]
-    return str(exe_path), ["shortcut-launch"]
+    return exe_path, ["-m", "gamehub_cli.main", "shortcut-launch"]
 
 
 def _split_launch_options(value: str) -> list[str]:

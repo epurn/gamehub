@@ -46,13 +46,11 @@ from .profiles import PROFILE_KBM, profile_name_for_controller_count, seed_defau
 from .sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
 
 _DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
-_RETROARCH_FLATPAK_APP_ID = "org.libretro.RetroArch"
 _DOLPHIN_LINUX_EXIT_HOOK_ENV = "GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK"
 _DOLPHIN_EXIT_BUTTON_SELECT_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT"
 _DOLPHIN_EXIT_BUTTON_START_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_START"
 _DOLPHIN_EXIT_JS_DEVICE_ENV = "GAMEHUB_DOLPHIN_EXIT_JS_DEVICE"
 _AZAHAR_WINDOWS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK"
-_SHORTCUT_LAUNCH_LOG_ENV = "GAMEHUB_SHORTCUT_LAUNCH_LOG"
 _XINPUT_GAMEPAD_START = 0x0010
 _XINPUT_GAMEPAD_BACK = 0x0020
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
@@ -282,36 +280,6 @@ def _int_env_optional(name: str) -> int | None:
         return None
 
 
-def _shortcut_launch_log_paths() -> list[Path]:
-    paths: list[Path] = []
-    override = os.environ.get(_SHORTCUT_LAUNCH_LOG_ENV, "").strip()
-    if override:
-        paths.append(Path(override).expanduser())
-    paths.append(Path.home() / ".gamehub" / "shortcut-launch.log")
-    paths.append(Path.cwd() / ".gamehub" / "shortcut-launch.log")
-    paths.append(Path("/tmp/gamehub-shortcut-launch.log"))
-    seen: set[Path] = set()
-    unique: list[Path] = []
-    for candidate in paths:
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        unique.append(candidate)
-    return unique
-
-
-def _write_shortcut_launch_log(message: str) -> None:
-    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    line = f"{timestamp}\t{message}\n"
-    for path in _shortcut_launch_log_paths():
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(line)
-        except Exception:
-            continue
-
-
 def _discover_js_devices(env_name: str) -> list[str]:
     env_device = os.environ.get(env_name)
     if env_device:
@@ -332,29 +300,6 @@ def _payload_targets_flatpak_app(payload: ShortcutLaunchPayload, *, app_id: str)
         return False
     args_folded = [arg.casefold() for arg in payload.target_args]
     return "run" in args_folded and app_id.casefold() in args_folded
-
-
-def _is_retroarch_flatpak_payload(payload: ShortcutLaunchPayload) -> bool:
-    if "retroarch" not in payload.emulator.casefold():
-        return False
-    return _payload_targets_flatpak_app(payload, app_id=_RETROARCH_FLATPAK_APP_ID)
-
-
-def _flatpak_args_with_device_all(args: list[str]) -> list[str]:
-    updated = list(args)
-    if not updated or updated[0] != "run" or "--device=all" in updated:
-        return updated
-    updated.insert(1, "--device=all")
-    return updated
-
-
-def _flatpak_args_without_file_forwarding(args: list[str]) -> list[str]:
-    updated: list[str] = []
-    for token in args:
-        if token in {"--file-forwarding", "@@", "@@u"}:
-            continue
-        updated.append(token)
-    return updated
 
 
 def _should_use_windows_azahar_exit_hook(payload: ShortcutLaunchPayload) -> bool:
@@ -424,59 +369,8 @@ def _run_target(payload: ShortcutLaunchPayload) -> int:
         candidate = Path(payload.start_dir)
         if candidate.exists():
             cwd = str(candidate)
-
-    def _spawn_and_wait(run_command: list[str]) -> int:
-        process = subprocess.Popen(run_command, cwd=cwd, stdin=subprocess.DEVNULL)
-        return int(process.wait())
-
-    try:
-        exit_code = _spawn_and_wait(command)
-    except OSError as exc:
-        normalized = executable.replace("\\", "/")
-        flatpak_app_id = ""
-        if "/flatpak/exports/bin/" in normalized.casefold():
-            flatpak_app_id = normalized.rsplit("/", 1)[-1]
-        if flatpak_app_id:
-            fallback_command = ["flatpak", "run", flatpak_app_id, *payload.target_args]
-            try:
-                exit_code = _spawn_and_wait(fallback_command)
-                print(
-                    "Warning: direct Flatpak export launch failed "
-                    f"(target={executable}, error={exc}); falling back to 'flatpak run {flatpak_app_id}'"
-                )
-                _write_shortcut_launch_log(
-                    f"flatpak-export-fallback target={executable} app_id={flatpak_app_id} error={exc}"
-                )
-            except OSError:
-                raise exc
-        else:
-            raise
-    if exit_code == 0 or not _is_retroarch_flatpak_payload(payload):
-        return exit_code
-
-    base_args = list(payload.target_args)
-    retries: list[tuple[str, list[str]]] = []
-    device_args = _flatpak_args_with_device_all(base_args)
-    if device_args != base_args:
-        retries.append(("with --device=all", [executable, *device_args]))
-    no_forward_args = _flatpak_args_without_file_forwarding(device_args)
-    if no_forward_args != device_args:
-        retries.append(("without --file-forwarding", [executable, *no_forward_args]))
-
-    last_exit_code = exit_code
-    for label, retry_command in retries:
-        try:
-            retry_exit = _spawn_and_wait(retry_command)
-        except OSError as exc:
-            print(f"Warning: RetroArch Flatpak retry {label} failed to launch ({exc})")
-            _write_shortcut_launch_log(f"retroarch-retry-launch-failed label={label} error={exc}")
-            continue
-        _write_shortcut_launch_log(f"retroarch-retry label={label} exit_code={retry_exit}")
-        if retry_exit == 0:
-            print(f"Warning: RetroArch Flatpak launch recovered {label}")
-            return 0
-        last_exit_code = retry_exit
-    return last_exit_code
+    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    return int(process.wait())
 
 
 def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:
@@ -498,13 +392,6 @@ def _detect_controller_count_once(*, max_devices: int = 2) -> tuple[int, Excepti
         return len(detect_xbox_controllers(max_devices=max_devices)), None
     except Exception as exc:
         return 0, exc
-
-
-def _supports_controller_autoconfig(emulator_name: str) -> bool:
-    normalized = emulator_name.casefold()
-    if "retroarch" in normalized:
-        return False
-    return True
 
 
 @dataclass(frozen=True)
@@ -1095,14 +982,7 @@ def _run_shortcut_postexit_save_sync(
 
 
 def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, audit: bool = False) -> int:
-    _write_shortcut_launch_log(f"shortcut-launch-start payload_len={len(payload_token)} audit={audit}")
-    try:
-        payload = parse_shortcut_payload(payload_token)
-    except Exception as exc:  # noqa: BLE001
-        print(f"Warning: shortcut launch payload parse failed ({exc})")
-        _write_shortcut_launch_log(f"shortcut-launch-parse-failed error={exc}")
-        return 2
-    _write_shortcut_launch_log(f"shortcut-launch-parsed emulator={payload.emulator} target_exe={payload.target_exe}")
+    payload = parse_shortcut_payload(payload_token)
     resolved_config = _resolve_config_path(config_path, payload)
     config = load_config(resolved_config)
     state: Any = None
@@ -1125,7 +1005,7 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
             if candidate.exists():
                 os.environ[_AZAHAR_WINDOWS_SDL_DIR_ENV] = str(candidate.parent)
 
-    if config.controllers.launch_autoconfig and _supports_controller_autoconfig(payload.emulator):
+    if config.controllers.launch_autoconfig:
         try:
             seed_default_profiles(config)
         except Exception as exc:
@@ -1198,8 +1078,6 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
                     "Warning: keyboard/mouse fallback profile application failed "
                     f"(emulator={payload.emulator}, error={fallback_exc})"
                 )
-    elif config.controllers.launch_autoconfig and audit:
-        print(f"controller-autoconfig\tskipped\temulator={payload.emulator}\treason=unsupported")
     if config.save_sync.enabled:
         try:
             _ensure_managed_memory_card_paths(payload, config)
@@ -1220,7 +1098,6 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
             print(f"Warning: pre-launch save sync failed; continuing launch ({exc})")
 
     exit_code = _run_target_with_optional_exit_hook(payload)
-    _write_shortcut_launch_log(f"shortcut-launch-target-exit emulator={payload.emulator} exit_code={exit_code}")
 
     if state is not None:
         try:
@@ -1236,9 +1113,5 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
         except Exception as exc:  # noqa: BLE001
             print(f"Warning: post-exit save sync failed ({exc})")
         if state_changed and save_state is not None:
-            try:
-                save_state(config.state_path, state)
-            except Exception as exc:  # noqa: BLE001
-                _write_shortcut_launch_log(f"shortcut-launch-state-persist-failed error={exc}")
-    _write_shortcut_launch_log(f"shortcut-launch-finish exit_code={exit_code}")
+            save_state(config.state_path, state)
     return exit_code
