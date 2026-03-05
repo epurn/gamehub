@@ -1007,7 +1007,11 @@ def _run_shortcut_postexit_save_sync(
 
 
 def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, audit: bool = False) -> int:
-    payload = parse_shortcut_payload(payload_token)
+    try:
+        payload = parse_shortcut_payload(payload_token)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: shortcut launch payload parse failed ({exc})")
+        return 2
     resolved_config = _resolve_config_path(config_path, payload)
     config = load_config(resolved_config)
     state: Any = None
