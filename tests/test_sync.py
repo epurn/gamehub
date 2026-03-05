@@ -1730,6 +1730,10 @@ def test_build_shortcut_specs_wraps_pcsx2_when_controller_autoconfig_enabled(mon
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "/usr/bin/python3")
         monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.shutil.which",
+            lambda name: "/usr/bin/gamehub" if name == "gamehub" else None,
+        )
+        monkeypatch.setattr(
             "gamehub_cli.sync.steam_stage.resolve_rom_destination",
             lambda **kwargs: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
         )
@@ -1737,8 +1741,8 @@ def test_build_shortcut_specs_wraps_pcsx2_when_controller_autoconfig_enabled(mon
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert _normalize_path_token(specs[0].exe) == "/usr/bin/python3"
-        assert specs[0].launch_options.startswith("-m gamehub_cli.main shortcut-launch --payload ")
+        assert _normalize_path_token(specs[0].exe) == "/usr/bin/gamehub"
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
         assert "shortcut-launch --payload" in specs[0].launch_options
         payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
         payload = parse_shortcut_payload(payload_token)
@@ -1833,12 +1837,16 @@ def test_build_shortcut_specs_wraps_retroarch_with_controller_autoconfig(monkeyp
             "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
         )
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "C:\\Python\\python.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.shutil.which",
+            lambda name: "C:\\Python\\gamehub.exe" if name in {"gamehub", "gamehub.exe"} else None,
+        )
 
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert _normalize_path_token(specs[0].exe) == "C:/Python/python.exe"
-        assert specs[0].launch_options.startswith("-m gamehub_cli.main shortcut-launch --payload ")
+        assert _normalize_path_token(specs[0].exe) == "C:/Python/gamehub.exe"
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
         payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
         payload = parse_shortcut_payload(payload_token)
         assert payload.emulator == "retroarch"
@@ -1882,12 +1890,16 @@ def test_build_shortcut_specs_wraps_retroarch_when_save_sync_enabled(monkeypatch
             "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
         )
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "C:\\Python\\python.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.shutil.which",
+            lambda name: "C:\\Python\\gamehub.exe" if name in {"gamehub", "gamehub.exe"} else None,
+        )
 
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert _normalize_path_token(specs[0].exe) == "C:/Python/python.exe"
-        assert specs[0].launch_options.startswith("-m gamehub_cli.main shortcut-launch --payload ")
+        assert _normalize_path_token(specs[0].exe) == "C:/Python/gamehub.exe"
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
 
 
 def test_build_shortcut_specs_windows_azahar_uses_native_launch_template(monkeypatch, workspace_tempdir) -> None:

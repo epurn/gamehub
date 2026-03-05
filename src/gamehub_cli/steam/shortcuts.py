@@ -121,18 +121,10 @@ def _shortcut_bool_to_vdf(value: bool) -> str:
 
 def _build_shortcut_entry(spec: SteamShortcutSpec, existing: dict | None = None) -> dict:
     entry = dict(existing) if existing is not None else {}
-    unsigned_target_app_id = _compute_shortcut_app_id(spec.exe, spec.title_name)
-    target_app_id = _canonical_signed_app_id_from_unsigned(unsigned_target_app_id) or unsigned_target_app_id
     persisted_app_id = _extract_persisted_app_id(entry)
     if persisted_app_id is None:
-        persisted_app_id = target_app_id
-    else:
-        existing_exe = str(entry.get("Exe", ""))
-        existing_app_name = str(entry.get("AppName", ""))
-        # Rotate app id when the launch seed changes so Steam stops launching
-        # stale target commands from prior wrapper layouts.
-        if existing_exe != spec.exe or existing_app_name != spec.title_name:
-            persisted_app_id = target_app_id
+        unsigned = _compute_shortcut_app_id(spec.exe, spec.title_name)
+        persisted_app_id = _canonical_signed_app_id_from_unsigned(unsigned) or unsigned
     allow_desktop_config = (
         _shortcut_bool_to_vdf(spec.allow_desktop_config)
         if spec.allow_desktop_config is not None

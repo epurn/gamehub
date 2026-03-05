@@ -252,6 +252,23 @@ def _maybe_quote_executable(value: str) -> str:
     return stripped
 
 
+def _is_python_executable_name(value: str) -> bool:
+    normalized = value.casefold()
+    if normalized.endswith(".exe"):
+        normalized = normalized[:-4]
+    return normalized == "python" or normalized.startswith("python") or normalized.startswith("pypy")
+
+
+def _is_known_emulator_flatpak_export(value: str) -> bool:
+    app_ids = (
+        RETROARCH_FLATPAK_APP_ID,
+        PCSX2_FLATPAK_APP_ID,
+        DOLPHIN_FLATPAK_APP_ID,
+        AZAHAR_FLATPAK_APP_ID,
+    )
+    return any(is_flatpak_command(value, app_id) for app_id in app_ids)
+
+
 def _strip_wrapping_quotes(value: str) -> str:
     stripped = value.strip()
     if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
@@ -259,11 +276,55 @@ def _strip_wrapping_quotes(value: str) -> str:
     return stripped
 
 
+def _resolve_gamehub_wrapper_executable() -> str | None:
+    candidates: list[str] = []
+
+    if sys.argv and sys.argv[0]:
+        argv0 = _strip_wrapping_quotes(sys.argv[0])
+        argv_name = Path(argv0).name.casefold()
+        if argv_name in {"gamehub", "gamehub.exe"}:
+            path = Path(argv0).expanduser()
+            if path.exists():
+                candidates.append(str(path))
+
+    exe_path = Path(sys.executable)
+    exe_name = exe_path.name.casefold()
+    if exe_name in {"gamehub", "gamehub.exe"}:
+        candidates.append(str(exe_path))
+
+    sibling_name = "gamehub.exe" if sys.platform.startswith("win") else "gamehub"
+    sibling = exe_path.with_name(sibling_name)
+    if sibling.exists():
+        candidates.append(str(sibling))
+
+    for command in ("gamehub", "gamehub.exe"):
+        resolved = shutil.which(command)
+        if resolved:
+            candidates.append(str(resolved))
+
+    for candidate in candidates:
+        normalized = _strip_wrapping_quotes(candidate)
+        if not normalized:
+            continue
+        if _is_known_emulator_flatpak_export(normalized):
+            continue
+        return normalized
+    return None
+
+
 def _wrapper_executable_and_args() -> tuple[str, list[str]]:
     exe_path = str(sys.executable)
     executable_name = exe_path.replace("\\", "/").rsplit("/", 1)[-1].casefold()
     is_frozen = bool(getattr(sys, "frozen", False))
-    if is_frozen or ("python" not in executable_name and executable_name.endswith(".exe")):
+
+    if is_frozen:
+        return exe_path, ["shortcut-launch"]
+
+    wrapper_executable = _resolve_gamehub_wrapper_executable()
+    if wrapper_executable:
+        return wrapper_executable, ["shortcut-launch"]
+
+    if not _is_python_executable_name(executable_name) and executable_name.endswith(".exe"):
         return exe_path, ["shortcut-launch"]
     if sys.platform.startswith("win"):
         candidate = Path(sys.executable).with_name("pythonw.exe")
