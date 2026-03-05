@@ -52,6 +52,7 @@ _DOLPHIN_EXIT_BUTTON_SELECT_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT"
 _DOLPHIN_EXIT_BUTTON_START_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_START"
 _DOLPHIN_EXIT_JS_DEVICE_ENV = "GAMEHUB_DOLPHIN_EXIT_JS_DEVICE"
 _AZAHAR_WINDOWS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK"
+_SHORTCUT_LAUNCH_LOG_ENV = "GAMEHUB_SHORTCUT_LAUNCH_LOG"
 _XINPUT_GAMEPAD_START = 0x0010
 _XINPUT_GAMEPAD_BACK = 0x0020
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
@@ -281,6 +282,24 @@ def _int_env_optional(name: str) -> int | None:
         return None
 
 
+def _shortcut_launch_log_path() -> Path:
+    override = os.environ.get(_SHORTCUT_LAUNCH_LOG_ENV, "").strip()
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".gamehub" / "shortcut-launch.log"
+
+
+def _write_shortcut_launch_log(message: str) -> None:
+    try:
+        path = _shortcut_launch_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{timestamp}\t{message}\n")
+    except Exception:
+        return
+
+
 def _discover_js_devices(env_name: str) -> list[str]:
     env_device = os.environ.get(env_name)
     if env_device:
@@ -413,6 +432,9 @@ def _run_target(payload: ShortcutLaunchPayload) -> int:
                     "Warning: direct Flatpak export launch failed "
                     f"(target={executable}, error={exc}); falling back to 'flatpak run {flatpak_app_id}'"
                 )
+                _write_shortcut_launch_log(
+                    f"flatpak-export-fallback target={executable} app_id={flatpak_app_id} error={exc}"
+                )
             except OSError:
                 raise exc
         else:
@@ -435,7 +457,9 @@ def _run_target(payload: ShortcutLaunchPayload) -> int:
             retry_exit = _spawn_and_wait(retry_command)
         except OSError as exc:
             print(f"Warning: RetroArch Flatpak retry {label} failed to launch ({exc})")
+            _write_shortcut_launch_log(f"retroarch-retry-launch-failed label={label} error={exc}")
             continue
+        _write_shortcut_launch_log(f"retroarch-retry label={label} exit_code={retry_exit}")
         if retry_exit == 0:
             print(f"Warning: RetroArch Flatpak launch recovered {label}")
             return 0
@@ -1059,11 +1083,14 @@ def _run_shortcut_postexit_save_sync(
 
 
 def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, audit: bool = False) -> int:
+    _write_shortcut_launch_log(f"shortcut-launch-start payload_len={len(payload_token)} audit={audit}")
     try:
         payload = parse_shortcut_payload(payload_token)
     except Exception as exc:  # noqa: BLE001
         print(f"Warning: shortcut launch payload parse failed ({exc})")
+        _write_shortcut_launch_log(f"shortcut-launch-parse-failed error={exc}")
         return 2
+    _write_shortcut_launch_log(f"shortcut-launch-parsed emulator={payload.emulator} target_exe={payload.target_exe}")
     resolved_config = _resolve_config_path(config_path, payload)
     config = load_config(resolved_config)
     state: Any = None
@@ -1181,6 +1208,7 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
             print(f"Warning: pre-launch save sync failed; continuing launch ({exc})")
 
     exit_code = _run_target_with_optional_exit_hook(payload)
+    _write_shortcut_launch_log(f"shortcut-launch-target-exit emulator={payload.emulator} exit_code={exit_code}")
 
     if state is not None:
         try:
@@ -1196,5 +1224,9 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
         except Exception as exc:  # noqa: BLE001
             print(f"Warning: post-exit save sync failed ({exc})")
         if state_changed and save_state is not None:
-            save_state(config.state_path, state)
+            try:
+                save_state(config.state_path, state)
+            except Exception as exc:  # noqa: BLE001
+                _write_shortcut_launch_log(f"shortcut-launch-state-persist-failed error={exc}")
+    _write_shortcut_launch_log(f"shortcut-launch-finish exit_code={exit_code}")
     return exit_code
