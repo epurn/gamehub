@@ -1745,6 +1745,69 @@ def test_build_shortcut_specs_wraps_pcsx2_when_controller_autoconfig_enabled(mon
         assert "net.pcsx2.PCSX2" in " ".join(payload.target_args)
 
 
+def test_build_shortcut_specs_wrapper_prefers_gamehub_console_script_on_linux(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-linux-gamehub-wrapper-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=True),
+        )
+        title = TitleEntry(
+            title_id="title_ps2_gt4",
+            system="PS2",
+            title_name="Gran Turismo 4",
+            title_rel_dir="PS2/Gran Turismo 4.iso",
+            emulator="pcsx2",
+            launch_template='"{emulator}" -fullscreen "{rom}"',
+            rom=RomSpec(
+                file_id="rom_ps2",
+                rel_path="roms/PS2/Gran Turismo 4.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable",
+            lambda value: "/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2",
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "/home/deck/gamehub/venv/bin/python3")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_rom_destination",
+            lambda **kwargs: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
+        )
+
+        real_exists = Path.exists
+
+        def _patched_exists(path_obj: Path) -> bool:
+            if str(path_obj).replace("\\", "/") == "/home/deck/gamehub/venv/bin/gamehub":
+                return True
+            return real_exists(path_obj)
+
+        monkeypatch.setattr(Path, "exists", _patched_exists)
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert _normalize_path_token(specs[0].exe) == "/home/deck/gamehub/venv/bin/gamehub"
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
+        payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
+        payload = parse_shortcut_payload(payload_token)
+        assert payload.emulator == "pcsx2"
+        assert payload.target_exe == "flatpak"
+
+
 def test_build_shortcut_specs_wrapper_uses_direct_command_for_frozen_exe(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-sync-shortcuts-win-ps2-wrap-") as temp_root:
         config = GamehubConfig(

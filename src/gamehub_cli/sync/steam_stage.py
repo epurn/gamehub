@@ -260,16 +260,24 @@ def _strip_wrapping_quotes(value: str) -> str:
 
 
 def _wrapper_executable_and_args() -> tuple[str, list[str]]:
-    exe_path = str(sys.executable)
-    executable_name = exe_path.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    exe_path = Path(sys.executable)
+    executable_name = str(exe_path).replace("\\", "/").rsplit("/", 1)[-1].casefold()
     is_frozen = bool(getattr(sys, "frozen", False))
     if is_frozen or ("python" not in executable_name and executable_name.endswith(".exe")):
-        return exe_path, ["shortcut-launch"]
+        return str(exe_path), ["shortcut-launch"]
+    if sys.platform.startswith("linux"):
+        gamehub_cmd = exe_path.with_name("gamehub")
+        if gamehub_cmd.exists():
+            return str(gamehub_cmd), ["shortcut-launch"]
+    if sys.platform.startswith("win"):
+        gamehub_cmd = exe_path.with_name("gamehub.exe")
+        if gamehub_cmd.exists():
+            return str(gamehub_cmd), ["shortcut-launch"]
     if sys.platform.startswith("win"):
         candidate = Path(sys.executable).with_name("pythonw.exe")
         if candidate.exists():
             return str(candidate), ["-m", "gamehub_cli.main", "shortcut-launch"]
-    return exe_path, ["-m", "gamehub_cli.main", "shortcut-launch"]
+    return str(exe_path), ["-m", "gamehub_cli.main", "shortcut-launch"]
 
 
 def _split_launch_options(value: str) -> list[str]:
