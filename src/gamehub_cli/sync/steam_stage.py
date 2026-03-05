@@ -350,10 +350,9 @@ def _normalize_retroarch_flatpak_tokens(tokens: list[str]) -> list[str]:
         if token != "-L":
             continue
         core_token = normalized[index + 1].strip().strip('"').replace("\\", "/")
-        core_name = core_token.rsplit("/", 1)[-1]
-        if core_name.endswith(".dll"):
-            core_name = f"{core_name[:-4]}.so"
-        normalized[index + 1] = f"cores/{core_name}"
+        if core_token.endswith(".dll"):
+            core_token = f"{core_token[:-4]}.so"
+        normalized[index + 1] = core_token
     return normalized
 
 
