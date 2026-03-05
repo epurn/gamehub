@@ -282,22 +282,34 @@ def _int_env_optional(name: str) -> int | None:
         return None
 
 
-def _shortcut_launch_log_path() -> Path:
+def _shortcut_launch_log_paths() -> list[Path]:
+    paths: list[Path] = []
     override = os.environ.get(_SHORTCUT_LAUNCH_LOG_ENV, "").strip()
     if override:
-        return Path(override).expanduser()
-    return Path.home() / ".gamehub" / "shortcut-launch.log"
+        paths.append(Path(override).expanduser())
+    paths.append(Path.home() / ".gamehub" / "shortcut-launch.log")
+    paths.append(Path.cwd() / ".gamehub" / "shortcut-launch.log")
+    paths.append(Path("/tmp/gamehub-shortcut-launch.log"))
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for candidate in paths:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        unique.append(candidate)
+    return unique
 
 
 def _write_shortcut_launch_log(message: str) -> None:
-    try:
-        path = _shortcut_launch_log_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(f"{timestamp}\t{message}\n")
-    except Exception:
-        return
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    line = f"{timestamp}\t{message}\n"
+    for path in _shortcut_launch_log_paths():
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(line)
+        except Exception:
+            continue
 
 
 def _discover_js_devices(env_name: str) -> list[str]:
