@@ -46,6 +46,9 @@ from ..emulators.save_resolution import (
 )
 
 _DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
+_RETROARCH_FLATPAK_APP_ID = "org.libretro.RetroArch"
+_PCSX2_FLATPAK_APP_ID = "net.pcsx2.PCSX2"
+_AZAHAR_FLATPAK_APP_ID = "org.azahar_emu.Azahar"
 _DOLPHIN_LINUX_EXIT_HOOK_ENV = "GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK"
 _DOLPHIN_EXIT_BUTTON_SELECT_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT"
 _DOLPHIN_EXIT_BUTTON_START_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_START"
@@ -421,9 +424,25 @@ class _ShortcutSaveContext:
     tree_snapshots: dict[str, _ShortcutTreeSnapshot]
 
 
+def _flatpak_run_app_id(target_args: tuple[str, ...]) -> str | None:
+    folded = [arg.casefold() for arg in target_args]
+    try:
+        run_index = folded.index("run")
+    except ValueError:
+        return None
+    for token in target_args[run_index + 1 :]:
+        if token == "--":
+            break
+        if token.startswith("-"):
+            continue
+        return token
+    return None
+
+
 def _shortcut_save_resolver(payload: ShortcutLaunchPayload) -> Callable[[str], str]:
     target_exe = _unquote_executable(payload.target_exe).strip()
     payload_emulator = payload.emulator.casefold()
+    flatpak_app_id = _flatpak_run_app_id(payload.target_args) if target_exe.casefold() == "flatpak" else None
     if not target_exe:
         return resolve_emulator_executable
 
@@ -440,6 +459,9 @@ def _shortcut_save_resolver(payload: ShortcutLaunchPayload) -> Callable[[str], s
     def _resolve(name: str) -> str:
         normalized = name.strip().strip('"').casefold()
         if normalized in expected_names:
+            if flatpak_app_id:
+                # Save-resolution helpers detect Flatpak runtimes from export-style tokens.
+                return f"/flatpak/exports/bin/{flatpak_app_id}"
             return target_exe
         return resolve_emulator_executable(name)
 
