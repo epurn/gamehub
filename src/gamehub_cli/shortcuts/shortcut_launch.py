@@ -439,10 +439,34 @@ def _flatpak_run_app_id(target_args: tuple[str, ...]) -> str | None:
     return None
 
 
+def _flag_value(target_args: tuple[str, ...], *, flag_name: str) -> str | None:
+    flag = flag_name.casefold()
+    for index, token in enumerate(target_args):
+        normalized = token.casefold()
+        if normalized == flag and index + 1 < len(target_args):
+            return target_args[index + 1]
+        if normalized.startswith(f"{flag}="):
+            value = token.split("=", 1)[1].strip()
+            if value:
+                return value
+    return None
+
+
+def _shortcut_flatpak_app_id(payload: ShortcutLaunchPayload) -> str | None:
+    target_exe = _unquote_executable(payload.target_exe).strip().casefold()
+    if target_exe == "flatpak":
+        return _flatpak_run_app_id(payload.target_args)
+    if "azahar" in payload.emulator.casefold():
+        args_folded = {arg.casefold() for arg in payload.target_args}
+        if "gamehub_cli.controllers.azahar_exit_hook" in args_folded:
+            return _flag_value(payload.target_args, flag_name="--app-id")
+    return None
+
+
 def _shortcut_save_resolver(payload: ShortcutLaunchPayload) -> Callable[[str], str]:
     target_exe = _unquote_executable(payload.target_exe).strip()
     payload_emulator = payload.emulator.casefold()
-    flatpak_app_id = _flatpak_run_app_id(payload.target_args) if target_exe.casefold() == "flatpak" else None
+    flatpak_app_id = _shortcut_flatpak_app_id(payload)
     if not target_exe:
         return resolve_emulator_executable
 
