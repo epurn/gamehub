@@ -117,8 +117,10 @@ Steam close behavior:
       - detects attached controllers (Xbox on non-Deck platforms; built-in controller on Steam Deck)
       - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
       - rewrites managed `PSX`/`PS2` memory-card targets to deterministic GAMEHUB filenames before launch when save sync is enabled
+      - performs a one-shot `/health` reachability precheck (`1.0s` timeout) before launch-session save-sync network work
       - runs title-scoped pre-launch save reconciliation when save sync is enabled
-      - fails open if the server cannot be reached for save sync; launch continues after a warning
+      - skips launch-session save-sync network work when the precheck fails (fail-open; launch continues)
+      - uses launch-only metadata fetch limits for `/v1/index` and `/v1/save-bindings` (`<=5.0s` timeout cap, attempts=`1`, backoff=`0.0s`)
       - launches the original emulator command
       - runs title-scoped post-exit save upload when `save_sync.mode = "bidirectional"`:
         - uploads changed indexed saves when the remote save did not change during play

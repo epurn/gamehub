@@ -5,6 +5,7 @@ import time
 from types import ModuleType
 from typing import Callable
 from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin
 from urllib.request import urlopen
 
 _httpx: ModuleType | None
@@ -135,3 +136,26 @@ def fetch_save_bindings_with_retries(
         http_client_module=http_client_module,
         sleep_func=sleep_func,
     )
+
+
+def probe_server_health(
+    *,
+    server_url: str,
+    timeout_seconds: float,
+    http_client_module: ModuleType | None = None,
+) -> bool:
+    health_url = urljoin(server_url.rstrip("/") + "/", "health")
+    try:
+        _fetch_json_with_retries(
+            url=health_url,
+            timeout_seconds=timeout_seconds,
+            attempts=1,
+            retry_backoff_seconds=0.0,
+            verbose=False,
+            request_label="health",
+            http_client_module=http_client_module,
+            sleep_func=None,
+        )
+    except Exception:
+        return False
+    return True

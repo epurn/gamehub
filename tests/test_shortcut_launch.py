@@ -15,7 +15,7 @@ from gamehub_cli.shortcuts.shortcut_launch import (
     run_shortcut_launch,
 )
 from gamehub_common.ids import make_save_id
-from gamehub_common.models import SaveBindingSpec, SaveSpec
+from gamehub_common.models import LibraryIndex, SaveBindingSpec, SaveSpec
 
 
 def _config() -> GamehubConfig:
@@ -799,3 +799,204 @@ def test_run_shortcut_launch_postexit_save_sync_failure_does_not_replace_exit_co
 
     assert exit_code == 23
     assert "post-exit save sync failed" in capsys.readouterr().out
+
+
+def test_shortcut_prelaunch_save_sync_skips_when_server_unreachable(monkeypatch) -> None:
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+    )
+    payload = launch_module.ShortcutLaunchPayload(
+        version=1,
+        emulator="retroarch",
+        target_exe="retroarch",
+        target_args=("-f", "game.gbc"),
+        title_id="title_gbc_pokemon",
+        system="GBC",
+        rom_rel_path="roms/GBC/Pokemon Crystal.gbc",
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._shortcut_server_reachable", lambda _config: False)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_index",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("index fetch should be skipped")),
+    )
+
+    context, changed = launch_module._run_shortcut_prelaunch_save_sync(
+        payload=payload,
+        config=config,
+        state=state,
+        resolve_executable=lambda _name: "retroarch",
+        verbose=False,
+        audit=False,
+    )
+
+    assert changed is False
+    assert context.save_snapshots == {}
+    assert context.exact_binding_snapshots == {}
+    assert context.tree_snapshots == {}
+
+
+def test_shortcut_postexit_save_sync_skips_when_server_unreachable(monkeypatch) -> None:
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+    )
+    payload = launch_module.ShortcutLaunchPayload(
+        version=1,
+        emulator="retroarch",
+        target_exe="retroarch",
+        target_args=("-f", "game.gbc"),
+        title_id="title_gbc_pokemon",
+        system="GBC",
+        rom_rel_path="roms/GBC/Pokemon Crystal.gbc",
+    )
+    context = launch_module._ShortcutSaveContext(
+        save_snapshots={
+            "save_1": launch_module._ShortcutSaveSnapshot(
+                destination=Path("D:/GameHub/save.sav"),
+                local_sha256="a" * 64,
+                remote_sha256="b" * 64,
+                allow_postexit_upload=True,
+            )
+        },
+        exact_binding_snapshots={},
+        tree_snapshots={},
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._shortcut_server_reachable", lambda _config: False)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_index",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("index fetch should be skipped")),
+    )
+
+    changed = launch_module._run_shortcut_postexit_save_sync(
+        payload=payload,
+        config=config,
+        state=state,
+        context=context,
+        resolve_executable=lambda _name: "retroarch",
+        verbose=False,
+        audit=False,
+    )
+
+    assert changed is False
+
+
+def test_shortcut_prelaunch_download_mode_skips_save_bindings_fetch(monkeypatch) -> None:
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="download"),
+    )
+    payload = launch_module.ShortcutLaunchPayload(
+        version=1,
+        emulator="retroarch",
+        target_exe="retroarch",
+        target_args=("-f", "game.gbc"),
+        title_id="title_gbc_pokemon",
+        system="GBC",
+        rom_rel_path="roms/GBC/Pokemon Crystal.gbc",
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._shortcut_server_reachable", lambda _config: True)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_index",
+        lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=()),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_save_bindings",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("save bindings fetch should be skipped")),
+    )
+
+    context, changed = launch_module._run_shortcut_prelaunch_save_sync(
+        payload=payload,
+        config=config,
+        state=state,
+        resolve_executable=lambda _name: "retroarch",
+        verbose=False,
+        audit=False,
+    )
+
+    assert changed is False
+    assert context.save_snapshots == {}
+    assert context.exact_binding_snapshots == {}
+    assert context.tree_snapshots == {}
+
+
+def test_shortcut_metadata_fetch_uses_single_attempt_fast_profile(monkeypatch) -> None:
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+        index_timeout_seconds=45.0,
+        index_fetch_attempts=6,
+        index_retry_backoff_seconds=2.5,
+    )
+    calls: dict[str, dict[str, object]] = {}
+
+    class _FakeIndexModule:
+        @staticmethod
+        def fetch_index_with_retries(**kwargs):
+            calls["index"] = kwargs
+            return {"index_version": 1, "systems": [], "titles": [], "saves": []}
+
+        @staticmethod
+        def fetch_save_bindings_with_retries(**kwargs):
+            calls["bindings"] = kwargs
+            return {"bindings": []}
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.import_module", lambda _name: _FakeIndexModule)
+
+    index = launch_module._load_shortcut_index(config, verbose=False)
+    bindings = launch_module._load_shortcut_save_bindings(config, verbose=False)
+
+    assert index is not None
+    assert bindings is not None
+    assert calls["index"]["timeout_seconds"] == 5.0
+    assert calls["index"]["attempts"] == 1
+    assert calls["index"]["retry_backoff_seconds"] == 0.0
+    assert calls["bindings"]["timeout_seconds"] == 5.0
+    assert calls["bindings"]["attempts"] == 1
+    assert calls["bindings"]["retry_backoff_seconds"] == 0.0

@@ -58,6 +58,10 @@ _XINPUT_GAMEPAD_START = 0x0010
 _XINPUT_GAMEPAD_BACK = 0x0020
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
 _WM_CLOSE = 0x0010
+_SHORTCUT_HEALTHCHECK_TIMEOUT_SECONDS = 1.0
+_SHORTCUT_METADATA_TIMEOUT_CAP_SECONDS = 5.0
+_SHORTCUT_METADATA_FETCH_ATTEMPTS = 1
+_SHORTCUT_METADATA_RETRY_BACKOFF_SECONDS = 0.0
 logger = logging.getLogger(__name__)
 
 
@@ -492,6 +496,30 @@ def _shortcut_save_resolver(payload: ShortcutLaunchPayload) -> Callable[[str], s
     return _resolve
 
 
+def _shortcut_metadata_timeout_seconds(config: GamehubConfig) -> float:
+    configured = config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0
+    return min(configured, _SHORTCUT_METADATA_TIMEOUT_CAP_SECONDS)
+
+
+def _shortcut_server_reachable(config: GamehubConfig) -> bool:
+    try:
+        index_module = import_module("gamehub_cli.sync.index")
+        probe_server_health = index_module.probe_server_health
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: save sync could not load server health probe helper ({exc})")
+        return False
+    try:
+        return bool(
+            probe_server_health(
+                server_url=config.server_url,
+                timeout_seconds=_SHORTCUT_HEALTHCHECK_TIMEOUT_SECONDS,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"Warning: save sync server reachability probe failed ({exc})")
+        return False
+
+
 def _load_shortcut_index(config: GamehubConfig, *, verbose: bool) -> LibraryIndex | None:
     try:
         index_module = import_module("gamehub_cli.sync.index")
@@ -500,14 +528,14 @@ def _load_shortcut_index(config: GamehubConfig, *, verbose: bool) -> LibraryInde
         print(f"Warning: save sync could not load index fetch helper ({exc})")
         return None
 
-    timeout_seconds = config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0
+    timeout_seconds = _shortcut_metadata_timeout_seconds(config)
     index_url = urljoin(config.server_url.rstrip("/") + "/", "v1/index")
     try:
         raw_index = fetch_index_with_retries(
             index_url=index_url,
             timeout_seconds=timeout_seconds,
-            attempts=config.index_fetch_attempts,
-            retry_backoff_seconds=config.index_retry_backoff_seconds,
+            attempts=_SHORTCUT_METADATA_FETCH_ATTEMPTS,
+            retry_backoff_seconds=_SHORTCUT_METADATA_RETRY_BACKOFF_SECONDS,
             verbose=verbose,
         )
         return LibraryIndex.model_validate(raw_index)
@@ -524,14 +552,14 @@ def _load_shortcut_save_bindings(config: GamehubConfig, *, verbose: bool) -> Sav
         print(f"Warning: save sync could not load save binding helper ({exc})")
         return None
 
-    timeout_seconds = config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0
+    timeout_seconds = _shortcut_metadata_timeout_seconds(config)
     bindings_url = urljoin(config.server_url.rstrip("/") + "/", "v1/save-bindings")
     try:
         raw_bindings = fetch_save_bindings_with_retries(
             bindings_url=bindings_url,
             timeout_seconds=timeout_seconds,
-            attempts=config.index_fetch_attempts,
-            retry_backoff_seconds=config.index_retry_backoff_seconds,
+            attempts=_SHORTCUT_METADATA_FETCH_ATTEMPTS,
+            retry_backoff_seconds=_SHORTCUT_METADATA_RETRY_BACKOFF_SECONDS,
             verbose=verbose,
         )
         return SaveBindingCatalog.model_validate(raw_bindings)
@@ -850,12 +878,18 @@ def _run_shortcut_prelaunch_save_sync(
     context = _ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={})
     if not _should_sync_shortcut_saves(payload, config):
         return context, False
+    if not _shortcut_server_reachable(config):
+        if verbose or audit:
+            print("shortcut-save\tprelaunch\tskip\tserver-unreachable")
+        return context, False
 
     index = _load_shortcut_index(config, verbose=verbose)
     if index is None or payload.title_id is None:
         return context, False
 
-    save_bindings = _load_shortcut_save_bindings(config, verbose=verbose)
+    save_bindings: SaveBindingCatalog | None = None
+    if config.save_sync.mode == "bidirectional":
+        save_bindings = _load_shortcut_save_bindings(config, verbose=verbose)
     title_saves = _iter_title_saves(index, payload.title_id)
     remote_save_ids = {save.save_id for save in title_saves}
     if save_bindings is not None and config.save_sync.mode == "bidirectional":
@@ -952,6 +986,10 @@ def _run_shortcut_postexit_save_sync(
     ):
         return False
     if not _should_sync_shortcut_saves(payload, config):
+        return False
+    if not _shortcut_server_reachable(config):
+        if verbose or audit:
+            print("shortcut-save\tpostexit\tskip\tserver-unreachable")
         return False
 
     index = _load_shortcut_index(config, verbose=verbose)

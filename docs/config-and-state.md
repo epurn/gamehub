@@ -190,7 +190,8 @@ Mode behavior reference:
 - `conflict_policy=prefer_local`: conflict path converges to local copy (planned `upload`).
 - `conflict_policy=manual`: planner emits `conflict` and records unresolved entries in state until operator intervention.
 - In `mode=bidirectional`, managed `shortcut-launch` sessions run pre-launch download/skip/conflict reconciliation, then attempt post-exit upload only when the remote save did not change during play.
-- Managed `shortcut-launch` save sync is fail-open: if the server is unreachable during pre-launch or post-exit save work, GAMEHUB logs a warning and still completes the emulator launch flow.
+- Managed `shortcut-launch` save sync is fail-open: it runs a one-shot `/health` precheck (`1.0s` timeout) before pre-launch and post-exit network save work, and skips launch-session save network steps when the server is unreachable.
+- Managed `shortcut-launch` metadata fetches (`/v1/index`, `/v1/save-bindings`) use launch-only fast-fail settings (`<=5.0s` timeout cap, attempts=`1`, backoff=`0.0s`).
 - First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry `gamehub sync` through `GET /v1/save-bindings`.
 - Managed `shortcut-launch` sessions also auto-create those deterministic `exact_files` saves at post-exit for wrapped titles, so first-time RetroArch battery saves and managed `PSX`/`PS2` memory cards do not need to wait for the next full sync.
   - `PSX` Swanstation exact-file detection accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.
