@@ -115,7 +115,8 @@ Run this after the first non-dry sync rewrites managed shortcuts to `shortcut-la
 - Validate download mode:
   - start with a remote newer save or missing local save
   - run dry-run, then non-dry sync
-  - confirm local bytes match `GET /v1/saves/{save_id}`
+  - confirm missing-local or remote-newer paths converge so local bytes match `GET /v1/saves/{save_id}`
+  - confirm a locally modified existing save is preserved as `skip(download-mode-local-drift)` and its local bytes remain unchanged
   - second sync is a no-op
 - Validate bidirectional mode:
   - edit an existing local save and confirm upload on non-dry sync

@@ -180,11 +180,11 @@ Save sync config keys (TOML only for now):
 - `[save_sync].mode`: `download` (default) or `bidirectional`.
 - `[save_sync].conflict_policy`: `prefer_server` (default), `prefer_local`, or `manual`.
 - `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase). Managed launch-session save sync and managed `PSX`/`PS2` memory-card rewrites only run for included systems.
-- Save planning decisions are deterministic and include explicit reasons for `download`, `upload_existing`, `upload_new`, `conflict`, and `skip` paths (for example: `local-missing`, `local-only-create`, `download-mode-local-new`, `both-changed-manual`, `save-sync-disabled`, `missed-upload-local-newer`, `missed-upload-remote-newer`).
+- Save planning decisions are deterministic and include explicit reasons for `download`, `upload_existing`, `upload_new`, `conflict`, and `skip` paths (for example: `local-missing`, `download-mode-local-drift`, `local-only-create`, `download-mode-local-new`, `both-changed-manual`, `save-sync-disabled`, `missed-upload-local-newer`, `missed-upload-remote-newer`).
 
 Mode behavior reference:
 - `enabled=false`: planner emits deterministic `skip` reasons (for example `save-sync-disabled`) and performs no save transfers.
-- `mode=download`: planner may emit `download` or `skip`; both `upload_existing` and `upload_new` actions are suppressed.
+- `mode=download`: planner may emit `download` or `skip`; missing local saves still download, while existing local drift becomes `skip(download-mode-local-drift)` and local-only first-time exact-file saves become `skip(download-mode-local-new)`. Both `upload_existing` and `upload_new` actions are suppressed.
 - `mode=bidirectional`: planner may emit `download`, `upload_existing`, `upload_new`, `conflict`, or `skip` based on checksum lineage, local-only discovery, and `conflict_policy`.
 - `conflict_policy=prefer_server`: conflict path converges to server copy (planned `download`).
 - `conflict_policy=prefer_local`: conflict path converges to local copy (planned `upload`).

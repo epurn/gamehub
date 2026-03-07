@@ -58,7 +58,7 @@ def classify_save_action(
     if local_sha256 == save_sha256:
         return "skip", "already-synced"
     if mode == "download":
-        return "download", "download-mode-local-drift"
+        return "skip", "download-mode-local-drift"
 
     lineage_present = lineage_local_sha is not None or lineage_remote_sha is not None
     if not lineage_present:

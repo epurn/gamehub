@@ -2964,6 +2964,69 @@ def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatc
     assert "save_b" not in state.save_checksums
 
 
+def test_apply_save_stage_preserves_local_drift_skip_without_mutating_state(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.sync import save_stage
+
+    with workspace_tempdir("gamehub-save-stage-download-drift-") as temp_root:
+        destination = temp_root / "drift.sav"
+        destination.write_bytes(b"local-edit")
+        state = SyncState(
+            save_checksums={"save_drift": "c" * 64},
+            save_lineage={
+                "save_drift": {
+                    "local_sha256": "c" * 64,
+                    "remote_sha256": "c" * 64,
+                    "local_updated_at": "2026-01-01T00:00:00+00:00",
+                    "remote_updated_at": "2026-01-01T00:00:00+00:00",
+                    "synced_at": "2026-01-01T00:00:00+00:00",
+                }
+            },
+            unresolved_save_conflicts={"save_drift": "prior-marker"},
+        )
+        original_state = state.to_dict()
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_drift",
+                    binding_id="savebind_drift",
+                    title_id="title_drift",
+                    system="N64",
+                    kind="battery",
+                    decision="skip",
+                    reason="download-mode-local-drift",
+                    url="/v1/saves/drift",
+                    destination=destination,
+                    canonical_suffix="drift.sav",
+                    expected_sha256="d" * 64,
+                    size_bytes=10,
+                    remote_updated_at="2026-01-03T00:00:00+00:00",
+                    local_sha256="e" * 64,
+                )
+            ]
+        )
+
+        monkeypatch.setattr(
+            "gamehub_cli.sync.save_stage.stream_to_destination_atomic",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("unexpected download")),
+        )
+
+        result = save_stage.apply_save_stage(
+            server_url="http://localhost:8000",
+            plan=plan,
+            state=state,
+            timeout_seconds=20.0,
+            dry_run=False,
+            verbose=False,
+        )
+
+        assert result.downloaded == 0
+        assert result.uploaded == 0
+        assert result.conflicts == 0
+        assert result.skipped == 1
+        assert destination.read_bytes() == b"local-edit"
+        assert state.to_dict() == original_state
+
+
 def test_apply_save_stage_treats_identical_upload_conflict_as_success(monkeypatch, workspace_tempdir) -> None:
     from gamehub_cli.sync import save_stage
 

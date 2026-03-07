@@ -585,6 +585,106 @@ def test_save_planner_tied_timestamps_fall_back_to_conflict_path(monkeypatch, wo
         assert plan.save_actions[0].reason == "lineage-missing-manual"
 
 
+def test_save_planner_preserves_existing_local_drift_in_download_mode(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save_root = temp_root / "memcards"
+        save_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_system_save_root",
+            lambda _system, **_kwargs: save_root,
+        )
+        remote_bytes = b"remote"
+        save = SaveSpec(
+            save_id="save_ps2_ffx_drift",
+            title_id="title_ps2_ffx",
+            system="PS2",
+            kind="memory_card",
+            rel_path="saves/PS2/Final Fantasy X/memory_card/ffx_drift.ps2",
+            sha256=_sha256_bytes(remote_bytes),
+            size_bytes=len(remote_bytes),
+            updated_at=datetime(2026, 1, 3, 12, 0, tzinfo=timezone.utc),
+            portable=True,
+        )
+        local_path = save_root / "ffx_drift.ps2"
+        local_path.write_bytes(b"local-edited")
+
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=(save,))
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, mode="download"),
+        )
+
+        plan = create_sync_plan(index=index, config=config, state=SyncState(), verify=False)
+
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "skip"
+        assert plan.save_actions[0].reason == "download-mode-local-drift"
+
+
+def test_save_planner_switches_to_upload_existing_after_download_mode_preserved_drift(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save_root = temp_root / "memcards"
+        save_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_system_save_root",
+            lambda _system, **_kwargs: save_root,
+        )
+        remote_bytes = b"remote"
+        save = SaveSpec(
+            save_id="save_ps2_ffx_transition",
+            title_id="title_ps2_ffx",
+            system="PS2",
+            kind="memory_card",
+            rel_path="saves/PS2/Final Fantasy X/memory_card/ffx_transition.ps2",
+            sha256=_sha256_bytes(remote_bytes),
+            size_bytes=len(remote_bytes),
+            updated_at=datetime(2026, 1, 3, 12, 0, tzinfo=timezone.utc),
+            portable=True,
+        )
+        local_path = save_root / "ffx_transition.ps2"
+        local_path.write_bytes(b"local-edited")
+
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=(save,))
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="prefer_server"),
+        )
+        state = SyncState(
+            save_lineage={
+                "save_ps2_ffx_transition": {
+                    "local_sha256": _sha256_bytes(remote_bytes),
+                    "remote_sha256": _sha256_bytes(remote_bytes),
+                }
+            }
+        )
+
+        plan = create_sync_plan(index=index, config=config, state=state, verify=False)
+
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "upload_existing"
+        assert plan.save_actions[0].reason == "local-changed-remote-unchanged"
+
+
 def test_save_planner_respects_disabled_and_system_filters(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-save-plan-") as temp_root:
         save = SaveSpec(

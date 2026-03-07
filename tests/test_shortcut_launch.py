@@ -1342,6 +1342,84 @@ def test_shortcut_prelaunch_download_mode_skips_save_bindings_fetch(monkeypatch)
     assert context.tree_snapshots == {}
 
 
+def test_shortcut_prelaunch_download_mode_preserves_existing_local_drift(
+    monkeypatch, capsys, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-shortcut-save-drift-") as temp_root:
+        destination = temp_root / "PokemonCrystal.srm"
+        destination.write_bytes(b"local-edit")
+        remote_bytes = b"remote-save"
+        remote_save = SaveSpec(
+            save_id="save_gbc_download_drift",
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            kind="battery",
+            rel_path="saves/GBC/Pokemon Crystal/battery/PokemonCrystal.srm",
+            sha256=_sha256_bytes(remote_bytes),
+            size_bytes=len(remote_bytes),
+            updated_at=datetime(2026, 1, 3, 12, 0, tzinfo=UTC),
+            portable=True,
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=Path("D:/GameHub"),
+            firmware_dir=Path("D:/GameHub/firmware"),
+            state_path=Path("D:/GameHub/state.json"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=Path("D:/GameHub/cache"),
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="download"),
+        )
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="retroarch",
+            target_args=("-f", "game.gbc"),
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            rom_rel_path="roms/GBC/Pokemon Crystal.gbc",
+        )
+        state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+        download_calls: list[str] = []
+
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._shortcut_server_reachable", lambda _config: True)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_index",
+            lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=(remote_save,)),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch.resolve_local_save_destination",
+            lambda save, **kwargs: destination,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._download_save_to_destination",
+            lambda **kwargs: download_calls.append(kwargs["save_id"]),
+        )
+
+        context, changed = launch_module._run_shortcut_prelaunch_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            resolve_executable=lambda _name: "retroarch",
+            verbose=True,
+            audit=False,
+        )
+
+        assert changed is False
+        assert download_calls == []
+        assert context.save_snapshots["save_gbc_download_drift"].destination == destination
+        assert context.save_snapshots["save_gbc_download_drift"].local_sha256 == _sha256_bytes(b"local-edit")
+        assert state.save_checksums == {}
+        assert state.save_lineage == {}
+        assert state.unresolved_save_conflicts == {}
+        output = capsys.readouterr().out
+        assert "shortcut-save\tprelaunch\tskip\tsave_gbc_download_drift\tdownload-mode-local-drift" in output
+
+
 def test_shortcut_metadata_fetch_uses_single_attempt_fast_profile(monkeypatch) -> None:
     config = GamehubConfig(
         server_url="http://localhost:8000",
