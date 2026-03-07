@@ -93,6 +93,11 @@ Good rule of thumb:
 
 Do not add process-heavy ceremony that slows the task down unless safety requires it.
 
+Python execution rule:
+
+- Always run Python commands with the repo-local virtual environment in `./venv`.
+- Do not rely on a system/global Python interpreter.
+
 ## File mutation rules
 
 Every user-data mutation must be:
@@ -183,13 +188,20 @@ Tests should verify behavior, not just happy paths:
 
 Required quality gates before calling work done:
 
-Use the active virtual environment's Python (for example: `source venv/bin/activate` on macOS/Linux or `.\venv\Scripts\Activate.ps1` on Windows), then run:
+Run with the repo-local virtual environment interpreter:
 
 ```bash
-python -m ruff format --check .
-python -m ruff check .
-python -m mypy src
-python -m pytest . -p no:cacheprovider
+./venv/bin/python -m ruff format --check .
+./venv/bin/python -m ruff check .
+./venv/bin/python -m mypy src
+./venv/bin/python -m pytest . -p no:cacheprovider
+```
+
+```powershell
+.\venv\Scripts\python.exe -m ruff format --check .
+.\venv\Scripts\python.exe -m ruff check .
+.\venv\Scripts\python.exe -m mypy src
+.\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
 
 If a gate is intentionally deferred, document why.
