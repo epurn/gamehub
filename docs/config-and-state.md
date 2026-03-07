@@ -180,7 +180,7 @@ Save sync config keys (TOML only for now):
 - `[save_sync].mode`: `download` (default) or `bidirectional`.
 - `[save_sync].conflict_policy`: `prefer_server` (default), `prefer_local`, or `manual`.
 - `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase).
-- Save planning decisions are deterministic and include explicit reasons for `download`, `upload_existing`, `upload_new`, `conflict`, and `skip` paths (for example: `local-missing`, `local-only-create`, `download-mode-local-new`, `both-changed-manual`, `save-sync-disabled`).
+- Save planning decisions are deterministic and include explicit reasons for `download`, `upload_existing`, `upload_new`, `conflict`, and `skip` paths (for example: `local-missing`, `local-only-create`, `download-mode-local-new`, `both-changed-manual`, `save-sync-disabled`, `missed-upload-local-newer`, `missed-upload-remote-newer`).
 
 Mode behavior reference:
 - `enabled=false`: planner emits deterministic `skip` reasons (for example `save-sync-disabled`) and performs no save transfers.
@@ -189,6 +189,10 @@ Mode behavior reference:
 - `conflict_policy=prefer_server`: conflict path converges to server copy (planned `download`).
 - `conflict_policy=prefer_local`: conflict path converges to local copy (planned `upload`).
 - `conflict_policy=manual`: planner emits `conflict` and records unresolved entries in state until operator intervention.
+- In `mode=bidirectional`, if `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"`, planner and managed `shortcut-launch` pre-launch resolution compare local file mtime vs remote `updated_at` after UTC normalization/truncation to seconds:
+  - local newer -> `upload_existing` (`missed-upload-local-newer`)
+  - remote newer -> `download` (`missed-upload-remote-newer`)
+  - missing/unreadable/tied timestamps -> fall back to the existing checksum/lineage conflict-safe path
 - In `mode=bidirectional`, managed `shortcut-launch` sessions run pre-launch download/skip/conflict reconciliation, then attempt post-exit upload only when the remote save did not change during play.
 - Managed `shortcut-launch` save sync is fail-open: it runs a one-shot `/health` precheck (`1.0s` timeout) before pre-launch and post-exit network save work, and skips launch-session save network steps when the server is unreachable.
 - Managed `shortcut-launch` metadata fetches (`/v1/index`, `/v1/save-bindings`) use launch-only fast-fail settings (`<=5.0s` timeout cap, attempts=`1`, backoff=`0.0s`).
@@ -305,6 +309,7 @@ Save sync state semantics:
 - `save_lineage` captures last-synced local/remote checksum snapshots and timestamps.
 - `save_binding_roots` persists learned deterministic tree roots for `per_game` save materialization across clients and later runs.
 - `unresolved_save_conflicts` persists manual-resolution-required conflicts between runs.
+- `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` marks a managed launch-session upload miss caused by unreachable server; on reconnect in bidirectional mode, this enables deterministic timestamp comparison before fallback conflict logic.
 
 Bootstrap notes:
 - Fresh installs must run `gamehub init` before the first `gamehub sync`.

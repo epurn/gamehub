@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from gamehub_cli.common.config import GamehubConfig, SaveSyncConfig
 from gamehub_cli.sync.planner import create_sync_plan
-from gamehub_cli.sync.state import SyncState
+from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON, SyncState
 from gamehub_common.models import (
     FirmwareSpec,
     LibraryIndex,
@@ -438,6 +439,150 @@ def test_save_planner_classifies_download_upload_conflict_and_skip(monkeypatch, 
         assert by_id["save_2"].reason == "local-changed-remote-unchanged"
         assert by_id["save_3"].decision == "conflict"
         assert by_id["save_3"].reason == "both-changed-manual"
+
+
+def test_save_planner_prefers_newer_local_after_missed_unreachable_upload(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save_root = temp_root / "memcards"
+        save_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_system_save_root",
+            lambda _system, **_kwargs: save_root,
+        )
+        remote_updated_at = datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc)
+        save = SaveSpec(
+            save_id="save_ps2_ffx_1",
+            title_id="title_ps2_ffx",
+            system="PS2",
+            kind="memory_card",
+            rel_path="saves/PS2/Final Fantasy X/memory_card/ffx_1.ps2",
+            sha256=_sha256_bytes(b"remote"),
+            size_bytes=len(b"remote"),
+            updated_at=remote_updated_at,
+            portable=True,
+        )
+        local_path = save_root / "ffx_1.ps2"
+        local_path.write_bytes(b"local-newer")
+        newer_seconds = remote_updated_at.timestamp() + 120.0
+        os.utime(local_path, (newer_seconds, newer_seconds))
+
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=(save,))
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="prefer_server"),
+        )
+        state = SyncState(unresolved_save_conflicts={"save_ps2_ffx_1": MISSED_POSTEXIT_UPLOAD_REASON})
+
+        plan = create_sync_plan(index=index, config=config, state=state, verify=False)
+
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "upload_existing"
+        assert plan.save_actions[0].reason == "missed-upload-local-newer"
+
+
+def test_save_planner_prefers_newer_remote_after_missed_unreachable_upload(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save_root = temp_root / "memcards"
+        save_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_system_save_root",
+            lambda _system, **_kwargs: save_root,
+        )
+        remote_updated_at = datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc)
+        save = SaveSpec(
+            save_id="save_ps2_ffx_2",
+            title_id="title_ps2_ffx",
+            system="PS2",
+            kind="memory_card",
+            rel_path="saves/PS2/Final Fantasy X/memory_card/ffx_2.ps2",
+            sha256=_sha256_bytes(b"remote"),
+            size_bytes=len(b"remote"),
+            updated_at=remote_updated_at,
+            portable=True,
+        )
+        local_path = save_root / "ffx_2.ps2"
+        local_path.write_bytes(b"local-older")
+        older_seconds = remote_updated_at.timestamp() - 120.0
+        os.utime(local_path, (older_seconds, older_seconds))
+
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=(save,))
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="prefer_local"),
+        )
+        state = SyncState(unresolved_save_conflicts={"save_ps2_ffx_2": MISSED_POSTEXIT_UPLOAD_REASON})
+
+        plan = create_sync_plan(index=index, config=config, state=state, verify=False)
+
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "download"
+        assert plan.save_actions[0].reason == "missed-upload-remote-newer"
+
+
+def test_save_planner_tied_timestamps_fall_back_to_conflict_path(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-plan-") as temp_root:
+        save_root = temp_root / "memcards"
+        save_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_system_save_root",
+            lambda _system, **_kwargs: save_root,
+        )
+        remote_updated_at = datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc)
+        save = SaveSpec(
+            save_id="save_ps2_ffx_3",
+            title_id="title_ps2_ffx",
+            system="PS2",
+            kind="memory_card",
+            rel_path="saves/PS2/Final Fantasy X/memory_card/ffx_3.ps2",
+            sha256=_sha256_bytes(b"remote"),
+            size_bytes=len(b"remote"),
+            updated_at=remote_updated_at,
+            portable=True,
+        )
+        local_path = save_root / "ffx_3.ps2"
+        local_path.write_bytes(b"local-tie")
+        tied_seconds = remote_updated_at.timestamp()
+        os.utime(local_path, (tied_seconds, tied_seconds))
+
+        index = LibraryIndex(index_version=1, systems=(), titles=(), saves=(save,))
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="manual"),
+        )
+        state = SyncState(unresolved_save_conflicts={"save_ps2_ffx_3": MISSED_POSTEXIT_UPLOAD_REASON})
+
+        plan = create_sync_plan(index=index, config=config, state=state, verify=False)
+
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "conflict"
+        assert plan.save_actions[0].reason == "lineage-missing-manual"
 
 
 def test_save_planner_respects_disabled_and_system_filters(workspace_tempdir) -> None:

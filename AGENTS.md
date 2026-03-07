@@ -140,6 +140,9 @@ Command/orchestration layers decide what to print.
 
 New platform-specific logic must be isolated and fail-open.
 
+- Development regularly moves between macOS and Windows.
+- Do not assume one default host OS for commands or paths.
+- Agent behavior must remain cross-platform unless a task explicitly scopes to one OS.
 - gate platform branches behind explicit detection
 - preserve non-target platform behavior
 - do not regress existing platforms as collateral damage
@@ -180,11 +183,13 @@ Tests should verify behavior, not just happy paths:
 
 Required quality gates before calling work done:
 
-```powershell
-.\venv\Scripts\python.exe -m ruff format --check .
-.\venv\Scripts\python.exe -m ruff check .
-.\venv\Scripts\python.exe -m mypy src
-.\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
+Use the active virtual environment's Python (for example: `source venv/bin/activate` on macOS/Linux or `.\venv\Scripts\Activate.ps1` on Windows), then run:
+
+```bash
+python -m ruff format --check .
+python -m ruff check .
+python -m mypy src
+python -m pytest . -p no:cacheprovider
 ```
 
 If a gate is intentionally deferred, document why.

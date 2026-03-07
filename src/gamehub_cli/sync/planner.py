@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from gamehub_common.ids import sha256_file
@@ -12,6 +13,7 @@ from ..common.save_sync import (
     canonical_suffix_for_save,
     classify_save_action,
     local_file_sha256,
+    local_file_updated_at,
     save_binding_id_for_save,
     to_utc_timestamp,
 )
@@ -20,7 +22,7 @@ from ..emulators.save_resolution import (
     discover_local_exact_save_candidates,
     resolve_local_save_destination,
 )
-from .state import SyncState
+from .state import MISSED_POSTEXIT_UPLOAD_REASON, SyncState
 
 
 @dataclass(frozen=True)
@@ -104,6 +106,78 @@ def _plan_local_only_exact_saves(
         else:
             planned.append((candidate, "upload_new", "local-only-create"))
     return planned
+
+
+def _normalize_utc_seconds(value: object) -> int | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return int(parsed.astimezone(timezone.utc).timestamp())
+
+
+def resolve_missed_upload_timestamp_decision(
+    *,
+    mode: str,
+    unresolved_reason: str | None,
+    local_updated_at: object,
+    remote_updated_at: object,
+) -> tuple[str, str] | None:
+    if mode != "bidirectional" or unresolved_reason != MISSED_POSTEXIT_UPLOAD_REASON:
+        return None
+    local_seconds = _normalize_utc_seconds(local_updated_at)
+    remote_seconds = _normalize_utc_seconds(remote_updated_at)
+    if local_seconds is None or remote_seconds is None or local_seconds == remote_seconds:
+        return None
+    if local_seconds > remote_seconds:
+        return "upload_existing", "missed-upload-local-newer"
+    return "download", "missed-upload-remote-newer"
+
+
+def resolve_save_action(
+    *,
+    save_sha256: str,
+    local_sha256: str | None,
+    mode: str,
+    conflict_policy: str,
+    lineage_local_sha: str | None,
+    lineage_remote_sha: str | None,
+    unresolved_reason: str | None,
+    local_updated_at: object,
+    remote_updated_at: object,
+) -> tuple[str, str]:
+    decision, reason = classify_save_action(
+        save_sha256=save_sha256,
+        local_sha256=local_sha256,
+        mode=mode,
+        conflict_policy=conflict_policy,
+        lineage_local_sha=lineage_local_sha,
+        lineage_remote_sha=lineage_remote_sha,
+    )
+    if local_sha256 is None or local_sha256 == save_sha256:
+        return decision, reason
+
+    timestamp_decision = resolve_missed_upload_timestamp_decision(
+        mode=mode,
+        unresolved_reason=unresolved_reason,
+        local_updated_at=local_updated_at,
+        remote_updated_at=remote_updated_at,
+    )
+    if timestamp_decision is not None:
+        return timestamp_decision
+    return decision, reason
 
 
 def create_sync_plan(
@@ -230,13 +304,16 @@ def create_sync_plan(
         else:
             local_sha = local_file_sha256(save_destination)
             lineage = state.save_lineage.get(save.save_id, {})
-            decision, reason = classify_save_action(
+            decision, reason = resolve_save_action(
                 save_sha256=save.sha256,
                 local_sha256=local_sha,
                 mode=config.save_sync.mode,
                 conflict_policy=config.save_sync.conflict_policy,
                 lineage_local_sha=lineage.get("local_sha256"),
                 lineage_remote_sha=lineage.get("remote_sha256"),
+                unresolved_reason=state.unresolved_save_conflicts.get(save.save_id),
+                local_updated_at=local_file_updated_at(save_destination),
+                remote_updated_at=save.updated_at,
             )
 
         plan.save_actions.append(

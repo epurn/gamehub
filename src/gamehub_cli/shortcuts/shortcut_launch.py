@@ -23,7 +23,6 @@ from gamehub_common.models import LibraryIndex, SaveBindingCatalog, SaveBindingS
 from ..common.config import GamehubConfig, load_config
 from ..common.save_sync import (
     canonical_suffix_for_save,
-    classify_save_action,
     local_file_sha256,
     local_file_updated_at,
     record_converged_save_state,
@@ -44,6 +43,8 @@ from ..emulators.save_resolution import (
     resolve_local_save_destination,
     snapshot_binding_tree,
 )
+from ..sync.planner import resolve_save_action
+from ..sync.state import MISSED_POSTEXIT_UPLOAD_REASON
 
 _DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
 _RETROARCH_FLATPAK_APP_ID = "org.libretro.RetroArch"
@@ -667,6 +668,57 @@ def _record_binding_root(state: Any, *, binding_id: str, canonical_root: str, ma
     }
 
 
+def _record_missed_postexit_upload(
+    state: Any,
+    *,
+    save_id: str,
+    destination: Path,
+    local_sha256: str,
+) -> bool:
+    lineage = state.save_lineage.get(save_id)
+    changed = False
+    if not isinstance(lineage, dict):
+        lineage = {}
+        state.save_lineage[save_id] = lineage
+        changed = True
+    if lineage.get("local_sha256") != local_sha256:
+        lineage["local_sha256"] = local_sha256
+        changed = True
+    local_updated_at = local_file_updated_at(destination)
+    if local_updated_at is not None and lineage.get("local_updated_at") != local_updated_at:
+        lineage["local_updated_at"] = local_updated_at
+        changed = True
+    if state.unresolved_save_conflicts.get(save_id) != MISSED_POSTEXIT_UPLOAD_REASON:
+        state.unresolved_save_conflicts[save_id] = MISSED_POSTEXIT_UPLOAD_REASON
+        changed = True
+    return changed
+
+
+def _mark_missed_postexit_uploads_from_snapshots(
+    *,
+    state: Any,
+    context: _ShortcutSaveContext,
+    verbose: bool,
+    audit: bool,
+) -> bool:
+    state_changed = False
+    for save_id, snapshot in context.save_snapshots.items():
+        if snapshot.destination is None or not snapshot.allow_postexit_upload:
+            continue
+        local_sha = local_file_sha256(snapshot.destination)
+        if local_sha is None or local_sha == snapshot.local_sha256:
+            continue
+        state_changed = _record_missed_postexit_upload(
+            state,
+            save_id=save_id,
+            destination=snapshot.destination,
+            local_sha256=local_sha,
+        ) or state_changed
+        if verbose or audit:
+            print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
+    return state_changed
+
+
 def _changed_tree_paths(before: dict[str, str], after: dict[str, str]) -> tuple[str, ...]:
     changed = {rel_path for rel_path, sha in after.items() if rel_path not in before or before[rel_path] != sha}
     return tuple(sorted(changed))
@@ -932,13 +984,16 @@ def _run_shortcut_prelaunch_save_sync(
             continue
 
         lineage = state.save_lineage.get(save.save_id, {})
-        decision, reason = classify_save_action(
+        decision, reason = resolve_save_action(
             save_sha256=save.sha256,
             local_sha256=local_sha,
             mode=config.save_sync.mode,
             conflict_policy=config.save_sync.conflict_policy,
             lineage_local_sha=lineage.get("local_sha256"),
             lineage_remote_sha=lineage.get("remote_sha256"),
+            unresolved_reason=state.unresolved_save_conflicts.get(save.save_id),
+            local_updated_at=local_file_updated_at(destination),
+            remote_updated_at=save.updated_at,
         )
         if decision == "conflict":
             state.unresolved_save_conflicts[save.save_id] = reason
@@ -988,9 +1043,15 @@ def _run_shortcut_postexit_save_sync(
     if not _should_sync_shortcut_saves(payload, config):
         return False
     if not _shortcut_server_reachable(config):
+        missed_upload_changed = _mark_missed_postexit_uploads_from_snapshots(
+            state=state,
+            context=context,
+            verbose=verbose,
+            audit=audit,
+        )
         if verbose or audit:
             print("shortcut-save\tpostexit\tskip\tserver-unreachable")
-        return False
+        return missed_upload_changed
 
     index = _load_shortcut_index(config, verbose=verbose)
     if index is None or payload.title_id is None:
@@ -1032,6 +1093,15 @@ def _run_shortcut_postexit_save_sync(
             if verbose or audit:
                 print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-upload")
         except Exception as exc:  # noqa: BLE001
+            if local_sha is not None and not _shortcut_server_reachable(config):
+                state_changed = _record_missed_postexit_upload(
+                    state,
+                    save_id=save_id,
+                    destination=snapshot.destination,
+                    local_sha256=local_sha,
+                ) or state_changed
+                if verbose or audit:
+                    print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
             print(f"Warning: post-exit save upload failed for {save_id} ({exc})")
 
     exact_binding_changed = _run_shortcut_postexit_exact_binding_sync(

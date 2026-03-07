@@ -155,6 +155,11 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - `conflict_policy = "prefer_server"` resolves conflict paths toward download decisions.
 - `conflict_policy = "prefer_local"` resolves conflict paths toward `upload_existing` decisions.
 - `conflict_policy = "manual"` preserves explicit `conflict` outcomes for operator review.
+- In `mode = "bidirectional"`, if managed post-exit upload is missed because the server is unreachable, GAMEHUB records `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` and keeps local timestamp observation in `save_lineage`.
+- On reconnect (planner and managed pre-launch), that marker enables deterministic UTC-second timestamp comparison (`local mtime` vs remote `updated_at`):
+  - local newer -> `upload_existing` (`missed-upload-local-newer`)
+  - remote newer -> `download` (`missed-upload-remote-newer`)
+  - missing/unreadable/tied timestamps -> fallback to existing checksum/lineage conflict-safe behavior
 - `--dry-run` performs no save writes and no remote mutations; it is the required safety preview for save plan auditing before enabling non-dry execution.
 - Managed shortcut launches use launch-session save sync only; there is no resident background watcher in this release.
 - Pre-launch shortcut sync never auto-uploads.

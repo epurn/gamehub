@@ -14,6 +14,7 @@ from gamehub_cli.shortcuts.shortcut_launch import (
     parse_shortcut_payload,
     run_shortcut_launch,
 )
+from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON
 from gamehub_common.ids import make_save_id
 from gamehub_common.models import LibraryIndex, SaveBindingSpec, SaveSpec
 
@@ -903,6 +904,233 @@ def test_shortcut_postexit_save_sync_skips_when_server_unreachable(monkeypatch) 
     )
 
     assert changed is False
+
+
+def test_shortcut_postexit_save_sync_records_missed_upload_when_server_unreachable(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-launch-save-") as temp_root:
+        destination = temp_root / "Pokemon.srm"
+        destination.write_bytes(b"local-new")
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="retroarch",
+            target_args=("-f", "game.gbc"),
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            rom_rel_path="roms/GBC/Pokemon Crystal.gbc",
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=Path("D:/GameHub"),
+            firmware_dir=Path("D:/GameHub/firmware"),
+            state_path=Path("D:/GameHub/state.json"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=Path("D:/GameHub/cache"),
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+        )
+        context = launch_module._ShortcutSaveContext(
+            save_snapshots={
+                "save_gbc_1": launch_module._ShortcutSaveSnapshot(
+                    destination=destination,
+                    local_sha256=_sha256_bytes(b"local-old"),
+                    remote_sha256=_sha256_bytes(b"remote-old"),
+                    allow_postexit_upload=True,
+                )
+            },
+            exact_binding_snapshots={},
+            tree_snapshots={},
+        )
+        state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._shortcut_server_reachable", lambda _config: False)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_index",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("index fetch should be skipped")),
+        )
+
+        changed = launch_module._run_shortcut_postexit_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            context=context,
+            resolve_executable=lambda _name: "retroarch",
+            verbose=False,
+            audit=False,
+        )
+
+        assert changed is True
+        assert state.unresolved_save_conflicts["save_gbc_1"] == MISSED_POSTEXIT_UPLOAD_REASON
+        assert state.save_lineage["save_gbc_1"]["local_sha256"] == _sha256_bytes(b"local-new")
+        assert "local_updated_at" in state.save_lineage["save_gbc_1"]
+
+
+def test_shortcut_postexit_upload_failure_records_missed_upload_when_server_drops(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-launch-save-") as temp_root:
+        destination = temp_root / "Pokemon.srm"
+        destination.write_bytes(b"local-new")
+        remote_save = SaveSpec(
+            save_id="save_gbc_2",
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            kind="battery",
+            rel_path="saves/GBC/Pokemon Crystal/battery/Pokemon.srm",
+            sha256=_sha256_bytes(b"remote-old"),
+            size_bytes=len(b"remote-old"),
+            updated_at=datetime(2026, 1, 2, 12, 0, tzinfo=UTC),
+            portable=True,
+        )
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="retroarch",
+            target_args=("-f", "game.gbc"),
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            rom_rel_path="roms/GBC/Pokemon Crystal.gbc",
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=Path("D:/GameHub"),
+            firmware_dir=Path("D:/GameHub/firmware"),
+            state_path=Path("D:/GameHub/state.json"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=Path("D:/GameHub/cache"),
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+        )
+        context = launch_module._ShortcutSaveContext(
+            save_snapshots={
+                "save_gbc_2": launch_module._ShortcutSaveSnapshot(
+                    destination=destination,
+                    local_sha256=_sha256_bytes(b"local-old"),
+                    remote_sha256=remote_save.sha256,
+                    allow_postexit_upload=True,
+                )
+            },
+            exact_binding_snapshots={},
+            tree_snapshots={},
+        )
+        state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+        reachability_checks = {"count": 0}
+
+        def _reachable(_config: GamehubConfig) -> bool:
+            reachability_checks["count"] += 1
+            return reachability_checks["count"] == 1
+
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._shortcut_server_reachable", _reachable)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_index",
+            lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=(remote_save,)),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._upload_save_from_path",
+            lambda **kwargs: (_ for _ in ()).throw(RuntimeError("network error")),
+        )
+
+        changed = launch_module._run_shortcut_postexit_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            context=context,
+            resolve_executable=lambda _name: "retroarch",
+            verbose=False,
+            audit=False,
+        )
+
+        assert changed is True
+        assert state.unresolved_save_conflicts["save_gbc_2"] == MISSED_POSTEXIT_UPLOAD_REASON
+        assert state.save_lineage["save_gbc_2"]["local_sha256"] == _sha256_bytes(b"local-new")
+        assert "local_updated_at" in state.save_lineage["save_gbc_2"]
+
+
+def test_shortcut_prelaunch_uses_missed_upload_timestamp_to_keep_newer_local(
+    monkeypatch, workspace_tempdir, capsys
+) -> None:
+    with workspace_tempdir("gamehub-launch-save-") as temp_root:
+        destination = temp_root / "Pokemon.srm"
+        destination.write_bytes(b"local-new")
+        remote_updated_at = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
+        newer_seconds = remote_updated_at.timestamp() + 120.0
+        os.utime(destination, (newer_seconds, newer_seconds))
+        remote_save = SaveSpec(
+            save_id="save_gbc_3",
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            kind="battery",
+            rel_path="saves/GBC/Pokemon Crystal/battery/Pokemon.srm",
+            sha256=_sha256_bytes(b"remote-old"),
+            size_bytes=len(b"remote-old"),
+            updated_at=remote_updated_at,
+            portable=True,
+        )
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="retroarch",
+            target_args=("-f", "game.gbc"),
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            rom_rel_path="roms/GBC/Pokemon Crystal.gbc",
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=Path("D:/GameHub"),
+            firmware_dir=Path("D:/GameHub/firmware"),
+            state_path=Path("D:/GameHub/state.json"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=Path("D:/GameHub/cache"),
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="prefer_server"),
+        )
+        state = SimpleNamespace(
+            save_binding_roots={},
+            save_lineage={},
+            unresolved_save_conflicts={"save_gbc_3": MISSED_POSTEXIT_UPLOAD_REASON},
+            save_checksums={},
+        )
+        download_calls: list[str] = []
+
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._shortcut_server_reachable", lambda _config: True)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_index",
+            lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=(remote_save,)),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch.resolve_local_save_destination",
+            lambda save, **kwargs: destination,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._download_save_to_destination",
+            lambda **kwargs: download_calls.append(kwargs["save_id"]),
+        )
+
+        context, changed = launch_module._run_shortcut_prelaunch_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            resolve_executable=lambda _name: "retroarch",
+            verbose=True,
+            audit=False,
+        )
+
+        assert changed is False
+        assert download_calls == []
+        assert context.save_snapshots["save_gbc_3"].allow_postexit_upload is True
+        output = capsys.readouterr().out
+        assert "shortcut-save\tprelaunch\tkeep-local\tsave_gbc_3\tmissed-upload-local-newer" in output
 
 
 def test_shortcut_prelaunch_download_mode_skips_save_bindings_fetch(monkeypatch) -> None:

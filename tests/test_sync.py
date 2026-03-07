@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -15,7 +17,7 @@ from gamehub_cli.sync.orchestrator import (
     run_sync,
 )
 from gamehub_cli.sync.planner import PlanAction, SavePlanAction, SyncPlan
-from gamehub_cli.sync.state import SyncState
+from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON, SyncState
 from gamehub_cli.sync.steam_stage import build_shortcut_specs as _build_shortcut_specs
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
@@ -2695,6 +2697,95 @@ def test_run_sync_dry_run_executes_save_stage_without_writes(monkeypatch) -> Non
 
     assert exit_code == 0
     assert received["dry_run"] is True
+
+
+def test_run_sync_dry_run_plans_upload_for_missed_unreachable_local_newer(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-save-marker-") as temp_root:
+        save_root = temp_root / "memcards"
+        save_root.mkdir(parents=True, exist_ok=True)
+        local_save = save_root / "ffx_1.ps2"
+        local_save.write_bytes(b"local-new")
+        remote_updated_at = datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc)
+        newer_seconds = remote_updated_at.timestamp() + 120.0
+        os.utime(local_save, (newer_seconds, newer_seconds))
+
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=Path("userdata"),
+            steam_id=None,
+            steam_exe=Path("steam.exe"),
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="prefer_server"),
+        )
+        state = SyncState(
+            unresolved_save_conflicts={"save_ps2_ffx_1": MISSED_POSTEXIT_UPLOAD_REASON},
+            bootstrap_version=1,
+        )
+        received: dict[str, object] = {}
+
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.load_state", lambda _path: state)
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._fetch_index_with_retries",
+            lambda **kwargs: {
+                "index_version": 1,
+                "systems": [],
+                "titles": [],
+                "saves": [
+                    {
+                        "save_id": "save_ps2_ffx_1",
+                        "title_id": "title_ps2_ffx",
+                        "system": "PS2",
+                        "kind": "memory_card",
+                        "rel_path": "saves/PS2/Final Fantasy X/memory_card/ffx_1.ps2",
+                        "sha256": "a" * 64,
+                        "size_bytes": 6,
+                        "updated_at": remote_updated_at.isoformat(),
+                        "portable": True,
+                    }
+                ],
+            },
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._load_validated_save_bindings",
+            lambda *args, **kwargs: None,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_system_save_root",
+            lambda _system, **_kwargs: save_root,
+        )
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_emulators", lambda **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_retroarch_cores", lambda **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._build_artwork_assignments", lambda *args, **kwargs: {})
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._resolve_steam_context", lambda _config: None)
+        monkeypatch.setattr(
+            "gamehub_cli.sync.save_stage.apply_save_stage",
+            lambda **kwargs: received.update(kwargs),
+        )
+
+        exit_code = run_sync(
+            config=config,
+            dry_run=True,
+            verbose=False,
+            verify=False,
+            require_steam_closed=False,
+            skip_steam=True,
+        )
+
+        plan = received["plan"]
+        assert isinstance(plan, SyncPlan)
+        assert exit_code == 0
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "upload_existing"
+        assert plan.save_actions[0].reason == "missed-upload-local-newer"
+        assert received["dry_run"] is True
 
 
 def test_run_sync_save_stage_failure_skips_state_write(monkeypatch) -> None:

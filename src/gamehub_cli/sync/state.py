@@ -12,6 +12,7 @@ from ..common.fsops import backup_existing_file, replace_file
 from ..common.save_sync import SaveBindingRootRecord, SaveLineageRecord
 
 BOOTSTRAP_VERSION = 1
+MISSED_POSTEXIT_UPLOAD_REASON = "postexit-upload-missed-server-unreachable"
 logger = getLogger(__name__)
 
 
