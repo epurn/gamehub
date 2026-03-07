@@ -708,12 +708,15 @@ def _mark_missed_postexit_uploads_from_snapshots(
         local_sha = local_file_sha256(snapshot.destination)
         if local_sha is None or local_sha == snapshot.local_sha256:
             continue
-        state_changed = _record_missed_postexit_upload(
-            state,
-            save_id=save_id,
-            destination=snapshot.destination,
-            local_sha256=local_sha,
-        ) or state_changed
+        state_changed = (
+            _record_missed_postexit_upload(
+                state,
+                save_id=save_id,
+                destination=snapshot.destination,
+                local_sha256=local_sha,
+            )
+            or state_changed
+        )
         if verbose or audit:
             print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
     return state_changed
@@ -1094,12 +1097,15 @@ def _run_shortcut_postexit_save_sync(
                 print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-upload")
         except Exception as exc:  # noqa: BLE001
             if local_sha is not None and not _shortcut_server_reachable(config):
-                state_changed = _record_missed_postexit_upload(
-                    state,
-                    save_id=save_id,
-                    destination=snapshot.destination,
-                    local_sha256=local_sha,
-                ) or state_changed
+                state_changed = (
+                    _record_missed_postexit_upload(
+                        state,
+                        save_id=save_id,
+                        destination=snapshot.destination,
+                        local_sha256=local_sha,
+                    )
+                    or state_changed
+                )
                 if verbose or audit:
                     print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
             print(f"Warning: post-exit save upload failed for {save_id} ({exc})")

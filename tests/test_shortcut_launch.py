@@ -906,7 +906,9 @@ def test_shortcut_postexit_save_sync_skips_when_server_unreachable(monkeypatch) 
     assert changed is False
 
 
-def test_shortcut_postexit_save_sync_records_missed_upload_when_server_unreachable(monkeypatch, workspace_tempdir) -> None:
+def test_shortcut_postexit_save_sync_records_missed_upload_when_server_unreachable(
+    monkeypatch, workspace_tempdir
+) -> None:
     with workspace_tempdir("gamehub-launch-save-") as temp_root:
         destination = temp_root / "Pokemon.srm"
         destination.write_bytes(b"local-new")
@@ -969,7 +971,9 @@ def test_shortcut_postexit_save_sync_records_missed_upload_when_server_unreachab
         assert "local_updated_at" in state.save_lineage["save_gbc_1"]
 
 
-def test_shortcut_postexit_upload_failure_records_missed_upload_when_server_drops(monkeypatch, workspace_tempdir) -> None:
+def test_shortcut_postexit_upload_failure_records_missed_upload_when_server_drops(
+    monkeypatch, workspace_tempdir
+) -> None:
     with workspace_tempdir("gamehub-launch-save-") as temp_root:
         destination = temp_root / "Pokemon.srm"
         destination.write_bytes(b"local-new")
