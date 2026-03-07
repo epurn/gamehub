@@ -93,6 +93,10 @@ def _override_dolphin_device_sections(
     existing_sections: dict[str, dict[str, str]] | None = None,
 ) -> tuple[dict[str, dict[str, str]], str, str]:
     selected_device = ""
+    pad_device0 = ""
+    pad_device1 = ""
+    hotkey_device0 = ""
+    hotkey_device1 = ""
     if sys.platform.startswith("linux"):
         if profile_name == PROFILE_KBM:
             pad_device0, pad_device1 = "XInput2/0/Virtual core pointer", "None"

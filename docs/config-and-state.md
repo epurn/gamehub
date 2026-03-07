@@ -179,7 +179,7 @@ Save sync config keys (TOML only for now):
 - `[save_sync].enabled`: default `false` (safe rollout).
 - `[save_sync].mode`: `download` (default) or `bidirectional`.
 - `[save_sync].conflict_policy`: `prefer_server` (default), `prefer_local`, or `manual`.
-- `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase).
+- `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase). Managed launch-session save sync and managed `PSX`/`PS2` memory-card rewrites only run for included systems.
 - Save planning decisions are deterministic and include explicit reasons for `download`, `upload_existing`, `upload_new`, `conflict`, and `skip` paths (for example: `local-missing`, `local-only-create`, `download-mode-local-new`, `both-changed-manual`, `save-sync-disabled`, `missed-upload-local-newer`, `missed-upload-remote-newer`).
 
 Mode behavior reference:
@@ -242,6 +242,7 @@ Managed shortcut launch autoconfig:
   - `<root>/dolphin/<profile>/Hotkeys.ini`
   - `<root>/azahar/<profile>/qt-config.ini`
 - Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
+- `shortcut-launch` does not seed controller profiles at launch time; run non-dry `gamehub init` or `gamehub sync` first when profile files may be missing.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
 - If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):

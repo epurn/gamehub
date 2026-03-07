@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import gamehub_cli.shortcuts.shortcut_launch as launch_module
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.controllers.detection import XboxController
@@ -15,6 +17,7 @@ from gamehub_cli.shortcuts.shortcut_launch import (
     run_shortcut_launch,
 )
 from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON
+from gamehub_cli.sync.transfer import SaveUploadConflictError
 from gamehub_common.ids import make_save_id
 from gamehub_common.models import LibraryIndex, SaveBindingSpec, SaveSpec
 
@@ -146,7 +149,6 @@ def test_run_shortcut_launch_sets_azahar_sdl_dir_env(monkeypatch, workspace_temp
         observed: dict[str, str] = {}
 
         monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
-        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
         monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
         monkeypatch.setattr(
             "gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile",
@@ -173,7 +175,6 @@ def test_run_shortcut_launch_fail_open_uses_kbm_fallback(monkeypatch) -> None:
     fallback_calls: list[str] = []
 
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr(
         "gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers",
         lambda max_devices=2: [XboxController(slot=0, name="XInput/0", subtype=0)],
@@ -207,7 +208,6 @@ def test_run_shortcut_launch_detection_failure_falls_back_to_kbm_profile_selecti
     applied_counts: list[int] = []
 
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr(
         "gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers",
@@ -238,7 +238,6 @@ def test_run_shortcut_launch_uses_azahar_windows_exit_hook(monkeypatch) -> None:
     hook_calls: list[str] = []
 
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile", lambda *args, **kwargs: None)
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "win32")
@@ -271,7 +270,6 @@ def test_run_shortcut_launch_uses_dolphin_linux_exit_hook_for_flatpak(monkeypatc
     hook_calls: list[str] = []
 
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile", lambda *args, **kwargs: None)
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "linux")
@@ -303,7 +301,6 @@ def test_run_shortcut_launch_audit_enables_verbose_profile_logs(monkeypatch) -> 
     observed: dict[str, object] = {}
 
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
 
     def _fake_apply(*args, **kwargs):
@@ -331,7 +328,6 @@ def test_run_shortcut_launch_can_disable_dolphin_linux_exit_hook(monkeypatch) ->
     config = _config()
 
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.apply_controller_profile", lambda *args, **kwargs: None)
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "linux")
@@ -360,7 +356,6 @@ def test_run_shortcut_launch_deck_zero_detect_defaults_to_xbox_1p(monkeypatch, c
     observed: dict[str, int] = {}
 
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.is_steam_deck_linux", lambda: True)
@@ -397,7 +392,6 @@ def test_run_shortcut_launch_non_deck_zero_detect_behavior_unchanged(monkeypatch
     observed: dict[str, int] = {}
 
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
-    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.seed_default_profiles", lambda config: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.detect_xbox_controllers", lambda max_devices=2: [])
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.is_steam_deck_linux", lambda: False)
@@ -1056,6 +1050,166 @@ def test_shortcut_postexit_upload_failure_records_missed_upload_when_server_drop
         assert "local_updated_at" in state.save_lineage["save_gbc_2"]
 
 
+def test_shortcut_postexit_metadata_fetch_failure_records_missed_upload(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-launch-save-") as temp_root:
+        destination = temp_root / "Pokemon.srm"
+        destination.write_bytes(b"local-new")
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="retroarch",
+            target_args=("-f", "game.gbc"),
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            rom_rel_path="roms/GBC/Pokemon Crystal.gbc",
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=Path("D:/GameHub"),
+            firmware_dir=Path("D:/GameHub/firmware"),
+            state_path=Path("D:/GameHub/state.json"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=Path("D:/GameHub/cache"),
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+        )
+        context = launch_module._ShortcutSaveContext(
+            save_snapshots={
+                "save_gbc_3": launch_module._ShortcutSaveSnapshot(
+                    destination=destination,
+                    local_sha256=_sha256_bytes(b"local-old"),
+                    remote_sha256=_sha256_bytes(b"remote-old"),
+                    allow_postexit_upload=True,
+                )
+            },
+            exact_binding_snapshots={},
+            tree_snapshots={},
+        )
+        state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._shortcut_server_reachable", lambda _config: True)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_index_or_warn",
+            lambda *_args, **_kwargs: None,
+        )
+
+        changed = launch_module._run_shortcut_postexit_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            context=context,
+            resolve_executable=lambda _name: "retroarch",
+            verbose=False,
+            audit=False,
+        )
+
+        assert changed is True
+        assert state.unresolved_save_conflicts["save_gbc_3"] == MISSED_POSTEXIT_UPLOAD_REASON
+        assert state.save_lineage["save_gbc_3"]["local_sha256"] == _sha256_bytes(b"local-new")
+
+
+def test_shortcut_postexit_upload_conflict_with_identical_remote_content_is_converged(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-launch-save-") as temp_root:
+        destination = temp_root / "Pokemon.srm"
+        destination.write_bytes(b"local-new")
+        local_sha = _sha256_bytes(b"local-new")
+        remote_save = SaveSpec(
+            save_id="save_gbc_4",
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            kind="battery",
+            rel_path="saves/GBC/Pokemon Crystal/battery/Pokemon.srm",
+            sha256=_sha256_bytes(b"remote-old"),
+            size_bytes=len(b"remote-old"),
+            updated_at=datetime(2026, 1, 2, 12, 0, tzinfo=UTC),
+            portable=True,
+        )
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="retroarch",
+            target_args=("-f", "game.gbc"),
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            rom_rel_path="roms/GBC/Pokemon Crystal.gbc",
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=Path("D:/GameHub"),
+            firmware_dir=Path("D:/GameHub/firmware"),
+            state_path=Path("D:/GameHub/state.json"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=Path("D:/GameHub/cache"),
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+        )
+        context = launch_module._ShortcutSaveContext(
+            save_snapshots={
+                "save_gbc_4": launch_module._ShortcutSaveSnapshot(
+                    destination=destination,
+                    local_sha256=_sha256_bytes(b"local-old"),
+                    remote_sha256=remote_save.sha256,
+                    allow_postexit_upload=True,
+                )
+            },
+            exact_binding_snapshots={},
+            tree_snapshots={},
+        )
+        state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._shortcut_server_reachable", lambda _config: True)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._load_shortcut_index",
+            lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=(remote_save,)),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._upload_save_from_path",
+            lambda **kwargs: (_ for _ in ()).throw(
+                SaveUploadConflictError(
+                    {
+                        "reason": "remote-changed",
+                        "current": {
+                            "save_id": remote_save.save_id,
+                            "title_id": remote_save.title_id,
+                            "system": remote_save.system,
+                            "kind": remote_save.kind,
+                            "rel_path": remote_save.rel_path,
+                            "sha256": local_sha,
+                            "size_bytes": len(b"local-new"),
+                            "updated_at": "2026-01-02T12:30:00+00:00",
+                            "portable": True,
+                        },
+                    }
+                )
+            ),
+        )
+
+        changed = launch_module._run_shortcut_postexit_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            context=context,
+            resolve_executable=lambda _name: "retroarch",
+            verbose=False,
+            audit=False,
+        )
+
+        assert changed is True
+        assert state.save_checksums["save_gbc_4"] == local_sha
+        assert state.save_lineage["save_gbc_4"]["remote_sha256"] == local_sha
+        assert "save_gbc_4" not in state.unresolved_save_conflicts
+
+
 def test_shortcut_prelaunch_uses_missed_upload_timestamp_to_keep_newer_local(
     monkeypatch, workspace_tempdir, capsys
 ) -> None:
@@ -1232,3 +1386,101 @@ def test_shortcut_metadata_fetch_uses_single_attempt_fast_profile(monkeypatch) -
     assert calls["bindings"]["timeout_seconds"] == 5.0
     assert calls["bindings"]["attempts"] == 1
     assert calls["bindings"]["retry_backoff_seconds"] == 0.0
+
+
+def test_run_shortcut_launch_persists_prelaunch_state_when_launch_fails(monkeypatch) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "retroarch",
+            "target_args": ["-f", "game.gbc"],
+            "title_id": "title_gbc_pokemon",
+            "system": "GBC",
+            "rom_rel_path": "roms/GBC/Pokemon Crystal.gbc",
+        }
+    )
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+    saved: list[tuple[Path, object]] = []
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._load_shortcut_state", lambda path: state)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._run_shortcut_prelaunch_save_sync",
+        lambda **kwargs: (
+            launch_module._ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={}),
+            True,
+        ),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._run_shortcut_postexit_save_sync",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("post-exit sync should not run when launch fails")),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._save_shortcut_state",
+        lambda path, current_state: saved.append((path, current_state)),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook",
+        lambda payload: (_ for _ in ()).throw(RuntimeError("launch failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="launch failed"):
+        run_shortcut_launch(payload_token=token)
+
+    assert saved == [(config.state_path, state)]
+
+
+def test_run_shortcut_launch_respects_save_sync_system_filter_for_memory_card_setup(monkeypatch) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "pcsx2",
+            "target_exe": "pcsx2-qt.exe",
+            "target_args": ["--nogui", "game.iso"],
+            "title_id": "title_ps2_gt4",
+            "system": "PS2",
+            "rom_rel_path": "roms/PS2/Gran Turismo 4.iso",
+        }
+    )
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", systems=("GC",)),
+    )
+    ensure_calls: list[str] = []
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._ensure_managed_memory_card_paths",
+        lambda payload, cfg: ensure_calls.append(payload.system or ""),
+    )
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook", lambda payload: 0)
+
+    exit_code = run_shortcut_launch(payload_token=token)
+
+    assert exit_code == 0
+    assert ensure_calls == []

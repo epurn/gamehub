@@ -188,6 +188,7 @@ def _fetch_index_with_retries(
         verbose=verbose,
         http_client_module=sync_index.httpx,
         sleep_func=time.sleep,
+        reporter=print,
     )
 
 
@@ -242,6 +243,7 @@ def _load_validated_save_bindings(
         verbose=verbose,
         http_client_module=sync_index.httpx,
         sleep_func=time.sleep,
+        reporter=print,
     )
     return cast(SaveBindingCatalog, SaveBindingCatalog.model_validate(raw_bindings))
 

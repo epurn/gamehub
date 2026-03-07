@@ -97,11 +97,48 @@ $env:GAMEHUB_SGDB_API_KEY="<YOUR_KEY>"
 ```powershell
 .\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe sync --config .\config.windows.toml --verbose --require-steam-closed
 ```
+### Windows save-sync validation
+
+Run this after the first non-dry sync rewrites managed shortcuts to `shortcut-launch`.
+
+- Prepare three config states and re-run sync as needed:
+  - `save_sync.enabled = false`
+  - `save_sync.enabled = true`, `mode = "download"`
+  - `save_sync.enabled = true`, `mode = "bidirectional"`
+- Use at least one title for each save shape:
+  - RetroArch battery save
+  - managed `PSX` or `PS2` memory card
+  - learned-tree `GC`, `Wii`, or `N3DS` save
+- Validate disabled mode:
+  - dry-run shows deterministic save `skip` reasons
+  - non-dry sync does not mutate local or remote saves
+- Validate download mode:
+  - start with a remote newer save or missing local save
+  - run dry-run, then non-dry sync
+  - confirm local bytes match `GET /v1/saves/{save_id}`
+  - second sync is a no-op
+- Validate bidirectional mode:
+  - edit an existing local save and confirm upload on non-dry sync
+  - create a first-time exact-file save and confirm remote creation
+  - create one deliberate both-side drift and verify `manual`, `prefer_server`, and `prefer_local`
+- Validate managed `shortcut-launch`:
+  - launch a managed shortcut from Steam, modify a save, and confirm post-exit upload
+  - repeat once with the server unavailable before exit; confirm deferred recovery on the next reconnect/launch
+- Capture evidence for each scenario:
+  - platform
+  - title/system
+  - local save path
+  - checksum before/after
+  - server route used
+  - Steam/launch result
+  - pass/fail notes
+
 15. Manual Steam verification:
 - Shortcuts exist.
 - Collections exist by exact system name.
 - Artwork appears.
 - A sample title launches.
+- `.\venv\Scripts\python.exe scripts\validate_steam_shortcuts.py --config .\config.windows.toml` returns exit code `0`.
 - If `N3DS` titles are in index, verify `%APPDATA%\\Azahar\\config\\qt-config.ini` contains `fullscreen=true` and `confirmClose=false`.
 
 ## 2. Linux Final Validation (Ubuntu/Fedora host)
@@ -186,11 +223,27 @@ gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
 ```bash
 gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
 ```
+### Bazzite save-sync validation
+
+Run the same save-sync matrix used on Windows after the first non-dry sync rewrites managed shortcuts:
+
+- `save_sync.enabled = false`: save work is `skip` only and non-dry sync leaves saves unchanged
+- `mode = "download"`: remote newer or missing local saves download and converge on second pass
+- `mode = "bidirectional"`:
+  - existing local change uploads successfully
+  - first-time exact-file save creates a remote save
+  - one both-side drift behaves correctly under `manual`, `prefer_server`, and `prefer_local`
+- Managed Steam launch validation:
+  - Steam-managed launch uploads the changed save after exit
+  - one offline post-exit upload miss is recovered correctly on reconnect
+- Capture the same evidence table fields used in Windows validation
+
 8. Manual Steam verification:
 - Shortcuts exist.
 - Collections exist by exact system name.
 - Artwork appears.
 - Sample titles launch through configured emulators.
+- `./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.bazzite.toml` returns exit code `0`.
 - If `N3DS` titles are in index, verify `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini` contains `fullscreen=true` and `confirmClose=false`.
 
 ## 4. GitHub Release Execution
@@ -235,5 +288,4 @@ Release is `PASS` only when all of the following are true:
 3. Real sync succeeded on Windows and Bazzite (including second idempotency pass).
 4. Manual Steam verification passed on both platforms.
 5. GitHub release workflows and artifacts are complete.
-
 

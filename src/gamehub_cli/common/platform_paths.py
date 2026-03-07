@@ -18,26 +18,14 @@ except Exception:
 
 def _safe_home_path() -> Path:
     try:
-        home = _host_path(str(Path.home()))
-        if os.name != "nt":
-            try:
-                return _host_path(str(home.resolve(strict=False)))
-            except Exception:
-                return home
-        return home
+        return _host_path(str(Path.home()))
     except Exception:
         pass
     for raw in (os.path.expanduser("~"), os.environ.get("USERPROFILE", ""), os.environ.get("HOME", "")):
         value = str(raw).strip()
         if not value or value == "~":
             continue
-        home = _host_path(value)
-        if os.name != "nt":
-            try:
-                return _host_path(str(home.resolve(strict=False)))
-            except Exception:
-                return home
-        return home
+        return _host_path(value)
     return _host_path(os.getcwd())
 
 

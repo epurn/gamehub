@@ -7,6 +7,7 @@ import stat
 import threading
 import time
 from pathlib import Path
+from typing import Callable
 
 from gamehub_common.models import FirmwareSpec, LibraryIndex, SaveBindingSpec, SaveSpec, TitleEntry
 
@@ -47,6 +48,22 @@ def _sorted_children(path: Path) -> list[Path]:
     return sorted(children, key=lambda item: item.name.casefold())
 
 
+def _update_signature_tree(
+    path: Path,
+    *,
+    data_root: Path,
+    update: Callable[[str, str, int, int], None],
+) -> None:
+    fields = _path_signature_fields(path, data_root)
+    if fields is None:
+        return
+    update(*fields)
+    if fields[1] != "dir":
+        return
+    for child in _sorted_children(path):
+        _update_signature_tree(child, data_root=data_root, update=update)
+
+
 def _snapshot_data_signature(data_root: Path) -> str:
     digest = hashlib.blake2s(digest_size=16)
 
@@ -55,27 +72,10 @@ def _snapshot_data_signature(data_root: Path) -> str:
 
     for root_name in ("roms", FIRMWARE_ROOT_NAME, SAVES_ROOT_NAME):
         root = data_root / root_name
-        root_fields = _path_signature_fields(root, data_root)
-        if root_fields is None:
+        if _path_signature_fields(root, data_root) is None:
             _update(root_name, "missing", 0, 0)
             continue
-        _update(*root_fields)
-        if root_fields[1] != "dir":
-            continue
-
-        for system_entry in _sorted_children(root):
-            system_fields = _path_signature_fields(system_entry, data_root)
-            if system_fields is None:
-                continue
-            _update(*system_fields)
-            if system_fields[1] != "dir":
-                continue
-
-            for child_entry in _sorted_children(system_entry):
-                child_fields = _path_signature_fields(child_entry, data_root)
-                if child_fields is None:
-                    continue
-                _update(*child_fields)
+        _update_signature_tree(root, data_root=data_root, update=_update)
 
     return digest.hexdigest()
 

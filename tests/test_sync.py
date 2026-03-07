@@ -19,6 +19,7 @@ from gamehub_cli.sync.orchestrator import (
 from gamehub_cli.sync.planner import PlanAction, SavePlanAction, SyncPlan
 from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON, SyncState
 from gamehub_cli.sync.steam_stage import build_shortcut_specs as _build_shortcut_specs
+from gamehub_cli.sync.transfer import SaveUploadConflictError
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
 
@@ -2961,3 +2962,68 @@ def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatc
     assert calls == ["/v1/saves/a", "/v1/saves/b"]
     assert state.save_checksums == {"save_a": "a" * 64}
     assert "save_b" not in state.save_checksums
+
+
+def test_apply_save_stage_treats_identical_upload_conflict_as_success(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.sync import save_stage
+
+    state = SyncState()
+    with workspace_tempdir("gamehub-save-stage-upload-conflict-") as temp_root:
+        destination = temp_root / "upload.sav"
+        destination.write_bytes(b"local-upload")
+        local_sha = save_stage.local_file_sha256(destination)
+        assert local_sha is not None
+
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_upload_conflict",
+                    binding_id="savebind_upload",
+                    title_id="title_upload",
+                    system="N64",
+                    kind="battery",
+                    decision="upload_existing",
+                    reason="local-changed-remote-unchanged",
+                    url="/v1/saves/upload",
+                    destination=destination,
+                    canonical_suffix="upload.sav",
+                    expected_sha256="c" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                )
+            ]
+        )
+
+        def _fake_upload(**kwargs) -> dict[str, object]:
+            raise SaveUploadConflictError(
+                {
+                    "reason": "remote-changed",
+                    "current": {
+                        "save_id": "save_upload_conflict",
+                        "title_id": "title_upload",
+                        "system": "N64",
+                        "kind": "battery",
+                        "rel_path": "saves/N64/Example/battery/upload.sav",
+                        "sha256": local_sha,
+                        "size_bytes": len(b"local-upload"),
+                        "updated_at": "2026-01-02T00:00:00+00:00",
+                        "portable": True,
+                    },
+                }
+            )
+
+        monkeypatch.setattr("gamehub_cli.sync.save_stage.upload_file_to_server", _fake_upload)
+
+        result = save_stage.apply_save_stage(
+            server_url="http://localhost:8000",
+            plan=plan,
+            state=state,
+            timeout_seconds=20.0,
+            dry_run=False,
+            verbose=False,
+        )
+
+        assert result.uploaded == 1
+        assert state.save_checksums == {"save_upload_conflict": local_sha}
+        assert state.save_lineage["save_upload_conflict"]["remote_sha256"] == local_sha
+        assert "save_upload_conflict" not in state.unresolved_save_conflicts

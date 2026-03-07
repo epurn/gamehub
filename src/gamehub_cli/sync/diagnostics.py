@@ -42,6 +42,7 @@ def build_sync_diagnostics_snapshot(
         verbose=verbose,
         http_client_module=sync_index.httpx,
         sleep_func=time.sleep,
+        reporter=print,
     )
     index = LibraryIndex.model_validate(raw_index)
     plan = create_sync_plan(index=index, config=config, state=state, verify=verify)

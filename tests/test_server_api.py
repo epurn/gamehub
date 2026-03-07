@@ -517,6 +517,33 @@ def test_index_repository_logs_new_files_when_source_change_refreshes(workspace_
     assert any("indexed new firmware file" in message and "addon.bin" in message for message in messages)
 
 
+def test_index_repository_refreshes_when_nested_save_tree_changes(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-index-save-tree-") as root:
+        _write_file(root / "roms" / "Wii" / "SuperMarioGalaxy.iso", b"rom-bytes")
+        nested_save = root / "saves" / "Wii" / "SuperMarioGalaxy" / "per_game" / "profiles" / "slot1.bin"
+        _write_file(nested_save, b"save-a")
+
+        original_build_index = repo_module.build_index
+        calls = {"count": 0}
+
+        def counting_build_index(data_root: Path) -> IndexBundle:
+            calls["count"] += 1
+            return original_build_index(data_root)
+
+        monkeypatch.setattr(repo_module, "build_index", counting_build_index)
+        repo = IndexRepository(root.resolve(), refresh_seconds=0, poll_seconds=0, stable_seconds=0)
+
+        first = repo.load()
+        first_sha = first.index.saves[0].sha256
+
+        nested_save.write_bytes(b"save-b-updated")
+
+        second = repo.load()
+
+        assert calls["count"] == 2
+        assert second.index.saves[0].sha256 != first_sha
+
+
 def test_index_endpoint_refresh_query_forces_reload(api_client: TestClient, monkeypatch) -> None:
     original_build_index = repo_module.build_index
     calls = {"count": 0}

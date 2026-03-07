@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from gamehub_common.models import SaveSpec
 
@@ -53,6 +55,54 @@ def _print_save_action(action: SavePlanAction) -> None:
     print(f"save\t{action.decision}\t{action.system}\t{action.title_id}\t{action.kind}\t{action.reason}\t{destination}")
 
 
+def record_uploaded_save(
+    *,
+    state: Any,
+    save_id: str,
+    destination: Path,
+    save: SaveSpec,
+) -> str:
+    local_sha = local_file_sha256(destination)
+    if local_sha is None:
+        raise ValueError("Uploaded save missing after local upload")
+    record_converged_save_state(
+        save_id=save_id,
+        save_checksums=state.save_checksums,
+        save_lineage=state.save_lineage,
+        unresolved_save_conflicts=state.unresolved_save_conflicts,
+        local_sha256=local_sha,
+        remote_sha256=save.sha256,
+        local_updated_at=local_file_updated_at(destination),
+        remote_updated_at=save.updated_at.isoformat(),
+    )
+    return local_sha
+
+
+def reconcile_upload_conflict(
+    *,
+    state: Any,
+    save_id: str,
+    destination: Path,
+    exc: SaveUploadConflictError,
+) -> SaveSpec | None:
+    current_payload = exc.payload.get("current")
+    current = SaveSpec.model_validate(current_payload) if isinstance(current_payload, dict) else None
+    local_sha = local_file_sha256(destination)
+    if current is None or local_sha is None or current.sha256 != local_sha:
+        return None
+    record_converged_save_state(
+        save_id=save_id,
+        save_checksums=state.save_checksums,
+        save_lineage=state.save_lineage,
+        unresolved_save_conflicts=state.unresolved_save_conflicts,
+        local_sha256=local_sha,
+        remote_sha256=current.sha256,
+        local_updated_at=local_file_updated_at(destination),
+        remote_updated_at=current.updated_at.isoformat(),
+    )
+    return current
+
+
 def apply_save_stage(
     *,
     server_url: str,
@@ -93,31 +143,18 @@ def apply_save_stage(
                     expected_remote_sha256=action.expected_sha256 if action.decision == "upload_existing" else None,
                 )
                 save = SaveSpec.model_validate(payload)
-                local_sha = local_file_sha256(action.destination)
-                if local_sha is None:
-                    raise ValueError("Uploaded save missing after local upload")
-                _record_converged_save(
-                    state,
-                    action,
-                    local_sha256=local_sha,
-                    remote_sha256=save.sha256,
-                    local_updated_at=local_file_updated_at(action.destination),
-                    remote_updated_at=save.updated_at.isoformat(),
-                )
+                record_uploaded_save(state=state, save_id=action.save_id, destination=action.destination, save=save)
                 uploaded += 1
             except SaveUploadConflictError as exc:
-                current_payload = exc.payload.get("current")
-                current = SaveSpec.model_validate(current_payload) if isinstance(current_payload, dict) else None
-                local_sha = local_file_sha256(action.destination)
-                if current is not None and local_sha is not None and current.sha256 == local_sha:
-                    _record_converged_save(
-                        state,
-                        action,
-                        local_sha256=local_sha,
-                        remote_sha256=current.sha256,
-                        local_updated_at=local_file_updated_at(action.destination),
-                        remote_updated_at=current.updated_at.isoformat(),
+                if (
+                    reconcile_upload_conflict(
+                        state=state,
+                        save_id=action.save_id,
+                        destination=action.destination,
+                        exc=exc,
                     )
+                    is not None
+                ):
                     uploaded += 1
                     continue
                 state.unresolved_save_conflicts[action.save_id] = str(exc)

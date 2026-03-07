@@ -58,6 +58,7 @@ def _fetch_json_with_retries(
     request_label: str,
     http_client_module: ModuleType | None = None,
     sleep_func: Callable[[float], None] | None = None,
+    reporter: Callable[[str], None] | None = None,
 ) -> dict:
     client = http_client_module if http_client_module is not None else httpx
     sleeper = sleep_func if sleep_func is not None else time.sleep
@@ -65,8 +66,8 @@ def _fetch_json_with_retries(
     last_error: Exception | None = None
     for attempt in range(1, total_attempts + 1):
         try:
-            if verbose and total_attempts > 1:
-                print(f"Fetching {request_label} attempt {attempt}/{total_attempts}")
+            if verbose and total_attempts > 1 and reporter is not None:
+                reporter(f"Fetching {request_label} attempt {attempt}/{total_attempts}")
             if client is not None:
                 response = client.get(url, timeout=timeout_seconds)
                 response.raise_for_status()
@@ -84,10 +85,11 @@ def _fetch_json_with_retries(
             if attempt >= total_attempts or not _is_retryable_index_fetch_error(exc, httpx_module=client):
                 raise
             delay = retry_backoff_seconds * (2 ** (attempt - 1))
-            print(
-                f"Warning: index fetch attempt {attempt}/{total_attempts} failed ({exc.__class__.__name__}). "
-                f"Retrying in {delay:.1f}s..."
-            )
+            if reporter is not None:
+                reporter(
+                    f"Warning: {request_label} fetch attempt {attempt}/{total_attempts} "
+                    f"failed ({exc.__class__.__name__}). Retrying in {delay:.1f}s..."
+                )
             sleeper(delay)
     if last_error is not None:
         raise last_error
@@ -103,6 +105,7 @@ def fetch_index_with_retries(
     verbose: bool,
     http_client_module: ModuleType | None = None,
     sleep_func: Callable[[float], None] | None = None,
+    reporter: Callable[[str], None] | None = None,
 ) -> dict:
     return _fetch_json_with_retries(
         url=index_url,
@@ -113,6 +116,7 @@ def fetch_index_with_retries(
         request_label="index",
         http_client_module=http_client_module,
         sleep_func=sleep_func,
+        reporter=reporter,
     )
 
 
@@ -125,6 +129,7 @@ def fetch_save_bindings_with_retries(
     verbose: bool,
     http_client_module: ModuleType | None = None,
     sleep_func: Callable[[float], None] | None = None,
+    reporter: Callable[[str], None] | None = None,
 ) -> dict:
     return _fetch_json_with_retries(
         url=bindings_url,
@@ -135,6 +140,7 @@ def fetch_save_bindings_with_retries(
         request_label="save bindings",
         http_client_module=http_client_module,
         sleep_func=sleep_func,
+        reporter=reporter,
     )
 
 
@@ -155,6 +161,7 @@ def probe_server_health(
             request_label="health",
             http_client_module=http_client_module,
             sleep_func=None,
+            reporter=None,
         )
     except Exception:
         return False

@@ -160,6 +160,7 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
   - local newer -> `upload_existing` (`missed-upload-local-newer`)
   - remote newer -> `download` (`missed-upload-remote-newer`)
   - missing/unreadable/tied timestamps -> fallback to existing checksum/lineage conflict-safe behavior
+- `[save_sync].systems` gates both launch-session save sync and managed `PSX`/`PS2` memory-card path rewrites.
 - `--dry-run` performs no save writes and no remote mutations; it is the required safety preview for save plan auditing before enabling non-dry execution.
 - Managed shortcut launches use launch-session save sync only; there is no resident background watcher in this release.
 - Pre-launch shortcut sync never auto-uploads.
@@ -242,6 +243,7 @@ Windows path notes:
 Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
 - Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
+- `shortcut-launch` does not seed controller profiles at launch time; run non-dry `gamehub init` or `gamehub sync` first when managed profiles may not exist yet.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
 - If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):

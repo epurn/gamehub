@@ -32,7 +32,7 @@ from ..common.save_sync import (
 from ..controllers import azahar_exit_hook
 from ..controllers.apply import apply_controller_profile, apply_named_controller_profile
 from ..controllers.detection import detect_xbox_controllers, is_steam_deck_linux
-from ..controllers.profiles import PROFILE_KBM, profile_name_for_controller_count, seed_default_profiles
+from ..controllers.profiles import PROFILE_KBM, profile_name_for_controller_count
 from ..controllers.sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
 from ..emulators import resolve_emulator_executable
 from ..emulators.save_resolution import (
@@ -44,7 +44,9 @@ from ..emulators.save_resolution import (
     snapshot_binding_tree,
 )
 from ..sync.planner import resolve_save_action
+from ..sync.save_stage import reconcile_upload_conflict, record_uploaded_save
 from ..sync.state import MISSED_POSTEXIT_UPLOAD_REASON
+from ..sync.transfer import SaveUploadConflictError
 
 _DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
 _RETROARCH_FLATPAK_APP_ID = "org.libretro.RetroArch"
@@ -64,6 +66,14 @@ _SHORTCUT_METADATA_TIMEOUT_CAP_SECONDS = 5.0
 _SHORTCUT_METADATA_FETCH_ATTEMPTS = 1
 _SHORTCUT_METADATA_RETRY_BACKOFF_SECONDS = 0.0
 logger = logging.getLogger(__name__)
+
+
+class _ShortcutMetadataError(RuntimeError):
+    """Raised when launch-session save metadata helpers cannot complete."""
+
+
+def _warn_shortcut_runtime(message: str) -> None:
+    print(f"Warning: {message}")
 
 
 class _XInputGamepad(ctypes.Structure):
@@ -386,12 +396,12 @@ def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:
         try:
             return _run_windows_azahar_target_with_exit_hook(payload)
         except Exception as exc:
-            print(f"Warning: Azahar exit hook failed (error={exc}); falling back to direct launch")
+            _warn_shortcut_runtime(f"Azahar exit hook failed (error={exc}); falling back to direct launch")
     if _should_use_linux_dolphin_exit_hook(payload):
         try:
             return _run_linux_dolphin_target_with_exit_hook(payload)
         except Exception as exc:
-            print(f"Warning: Dolphin exit hook failed (error={exc}); falling back to direct launch")
+            _warn_shortcut_runtime(f"Dolphin exit hook failed (error={exc}); falling back to direct launch")
     return _run_target(payload)
 
 
@@ -507,8 +517,7 @@ def _shortcut_server_reachable(config: GamehubConfig) -> bool:
         index_module = import_module("gamehub_cli.sync.index")
         probe_server_health = index_module.probe_server_health
     except Exception as exc:  # noqa: BLE001
-        print(f"Warning: save sync could not load server health probe helper ({exc})")
-        return False
+        raise _ShortcutMetadataError(f"save sync could not load server health probe helper ({exc})") from exc
     try:
         return bool(
             probe_server_health(
@@ -517,7 +526,14 @@ def _shortcut_server_reachable(config: GamehubConfig) -> bool:
             )
         )
     except Exception as exc:  # noqa: BLE001
-        print(f"Warning: save sync server reachability probe failed ({exc})")
+        raise _ShortcutMetadataError(f"save sync server reachability probe failed ({exc})") from exc
+
+
+def _shortcut_server_reachable_or_warn(config: GamehubConfig) -> bool:
+    try:
+        return _shortcut_server_reachable(config)
+    except _ShortcutMetadataError as exc:
+        _warn_shortcut_runtime(str(exc))
         return False
 
 
@@ -526,8 +542,7 @@ def _load_shortcut_index(config: GamehubConfig, *, verbose: bool) -> LibraryInde
         index_module = import_module("gamehub_cli.sync.index")
         fetch_index_with_retries = index_module.fetch_index_with_retries
     except Exception as exc:  # noqa: BLE001
-        print(f"Warning: save sync could not load index fetch helper ({exc})")
-        return None
+        raise _ShortcutMetadataError(f"save sync could not load index fetch helper ({exc})") from exc
 
     timeout_seconds = _shortcut_metadata_timeout_seconds(config)
     index_url = urljoin(config.server_url.rstrip("/") + "/", "v1/index")
@@ -541,7 +556,14 @@ def _load_shortcut_index(config: GamehubConfig, *, verbose: bool) -> LibraryInde
         )
         return LibraryIndex.model_validate(raw_index)
     except Exception as exc:  # noqa: BLE001
-        print(f"Warning: save sync index fetch failed ({exc})")
+        raise _ShortcutMetadataError(f"save sync index fetch failed ({exc})") from exc
+
+
+def _load_shortcut_index_or_warn(config: GamehubConfig, *, verbose: bool) -> LibraryIndex | None:
+    try:
+        return _load_shortcut_index(config, verbose=verbose)
+    except _ShortcutMetadataError as exc:
+        _warn_shortcut_runtime(str(exc))
         return None
 
 
@@ -550,8 +572,7 @@ def _load_shortcut_save_bindings(config: GamehubConfig, *, verbose: bool) -> Sav
         index_module = import_module("gamehub_cli.sync.index")
         fetch_save_bindings_with_retries = index_module.fetch_save_bindings_with_retries
     except Exception as exc:  # noqa: BLE001
-        print(f"Warning: save sync could not load save binding helper ({exc})")
-        return None
+        raise _ShortcutMetadataError(f"save sync could not load save binding helper ({exc})") from exc
 
     timeout_seconds = _shortcut_metadata_timeout_seconds(config)
     bindings_url = urljoin(config.server_url.rstrip("/") + "/", "v1/save-bindings")
@@ -565,7 +586,14 @@ def _load_shortcut_save_bindings(config: GamehubConfig, *, verbose: bool) -> Sav
         )
         return SaveBindingCatalog.model_validate(raw_bindings)
     except Exception as exc:  # noqa: BLE001
-        print(f"Warning: save sync binding fetch failed ({exc})")
+        raise _ShortcutMetadataError(f"save sync binding fetch failed ({exc})") from exc
+
+
+def _load_shortcut_save_bindings_or_warn(config: GamehubConfig, *, verbose: bool) -> SaveBindingCatalog | None:
+    try:
+        return _load_shortcut_save_bindings(config, verbose=verbose)
+    except _ShortcutMetadataError as exc:
+        _warn_shortcut_runtime(str(exc))
         return None
 
 
@@ -812,24 +840,37 @@ def _run_shortcut_postexit_exact_binding_sync(
                     source=destination,
                     timeout_seconds=timeout_seconds,
                 )
-                record_converged_save_state(
+                record_uploaded_save(
+                    state=state,
                     save_id=save_id,
-                    save_checksums=state.save_checksums,
-                    save_lineage=state.save_lineage,
-                    unresolved_save_conflicts=state.unresolved_save_conflicts,
-                    local_sha256=local_sha,
-                    remote_sha256=created_save.sha256,
-                    local_updated_at=local_file_updated_at(destination),
-                    remote_updated_at=to_utc_timestamp(created_save.updated_at),
+                    destination=destination,
+                    save=created_save,
                 )
                 state_changed = True
                 action = "auto-create" if before_sha is None else "auto-create-existing-local"
                 if verbose or audit:
                     print(f"shortcut-save\tpostexit\tupload\t{save_id}\t{action}")
+            except SaveUploadConflictError as exc:
+                if (
+                    reconcile_upload_conflict(
+                        state=state,
+                        save_id=save_id,
+                        destination=destination,
+                        exc=exc,
+                    )
+                    is not None
+                ):
+                    state_changed = True
+                    if verbose or audit:
+                        print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
+                    continue
+                state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"
+                state_changed = True
+                _warn_shortcut_runtime(f"post-exit save upload failed for {save_id} ({exc})")
             except Exception as exc:  # noqa: BLE001
                 state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"
                 state_changed = True
-                print(f"Warning: post-exit save upload failed for {save_id} ({exc})")
+                _warn_shortcut_runtime(f"post-exit save upload failed for {save_id} ({exc})")
     return state_changed
 
 
@@ -933,18 +974,18 @@ def _run_shortcut_prelaunch_save_sync(
     context = _ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={})
     if not _should_sync_shortcut_saves(payload, config):
         return context, False
-    if not _shortcut_server_reachable(config):
+    if not _shortcut_server_reachable_or_warn(config):
         if verbose or audit:
             print("shortcut-save\tprelaunch\tskip\tserver-unreachable")
         return context, False
 
-    index = _load_shortcut_index(config, verbose=verbose)
+    index = _load_shortcut_index_or_warn(config, verbose=verbose)
     if index is None or payload.title_id is None:
         return context, False
 
     save_bindings: SaveBindingCatalog | None = None
     if config.save_sync.mode == "bidirectional":
-        save_bindings = _load_shortcut_save_bindings(config, verbose=verbose)
+        save_bindings = _load_shortcut_save_bindings_or_warn(config, verbose=verbose)
     title_saves = _iter_title_saves(index, payload.title_id)
     remote_save_ids = {save.save_id for save in title_saves}
     if save_bindings is not None and config.save_sync.mode == "bidirectional":
@@ -1016,7 +1057,7 @@ def _run_shortcut_prelaunch_save_sync(
                     _record_shortcut_save_sync(state, save, destination, local_sha256=local_sha)
                     state_changed = True
             except Exception as exc:  # noqa: BLE001
-                print(f"Warning: pre-launch save sync failed for {save.save_id} ({exc})")
+                _warn_shortcut_runtime(f"pre-launch save sync failed for {save.save_id} ({exc})")
         if verbose or audit:
             action_label = "keep-local" if decision == "upload_existing" else decision
             print(f"shortcut-save\tprelaunch\t{action_label}\t{save.save_id}\t{reason}")
@@ -1045,7 +1086,7 @@ def _run_shortcut_postexit_save_sync(
         return False
     if not _should_sync_shortcut_saves(payload, config):
         return False
-    if not _shortcut_server_reachable(config):
+    if not _shortcut_server_reachable_or_warn(config):
         missed_upload_changed = _mark_missed_postexit_uploads_from_snapshots(
             state=state,
             context=context,
@@ -1056,9 +1097,16 @@ def _run_shortcut_postexit_save_sync(
             print("shortcut-save\tpostexit\tskip\tserver-unreachable")
         return missed_upload_changed
 
-    index = _load_shortcut_index(config, verbose=verbose)
-    if index is None or payload.title_id is None:
+    if payload.title_id is None:
         return False
+    index = _load_shortcut_index_or_warn(config, verbose=verbose)
+    if index is None:
+        return _mark_missed_postexit_uploads_from_snapshots(
+            state=state,
+            context=context,
+            verbose=verbose,
+            audit=audit,
+        )
 
     current_saves = {save.save_id: save for save in _iter_title_saves(index, payload.title_id)}
     state_changed = False
@@ -1082,21 +1130,35 @@ def _run_shortcut_postexit_save_sync(
                 source=snapshot.destination,
                 timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
             )
-            record_converged_save_state(
+            record_uploaded_save(
+                state=state,
                 save_id=save_id,
-                save_checksums=state.save_checksums,
-                save_lineage=state.save_lineage,
-                unresolved_save_conflicts=state.unresolved_save_conflicts,
-                local_sha256=local_sha,
-                remote_sha256=updated_save.sha256,
-                local_updated_at=local_file_updated_at(snapshot.destination),
-                remote_updated_at=to_utc_timestamp(updated_save.updated_at),
+                destination=snapshot.destination,
+                save=updated_save,
             )
             state_changed = True
             if verbose or audit:
                 print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-upload")
+        except SaveUploadConflictError as exc:
+            if (
+                reconcile_upload_conflict(
+                    state=state,
+                    save_id=save_id,
+                    destination=snapshot.destination,
+                    exc=exc,
+                )
+                is not None
+            ):
+                state_changed = True
+                if verbose or audit:
+                    print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
+                continue
+            state.unresolved_save_conflicts[save_id] = str(exc)
+            state_changed = True
+            if verbose or audit:
+                print(f"shortcut-save\tpostexit\tconflict\t{save_id}\t{exc}")
         except Exception as exc:  # noqa: BLE001
-            if local_sha is not None and not _shortcut_server_reachable(config):
+            if local_sha is not None and not _shortcut_server_reachable_or_warn(config):
                 state_changed = (
                     _record_missed_postexit_upload(
                         state,
@@ -1108,7 +1170,7 @@ def _run_shortcut_postexit_save_sync(
                 )
                 if verbose or audit:
                     print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
-            print(f"Warning: post-exit save upload failed for {save_id} ({exc})")
+            _warn_shortcut_runtime(f"post-exit save upload failed for {save_id} ({exc})")
 
     exact_binding_changed = _run_shortcut_postexit_exact_binding_sync(
         state=state,
@@ -1171,23 +1233,36 @@ def _run_shortcut_postexit_save_sync(
                     source=source,
                     timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
                 )
-                record_converged_save_state(
+                record_uploaded_save(
+                    state=state,
                     save_id=save_id,
-                    save_checksums=state.save_checksums,
-                    save_lineage=state.save_lineage,
-                    unresolved_save_conflicts=state.unresolved_save_conflicts,
-                    local_sha256=local_sha,
-                    remote_sha256=created_save.sha256,
-                    local_updated_at=local_file_updated_at(source),
-                    remote_updated_at=to_utc_timestamp(created_save.updated_at),
+                    destination=source,
+                    save=created_save,
                 )
                 state_changed = True
                 if verbose or audit:
                     print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-create")
+            except SaveUploadConflictError as exc:
+                if (
+                    reconcile_upload_conflict(
+                        state=state,
+                        save_id=save_id,
+                        destination=source,
+                        exc=exc,
+                    )
+                    is not None
+                ):
+                    state_changed = True
+                    if verbose or audit:
+                        print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
+                    continue
+                state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"
+                state_changed = True
+                _warn_shortcut_runtime(f"post-exit save upload failed for {save_id} ({exc})")
             except Exception as exc:  # noqa: BLE001
                 state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"
                 state_changed = True
-                print(f"Warning: post-exit save upload failed for {save_id} ({exc})")
+                _warn_shortcut_runtime(f"post-exit save upload failed for {save_id} ({exc})")
     return state_changed
 
 
@@ -1205,7 +1280,7 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
             state = _load_shortcut_state(config.state_path)
             save_state = _save_shortcut_state
         except Exception as exc:  # noqa: BLE001
-            print(f"Warning: save sync state helpers unavailable ({exc})")
+            _warn_shortcut_runtime(f"save sync state helpers unavailable ({exc})")
             state = None
             save_state = None
 
@@ -1217,15 +1292,11 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
                 os.environ[_AZAHAR_WINDOWS_SDL_DIR_ENV] = str(candidate.parent)
 
     if config.controllers.launch_autoconfig:
-        try:
-            seed_default_profiles(config)
-        except Exception as exc:
-            print(f"Warning: failed to seed controller profile defaults (error={exc})")
         detected_controller_count, detect_error = _detect_controller_count_once(max_devices=2)
         controller_count = detected_controller_count
         if detect_error is not None:
-            print(
-                "Warning: controller detection failed "
+            _warn_shortcut_runtime(
+                "controller detection failed "
                 f"(emulator={payload.emulator}, error={detect_error}); using keyboard/mouse fallback profile selection"
             )
         zero_detect_policy = "none"
@@ -1233,7 +1304,9 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
         if sys.platform.startswith("linux") and is_steam_deck_linux() and controller_count == 0:
             zero_detect_policy = "xbox_1p"
             controller_count = 1
-            print("Warning: Steam Deck controller detection returned 0 controllers; forcing xbox_1p profile fallback")
+            _warn_shortcut_runtime(
+                "Steam Deck controller detection returned 0 controllers; forcing xbox_1p profile fallback"
+            )
         effective_controller_count = controller_count
         if audit:
             detect_status = "ok" if detect_error is None else "error"
@@ -1264,8 +1337,8 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
             if audit:
                 print(f"controller-autoconfig\tselected_profile={selected_profile}")
         except Exception as exc:
-            print(
-                "Warning: controller autoconfig failed "
+            _warn_shortcut_runtime(
+                "controller autoconfig failed "
                 f"(emulator={payload.emulator}, profile={PROFILE_KBM}, error={exc}); using keyboard/mouse fallback"
             )
             try:
@@ -1285,15 +1358,15 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
                 if audit:
                     print(f"controller-autoconfig\tselected_profile={selected_profile}\tfallback=true")
             except Exception as fallback_exc:
-                print(
-                    "Warning: keyboard/mouse fallback profile application failed "
+                _warn_shortcut_runtime(
+                    "keyboard/mouse fallback profile application failed "
                     f"(emulator={payload.emulator}, error={fallback_exc})"
                 )
-    if config.save_sync.enabled:
+    if _should_sync_shortcut_saves(payload, config):
         try:
             _ensure_managed_memory_card_paths(payload, config)
         except Exception as exc:  # noqa: BLE001
-            print(f"Warning: managed memory-card setup failed ({exc})")
+            _warn_shortcut_runtime(f"managed memory-card setup failed ({exc})")
     save_context = _ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={})
     if state is not None:
         try:
@@ -1307,24 +1380,29 @@ def run_shortcut_launch(*, payload_token: str, config_path: Path | None = None, 
             )
             state_changed = state_changed or prelaunch_changed
         except Exception as exc:  # noqa: BLE001
-            print(f"Warning: pre-launch save sync failed; continuing launch ({exc})")
+            _warn_shortcut_runtime(f"pre-launch save sync failed; continuing launch ({exc})")
 
-    exit_code = _run_target_with_optional_exit_hook(payload)
-
-    if state is not None:
-        try:
-            postexit_changed = _run_shortcut_postexit_save_sync(
-                payload=payload,
-                config=config,
-                state=state,
-                context=save_context,
-                resolve_executable=save_resolver,
-                verbose=False,
-                audit=audit,
-            )
-            state_changed = state_changed or postexit_changed
-        except Exception as exc:  # noqa: BLE001
-            print(f"Warning: post-exit save sync failed ({exc})")
-        if state_changed and save_state is not None:
-            save_state(config.state_path, state)
+    exit_code = 0
+    launch_completed = False
+    try:
+        exit_code = _run_target_with_optional_exit_hook(payload)
+        launch_completed = True
+    finally:
+        if state is not None:
+            if launch_completed:
+                try:
+                    postexit_changed = _run_shortcut_postexit_save_sync(
+                        payload=payload,
+                        config=config,
+                        state=state,
+                        context=save_context,
+                        resolve_executable=save_resolver,
+                        verbose=False,
+                        audit=audit,
+                    )
+                    state_changed = state_changed or postexit_changed
+                except Exception as exc:  # noqa: BLE001
+                    _warn_shortcut_runtime(f"post-exit save sync failed ({exc})")
+            if state_changed and save_state is not None:
+                save_state(config.state_path, state)
     return exit_code
