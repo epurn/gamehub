@@ -160,11 +160,12 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
   - local newer -> `upload_existing` (`missed-upload-local-newer`)
   - remote newer -> `download` (`missed-upload-remote-newer`)
   - missing/unreadable/tied timestamps -> fallback to existing checksum/lineage conflict-safe behavior
+- If a managed launch starts while the server is unreachable, GAMEHUB records that title for reconnect recovery. On the next connected managed pre-launch, lineage-missing indexed saves reuse the same timestamp comparison to seed `postexit-upload-missed-server-unreachable` recovery before the session starts.
 - `[save_sync].systems` gates both launch-session save sync and managed `PSX`/`PS2` memory-card path rewrites.
 - `--dry-run` performs no save writes and no remote mutations; it is the required safety preview for save plan auditing before enabling non-dry execution.
 - Managed shortcut launches use launch-session save sync only; there is no resident background watcher in this release.
 - Pre-launch shortcut sync never auto-uploads.
-- Post-exit shortcut sync uploads only when the local save changed during the session and the remote save is unchanged from the pre-launch snapshot.
+- Post-exit shortcut sync uploads only when the remote save is unchanged from the pre-launch snapshot and either the local save changed during the session or pre-launch already resolved that indexed save as `keep-local` / `upload_existing`.
 - First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry sync from the server-published save-binding catalog and become `upload_new` actions in `bidirectional`.
 - Managed shortcut launches also auto-create those deterministic `exact_files` saves at post-exit, so wrapped RetroArch and managed `PSX`/`PS2` sessions do not need to wait for the next full `gamehub sync`.
   - For `PSX` Swanstation, GAMEHUB accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.

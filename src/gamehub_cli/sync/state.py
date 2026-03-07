@@ -23,6 +23,7 @@ class SyncState:
     save_checksums: dict[str, str] = field(default_factory=dict)
     save_lineage: dict[str, SaveLineageRecord] = field(default_factory=dict)
     save_binding_roots: dict[str, SaveBindingRootRecord] = field(default_factory=dict)
+    offline_shortcut_titles: dict[str, str] = field(default_factory=dict)
     unresolved_save_conflicts: dict[str, str] = field(default_factory=dict)
     tombstones: list[str] = field(default_factory=list)
     last_sync: str | None = None
@@ -44,6 +45,7 @@ class SyncState:
                 for binding_id, root in dict(data.get("save_binding_roots", {})).items()
                 if isinstance(binding_id, str) and isinstance(root, dict)
             },
+            offline_shortcut_titles=dict(data.get("offline_shortcut_titles", {})),
             unresolved_save_conflicts=dict(data.get("unresolved_save_conflicts", {})),
             tombstones=list(data.get("tombstones", [])),
             last_sync=data.get("last_sync"),
@@ -57,6 +59,7 @@ class SyncState:
             "save_checksums": self.save_checksums,
             "save_lineage": self.save_lineage,
             "save_binding_roots": self.save_binding_roots,
+            "offline_shortcut_titles": self.offline_shortcut_titles,
             "unresolved_save_conflicts": self.unresolved_save_conflicts,
             "tombstones": self.tombstones,
             "last_sync": self.last_sync,

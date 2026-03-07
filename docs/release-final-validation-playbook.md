@@ -124,6 +124,8 @@ Run this after the first non-dry sync rewrites managed shortcuts to `shortcut-la
   - create one deliberate both-side drift and verify `manual`, `prefer_server`, and `prefer_local`
 - Validate managed `shortcut-launch`:
   - launch a managed shortcut from Steam, modify a save, and confirm post-exit upload
+  - launch a managed shortcut after pre-launch `keep-local` resolution and confirm post-exit upload even when that save is unchanged during the session
+  - launch a managed shortcut with the server offline, reconnect on a later managed launch, and confirm an unchanged reconnect session still uploads the preserved local save
   - repeat once with the server unavailable before exit; confirm deferred recovery on the next reconnect/launch
 - Capture evidence for each scenario:
   - platform

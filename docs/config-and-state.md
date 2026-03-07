@@ -193,7 +193,8 @@ Mode behavior reference:
   - local newer -> `upload_existing` (`missed-upload-local-newer`)
   - remote newer -> `download` (`missed-upload-remote-newer`)
   - missing/unreadable/tied timestamps -> fall back to the existing checksum/lineage conflict-safe path
-- In `mode=bidirectional`, managed `shortcut-launch` sessions run pre-launch download/skip/conflict reconciliation, then attempt post-exit upload only when the remote save did not change during play.
+- `offline_shortcut_titles[title_id]` records managed titles that launched while server metadata was unavailable. On the next connected managed pre-launch, GAMEHUB uses that title marker to seed the same `postexit-upload-missed-server-unreachable` timestamp recovery for lineage-missing indexed saves before clearing the title marker.
+- In `mode=bidirectional`, managed `shortcut-launch` sessions run pre-launch download/skip/conflict reconciliation, then attempt post-exit upload when the remote save did not change during play and either the save changed during that session or pre-launch already resolved it toward `upload_existing`.
 - Managed `shortcut-launch` save sync is fail-open: it runs a one-shot `/health` precheck (`1.0s` timeout) before pre-launch and post-exit network save work, and skips launch-session save network steps when the server is unreachable.
 - Managed `shortcut-launch` metadata fetches (`/v1/index`, `/v1/save-bindings`) use launch-only fast-fail settings (`<=5.0s` timeout cap, attempts=`1`, backoff=`0.0s`).
 - First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry `gamehub sync` through `GET /v1/save-bindings`.

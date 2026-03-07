@@ -27,6 +27,7 @@ from ..common.save_sync import (
     local_file_updated_at,
     record_converged_save_state,
     save_binding_id_for_save,
+    timestamp_now_utc,
     to_utc_timestamp,
 )
 from ..controllers import azahar_exit_hook
@@ -43,7 +44,7 @@ from ..emulators.save_resolution import (
     resolve_local_save_destination,
     snapshot_binding_tree,
 )
-from ..sync.planner import resolve_save_action
+from ..sync.planner import resolve_missed_upload_timestamp_decision, resolve_save_action
 from ..sync.save_stage import reconcile_upload_conflict, record_uploaded_save
 from ..sync.state import MISSED_POSTEXIT_UPLOAD_REASON
 from ..sync.transfer import SaveUploadConflictError
@@ -418,6 +419,7 @@ class _ShortcutSaveSnapshot:
     local_sha256: str | None
     remote_sha256: str
     allow_postexit_upload: bool
+    pending_postexit_upload: bool = False
 
 
 @dataclass(frozen=True)
@@ -437,6 +439,31 @@ class _ShortcutSaveContext:
     save_snapshots: dict[str, _ShortcutSaveSnapshot]
     exact_binding_snapshots: dict[str, _ShortcutExactBindingSnapshot]
     tree_snapshots: dict[str, _ShortcutTreeSnapshot]
+
+
+def _offline_shortcut_titles(state: Any) -> dict[str, str]:
+    titles = getattr(state, "offline_shortcut_titles", None)
+    if isinstance(titles, dict):
+        return titles
+    titles = {}
+    setattr(state, "offline_shortcut_titles", titles)
+    return titles
+
+
+def _mark_offline_shortcut_title(state: Any, *, title_id: str | None) -> bool:
+    if not title_id:
+        return False
+    titles = _offline_shortcut_titles(state)
+    previous = titles.get(title_id)
+    titles[title_id] = timestamp_now_utc()
+    return previous != titles[title_id]
+
+
+def _clear_offline_shortcut_title(state: Any, *, title_id: str | None) -> bool:
+    if not title_id:
+        return False
+    titles = _offline_shortcut_titles(state)
+    return titles.pop(title_id, None) is not None
 
 
 def _flatpak_run_app_id(target_args: tuple[str, ...]) -> str | None:
@@ -734,7 +761,9 @@ def _mark_missed_postexit_uploads_from_snapshots(
         if snapshot.destination is None or not snapshot.allow_postexit_upload:
             continue
         local_sha = local_file_sha256(snapshot.destination)
-        if local_sha is None or local_sha == snapshot.local_sha256:
+        if local_sha is None:
+            continue
+        if not _should_attempt_postexit_upload(snapshot, local_sha=local_sha):
             continue
         state_changed = (
             _record_missed_postexit_upload(
@@ -748,6 +777,12 @@ def _mark_missed_postexit_uploads_from_snapshots(
         if verbose or audit:
             print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
     return state_changed
+
+
+def _should_attempt_postexit_upload(snapshot: _ShortcutSaveSnapshot, *, local_sha: str | None) -> bool:
+    if local_sha is None:
+        return False
+    return snapshot.pending_postexit_upload or local_sha != snapshot.local_sha256
 
 
 def _changed_tree_paths(before: dict[str, str], after: dict[str, str]) -> tuple[str, ...]:
@@ -975,13 +1010,19 @@ def _run_shortcut_prelaunch_save_sync(
     if not _should_sync_shortcut_saves(payload, config):
         return context, False
     if not _shortcut_server_reachable_or_warn(config):
+        state_changed = False
+        if config.save_sync.mode == "bidirectional":
+            state_changed = _mark_offline_shortcut_title(state, title_id=payload.title_id)
         if verbose or audit:
             print("shortcut-save\tprelaunch\tskip\tserver-unreachable")
-        return context, False
+        return context, state_changed
 
     index = _load_shortcut_index_or_warn(config, verbose=verbose)
     if index is None or payload.title_id is None:
-        return context, False
+        state_changed = False
+        if index is None and config.save_sync.mode == "bidirectional":
+            state_changed = _mark_offline_shortcut_title(state, title_id=payload.title_id)
+        return context, state_changed
 
     save_bindings: SaveBindingCatalog | None = None
     if config.save_sync.mode == "bidirectional":
@@ -1007,6 +1048,10 @@ def _run_shortcut_prelaunch_save_sync(
                 context.exact_binding_snapshots[binding.binding_id] = exact_snapshot
 
     state_changed = False
+    offline_title_pending = config.save_sync.mode == "bidirectional" and payload.title_id in _offline_shortcut_titles(
+        state
+    )
+    needs_offline_title = False
     for save in title_saves:
         destination = resolve_local_save_destination(
             save,
@@ -1022,21 +1067,46 @@ def _run_shortcut_prelaunch_save_sync(
                 local_sha256=None,
                 remote_sha256=save.sha256,
                 allow_postexit_upload=False,
+                pending_postexit_upload=False,
             )
             if verbose or audit:
                 print(f"shortcut-save\tprelaunch\tskip\t{save.save_id}\t{reason}")
             continue
 
         lineage = state.save_lineage.get(save.save_id, {})
+        lineage_local_sha = lineage.get("local_sha256")
+        lineage_remote_sha = lineage.get("remote_sha256")
+        local_updated_at = local_file_updated_at(destination)
+        unresolved_reason = state.unresolved_save_conflicts.get(save.save_id)
+        if (
+            offline_title_pending
+            and unresolved_reason is None
+            and local_sha is not None
+            and local_sha != save.sha256
+            and lineage_local_sha is None
+            and lineage_remote_sha is None
+        ):
+            timestamp_decision = resolve_missed_upload_timestamp_decision(
+                mode=config.save_sync.mode,
+                unresolved_reason=MISSED_POSTEXIT_UPLOAD_REASON,
+                local_updated_at=local_updated_at,
+                remote_updated_at=save.updated_at,
+            )
+            if timestamp_decision is not None:
+                state.unresolved_save_conflicts[save.save_id] = MISSED_POSTEXIT_UPLOAD_REASON
+                unresolved_reason = MISSED_POSTEXIT_UPLOAD_REASON
+                state_changed = True
+            else:
+                needs_offline_title = True
         decision, reason = resolve_save_action(
             save_sha256=save.sha256,
             local_sha256=local_sha,
             mode=config.save_sync.mode,
             conflict_policy=config.save_sync.conflict_policy,
-            lineage_local_sha=lineage.get("local_sha256"),
-            lineage_remote_sha=lineage.get("remote_sha256"),
-            unresolved_reason=state.unresolved_save_conflicts.get(save.save_id),
-            local_updated_at=local_file_updated_at(destination),
+            lineage_local_sha=lineage_local_sha,
+            lineage_remote_sha=lineage_remote_sha,
+            unresolved_reason=unresolved_reason,
+            local_updated_at=local_updated_at,
             remote_updated_at=save.updated_at,
         )
         if decision == "conflict":
@@ -1066,7 +1136,10 @@ def _run_shortcut_prelaunch_save_sync(
             local_sha256=local_sha,
             remote_sha256=save.sha256,
             allow_postexit_upload=allow_postexit_upload,
+            pending_postexit_upload=decision == "upload_existing",
         )
+    if offline_title_pending and not needs_offline_title:
+        state_changed = _clear_offline_shortcut_title(state, title_id=payload.title_id) or state_changed
     return context, state_changed
 
 
@@ -1114,7 +1187,9 @@ def _run_shortcut_postexit_save_sync(
         if snapshot.destination is None or not snapshot.allow_postexit_upload:
             continue
         local_sha = local_file_sha256(snapshot.destination)
-        if local_sha is None or local_sha == snapshot.local_sha256:
+        if local_sha is None:
+            continue
+        if not _should_attempt_postexit_upload(snapshot, local_sha=local_sha):
             continue
         save = current_saves.get(save_id)
         if save is None or save.sha256 != snapshot.remote_sha256:
