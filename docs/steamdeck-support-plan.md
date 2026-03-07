@@ -1,5 +1,9 @@
 # Steam Deck Support Plan (Research + Execution)
 
+Historical note:
+- This plan is fully implemented.
+- Current operator behavior lives in [client-install.md](client-install.md), [cli-sync.md](cli-sync.md), [config-and-state.md](config-and-state.md), and [steam-integration.md](steam-integration.md).
+
 ## External research references used
 - Flatpak sandbox path conventions (`XDG_CONFIG_HOME` and `XDG_DATA_HOME` map into `~/.var/app/<app-id>/config|data`).
   - https://docs.flatpak.org/en/latest/conventions.html

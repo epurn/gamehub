@@ -42,8 +42,9 @@ Historical note:
 - Branch remains lint-clean at rule level; repo-wide format drift exists outside this scope and should be addressed in a dedicated formatting PR.
 - Full-suite validation should run in Python 3.12 `venv/` to match repository runtime contract.
 
-## Suggested follow-up fixes (not part of this patch)
+## Historical follow-up notes
 
-1. Add end-to-end tests for future server-side save upload once `/v1/saves/{save_id}` PUT is implemented.
-2. Add explicit CLI output hint when upload actions are planned in dry-run mode (e.g., "planned upload; upload API not active yet").
-3. Run a dedicated repo-wide formatting pass to remove pre-existing Ruff format drift.
+The open items from this checkpoint are intentionally retired here.
+
+- Server-side `PUT /v1/saves/{save_id}` upload support and related validation have since landed.
+- Use current planning docs, runtime docs, and release checklists for active follow-up work instead of this historical checkpoint.

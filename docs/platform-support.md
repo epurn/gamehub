@@ -1,5 +1,12 @@
 # Platform Support (v1)
 
+Current operator workflows and config details live in:
+- [client-install.md](client-install.md)
+- [cli-sync.md](cli-sync.md)
+- [config-and-state.md](config-and-state.md)
+
+This page is the short validation matrix only.
+
 ## Validation Status
 - Windows: verified
 - Bazzite: tested

@@ -169,6 +169,7 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry sync from the server-published save-binding catalog and become `upload_new` actions in `bidirectional`.
 - Managed shortcut launches also auto-create those deterministic `exact_files` saves at post-exit, so wrapped RetroArch and managed `PSX`/`PS2` sessions do not need to wait for the next full `gamehub sync`.
   - For `PSX` Swanstation, GAMEHUB accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.
+- Managed shortcut launches also auto-create first-time deterministic `learned_tree` saves at post-exit when one root can be proven, even if that local save already existed before the connected bidirectional session began (for example after an offline launch or after switching from `disabled`/`download` to `bidirectional`).
 - `download` mode stays read-only: missing local saves may still download, existing local drift becomes `skip(download-mode-local-drift)`, local-only first-time saves become `skip(download-mode-local-new)`, and the server is never mutated.
 - If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
 - If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
@@ -225,7 +226,7 @@ Linux path notes:
 - Linux Flatpak RetroArch Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so ROM paths (including SD-card paths) are forwarded reliably to the sandbox.
 - Linux Flatpak PCSX2 Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so host ROM paths are forwarded reliably to the sandbox.
 - Linux Flatpak Dolphin Steam launch options use `flatpak run --device=all --file-forwarding ... -e @@ <rom> @@` so controller devices and host ROM paths are consistently available in the sandbox.
-- Linux Flatpak Azahar Steam launch options default to a Linux-only wrapper (`python -m gamehub_cli.controllers.azahar_exit_hook`) that:
+- Linux Flatpak Azahar Steam launch options default to a sync-emitted Linux-only wrapper (`python -m gamehub_cli.controllers.azahar_exit_hook`) that:
   - launches `flatpak run --device=all --file-forwarding org.azahar_emu.Azahar -f -- @@ <rom> @@`
   - listens for strict `Select+Start` and terminates Azahar when pressed:
     - joystick path (`/dev/input/js*`) using configured Azahar button indices
@@ -369,7 +370,7 @@ For systems that launch via RetroArch, GAMEHUB uses these general-purpose core d
 Steam shortcut build normalizes emulator launch options for fullscreen:
 - RetroArch shortcuts include `-f` (injected if missing).
 - PCSX2 shortcuts include `-fullscreen` (injected if missing; Flatpak path already includes it).
-- Azahar native shortcuts include `-f` (injected if missing). Linux Flatpak Azahar uses a GAMEHUB wrapper hook by default (or direct `flatpak run` when `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false`).
+- Azahar native shortcuts include `-f` (injected if missing). Linux Flatpak Azahar uses a sync-emitted GAMEHUB wrapper hook by default (or direct `flatpak run` when `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false`).
 - Dolphin shortcuts include `-u "<dolphin-user-dir>"` so launch always uses the same user profile path GAMEHUB configured.
 - Dolphin shortcuts include `-C Dolphin.Display.Fullscreen=True` for non-Flatpak installs when supported by the installed Dolphin CLI parser (injected before `-e/--exec` when missing).
 

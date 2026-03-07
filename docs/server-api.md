@@ -7,6 +7,7 @@ Base URL: `http://<host>:8000`
   - Returns `{ "status": "ok" }`
 - `GET /v1/index`
   - Returns strict `LibraryIndex` JSON (`index_version=1`)
+  - Returns gzip-encoded JSON when the client advertises `Accept-Encoding: gzip`
   - Query param `refresh=1` forces an immediate index rebuild before responding
 - `GET /v1/files/{file_id}`
   - Streams ROM file content for IDs present in `/v1/index`
@@ -40,6 +41,7 @@ Base URL: `http://<host>:8000`
 - Expected layout:
   - `roms/<system>/<title.ext>`
   - `firmware/<system>/<filename>`
+  - `saves/<system>/<title_stem>/<kind>/<file...>`
 
 ## Index generation notes
 - ROMs are discovered from files in `roms/<system>/` matching the system's allowed extensions.
@@ -66,10 +68,14 @@ Base URL: `http://<host>:8000`
 - A background poller checks for changes by default:
   - `GAMEHUB_INDEX_POLL_SECONDS=1` by default
   - set `GAMEHUB_INDEX_POLL_SECONDS=0` to disable background polling
+- Source-change detection covers:
+  - `roms/<system>/`
+  - `firmware/<system>/`
+  - `saves/<system>/`
 - Automatic rebuilds wait until a detected change remains unchanged for `GAMEHUB_INDEX_STABLE_SECONDS` seconds (default `2`) before replacing the cached snapshot.
 - `GET /v1/index` also checks for pending changes, but it keeps serving the last good cached snapshot until the changed files have stayed stable long enough to rebuild safely.
 - If an automatic rebuild fails after a previous snapshot already exists, the server keeps serving the last good cached snapshot and retries later.
-- When a rebuild changes the indexed contents, the server logs a summary plus per-file lines for added, updated, and removed ROM/firmware entries.
+- When a rebuild changes the indexed contents, the server logs a summary plus per-file lines for added, updated, and removed ROM, firmware, and save entries.
 - `GAMEHUB_INDEX_REFRESH_SECONDS` is optional TTL-based refresh on top of change detection:
   - `0` (default): no TTL-based rebuilds
   - `>0`: also rebuild after the cached snapshot age reaches this TTL when no source change is still settling

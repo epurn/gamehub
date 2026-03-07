@@ -28,8 +28,11 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 ```powershell
 .\venv\Scripts\pip.exe install -e .[dev]
 ```
-3. Full test suite:
+3. Required quality gates:
 ```powershell
+.\venv\Scripts\python.exe -m ruff format --check .
+.\venv\Scripts\python.exe -m ruff check .
+.\venv\Scripts\python.exe -m mypy src
 .\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
 4. Audit-critical slices:
@@ -38,7 +41,7 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_architecture.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_launch.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_runtime.py tests/test_shortcut_save_session.py tests/test_shortcut_orchestrator.py tests/test_shortcut_payload.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
@@ -126,6 +129,7 @@ Run this after the first non-dry sync rewrites managed shortcuts to `shortcut-la
   - launch a managed shortcut from Steam, modify a save, and confirm post-exit upload
   - launch a managed shortcut after pre-launch `keep-local` resolution and confirm post-exit upload even when that save is unchanged during the session
   - launch a managed shortcut with the server offline, reconnect on a later managed launch, and confirm an unchanged reconnect session still uploads the preserved local save
+  - switch one title from `disabled` or `download` to `bidirectional`, keep a first-time deterministic `per_game` save local-only, and confirm the next connected managed exit auto-creates it on the server
   - repeat once with the server unavailable before exit; confirm deferred recovery on the next reconnect/launch
 - Capture evidence for each scenario:
   - platform
@@ -151,8 +155,11 @@ Run this after the first non-dry sync rewrites managed shortcuts to `shortcut-la
 python3 -m venv venv
 ./venv/bin/python -m pip install -e .[dev]
 ```
-2. Full test suite:
+2. Required quality gates:
 ```bash
+./venv/bin/python -m ruff format --check .
+./venv/bin/python -m ruff check .
+./venv/bin/python -m mypy src
 ./venv/bin/python -m pytest . -p no:cacheprovider
 ```
 3. Audit-critical slices:
@@ -161,7 +168,7 @@ python3 -m venv venv
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_server_api.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_architecture.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_launch.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_runtime.py tests/test_shortcut_save_session.py tests/test_shortcut_orchestrator.py tests/test_shortcut_payload.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```

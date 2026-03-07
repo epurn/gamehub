@@ -20,11 +20,12 @@ from ..common.platform_paths import (
     RETROARCH_FLATPAK_APP_ID,
     is_flatpak_command,
 )
+from ..common.shortcut_payload import encode_shortcut_payload
+from ..common.shortcut_payload import strip_wrapping_quotes as _strip_wrapping_quotes
 from ..controllers.detection import is_steam_deck_linux
 from ..emulators import resolve_emulator_executable
 from ..firmware.retroarch_cores import resolve_retroarch_paths
 from ..firmware.targets import resolve_dolphin_runtime_user_dir
-from ..shortcuts.shortcut_launch import encode_shortcut_payload
 from ..steam import (
     SteamArtworkAssignment,
     SteamContext,
@@ -267,13 +268,6 @@ def _is_known_emulator_flatpak_export(value: str) -> bool:
         AZAHAR_FLATPAK_APP_ID,
     )
     return any(is_flatpak_command(value, app_id) for app_id in app_ids)
-
-
-def _strip_wrapping_quotes(value: str) -> str:
-    stripped = value.strip()
-    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
-        return stripped[1:-1]
-    return stripped
 
 
 def _resolve_gamehub_wrapper_executable() -> str | None:

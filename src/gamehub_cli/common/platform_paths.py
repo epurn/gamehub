@@ -95,12 +95,14 @@ def parse_simple_kv_config(path: Path) -> dict[str, str]:
 def retroarch_cfg_candidates(
     explicit_cfg_path: Path | None = None,
     resolve_emulator_executable: Callable[[str], str] | None = None,
+    os_name: str | None = None,
 ) -> list[Path]:
     values: list[Path] = []
+    current_os_name = _OS_NAME if os_name is None else os_name
     if explicit_cfg_path is not None:
         values.append(explicit_cfg_path.expanduser())
 
-    if _OS_NAME == "nt":
+    if current_os_name == "nt":
         if resolve_emulator_executable is not None:
             exe_raw = resolve_emulator_executable("retroarch").strip('"')
             if exe_raw:
@@ -109,10 +111,10 @@ def retroarch_cfg_candidates(
                     values.append(exe_path.parent / "retroarch.cfg")
 
     appdata = os.environ.get("APPDATA")
-    if _OS_NAME == "nt" and appdata:
+    if current_os_name == "nt" and appdata:
         values.append(_host_path(appdata) / "RetroArch" / "retroarch.cfg")
 
-    if _OS_NAME != "nt":
+    if current_os_name != "nt":
         home = _safe_home_path()
         native_cfg = home / ".config" / "retroarch" / "retroarch.cfg"
         flatpak_cfg = linux_flatpak_retroarch_root() / "retroarch.cfg"

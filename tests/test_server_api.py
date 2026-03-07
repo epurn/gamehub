@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 import gamehub_server.index_repository as repo_module
 import gamehub_server.main as server_main
+import gamehub_server.save_api as save_api
 from gamehub_common.ids import make_save_id
 from gamehub_common.models import LibraryIndex
 from gamehub_server.index_repository import IndexRepository
@@ -267,7 +268,7 @@ def test_save_upload_route_rejects_target_exists_unindexed_conflict(api_client: 
     save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
     _write_file(save_path, b"existing-out-of-band")
 
-    monkeypatch.setattr(server_main, "_save_spec_from_bundle", lambda bundle, lookup_save_id: None)
+    monkeypatch.setattr(save_api, "_save_spec_from_bundle", lambda bundle, lookup_save_id: None)
 
     response = api_client.put(
         f"/v1/saves/{save_id}",
@@ -312,11 +313,11 @@ def test_write_save_upload_reports_read_only_volume_clearly(monkeypatch, workspa
             raise OSError(errno.EROFS, "Read-only file system")
 
         monkeypatch.setattr(path_cls, "mkdir", _readonly_mkdir)
-        upload = server_main.UploadFile(file=BytesIO(b"save"), filename="slot1.sav")
+        upload = save_api.UploadFile(file=BytesIO(b"save"), filename="slot1.sav")
 
         with pytest.raises(HTTPException) as excinfo:
             asyncio.run(
-                server_main._write_save_upload(
+                save_api._write_save_upload(
                     target,
                     upload,
                     save_id="save_test",

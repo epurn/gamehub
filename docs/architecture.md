@@ -12,23 +12,27 @@
 - `src/gamehub_cli/emulators`: emulator resolution + installation services.
 - `src/gamehub_cli/firmware`: firmware deploy, targets, and RetroArch/PCSX2 helpers.
 - `src/gamehub_cli/controllers`: controller detection/profile/apply/launch and Azahar hook runtime.
+- `src/gamehub_cli/shortcuts`: managed shortcut orchestration, launch runtime, and launch-session save sync.
 - `src/gamehub_cli/common`: shared file/path/platform helpers used across features.
 
 ## Dependency direction (target)
 - `sync` may depend on `steam`, `controllers`, `firmware`, `emulators`, and `common`.
 - `controllers` may depend on `firmware`, `emulators`, and `common`.
+- `emulators` may depend on `common` only.
 - `firmware` may depend on `emulators` and `common`.
+- `shortcuts` may depend on `sync`, `controllers`, `firmware`, `emulators`, and `common`.
 - `steam` may depend on `common`.
 - `common` must not depend on other CLI feature packages.
-- `emulators` must not depend on other CLI feature packages.
+- `sync` must not depend on `shortcuts`.
 - `gamehub_common` must not depend on `gamehub_cli` or `gamehub_server`.
 - `gamehub_server` must not depend on `gamehub_cli`.
 - `gamehub_cli` must not depend on `gamehub_server`.
 
 ## Guardrails
-- `tests/test_architecture.py` enforces an acyclic dependency graph across `sync`, `steam`, `emulators`, `firmware`, `controllers`, and `common`.
+- `tests/test_architecture.py` enforces an acyclic dependency graph across `sync`, `steam`, `emulators`, `firmware`, `controllers`, `shortcuts`, and `common`.
 - `tests/test_architecture.py` enforces explicit allowed dependency directions for each core package.
 - `tests/test_architecture.py` enforces disallowed inter-package imports across `gamehub_cli`, `gamehub_server`, and `gamehub_common`.
+- `tests/test_architecture.py` rejects repo-local `import_module("gamehub_cli...")` / `import_module("gamehub_server...")` bypasses in runtime code.
 - `.github/workflows/audit-regression-gates.yml` runs the architecture guard test on PRs/pushes whenever `src/`, `tests/`, or architecture/release development docs change.
 - `.github/workflows/targeted-regression-matrix.yml` runs the emulator/firmware, controller, Steam, and sync regression slices on both Linux and Windows.
 

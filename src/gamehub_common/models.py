@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 HEX_SHA256 = r"^[a-f0-9]{64}$"
+
+SaveKind: TypeAlias = Literal["battery", "memory_card", "per_game"]
+SaveBindingLocalRoot: TypeAlias = Literal[
+    "retroarch_saves",
+    "retroarch_saves_psx",
+    "pcsx2_memcards",
+    "dolphin_gc",
+    "dolphin_wii",
+    "azahar_sdmc",
+]
+SaveBindingStrategy: TypeAlias = Literal["exact_files", "learned_tree"]
+SaveBindingLearnRule: TypeAlias = Literal["dolphin_gc_gci_tree", "dolphin_wii_title_tree", "azahar_title_data_tree"]
 
 
 class StrictBaseModel(BaseModel):
@@ -70,7 +82,7 @@ class SaveSpec(StrictBaseModel):
     save_id: str = Field(min_length=1)
     title_id: str = Field(min_length=1)
     system: str = Field(min_length=1)
-    kind: Literal["battery", "memory_card", "per_game"]
+    kind: SaveKind
     rel_path: str = Field(min_length=1)
     sha256: str = Field(pattern=HEX_SHA256)
     size_bytes: int = Field(ge=0)
@@ -82,14 +94,12 @@ class SaveBindingSpec(StrictBaseModel):
     binding_id: str = Field(min_length=1)
     title_id: str = Field(min_length=1)
     system: str = Field(min_length=1)
-    kind: Literal["battery", "memory_card", "per_game"]
+    kind: SaveKind
     server_rel_dir: str = Field(min_length=1)
-    local_root: Literal[
-        "retroarch_saves", "retroarch_saves_psx", "pcsx2_memcards", "dolphin_gc", "dolphin_wii", "azahar_sdmc"
-    ]
-    strategy: Literal["exact_files", "learned_tree"]
+    local_root: SaveBindingLocalRoot
+    strategy: SaveBindingStrategy
     candidate_filenames: tuple[str, ...] = ()
-    learn_rule: Literal["dolphin_gc_gci_tree", "dolphin_wii_title_tree", "azahar_title_data_tree"] | None = None
+    learn_rule: SaveBindingLearnRule | None = None
     portable: bool
 
     @field_validator("candidate_filenames")
@@ -118,9 +128,9 @@ class SaveBindingSpec(StrictBaseModel):
     @classmethod
     def validate_strategy_fields(
         cls,
-        value: Literal["dolphin_gc_gci_tree", "dolphin_wii_title_tree", "azahar_title_data_tree"] | None,
+        value: SaveBindingLearnRule | None,
         info: ValidationInfo,
-    ) -> Literal["dolphin_gc_gci_tree", "dolphin_wii_title_tree", "azahar_title_data_tree"] | None:
+    ) -> SaveBindingLearnRule | None:
         strategy = info.data.get("strategy")
         candidates = info.data.get("candidate_filenames", ())
         if strategy == "exact_files":

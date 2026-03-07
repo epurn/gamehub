@@ -11,8 +11,9 @@ from typing import Callable
 
 from gamehub_common.models import FirmwareSpec, LibraryIndex, SaveBindingSpec, SaveSpec, TitleEntry
 
-from .indexer import FIRMWARE_ROOT_NAME, SAVES_ROOT_NAME, IndexBundle, build_index
+from .indexer import FIRMWARE_ROOT_NAME, IndexBundle, build_index
 from .logging_utils import get_server_logger
+from .save_index import SAVES_ROOT_NAME
 
 logger = get_server_logger(__name__)
 DEFAULT_INDEX_POLL_SECONDS = 1.0

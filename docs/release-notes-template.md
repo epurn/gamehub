@@ -19,11 +19,11 @@
 ## Compatibility / Migration Notes
 - Save sync rollout default remains disabled (`[save_sync].enabled = false`).
 - If enabling save sync for existing installs, run `gamehub sync --dry-run` first and review planned save actions/reasons before first non-dry execution.
-- Save writes now use the binding-aware `PUT /v1/saves/{save_id}` contract only; update any save-upload tooling that still sends raw request bodies.
-- In `bidirectional`, first-time local save creation now auto-uploads through server-published save bindings. `download` mode remains read-only.
-- This release renames the hidden managed shortcut wrapper from `controller-launch` to `shortcut-launch`.
-- After upgrading, run one non-dry `gamehub sync` before launching managed shortcuts so Steam shortcut commands are rewritten to `shortcut-launch`.
-- Call out any state migration behavior (for example newly added `state.json` save keys loading as empty defaults).
+- Document any API contract changes (for example save-upload request/response changes such as `PUT /v1/saves/{save_id}` behavior).
+- Document any save-sync rollout changes (for example first-time local save creation auto-upload in `bidirectional`, or any new read-only/write behavior).
+- Document any managed shortcut command migrations only if this release changes them (for example `controller-launch` -> `shortcut-launch`).
+- Document any required post-upgrade operator action (for example one non-dry `gamehub sync` to rewrite persisted Steam shortcut commands).
+- Call out any state migration behavior (for example newly added `state.json` keys loading as empty defaults).
 
 ## Known Limitations
 - Automatic save upload is launch-session scoped for GAMEHUB-managed shortcuts only; there is no background watcher service in this release.

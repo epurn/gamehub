@@ -1,5 +1,10 @@
 # Repo maintainability audit: legacy migration + fallback paths
 
+Historical note:
+- This document records one cleanup checkpoint.
+- Current behavior and ownership live in [architecture.md](architecture.md), [cli-sync.md](cli-sync.md), and [config-and-state.md](config-and-state.md).
+- Module-path references below are historical examples and may have moved as the codebase was split into smaller modules.
+
 ## Scope
 
 This audit tracks status for compatibility branches that previously carried legacy config, path, and Steam migration behavior.

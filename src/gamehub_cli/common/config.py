@@ -148,6 +148,16 @@ def _normalize_system_filter(raw: object) -> tuple[str, ...]:
     return tuple(normalized)
 
 
+def _load_save_sync_config(save_sync: dict[str, object]) -> SaveSyncConfig:
+    enabled = _normalize_optional_bool(save_sync.get("enabled"))
+    return SaveSyncConfig(
+        enabled=enabled if enabled is not None else False,
+        mode=_normalize_save_sync_mode(save_sync.get("mode")),
+        conflict_policy=_normalize_save_sync_conflict_policy(save_sync.get("conflict_policy")),
+        systems=_normalize_system_filter(save_sync.get("systems")),
+    )
+
+
 def _normalize_secret(raw: object) -> str | None:
     if not isinstance(raw, str):
         return None
@@ -344,10 +354,7 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     )
     config_controller_profiles_dir = _normalize_optional_path(controllers.get("profiles_dir"))
     env_controller_profiles_dir = _normalize_optional_path(_first_env_value("GAMEHUB_CONTROLLER_PROFILES_DIR"))
-    config_save_sync_enabled = _normalize_optional_bool(save_sync.get("enabled"))
-    config_save_sync_mode = _normalize_save_sync_mode(save_sync.get("mode"))
-    config_save_sync_conflict_policy = _normalize_save_sync_conflict_policy(save_sync.get("conflict_policy"))
-    config_save_sync_systems = _normalize_system_filter(save_sync.get("systems"))
+    save_sync_config = _load_save_sync_config(save_sync)
     server_url = _normalize_optional_text(server.get("url")) or "http://127.0.0.1:8000"
     steam_id = _normalize_optional_text(steam.get("steam_id"))
     steam_exe = _normalize_optional_path(steam.get("steam_exe"))
@@ -421,11 +428,6 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
                 else config_controller_profiles_dir
             ),
         ),
-        save_sync=SaveSyncConfig(
-            enabled=config_save_sync_enabled if config_save_sync_enabled is not None else False,
-            mode=config_save_sync_mode,
-            conflict_policy=config_save_sync_conflict_policy,
-            systems=config_save_sync_systems,
-        ),
+        save_sync=save_sync_config,
         config_path=path,
     )

@@ -2,21 +2,39 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from importlib import import_module
 from pathlib import Path, PurePosixPath
 from typing import Callable, Literal, Mapping, cast
 
 from gamehub_common.ids import make_save_binding_id, make_save_id, sha256_file
-from gamehub_common.models import SaveBindingSpec, SaveSpec
+from gamehub_common.models import SaveBindingLocalRoot, SaveBindingSpec, SaveKind, SaveSpec
 
+from ..common.paths import normalized_local_path as _normalized_local_path
+from ..common.platform_paths import (
+    AZAHAR_FLATPAK_APP_ID as _AZAHAR_FLATPAK_APP_ID,
+)
+from ..common.platform_paths import (
+    DOLPHIN_FLATPAK_APP_ID as _DOLPHIN_FLATPAK_APP_ID,
+)
+from ..common.platform_paths import (
+    PCSX2_FLATPAK_APP_ID as _PCSX2_FLATPAK_APP_ID,
+)
+from ..common.platform_paths import (
+    RETROARCH_FLATPAK_APP_ID as _RETROARCH_FLATPAK_APP_ID,
+)
+from ..common.platform_paths import (
+    is_flatpak_command as _is_flatpak_command,
+)
+from ..common.platform_paths import (
+    parse_simple_kv_config as _parse_simple_kv_config,
+)
+from ..common.platform_paths import (
+    retroarch_cfg_candidates,
+    unique_paths,
+)
 from .resolution import resolve_emulator_executable
 
 _OS_NAME = os.name
 
-_RETROARCH_FLATPAK_APP_ID = "org.libretro.RetroArch"
-_PCSX2_FLATPAK_APP_ID = "net.pcsx2.PCSX2"
-_DOLPHIN_FLATPAK_APP_ID = "org.DolphinEmu.dolphin-emu"
-_AZAHAR_FLATPAK_APP_ID = "org.azahar_emu.Azahar"
 _DOLPHIN_GC_REGIONS = {"USA", "EUR", "JAP"}
 _DOLPHIN_GC_CARDS = {"Card A", "Card B"}
 _RETROARCH_SORTED_CORE_DIR_BY_SYSTEM = {
@@ -53,7 +71,7 @@ class LocalSaveCandidate:
     binding_id: str
     title_id: str
     system: str
-    kind: str
+    kind: SaveKind
     save_id: str
     canonical_suffix: str
     path: Path
@@ -61,27 +79,8 @@ class LocalSaveCandidate:
     size_bytes: int
 
 
-def _normalized_local_path(value: str | Path) -> Path:
-    helper = import_module("gamehub_cli.common.paths")
-    normalizer = cast(Callable[[str | Path], Path], helper.normalized_local_path)
-    return normalizer(value)
-
-
 def default_emulator_for_system(system: str) -> str | None:
     return _SYSTEM_DEFAULT_EMULATOR.get(system.strip().upper())
-
-
-def _parse_simple_kv_config(path: Path) -> dict[str, str]:
-    if not path.exists():
-        return {}
-    parsed: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        raw = line.strip()
-        if not raw or raw.startswith("#") or raw.startswith(";") or "=" not in raw:
-            continue
-        key, value = raw.split("=", 1)
-        parsed[key.strip().lower()] = value.strip().strip('"').strip("'")
-    return parsed
 
 
 def _config_truthy(value: str | None) -> bool:
@@ -101,44 +100,7 @@ def _resolve_retroarch_cfg_path_value(raw: str, *, cfg_path: Path) -> Path:
 
 
 def _retroarch_cfg_candidates(resolve_executable: Callable[[str], str]) -> tuple[Path, ...]:
-    values: list[Path] = []
-
-    if _OS_NAME == "nt":
-        exe_raw = resolve_executable("retroarch").strip().strip('"')
-        if exe_raw:
-            exe_path = _normalized_local_path(exe_raw)
-            if exe_path.exists():
-                values.append(exe_path.parent / "retroarch.cfg")
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            values.append(_normalized_local_path(appdata) / "RetroArch" / "retroarch.cfg")
-    else:
-        home = _normalized_local_path(Path.home())
-        native_cfg = home / ".config" / "retroarch" / "retroarch.cfg"
-        flatpak_cfg = home / ".var" / "app" / _RETROARCH_FLATPAK_APP_ID / "config" / "retroarch" / "retroarch.cfg"
-        resolved = resolve_executable("retroarch").strip().strip('"')
-        if resolved and _is_flatpak_command(resolved, _RETROARCH_FLATPAK_APP_ID):
-            values.append(flatpak_cfg)
-            values.append(native_cfg)
-        else:
-            values.append(native_cfg)
-            values.append(flatpak_cfg)
-
-    deduped: list[Path] = []
-    seen: set[Path] = set()
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        deduped.append(value)
-    return tuple(deduped)
-
-
-def _is_flatpak_command(path_value: str | Path, app_id: str) -> bool:
-    raw = str(path_value)
-    normalized = raw.strip().strip('"').replace("\\", "/").casefold()
-    app = app_id.casefold()
-    return normalized.endswith(f"/{app}") or f"flatpak/exports/bin/{app}" in normalized
+    return tuple(retroarch_cfg_candidates(resolve_emulator_executable=resolve_executable, os_name=_OS_NAME))
 
 
 def _existing_dir(path: Path) -> Path | None:
@@ -196,12 +158,7 @@ def _retroarch_system_roots(resolve_executable: Callable[[str], str]) -> tuple[P
         values.append(home / ".var" / "app" / _RETROARCH_FLATPAK_APP_ID / "config" / "retroarch" / "system")
 
     deduped: list[Path] = []
-    seen: set[Path] = set()
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        deduped.append(value)
+    deduped.extend(unique_paths(values))
     return tuple(deduped)
 
 
@@ -229,12 +186,7 @@ def _pcsx2_ini_candidates() -> tuple[Path, ...]:
         values.append(home / ".var" / "app" / _PCSX2_FLATPAK_APP_ID / "config" / "PCSX2" / "inis" / "PCSX2.ini")
 
     deduped: list[Path] = []
-    seen: set[Path] = set()
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        deduped.append(value)
+    deduped.extend(unique_paths(values))
     return tuple(deduped)
 
 
@@ -624,7 +576,7 @@ def resolve_exact_local_save_destination(
     resolve_executable: Callable[[str], str] = resolve_emulator_executable,
 ) -> Path:
     system_name = system.strip().upper()
-    local_root: Literal["retroarch_saves", "retroarch_saves_psx", "pcsx2_memcards"] = "retroarch_saves"
+    local_root: SaveBindingLocalRoot = "retroarch_saves"
     if system_name == "PS2":
         local_root = "pcsx2_memcards"
     elif system_name == "PSX":

@@ -55,7 +55,7 @@ Save sync matching rules:
   - `binding_id`: deterministic from `make_save_binding_id(title_id, kind)`
   - `title_id`, `system`, `kind`
   - `server_rel_dir`: canonical remote namespace root used to derive `save_id`
-  - `local_root`: deterministic local save-root family
+  - `local_root`: deterministic local save-root family (`retroarch_saves`, `retroarch_saves_psx`, `pcsx2_memcards`, `dolphin_gc`, `dolphin_wii`, `azahar_sdmc`)
   - `strategy`: `exact_files` or `learned_tree`
   - `candidate_filenames`: exact allowed first-create filenames for `exact_files`
   - `learn_rule`: structural learned-tree rule for `learned_tree` (`dolphin_gc_gci_tree`, `dolphin_wii_title_tree`, `azahar_title_data_tree`)
@@ -66,6 +66,9 @@ Save sync matching rules:
 - Unknown fields are rejected (`extra=forbid`)
 - SHA-256 fields must be lowercase 64-char hex
 - ROM extensions are normalized and deduplicated
+- `server_rel_dir` must be a normalized POSIX relative path without traversal segments
+- `exact_files` bindings require non-empty `candidate_filenames` and must not declare `learn_rule`
+- `learned_tree` bindings require `learn_rule` and must not declare `candidate_filenames`
 - Nested title directories under `roms/<system>/` are rejected (layout is flat files only)
 - Duplicate title stems within a system (for example `Title.iso` + `Title.chd`) are rejected
 - If a system has indexed titles and required firmware is missing on the server, index generation fails (for example: `PS2` `scph10000.bin`)

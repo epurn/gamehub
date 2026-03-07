@@ -154,18 +154,18 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND`: overrides `[linux].emulator_install_command`.
 - `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`: overrides the default pinned Windows Azahar installer URL used by emulator auto-install.
-- `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`: enables/disables Windows Azahar `Start+Select` exit hook (`true` by default).
-- `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`: enables/disables Linux Azahar `Select+Start` exit hook wrapper (`true` by default).
-- `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Azahar exit hook (default `4`).
-- `GAMEHUB_AZAHAR_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Azahar exit hook (default `6`).
-- `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Azahar exit hook (for example `/dev/input/js0`).
+- `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`: enables/disables the Windows Azahar `shortcut-launch` `Start+Select` exit hook (`true` by default).
+- `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`: enables/disables the Linux Azahar Steam-launch wrapper emitted during sync (`true` by default).
+- `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for the Linux Azahar wrapper (default `4`).
+- `GAMEHUB_AZAHAR_EXIT_BUTTON_START`: joystick button index used as `Start` for the Linux Azahar wrapper (default `6`).
+- `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`: optional explicit joystick device path for the Linux Azahar wrapper (for example `/dev/input/js0`).
 - `GAMEHUB_AZAHAR_SDL_DIR`: optional directory containing Azahar's `SDL2.dll` for Windows GUID discovery.
 - `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`: enables/disables Linux Dolphin Flatpak `Select+Start` exit hook wrapper in `shortcut-launch` (`true` by default).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
 - `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`: force managed shortcut `AllowDesktopConfig` (`true`/`false`).
-- Linux Azahar exit hook input sources:
+- Linux Azahar wrapper input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
 - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`: overrides `[controllers].launch_autoconfig` (`true`/`false`).
@@ -200,7 +200,7 @@ Mode behavior reference:
 - First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry `gamehub sync` through `GET /v1/save-bindings`.
 - Managed `shortcut-launch` sessions also auto-create those deterministic `exact_files` saves at post-exit for wrapped titles, so first-time RetroArch battery saves and managed `PSX`/`PS2` memory cards do not need to wait for the next full sync.
   - `PSX` Swanstation exact-file detection accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.
-- First-time `per_game` saves are learned and uploaded by managed `shortcut-launch` post-exit when one deterministic tree root can be proven (`GC` GCI folders, `Wii` title trees, and `N3DS` title data trees).
+- First-time `per_game` saves are learned and uploaded by managed `shortcut-launch` post-exit when one deterministic tree root can be proven (`GC` GCI folders, `Wii` title trees, and `N3DS` title data trees), including local-only saves that already existed before the connected bidirectional launch began.
 - There is no background save watcher service in this release; unmanaged emulator launches reconcile on the next `gamehub sync` or next managed launch.
 
 Dry-run expectations for save sync:
@@ -288,7 +288,7 @@ N3DS Azahar defaults:
 - GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
-- On Linux, GAMEHUB uses a shortcut-launch exit hook by default to close Azahar when `Select+Start` is pressed.
+- On Linux Flatpak Azahar, GAMEHUB emits `python -m gamehub_cli.controllers.azahar_exit_hook` in the Steam shortcut by default so `Select+Start` can close Azahar before any optional `shortcut-launch` wrapping runs.
 - On Windows, GAMEHUB uses a `shortcut-launch` XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
 - On Linux Flatpak Dolphin launches wrapped by `shortcut-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
 
@@ -300,6 +300,7 @@ N3DS Azahar defaults:
   - `save_checksums` (`save_id` -> checksum)
   - `save_lineage` (`save_id` -> last synced local/remote checksum and timestamps)
   - `save_binding_roots` (`binding_id` -> learned `canonical_root` + client-local `materialized_root`)
+  - `offline_shortcut_titles` (`title_id` -> UTC timestamp marker for managed launches that lost metadata/server reachability)
   - `unresolved_save_conflicts` (`save_id` -> last unresolved deterministic conflict reason)
   - `tombstones`
   - `last_sync` (UTC timestamp)
@@ -310,6 +311,7 @@ Save sync state semantics:
 - `save_checksums` tracks last-known local checksum by `save_id` for deterministic planner comparisons.
 - `save_lineage` captures last-synced local/remote checksum snapshots and timestamps.
 - `save_binding_roots` persists learned deterministic tree roots for `per_game` save materialization across clients and later runs.
+- `offline_shortcut_titles` persists reconnect-recovery markers for managed launches that skipped metadata/save work while the server was unreachable.
 - `unresolved_save_conflicts` persists manual-resolution-required conflicts between runs.
 - `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` marks a managed launch-session upload miss caused by unreachable server; on reconnect in bidirectional mode, this enables deterministic timestamp comparison before fallback conflict logic.
 
@@ -317,6 +319,6 @@ Bootstrap notes:
 - Fresh installs must run `gamehub init` before the first `gamehub sync`.
 - `gamehub sync` fails fast on fresh installs when `bootstrap_version` is missing and no legacy sync evidence exists.
 - Existing installs upgrade in place:
-  - if older `state.json` files do not include `bootstrap_version` but do include prior sync evidence (`last_sync`, downloaded checksums, or firmware checksums), `gamehub sync` still runs and backfills `bootstrap_version` after a successful non-dry sync.
+  - if older `state.json` files do not include `bootstrap_version` but do include prior sync evidence (`last_sync`, downloaded checksums, firmware checksums, save checksums, or learned save roots), `gamehub sync` still runs and backfills `bootstrap_version` after a successful non-dry sync.
 
 State writes back up existing `state.json`, write via `.tmp` + fsync + atomic replace, and emit explicit sync-state log records.
