@@ -20,7 +20,7 @@ from gamehub_common.models import SaveBindingSpec, SaveSpec
 from .index_repository import IndexRepository
 from .indexer import IndexBundle
 from .logging_utils import get_server_logger
-from .save_index import SAVES_ROOT_NAME
+from .save_index import SAVES_ROOT_NAME, is_server_generated_save_backup_name
 
 logger = get_server_logger(__name__)
 DEFAULT_MAX_SAVE_UPLOAD_BYTES = 128 * 1024 * 1024
@@ -274,6 +274,8 @@ def _normalize_canonical_suffix(raw: str) -> str:
     normalized = PurePosixPath(*parts).as_posix()
     if normalized != value:
         raise HTTPException(status_code=400, detail="canonical_suffix must be normalized")
+    if is_server_generated_save_backup_name(PurePosixPath(normalized).name):
+        raise HTTPException(status_code=400, detail="canonical_suffix cannot target a GAMEHUB backup file")
     return normalized
 
 

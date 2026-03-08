@@ -199,6 +199,40 @@ def test_save_upload_route_creates_gc_learned_tree_save_from_binding(api_client:
     assert save_path.read_bytes() == b"gc-save"
 
 
+def test_save_upload_route_rejects_gamehub_backup_suffix_for_learned_tree_binding(api_client: TestClient) -> None:
+    _write_file(server_main.DATA_ROOT / "roms" / "GC" / "WindWaker.iso", b"gc-rom")
+    server_main.INDEX_REPO.load(force_refresh=True)
+
+    bindings = api_client.get("/v1/save-bindings").json()["bindings"]
+    binding = next(item for item in bindings if item["system"] == "GC" and item["kind"] == "per_game")
+    canonical_suffix = "USA/Card A/01-GZLE-gczelda.gci.20260308175422.bak"
+    save_rel = f"saves/GC/WindWaker/per_game/{canonical_suffix}"
+    save_id = make_save_id(save_rel)
+    save_path = (
+        server_main.DATA_ROOT
+        / "saves"
+        / "GC"
+        / "WindWaker"
+        / "per_game"
+        / "USA"
+        / "Card A"
+        / "01-GZLE-gczelda.gci.20260308175422.bak"
+    )
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": canonical_suffix,
+        },
+        files={"file": ("01-GZLE-gczelda.gci.20260308175422.bak", b"gc-backup", "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "canonical_suffix cannot target a GAMEHUB backup file"
+    assert not save_path.exists()
+
+
 def test_save_upload_route_rejects_expected_sha_mismatch(api_client: TestClient) -> None:
     index_response = api_client.get("/v1/index")
     save = index_response.json()["saves"][0]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable, Literal, Mapping, cast
@@ -37,6 +38,7 @@ _OS_NAME = os.name
 
 _DOLPHIN_GC_REGIONS = {"USA", "EUR", "JAP"}
 _DOLPHIN_GC_CARDS = {"Card A", "Card B"}
+_SERVER_GENERATED_SAVE_BACKUP_NAME_RE = re.compile(r"^.+\.\d{14}(?:\.\d+)?\.bak$")
 _RETROARCH_SORTED_CORE_DIR_BY_SYSTEM = {
     "GB": "Gambatte",
     "GBA": "mGBA",
@@ -538,6 +540,8 @@ def snapshot_binding_tree(
     for path in sorted(root.rglob("*"), key=lambda item: item.as_posix().casefold()):
         if not path.is_file():
             continue
+        if _is_server_generated_save_backup_name(path.name):
+            continue
         rel_path = path.relative_to(root).as_posix()
         if not _matches_learned_tree_path(binding, rel_path):
             continue
@@ -679,6 +683,10 @@ def _is_hex_segment(value: str, length: int) -> bool:
     if len(value) != length:
         return False
     return all(char.isdigit() or char.casefold() in "abcdef" for char in value)
+
+
+def _is_server_generated_save_backup_name(filename: str) -> bool:
+    return bool(_SERVER_GENERATED_SAVE_BACKUP_NAME_RE.match(filename))
 
 
 def _single_n3ds_profile_prefix(root: Path) -> tuple[str, ...] | None:

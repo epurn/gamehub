@@ -285,6 +285,130 @@ def test_shortcut_postexit_learned_tree_uploads_existing_local_save_without_sess
         assert "savebind_gc" not in state.unresolved_save_conflicts
 
 
+def test_shortcut_postexit_learned_tree_ignores_local_gamehub_backup_files(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-launch-save-") as temp_root:
+        local_root = temp_root / "Nintendo 3DS" / ("0" * 32) / ("1" * 32) / "title" / "00040000" / "0011c500" / "data"
+    metadata_path = local_root / "00000001.metadata"
+    main_path = local_root / "00000001" / "main"
+    backup_path = local_root / "00000001" / "main.20260307022223.bak"
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    main_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_bytes(b"metadata")
+    main_path.write_bytes(b"main")
+    backup_path.write_bytes(b"backup")
+    expected_save_ids = {
+        make_save_id("saves/N3DS/Pokemon Alpha Sapphire/per_game/title/00040000/0011c500/data/00000001/main"),
+        make_save_id("saves/N3DS/Pokemon Alpha Sapphire/per_game/title/00040000/0011c500/data/00000001.metadata"),
+    }
+    binding = SaveBindingSpec(
+        binding_id="savebind_n3ds",
+        title_id="title_n3ds_alpha_sapphire",
+        system="N3DS",
+        kind="per_game",
+        server_rel_dir="saves/N3DS/Pokemon Alpha Sapphire/per_game",
+        local_root="azahar_sdmc",
+        strategy="learned_tree",
+        candidate_filenames=(),
+        learn_rule="azahar_title_data_tree",
+        portable=False,
+    )
+    payload = launch_module.ShortcutLaunchPayload(
+        version=1,
+        emulator="azahar",
+        target_exe="azahar",
+        target_args=("--fullscreen", "Pokemon Alpha Sapphire.cci"),
+        title_id="title_n3ds_alpha_sapphire",
+        system="N3DS",
+        rom_rel_path="roms/N3DS/Pokemon Alpha Sapphire.cci",
+    )
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="prefer_server"),
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+    created_ids: list[str] = []
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.save_session._shortcut_server_reachable", lambda _config: True)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session._load_shortcut_index",
+        lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=()),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session._load_shortcut_save_bindings_or_warn",
+        lambda _config, verbose=False: SimpleNamespace(bindings=(binding,)),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session.resolve_binding_local_root",
+        lambda _binding, **_kwargs: temp_root,
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.emulators.save_resolution.resolve_binding_local_root",
+        lambda _binding, **_kwargs: temp_root,
+    )
+
+    def _fake_upload_new(**kwargs):
+        created_ids.append(kwargs["save_id"])
+        source = kwargs["source"]
+        return SaveSpec(
+            save_id=kwargs["save_id"],
+            title_id=binding.title_id,
+            system=binding.system,
+            kind=binding.kind,
+            rel_path=f"{binding.server_rel_dir}/{kwargs['canonical_suffix']}",
+            sha256=_sha256_bytes(source.read_bytes()),
+            size_bytes=source.stat().st_size,
+            updated_at=datetime(2026, 3, 8, 18, 0, tzinfo=UTC),
+            portable=False,
+        )
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.save_session._upload_new_save_from_path", _fake_upload_new)
+
+    context, changed = launch_module._run_shortcut_prelaunch_save_sync(
+        payload=payload,
+        config=config,
+        state=state,
+        resolve_executable=lambda _name: "azahar",
+        verbose=False,
+        audit=False,
+    )
+
+    assert changed is False
+    assert binding.binding_id in context.tree_snapshots
+    assert set(context.tree_snapshots[binding.binding_id].before) == {
+        "Nintendo 3DS/00000000000000000000000000000000/11111111111111111111111111111111/title/00040000/0011c500/data/00000001/main",
+        "Nintendo 3DS/00000000000000000000000000000000/11111111111111111111111111111111/title/00040000/0011c500/data/00000001.metadata",
+    }
+
+    changed = launch_module._run_shortcut_postexit_save_sync(
+        payload=payload,
+        config=config,
+        state=state,
+        context=context,
+        resolve_executable=lambda _name: "azahar",
+        verbose=False,
+        audit=False,
+    )
+
+    assert changed is True
+    assert set(created_ids) == expected_save_ids
+    assert (
+        make_save_id(
+            "saves/N3DS/Pokemon Alpha Sapphire/per_game/title/00040000/0011c500/data/00000001/main.20260307022223.bak"
+        )
+        not in created_ids
+    )
+
+
 def test_shortcut_prelaunch_save_sync_skips_when_server_unreachable(monkeypatch) -> None:
     config = GamehubConfig(
         server_url="http://localhost:8000",

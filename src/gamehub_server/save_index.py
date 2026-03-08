@@ -28,13 +28,17 @@ _BATTERY_SAVE_SUFFIXES: dict[str, tuple[str, ...]] = {
     "SNES": (".srm",),
 }
 
-_SAVE_BACKUP_NAME_RE = re.compile(r"^.+\.\d{14}(?:\.\d+)?\.bak$")
+_SERVER_GENERATED_SAVE_BACKUP_NAME_RE = re.compile(r"^.+\.\d{14}(?:\.\d+)?\.bak$")
 
 
 @dataclass(frozen=True)
 class IndexedSaveBinding:
     title_id: str
     system: str
+
+
+def is_server_generated_save_backup_name(filename: str) -> bool:
+    return bool(_SERVER_GENERATED_SAVE_BACKUP_NAME_RE.match(filename))
 
 
 def build_save_bindings(titles: tuple[TitleEntry, ...]) -> tuple[SaveBindingSpec, ...]:
@@ -264,7 +268,7 @@ def _iter_save_files(kind_dir: Path, save_kind: SaveKind) -> list[Path]:
             files.extend(_iter_save_files(child, save_kind))
             continue
         if child.is_file():
-            if _SAVE_BACKUP_NAME_RE.match(child.name):
+            if is_server_generated_save_backup_name(child.name):
                 continue
             files.append(child)
     return files
