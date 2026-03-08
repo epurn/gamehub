@@ -57,6 +57,30 @@ def linux_flatpak_azahar_config_root() -> Path:
     return _safe_home_path() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu"
 
 
+def macos_application_support_root() -> Path:
+    return _safe_home_path() / "Library" / "Application Support"
+
+
+def macos_user_applications_dir() -> Path:
+    return _safe_home_path() / "Applications"
+
+
+def macos_system_applications_dir() -> Path:
+    return _host_path("/Applications")
+
+
+def macos_retroarch_root() -> Path:
+    return macos_application_support_root() / "RetroArch"
+
+
+def macos_pcsx2_root() -> Path:
+    return macos_application_support_root() / "PCSX2"
+
+
+def macos_dolphin_root() -> Path:
+    return macos_application_support_root() / "Dolphin"
+
+
 def is_flatpak_command(path_value: str | Path, app_id: str) -> bool:
     if isinstance(path_value, Path):
         raw = path_value.as_posix()

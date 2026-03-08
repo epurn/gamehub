@@ -18,6 +18,8 @@ This page is the short validation matrix only.
 ## Recommended Config Templates
 - Windows:
   - [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
+- macOS:
+  - [docs/templates/config.macos.template.toml](templates/config.macos.template.toml)
 - Bazzite:
   - [docs/templates/config.bazzite.template.toml](templates/config.bazzite.template.toml)
 - SteamOS (Deck):
@@ -46,8 +48,11 @@ Legacy/general templates are still available:
 
 ### macOS (v1 target, validation in progress)
 - macOS support is in scope for v1.
-- Validated operator setup steps and a checked-in macOS config template will land with the macOS implementation work.
-- Until then, do not treat macOS as an excluded platform in plans or support notes.
+- Start from:
+  - [docs/templates/config.macos.template.toml](templates/config.macos.template.toml)
+- Current frozen host contract targets the latest stable Apple Silicon macOS release with native Steam.
+- Prefer `~/Applications` for admin-free Steam/emulator app installs; `/Applications` remains an expected native install location.
+- Rosetta and Intel Mac fallback are not part of the supported path.
 
 ### SteamOS (Deck) (verified)
 - Start from:

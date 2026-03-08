@@ -45,3 +45,24 @@ def test_parse_shortcut_payload_strips_wrapping_quotes_from_args() -> None:
 
     assert payload.target_exe == '"C:/Emu/Dolphin.exe"'
     assert payload.target_args == ("-b", "C:/Games/Path With Spaces/game.iso")
+
+
+def test_parse_shortcut_payload_preserves_macos_open_args() -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "pcsx2",
+            "target_exe": "/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt",
+            "target_args": ["-fullscreen", "/Users/test/Games/Gran Turismo 4.iso"],
+            "macos_open_app": "/Applications/PCSX2.app",
+            "macos_open_args": ["-fullscreen", "/Users/test/Games/Gran Turismo 4.iso"],
+            "start_dir": "/Applications/PCSX2.app/Contents/MacOS",
+        }
+    )
+
+    payload = parse_shortcut_payload(token)
+
+    assert payload.target_exe == "/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt"
+    assert payload.target_args == ("-fullscreen", "/Users/test/Games/Gran Turismo 4.iso")
+    assert payload.macos_open_app == "/Applications/PCSX2.app"
+    assert payload.macos_open_args == ("-fullscreen", "/Users/test/Games/Gran Turismo 4.iso")

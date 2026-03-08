@@ -50,3 +50,4 @@ DEFAULT_USER_COLLECTIONS_PATH = [
     USER_COLLECTIONS_KEY,
 ]
 LINUX_STEAM_PROCESS_NAMES = ("steam", "steam.sh", "steamwebhelper")
+MACOS_STEAM_PROCESS_NAMES = ("Steam", "steam_osx", "steamwebhelper")

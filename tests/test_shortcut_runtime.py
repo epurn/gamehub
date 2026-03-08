@@ -8,12 +8,23 @@ from gamehub_cli.controllers.detection import XboxController
 from tests.shortcut_test_helpers import default_shortcut_config
 
 
-def _payload(*, emulator: str, target_exe: str, target_args: tuple[str, ...]) -> ShortcutLaunchPayload:
+def _payload(
+    *,
+    emulator: str,
+    target_exe: str,
+    target_args: tuple[str, ...],
+    start_dir: str = "",
+    macos_open_app: str | None = None,
+    macos_open_args: tuple[str, ...] = (),
+) -> ShortcutLaunchPayload:
     return ShortcutLaunchPayload(
         version=1,
         emulator=emulator,
         target_exe=target_exe,
         target_args=target_args,
+        start_dir=start_dir,
+        macos_open_app=macos_open_app,
+        macos_open_args=macos_open_args,
     )
 
 
@@ -179,6 +190,78 @@ def test_run_target_with_optional_exit_hook_can_disable_dolphin_linux_exit_hook(
     )
 
     assert exit_code == 4
+
+
+def test_run_target_macos_uses_open_wait_args(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _Process:
+        def wait(self) -> int:
+            captured["wait_called"] = True
+            return 0
+
+    def _fake_popen(command, cwd=None, stdin=None):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["stdin"] = stdin
+        return _Process()
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", _fake_popen)
+
+    exit_code = runtime_module._run_target(
+        _payload(
+            emulator="pcsx2",
+            target_exe="/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt",
+            target_args=("-fullscreen", "/Users/test/Games/Gran Turismo 4.iso"),
+            macos_open_app="/Applications/PCSX2.app",
+            macos_open_args=("-fullscreen", "/Users/test/Games/Gran Turismo 4.iso"),
+        )
+    )
+
+    assert exit_code == 0
+    assert captured["command"] == [
+        "open",
+        "-W",
+        "-a",
+        "/Applications/PCSX2.app",
+        "--args",
+        "-fullscreen",
+        "/Users/test/Games/Gran Turismo 4.iso",
+    ]
+    assert captured["cwd"] is None
+    assert captured["stdin"] is runtime_module.subprocess.DEVNULL
+    assert captured["wait_called"] is True
+
+
+def test_run_target_macos_waits_for_session_exit_before_return(monkeypatch) -> None:
+    call_order: list[str] = []
+
+    class _Process:
+        def wait(self) -> int:
+            call_order.append("wait")
+            return 37
+
+    def _fake_popen(command, cwd=None, stdin=None):
+        call_order.append("popen")
+        return _Process()
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", _fake_popen)
+
+    exit_code = runtime_module._run_target(
+        _payload(
+            emulator="dolphin",
+            target_exe="/Applications/Dolphin.app/Contents/MacOS/Dolphin",
+            target_args=("-b", "-e", "/Users/test/Games/Super Mario Galaxy.rvz"),
+            macos_open_app="/Applications/Dolphin.app",
+            macos_open_args=("-b", "-e", "/Users/test/Games/Super Mario Galaxy.rvz"),
+        )
+    )
+    call_order.append("returned")
+
+    assert exit_code == 37
+    assert call_order == ["popen", "wait", "returned"]
 
 
 def test_apply_shortcut_controller_configuration_deck_zero_detect_defaults_to_xbox_1p(monkeypatch, capsys) -> None:
