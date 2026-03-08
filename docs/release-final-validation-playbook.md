@@ -59,7 +59,7 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 ```
 7. Build Windows executable:
 ```powershell
-pyinstaller --noconfirm --clean packaging/windows/gamehub.spec
+.\venv\Scripts\pyinstaller.exe --noconfirm --clean packaging/windows/gamehub.spec
 ```
 8. EXE smoke tests:
 ```powershell
@@ -271,7 +271,7 @@ git push origin <branch>
 - `Audit Regression Gates`
 - `Targeted Regression Matrix`
 4. Merge PR.
-5. Ensure version in `pyproject.toml` is final; commit if needed and push `main`.
+5. Ensure version in `src/gamehub_common/version.py` is final; commit if needed and push `main`.
 6. Create and push release tag:
 ```powershell
 git checkout main

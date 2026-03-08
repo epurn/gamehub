@@ -63,7 +63,7 @@ Start from a template:
 Linux install from latest release wheel:
 ```bash
 LATEST_TAG="$(python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://api.github.com/repos/epurn/gamehub/releases/latest'))['tag_name'])")"
-LATEST_VER="${LATEST_TAG}"
+LATEST_VER="${LATEST_TAG#v}"
 python3 -m pip install --user --upgrade "https://github.com/epurn/gamehub/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
 ```
 

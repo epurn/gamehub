@@ -35,7 +35,7 @@ Detailed end-to-end validation and publishing steps are in:
 ```powershell
 .\venv\Scripts\python.exe scripts/audit_repo_readiness.py
 ```
-5. Bump version in `pyproject.toml`.
+5. Bump version in `src/gamehub_common/version.py`.
 6. Update release notes/changelog.
 7. Create and push tag:
 ```powershell
