@@ -8,6 +8,7 @@ Config resolution order:
 
 Sample templates:
 - Windows (verified): [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
+- macOS (Apple Silicon contract): [docs/templates/config.macos.template.toml](templates/config.macos.template.toml)
 - Bazzite (tested): [docs/templates/config.bazzite.template.toml](templates/config.bazzite.template.toml)
 - Steam Deck (verified): [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 - General Linux: [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
@@ -62,6 +63,23 @@ retroarch_cores_base_url = "https://buildbot.libretro.com/nightly/linux/x86_64/l
 pcsx2_ini_path = "~/.config/PCSX2/inis/PCSX2.ini"
 pcsx2_bios_dir = "~/.config/PCSX2/bios"
 dolphin_user_path = "~/.local/share/dolphin-emu"
+
+[macos]
+# Optional macOS emulator auto-install strategy:
+# auto | official | command | none
+emulator_install_backend = "auto"
+# Used when emulator_install_backend = "command"
+emulator_install_command = "brew install --cask {package}"
+
+# Optional macOS path hints (all optional)
+retroarch_cfg_path = "~/.config/retroarch/retroarch.cfg"
+retroarch_system_dir = "~/Library/Application Support/RetroArch/system"
+retroarch_cores_dir = "~/Library/Application Support/RetroArch/cores"
+retroarch_info_dir = "~/Library/Application Support/RetroArch/info"
+retroarch_cores_base_url = "https://example.invalid/apple-silicon/"
+pcsx2_ini_path = "~/Library/Application Support/PCSX2/inis/PCSX2.ini"
+pcsx2_bios_dir = "~/Library/Application Support/PCSX2/bios"
+dolphin_user_path = "~/Library/Application Support/Dolphin"
 
 [controllers]
 # Launch-time controller profile application for non-RetroArch emulators.
@@ -136,7 +154,14 @@ On non-dry sync, firmware system subdirectories are auto-created under `<gamehub
 
 Environment overrides are resolved centrally in `load_config` (precedence: CLI flag > env > config file > default).
 
-Firmware deployment and Linux runtime env overrides:
+Host install policy env overrides:
+- `GAMEHUB_LINUX_EMULATOR_INSTALL_BACKEND`: overrides `[linux].emulator_install_backend`.
+- `GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND`: overrides `[linux].emulator_install_command`.
+- `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
+- `GAMEHUB_MACOS_EMULATOR_INSTALL_BACKEND`: overrides `[macos].emulator_install_backend`.
+- `GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND`: overrides `[macos].emulator_install_command`.
+
+Shared emulator path/runtime env overrides (Linux and macOS):
 - `RETROARCH_SYSTEM_DIR` or `GAMEHUB_RETROARCH_SYSTEM_DIR`: explicit RetroArch `system` directory target.
 - `PCSX2_BIOS_DIR` or `GAMEHUB_PCSX2_BIOS_DIR`: explicit BIOS directory written into PCSX2 config (`PCSX2.ini`).
 - `DOLPHIN_EMU_USERPATH` or `GAMEHUB_DOLPHIN_EMU_USERPATH`: explicit Dolphin runtime user directory target.
@@ -150,9 +175,7 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_RETROARCH_CORES_BASE_URL`: optional base URL override for RetroArch core downloads.
 - `GAMEHUB_RETROARCH_CORES_DIR`: explicit RetroArch cores directory for core auto-provisioning.
 - `GAMEHUB_RETROARCH_INFO_DIR`: explicit RetroArch info directory for `.info` metadata auto-provisioning.
-- `GAMEHUB_LINUX_EMULATOR_INSTALL_BACKEND`: overrides `[linux].emulator_install_backend`.
-- `GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND`: overrides `[linux].emulator_install_command`.
-- `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
+- These emulator path overrides remain shared across Linux and macOS; there are no macOS-specific duplicates for them.
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`: overrides the default pinned Windows Azahar installer URL used by emulator auto-install.
 - `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`: enables/disables the Windows Azahar `shortcut-launch` `Start+Select` exit hook (`true` by default).
 - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`: enables/disables the Linux Azahar Steam-launch wrapper emitted during sync (`true` by default).

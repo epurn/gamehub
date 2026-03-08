@@ -3,10 +3,34 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import time
-from pathlib import Path
+from pathlib import Path, PosixPath, WindowsPath
 
-from .types import LINUX_STEAM_PROCESS_NAMES, STEAM_ID64_BASE, SteamContext
+from .types import LINUX_STEAM_PROCESS_NAMES, MACOS_STEAM_PROCESS_NAMES, STEAM_ID64_BASE, SteamContext
+
+try:
+    _HOST_PATH_CLS = type(Path.cwd())
+except Exception:
+    _HOST_PATH_CLS = WindowsPath if os.name == "nt" else PosixPath
+
+
+def _host_path(raw: str | os.PathLike[str]) -> Path:
+    normalized = str(raw).replace("\\", "/")
+    return _HOST_PATH_CLS(normalized)
+
+
+def _safe_home_path() -> Path:
+    try:
+        return _host_path(str(Path.home()))
+    except Exception:
+        pass
+    for raw in (os.path.expanduser("~"), os.environ.get("USERPROFILE", ""), os.environ.get("HOME", "")):
+        value = str(raw).strip()
+        if not value or value == "~":
+            continue
+        return _host_path(value)
+    return _host_path(os.getcwd())
 
 
 def _run_process_best_effort(command: list[str], timeout_seconds: int = 10) -> None:
@@ -21,16 +45,57 @@ def _run_process_best_effort(command: list[str], timeout_seconds: int = 10) -> N
         return
 
 
+def _is_macos() -> bool:
+    return os.name == "posix" and sys.platform == "darwin"
+
+
+def _unique_paths(values: list[Path]) -> list[Path]:
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for value in values:
+        candidate = value.expanduser()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        unique.append(candidate)
+    return unique
+
+
+def _normalize_macos_steam_app_path(path: Path | None) -> Path | None:
+    if path is None:
+        return None
+    expanded = _host_path(path).expanduser()
+    if expanded.name.casefold() == "steam.app":
+        return expanded
+    for parent in expanded.parents:
+        if parent.name.casefold() == "steam.app":
+            return parent
+    return None
+
+
+def _candidate_macos_steam_apps(explicit: Path | None = None) -> list[Path]:
+    candidates: list[Path] = []
+    normalized_explicit = _normalize_macos_steam_app_path(explicit)
+    if normalized_explicit is not None:
+        candidates.append(normalized_explicit)
+    home = _safe_home_path()
+    candidates.append(home / "Applications" / "Steam.app")
+    candidates.append(_host_path("/Applications/Steam.app"))
+    return _unique_paths(candidates)
+
+
 def _candidate_userdata_dirs() -> list[Path]:
     candidates: list[Path] = []
     if os.name == "nt":
         pf86 = os.environ.get("PROGRAMFILES(X86)")
         pf = os.environ.get("PROGRAMFILES")
         if pf86:
-            candidates.append(Path(pf86) / "Steam" / "userdata")
+            candidates.append(_host_path(pf86) / "Steam" / "userdata")
         if pf:
-            candidates.append(Path(pf) / "Steam" / "userdata")
-    home = Path.home()
+            candidates.append(_host_path(pf) / "Steam" / "userdata")
+    home = _safe_home_path()
+    if _is_macos():
+        candidates.append(home / "Library" / "Application Support" / "Steam" / "userdata")
     candidates.append(home / ".steam" / "steam" / "userdata")
     candidates.append(home / ".steam" / "root" / "userdata")
     candidates.append(home / ".local" / "share" / "Steam" / "userdata")
@@ -119,14 +184,18 @@ def discover_steam_id(userdata_dir: Path, preferred_steam_id: str | None = None)
 
 
 def build_context(userdata_dir: Path, steam_id: str, steam_exe: Path | None) -> SteamContext:
-    config_dir = userdata_dir / steam_id / "config"
+    normalized_userdata_dir = _host_path(userdata_dir)
+    config_dir = normalized_userdata_dir / steam_id / "config"
     cloudstorage_path = config_dir / "cloudstorage" / "cloud-storage-namespace-1.json"
+    normalized_steam_exe = _host_path(steam_exe).expanduser() if steam_exe is not None else None
+    if _is_macos():
+        normalized_steam_exe = _normalize_macos_steam_app_path(steam_exe) or normalized_steam_exe
     return SteamContext(
-        userdata_dir=userdata_dir,
+        userdata_dir=normalized_userdata_dir,
         steam_id=steam_id,
         shortcuts_path=config_dir / "shortcuts.vdf",
         localconfig_path=config_dir / "localconfig.vdf",
-        steam_exe=steam_exe,
+        steam_exe=normalized_steam_exe,
         cloudstorage_path=cloudstorage_path,
     )
 
@@ -140,7 +209,8 @@ def is_steam_running() -> bool:
             text=True,
         )
         return "steam.exe" in completed.stdout.lower()
-    for process_name in LINUX_STEAM_PROCESS_NAMES:
+    process_names = MACOS_STEAM_PROCESS_NAMES if _is_macos() else LINUX_STEAM_PROCESS_NAMES
+    for process_name in process_names:
         completed = subprocess.run(["pgrep", "-x", process_name], check=False, capture_output=True, text=True)
         if completed.returncode == 0:
             return True
@@ -153,9 +223,13 @@ def close_steam_best_effort() -> None:
         _run_process_best_effort(["taskkill", "/IM", "steam.exe", "/T"])
         _run_process_best_effort(["taskkill", "/F", "/IM", "steam.exe", "/T"])
         return
-    for process_name in LINUX_STEAM_PROCESS_NAMES:
+    process_names = LINUX_STEAM_PROCESS_NAMES
+    if _is_macos():
+        _run_process_best_effort(["osascript", "-e", 'tell application id "com.valvesoftware.steam" to quit'])
+        process_names = MACOS_STEAM_PROCESS_NAMES
+    for process_name in process_names:
         _run_process_best_effort(["pkill", "-x", process_name])
-    for process_name in LINUX_STEAM_PROCESS_NAMES:
+    for process_name in process_names:
         _run_process_best_effort(["pkill", "-9", "-x", process_name])
 
 
@@ -204,6 +278,17 @@ def _wait_for_steam_start(timeout_seconds: float = 12.0) -> bool:
 
 
 def reopen_steam(context: SteamContext) -> bool:
+    if _is_macos():
+        for steam_app in _candidate_macos_steam_apps(context.steam_exe):
+            if not steam_app.exists():
+                continue
+            try:
+                _spawn_detached(["open", "-a", str(steam_app)])
+            except OSError:
+                continue
+            if _wait_for_steam_start():
+                return True
+        return False
     if context.steam_exe and context.steam_exe.exists():
         try:
             _spawn_detached([str(context.steam_exe)])

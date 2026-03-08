@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from gamehub_common.models import LibraryIndex
 
@@ -327,18 +327,34 @@ def _wrapper_executable_and_args() -> tuple[str, list[str]]:
     return exe_path, ["-m", "gamehub_cli.main", "shortcut-launch"]
 
 
-def _split_launch_options(value: str) -> list[str]:
+def _split_launch_options(value: str, *, windows_style: bool | None = None) -> list[str]:
     if not value.strip():
         return []
-    return shlex.split(value, posix=not sys.platform.startswith("win"))
+    if windows_style is None:
+        windows_style = sys.platform.startswith("win")
+    return shlex.split(value, posix=not windows_style)
 
 
-def _join_launch_options(args: list[str]) -> str:
+def _join_launch_options(args: list[str], *, windows_style: bool | None = None) -> str:
     if not args:
         return ""
-    if sys.platform.startswith("win"):
+    if windows_style is None:
+        windows_style = sys.platform.startswith("win")
+    if windows_style:
         return subprocess.list2cmdline(args)
     return shlex.join(args)
+
+
+def _macos_app_bundle_for_executable(executable: str) -> str | None:
+    token = _strip_wrapping_quotes(executable).replace("\\", "/")
+    if not token:
+        return None
+    path = PurePosixPath(token)
+    candidates = (path, *path.parents)
+    for candidate in candidates:
+        if candidate.name.casefold().endswith(".app"):
+            return candidate.as_posix()
+    return None
 
 
 def _wrap_shortcut_for_managed_launch(
@@ -348,7 +364,8 @@ def _wrap_shortcut_for_managed_launch(
     config: GamehubConfig,
     rom_rel_path: str,
 ) -> SteamShortcutSpec:
-    target_args = _split_launch_options(spec.launch_options)
+    windows_style = _is_windows_style_runtime_path(spec.exe)
+    target_args = _split_launch_options(spec.launch_options, windows_style=windows_style)
     payload: dict[str, object] = {
         "v": 1,
         "emulator": emulator_name.casefold(),
@@ -359,6 +376,11 @@ def _wrap_shortcut_for_managed_launch(
         "target_args": target_args,
         "start_dir": spec.start_dir,
     }
+    if sys.platform == "darwin":
+        app_bundle = _macos_app_bundle_for_executable(spec.exe)
+        if app_bundle:
+            payload["macos_open_app"] = app_bundle
+            payload["macos_open_args"] = target_args
     if config.config_path is not None:
         payload["config_path"] = str(config.config_path)
     payload_token = encode_shortcut_payload(payload)
@@ -374,7 +396,7 @@ def _wrap_shortcut_for_managed_launch(
         system=spec.system,
         title_name=spec.title_name,
         exe=_maybe_quote_executable(wrapper_exe),
-        launch_options=_join_launch_options(launch_args),
+        launch_options=_join_launch_options(launch_args, windows_style=_is_windows_style_runtime_path(wrapper_exe)),
         start_dir=start_dir,
         icon_path=spec.icon_path,
         allow_desktop_config=spec.allow_desktop_config,
@@ -595,13 +617,20 @@ def build_shortcut_specs(
         if "dolphin" in title.emulator.casefold():
             launch_template = _normalize_dolphin_launch_template(launch_template, emulator_exe, config)
         launch_line = launch_template.format(emulator=emulator_exe, rom=str(rom_path))
-        parts = shlex.split(launch_line, posix=False)
+        windows_style = _is_windows_style_runtime_path(emulator_exe)
+        parts = _split_launch_options(launch_line, windows_style=windows_style)
         if parts:
             exe = parts[0]
-            launch_options = " ".join(parts[1:])
+            if windows_style:
+                launch_options = " ".join(parts[1:])
+            else:
+                launch_options = _join_launch_options(parts[1:], windows_style=False)
         else:
             exe = emulator_exe
-            launch_options = f'"{rom_path}"'
+            if windows_style:
+                launch_options = f'"{rom_path}"'
+            else:
+                launch_options = _join_launch_options([str(rom_path)], windows_style=False)
         start_dir = ""
         exe_path = Path(exe.strip('"'))
         if exe_path.parent != Path("."):
