@@ -146,7 +146,6 @@ Command/orchestration layers decide what to print.
 New platform-specific logic must be isolated and fail-open.
 
 - Development regularly moves between macOS and Windows.
-- macOS and Windows are both in-scope host platforms for v1 work; do not document macOS as post-v1 or out of scope unless the task explicitly changes product scope.
 - Do not assume one default host OS for commands or paths.
 - Agent behavior must remain cross-platform unless a task explicitly scopes to one OS.
 - gate platform branches behind explicit detection

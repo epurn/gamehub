@@ -18,7 +18,7 @@
 - Save-state sync in the initial release phase.
 
 ## Constraints
-- Windows and macOS local development support are required.
+- Windows-first local development support is required.
 - Keep diffs minimal and conflict-resistant for parallel work.
 - No dependency/lockfile/packaging changes unless explicitly required.
 - No repo-wide formatting.
@@ -101,3 +101,4 @@
 - Documentation updates remain implementation-accurate.
 - Save sync behavior stays deterministic and idempotent in both dry-run and non-dry-run flows.
 - Conflict handling and rollout defaults remain explicitly documented and reproducible.
+

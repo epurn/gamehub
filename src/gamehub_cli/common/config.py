@@ -24,20 +24,6 @@ class LinuxConfig:
 
 
 @dataclass(frozen=True)
-class MacOSConfig:
-    emulator_install_backend: str | None = None
-    emulator_install_command: str | None = None
-    retroarch_cfg_path: Path | None = None
-    retroarch_system_dir: Path | None = None
-    retroarch_cores_dir: Path | None = None
-    retroarch_info_dir: Path | None = None
-    retroarch_cores_base_url: str | None = None
-    pcsx2_ini_path: Path | None = None
-    pcsx2_bios_dir: Path | None = None
-    dolphin_user_path: Path | None = None
-
-
-@dataclass(frozen=True)
 class ControllersConfig:
     launch_autoconfig: bool = True
     profiles_dir: Path | None = None
@@ -69,7 +55,6 @@ class GamehubConfig:
     index_retry_backoff_seconds: float = 1.5
     max_parallel_downloads: int = 4
     linux: LinuxConfig = field(default_factory=LinuxConfig)
-    macos: MacOSConfig = field(default_factory=MacOSConfig)
     controllers: ControllersConfig = field(default_factory=ControllersConfig)
     save_sync: SaveSyncConfig = field(default_factory=SaveSyncConfig)
     config_path: Path | None = None
@@ -306,7 +291,6 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     steam = _as_section(data.get("steam"))
     sgdb = _as_section(data.get("sgdb"))
     linux = _as_section(data.get("linux"))
-    macos = _as_section(data.get("macos"))
     controllers = _as_section(data.get("controllers"))
     save_sync = _as_section(data.get("save_sync"))
     _reject_removed_path_keys(paths)
@@ -337,14 +321,6 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     env_emulator_install_command = _normalize_optional_text(_first_env_value("GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND"))
     config_flatpak_remote = _normalize_optional_text(linux.get("flatpak_remote"))
     env_flatpak_remote = _normalize_optional_text(_first_env_value("GAMEHUB_LINUX_FLATPAK_REMOTE"))
-    config_macos_emulator_install_backend = _normalize_optional_text(macos.get("emulator_install_backend"))
-    env_macos_emulator_install_backend = _normalize_optional_text(
-        _first_env_value("GAMEHUB_MACOS_EMULATOR_INSTALL_BACKEND")
-    )
-    config_macos_emulator_install_command = _normalize_optional_text(macos.get("emulator_install_command"))
-    env_macos_emulator_install_command = _normalize_optional_text(
-        _first_env_value("GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND")
-    )
 
     config_roms_dir = _normalize_optional_path(paths.get("roms_dir"))
     env_roms_dir = _normalize_optional_path(_first_env_value("GAMEHUB_ROMS_DIR"))
@@ -371,14 +347,6 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     env_dolphin_user_path = _normalize_optional_path(
         _first_env_value("DOLPHIN_EMU_USERPATH", "GAMEHUB_DOLPHIN_EMU_USERPATH")
     )
-    config_macos_retroarch_cfg_path = _normalize_optional_path(macos.get("retroarch_cfg_path"))
-    config_macos_retroarch_system_dir = _normalize_optional_path(macos.get("retroarch_system_dir"))
-    config_macos_retroarch_cores_dir = _normalize_optional_path(macos.get("retroarch_cores_dir"))
-    config_macos_retroarch_info_dir = _normalize_optional_path(macos.get("retroarch_info_dir"))
-    config_macos_retroarch_cores_base_url = _normalize_optional_text(macos.get("retroarch_cores_base_url"))
-    config_macos_pcsx2_ini_path = _normalize_optional_path(macos.get("pcsx2_ini_path"))
-    config_macos_pcsx2_bios_dir = _normalize_optional_path(macos.get("pcsx2_bios_dir"))
-    config_macos_dolphin_user_path = _normalize_optional_path(macos.get("dolphin_user_path"))
 
     config_controller_launch_autoconfig = _normalize_optional_bool(controllers.get("launch_autoconfig"))
     env_controller_launch_autoconfig = _normalize_optional_bool(
@@ -447,40 +415,6 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
             pcsx2_ini_path=env_pcsx2_ini_path if env_pcsx2_ini_path is not None else config_pcsx2_ini_path,
             pcsx2_bios_dir=env_pcsx2_bios_dir if env_pcsx2_bios_dir is not None else config_pcsx2_bios_dir,
             dolphin_user_path=env_dolphin_user_path if env_dolphin_user_path is not None else config_dolphin_user_path,
-        ),
-        macos=MacOSConfig(
-            emulator_install_backend=(
-                env_macos_emulator_install_backend
-                if env_macos_emulator_install_backend is not None
-                else config_macos_emulator_install_backend
-            ),
-            emulator_install_command=(
-                env_macos_emulator_install_command
-                if env_macos_emulator_install_command is not None
-                else config_macos_emulator_install_command
-            ),
-            retroarch_cfg_path=env_retroarch_cfg_path
-            if env_retroarch_cfg_path is not None
-            else config_macos_retroarch_cfg_path,
-            retroarch_system_dir=(
-                env_retroarch_system_dir if env_retroarch_system_dir is not None else config_macos_retroarch_system_dir
-            ),
-            retroarch_cores_dir=(
-                env_retroarch_cores_dir if env_retroarch_cores_dir is not None else config_macos_retroarch_cores_dir
-            ),
-            retroarch_info_dir=env_retroarch_info_dir
-            if env_retroarch_info_dir is not None
-            else config_macos_retroarch_info_dir,
-            retroarch_cores_base_url=(
-                env_retroarch_cores_base_url
-                if env_retroarch_cores_base_url is not None
-                else config_macos_retroarch_cores_base_url
-            ),
-            pcsx2_ini_path=env_pcsx2_ini_path if env_pcsx2_ini_path is not None else config_macos_pcsx2_ini_path,
-            pcsx2_bios_dir=(env_pcsx2_bios_dir if env_pcsx2_bios_dir is not None else config_macos_pcsx2_bios_dir),
-            dolphin_user_path=(
-                env_dolphin_user_path if env_dolphin_user_path is not None else config_macos_dolphin_user_path
-            ),
         ),
         controllers=ControllersConfig(
             launch_autoconfig=(

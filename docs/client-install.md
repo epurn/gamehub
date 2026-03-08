@@ -2,8 +2,6 @@
 
 Platform status and recommended templates:
 - [Platform Support (v1)](platform-support.md)
-- macOS support is now in scope for v1.
-- This page currently documents the validated Linux and Windows install flows; macOS-specific operator steps will land with the macOS implementation work.
 
 ## Linux (distro-agnostic) via pip
 

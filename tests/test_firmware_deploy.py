@@ -9,12 +9,9 @@ from gamehub_cli.firmware.runtime_azahar import default_azahar_qt_config_path
 from gamehub_cli.firmware.runtime_dolphin import default_dolphin_ini_path
 from gamehub_cli.firmware.targets import (
     default_pcsx2_ini_path,
-    resolve_azahar_runtime_user_dir,
-    resolve_azahar_user_dirs,
     resolve_dolphin_config_dirs,
     resolve_dolphin_runtime_user_dir,
     resolve_dolphin_user_dirs,
-    resolve_pcsx2_bios_dirs,
     resolve_retroarch_system_dirs,
     target_dirs_for_system,
 )
@@ -675,36 +672,6 @@ def test_resolve_retroarch_system_dirs_windows_colon_prefix(monkeypatch, workspa
 
         assert temp_root / "system" in dirs
         assert all("/~/" not in path.as_posix() for path in dirs)
-
-
-def test_resolve_runtime_targets_macos_use_application_support_roots(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-firmware-macos-") as temp_root:
-        home = temp_root / "home"
-        retroarch_root = home / "Library" / "Application Support" / "RetroArch"
-        pcsx2_root = home / "Library" / "Application Support" / "PCSX2"
-        dolphin_root = home / "Library" / "Application Support" / "Dolphin"
-        azahar_root = home / "Library" / "Application Support" / "Azahar"
-
-        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
-        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
-        monkeypatch.setattr("gamehub_cli.firmware.targets.retroarch_cfg_candidates_for_config", lambda config=None: [])
-        monkeypatch.setattr("gamehub_cli.firmware.targets.pcsx2_ini_candidates", lambda config=None: [])
-
-        assert resolve_retroarch_system_dirs() == [retroarch_root / "system"]
-        assert target_dirs_for_system("PSX") == [retroarch_root / "system"]
-        assert target_dirs_for_system("PS2") == [pcsx2_root / "bios"]
-        assert default_pcsx2_ini_path() == pcsx2_root / "inis" / "PCSX2.ini"
-        assert resolve_pcsx2_bios_dirs() == [pcsx2_root / "bios"]
-        assert resolve_dolphin_runtime_user_dir() == dolphin_root
-        assert resolve_dolphin_user_dirs() == [dolphin_root]
-        assert resolve_dolphin_config_dirs() == [dolphin_root]
-        assert target_dirs_for_system("Wii") == [dolphin_root / "Wii"]
-        assert target_dirs_for_system("GC") == [dolphin_root / "GC"]
-        assert resolve_azahar_runtime_user_dir() == azahar_root
-        assert resolve_azahar_user_dirs() == [azahar_root]
 
 
 def test_default_pcsx2_ini_path_prefers_flatpak_when_detected(monkeypatch, workspace_tempdir) -> None:
