@@ -319,6 +319,20 @@ def test_save_upload_route_rejects_target_exists_unindexed_conflict(api_client: 
     assert save_path.read_bytes() == b"existing-out-of-band"
 
 
+def test_save_upload_lock_cleans_up_unused_entries(monkeypatch) -> None:
+    monkeypatch.setattr(save_api, "_SAVE_UPLOAD_LOCKS", {})
+    monkeypatch.setattr(save_api, "_SAVE_UPLOAD_LOCK_REFS", {})
+
+    async def _exercise() -> None:
+        async with save_api._save_upload_lock("save_a"):
+            assert len(save_api._SAVE_UPLOAD_LOCKS) == 1
+            assert next(iter(save_api._SAVE_UPLOAD_LOCK_REFS.values())) == 1
+        assert save_api._SAVE_UPLOAD_LOCKS == {}
+        assert save_api._SAVE_UPLOAD_LOCK_REFS == {}
+
+    asyncio.run(_exercise())
+
+
 def test_save_upload_route_serializes_concurrent_existing_updates(api_client: TestClient, monkeypatch) -> None:
     index_response = api_client.get("/v1/index")
     original_save = index_response.json()["saves"][0]
