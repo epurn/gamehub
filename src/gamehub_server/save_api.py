@@ -29,6 +29,7 @@ DEFAULT_MAX_SAVE_UPLOAD_BYTES = 128 * 1024 * 1024
 SAVE_UPLOAD_CHUNK_BYTES = 1024 * 1024
 _SAVE_UPLOAD_LOCKS_GUARD = threading.Lock()
 _SAVE_UPLOAD_LOCKS: dict[tuple[int, str], asyncio.Lock] = {}
+_SAVE_UPLOAD_LOCK_REFS: dict[tuple[int, str], int] = {}
 
 
 def read_max_save_upload_bytes() -> int:
@@ -117,8 +118,18 @@ async def _save_upload_lock(save_id: str) -> AsyncIterator[None]:
         if lock is None:
             lock = asyncio.Lock()
             _SAVE_UPLOAD_LOCKS[lock_key] = lock
-    async with lock:
-        yield
+        _SAVE_UPLOAD_LOCK_REFS[lock_key] = _SAVE_UPLOAD_LOCK_REFS.get(lock_key, 0) + 1
+    try:
+        async with lock:
+            yield
+    finally:
+        with _SAVE_UPLOAD_LOCKS_GUARD:
+            remaining = _SAVE_UPLOAD_LOCK_REFS.get(lock_key, 0) - 1
+            if remaining <= 0:
+                _SAVE_UPLOAD_LOCK_REFS.pop(lock_key, None)
+                _SAVE_UPLOAD_LOCKS.pop(lock_key, None)
+            else:
+                _SAVE_UPLOAD_LOCK_REFS[lock_key] = remaining
 
 
 def _parse_multipart_boundary(content_type: str) -> str:
