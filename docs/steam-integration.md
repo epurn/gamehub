@@ -2,10 +2,15 @@
 
 ## Implemented now
 - Steam userdata discovery (explicit path or common defaults)
+  - macOS auto-discovery includes `~/Library/Application Support/Steam/userdata`
 - SteamID discovery:
   - auto-select most recently active numeric profile by default
   - optional explicit profile via `steam.steam_id`
 - Steam running detection + close/wait lifecycle
+  - macOS checks native Steam process names first (`Steam`, `steam_osx`, `steamwebhelper`)
+  - macOS close uses a best-effort app quit before falling back to exact-name `pkill`
+  - macOS reopen uses `open -a <Steam.app>` against either configured or auto-discovered app bundles
+- On macOS, `steam.steam_exe` may point to either `Steam.app` or its inner `Contents/MacOS/...` executable; GAMEHUB normalizes it to the app bundle for lifecycle actions
 - Backup before mutation:
   - `userdata/<steamid>/config/shortcuts.vdf`
   - `userdata/<steamid>/config/localconfig.vdf`
@@ -49,6 +54,7 @@
 
 ## Managed launch wrappers
 - When `[controllers].launch_autoconfig = true` or `[save_sync].enabled = true`, supported managed shortcuts (`RetroArch`, `PCSX2`, `Dolphin`, `Azahar`) are emitted through the hidden `shortcut-launch` wrapper so launch-time controller and save-session policy stays deterministic.
+- On macOS, when a managed shortcut target resolves to an app bundle executable (`*.app/Contents/MacOS/...`), GAMEHUB persists bundle-aware launch metadata and `shortcut-launch` runs `open -W -a <App> --args ...` so Apple Silicon apps launch natively and post-exit save sync waits for the app session to close.
 - Linux Flatpak Azahar is a special case: sync first emits `python -m gamehub_cli.controllers.azahar_exit_hook --app-id org.azahar_emu.Azahar --rom ...` by default, and `shortcut-launch` treats that wrapper as the target command payload.
 - Linux Dolphin and Windows Azahar exit hooks live in `shortcut-launch` runtime behavior; the Linux Azahar hook lives in the sync-emitted Steam launch command instead.
 - After upgrading from older builds that still emitted `controller-launch`, run one non-dry `gamehub sync` so persisted Steam shortcut commands are rewritten.

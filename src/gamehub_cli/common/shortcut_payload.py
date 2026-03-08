@@ -19,6 +19,8 @@ class ShortcutLaunchPayload:
     title_id: str | None = None
     system: str | None = None
     rom_rel_path: str | None = None
+    macos_open_app: str | None = None
+    macos_open_args: tuple[str, ...] = ()
 
 
 def strip_wrapping_quotes(value: str) -> str:
@@ -73,6 +75,13 @@ def parse_shortcut_payload(token: str) -> ShortcutLaunchPayload:
     rom_rel_path = (
         str(rom_rel_path_raw).strip() if isinstance(rom_rel_path_raw, str) and rom_rel_path_raw.strip() else None
     )
+    macos_open_app_raw = payload.get("macos_open_app")
+    macos_open_app = (
+        str(macos_open_app_raw).strip() if isinstance(macos_open_app_raw, str) and macos_open_app_raw.strip() else None
+    )
+    macos_open_args = _parse_target_args(payload.get("macos_open_args"))
+    if not macos_open_args and isinstance(payload.get("macos_open_launch_options"), str):
+        macos_open_args = _parse_target_args(payload["macos_open_launch_options"])
     return ShortcutLaunchPayload(
         version=version,
         emulator=emulator,
@@ -83,6 +92,8 @@ def parse_shortcut_payload(token: str) -> ShortcutLaunchPayload:
         title_id=title_id,
         system=system,
         rom_rel_path=rom_rel_path,
+        macos_open_app=macos_open_app,
+        macos_open_args=macos_open_args,
     )
 
 

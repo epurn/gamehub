@@ -117,9 +117,11 @@
 3. M3: Deliver macOS operator parity: native install automation, RetroArch core provisioning, template config, and release-validation docs.
 
 ## Story Contracts
+### Completed Stories
+- `MACOS-CLI-01`: Complete
+- `MACOS-CLI-02`: Complete
+
 ### Pending Stories
-- `MACOS-CLI-01`
-- `MACOS-CLI-02`
 - `MACOS-CLI-03`
 - `MACOS-CLI-04`
 - `MACOS-CLI-05`
@@ -129,7 +131,7 @@
 
 ### STORY MACOS-CLI-01
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: none
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/common/config.py`
@@ -144,12 +146,12 @@
   - `tests/test_cli_config_state.py`
 - Goal: freeze the macOS config contract and baseline platform-path helpers without changing runtime behavior yet.
 - Acceptance Criteria (deterministic):
-  - [ ] `GamehubConfig` exposes a dedicated `macos` section and existing `[linux]` behavior is unchanged.
-  - [ ] `[macos]` supports `auto|official|command|none` install backend plus the current path override surface used by RetroArch, PCSX2, and Dolphin.
-  - [ ] `GAMEHUB_MACOS_EMULATOR_INSTALL_BACKEND` and `GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND` override config with the same precedence rules as other config env overrides.
-  - [ ] Generic emulator path override env vars continue to work cross-platform and are not duplicated into mac-only names.
-  - [ ] `default_gamehub_dir()` and helper paths remain correct on macOS and existing Windows/Linux defaults do not regress.
-  - [ ] A checked-in `config.macos.template.toml` documents the supported native Steam/macOS baseline, Apple Silicon scope, and `~/Applications` install default.
+  - [x] `GamehubConfig` exposes a dedicated `macos` section and existing `[linux]` behavior is unchanged.
+  - [x] `[macos]` supports `auto|official|command|none` install backend plus the current path override surface used by RetroArch, PCSX2, and Dolphin.
+  - [x] `GAMEHUB_MACOS_EMULATOR_INSTALL_BACKEND` and `GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND` override config with the same precedence rules as other config env overrides.
+  - [x] Generic emulator path override env vars continue to work cross-platform and are not duplicated into mac-only names.
+  - [x] `default_gamehub_dir()` and helper paths remain correct on macOS and existing Windows/Linux defaults do not regress.
+  - [x] A checked-in `config.macos.template.toml` documents the supported native Steam/macOS baseline, Apple Silicon scope, and `~/Applications` install default.
 - Non-Goals:
   - Steam process handling.
   - Managed shortcut emission/runtime.
@@ -172,7 +174,7 @@
 
 ### STORY MACOS-CLI-02
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-01`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/steam/lifecycle.py`
@@ -186,13 +188,13 @@
   - `tests/test_steam.py`
 - Goal: add native macOS Steam discovery and lifecycle behavior while preserving the existing safety-first close/wait/reopen contract.
 - Acceptance Criteria (deterministic):
-  - [ ] Steam userdata auto-discovery includes `~/Library/Application Support/Steam/userdata`.
-  - [ ] Steam executable/app discovery supports both `~/Applications/Steam.app` and `/Applications/Steam.app`.
-  - [ ] On macOS, `steam.steam_exe` accepts either a `.app` bundle or the inner executable path and is normalized consistently for lifecycle use.
-  - [ ] Steam running detection checks macOS-native Steam processes first and does not rely on Linux process names on macOS.
-  - [ ] Steam close behavior on macOS attempts a graceful app quit first and retains kill fallback if Steam does not exit.
-  - [ ] Steam reopen behavior on macOS uses bundle-safe launch semantics (`open -a ...` or equivalent explicit app-path launch) and preserves existing “return bool success” behavior.
-  - [ ] Existing Windows and Linux lifecycle tests continue to pass unchanged.
+  - [x] Steam userdata auto-discovery includes `~/Library/Application Support/Steam/userdata`.
+  - [x] Steam executable/app discovery supports both `~/Applications/Steam.app` and `/Applications/Steam.app`.
+  - [x] On macOS, `steam.steam_exe` accepts either a `.app` bundle or the inner executable path and is normalized consistently for lifecycle use.
+  - [x] Steam running detection checks macOS-native Steam processes first and does not rely on Linux process names on macOS.
+  - [x] Steam close behavior on macOS attempts a graceful app quit first and retains kill fallback if Steam does not exit.
+  - [x] Steam reopen behavior on macOS uses bundle-safe launch semantics (`open -a ...` or equivalent explicit app-path launch) and preserves existing “return bool success” behavior.
+  - [x] Existing Windows and Linux lifecycle tests continue to pass unchanged.
 - Non-Goals:
   - Managed shortcut emission.
   - Emulator runtime or save-path changes.
