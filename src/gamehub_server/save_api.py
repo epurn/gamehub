@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import errno
 import os
 import shutil
+import threading
 from collections.abc import AsyncIterator, Callable
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from tempfile import SpooledTemporaryFile
@@ -25,6 +27,8 @@ from .save_index import SAVES_ROOT_NAME, is_server_generated_save_backup_name
 logger = get_server_logger(__name__)
 DEFAULT_MAX_SAVE_UPLOAD_BYTES = 128 * 1024 * 1024
 SAVE_UPLOAD_CHUNK_BYTES = 1024 * 1024
+_SAVE_UPLOAD_LOCKS_GUARD = threading.Lock()
+_SAVE_UPLOAD_LOCKS: dict[tuple[int, str], asyncio.Lock] = {}
 
 
 def read_max_save_upload_bytes() -> int:
@@ -103,6 +107,18 @@ def _save_conflict_response(*, reason: str, current: SaveSpec | None, status_cod
     if current is not None:
         payload["current"] = current.model_dump(mode="json")
     return HTTPException(status_code=status_code, detail=payload)
+
+
+@asynccontextmanager
+async def _save_upload_lock(save_id: str) -> AsyncIterator[None]:
+    lock_key = (id(asyncio.get_running_loop()), save_id)
+    with _SAVE_UPLOAD_LOCKS_GUARD:
+        lock = _SAVE_UPLOAD_LOCKS.get(lock_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _SAVE_UPLOAD_LOCKS[lock_key] = lock
+    async with lock:
+        yield
 
 
 def _parse_multipart_boundary(content_type: str) -> str:
@@ -398,8 +414,6 @@ async def _write_save_upload(
                 detail="Server data volume is read-only; save uploads require a writable GAMEHUB_DATA_DIR mount",
             ) from exc
         raise HTTPException(status_code=500, detail=f"Failed to store save upload: {exc}") from exc
-    finally:
-        await upload.close()
     return bytes_written
 
 
@@ -419,68 +433,72 @@ async def put_save(
     if expected_remote_sha256 is not None:
         expected_remote_sha256 = expected_remote_sha256.strip() or None
 
-    if not binding_id:
-        raise HTTPException(status_code=400, detail="binding_id is required")
+    try:
+        if not binding_id:
+            raise HTTPException(status_code=400, detail="binding_id is required")
 
-    bundle = index_repo.load(force_refresh=True)
-    binding = next((item for item in bundle.save_bindings if item.binding_id == binding_id), None)
-    if binding is None:
-        raise HTTPException(status_code=404, detail=f"Unknown binding_id: {binding_id}")
+        async with _save_upload_lock(save_id):
+            bundle = index_repo.load(force_refresh=True)
+            binding = next((item for item in bundle.save_bindings if item.binding_id == binding_id), None)
+            if binding is None:
+                raise HTTPException(status_code=404, detail=f"Unknown binding_id: {binding_id}")
 
-    rel_path = f"{binding.server_rel_dir}/{canonical_suffix}"
-    if make_save_id(rel_path) != save_id:
-        raise HTTPException(status_code=400, detail="save_id does not match binding_id + canonical_suffix")
+            rel_path = f"{binding.server_rel_dir}/{canonical_suffix}"
+            if make_save_id(rel_path) != save_id:
+                raise HTTPException(status_code=400, detail="save_id does not match binding_id + canonical_suffix")
 
-    path = (data_root / Path(*PurePosixPath(rel_path).parts)).resolve()
-    saves_root = (data_root / SAVES_ROOT_NAME).resolve()
-    if not path.is_relative_to(saves_root):
-        raise HTTPException(status_code=400, detail="Resolved save path escapes saves root")
+            path = (data_root / Path(*PurePosixPath(rel_path).parts)).resolve()
+            saves_root = (data_root / SAVES_ROOT_NAME).resolve()
+            if not path.is_relative_to(saves_root):
+                raise HTTPException(status_code=400, detail="Resolved save path escapes saves root")
 
-    current = _save_spec_from_bundle(bundle, save_id)
-    target_path_exists = path.exists() and path.is_file()
-    if current is None and target_path_exists:
-        raise _save_conflict_response(reason="target-exists-unindexed", current=None)
-    if current is not None and not target_path_exists:
-        raise _save_conflict_response(reason="indexed-save-missing-file", current=current)
+            current = _save_spec_from_bundle(bundle, save_id)
+            target_path_exists = path.exists() and path.is_file()
+            if current is None and target_path_exists:
+                raise _save_conflict_response(reason="target-exists-unindexed", current=None)
+            if current is not None and not target_path_exists:
+                raise _save_conflict_response(reason="indexed-save-missing-file", current=current)
 
-    target_exists = current is not None
-    _validate_binding_suffix(index_repo, binding, canonical_suffix, target_exists=target_exists)
+            target_exists = current is not None
+            _validate_binding_suffix(index_repo, binding, canonical_suffix, target_exists=target_exists)
 
-    if not target_exists:
-        if expected_remote_sha256 is not None:
-            raise HTTPException(status_code=400, detail="expected_remote_sha256 is only valid for existing saves")
-        bytes_written = await _write_save_upload(
-            path,
-            file_upload,
-            save_id=save_id,
-            create=True,
-            max_upload_bytes=max_upload_bytes,
-        )
-        refreshed_bundle = index_repo.load(force_refresh=True)
-        save = _save_spec_from_bundle(refreshed_bundle, save_id)
-        if save is None:
-            raise HTTPException(status_code=500, detail=f"Uploaded save missing after refresh: {save_id}")
-        logger.info("save create completed save_id=%s rel_path=%s bytes=%d", save_id, save.rel_path, bytes_written)
-        response.status_code = 201
-        return save.model_dump(mode="json")
+            if not target_exists:
+                if expected_remote_sha256 is not None:
+                    raise HTTPException(status_code=400, detail="expected_remote_sha256 is only valid for existing saves")
+                bytes_written = await _write_save_upload(
+                    path,
+                    file_upload,
+                    save_id=save_id,
+                    create=True,
+                    max_upload_bytes=max_upload_bytes,
+                )
+                refreshed_bundle = index_repo.load(force_refresh=True)
+                save = _save_spec_from_bundle(refreshed_bundle, save_id)
+                if save is None:
+                    raise HTTPException(status_code=500, detail=f"Uploaded save missing after refresh: {save_id}")
+                logger.info("save create completed save_id=%s rel_path=%s bytes=%d", save_id, save.rel_path, bytes_written)
+                response.status_code = 201
+                return save.model_dump(mode="json")
 
-    if expected_remote_sha256 is None:
-        raise HTTPException(status_code=400, detail="expected_remote_sha256 is required for existing saves")
-    if current is None:
-        raise HTTPException(status_code=500, detail=f"Indexed save missing for existing upload: {save_id}")
-    if current.sha256 != expected_remote_sha256:
-        raise _save_conflict_response(reason="remote-sha-mismatch", current=current)
+            if expected_remote_sha256 is None:
+                raise _save_conflict_response(reason="target-exists", current=current)
+            if current is None:
+                raise HTTPException(status_code=500, detail=f"Indexed save missing for existing upload: {save_id}")
+            if current.sha256 != expected_remote_sha256:
+                raise _save_conflict_response(reason="remote-sha-mismatch", current=current)
 
-    bytes_written = await _write_save_upload(
-        path,
-        file_upload,
-        save_id=save_id,
-        create=False,
-        max_upload_bytes=max_upload_bytes,
-    )
-    refreshed_bundle = index_repo.load(force_refresh=True)
-    save = _save_spec_from_bundle(refreshed_bundle, save_id)
-    if save is None:
-        raise HTTPException(status_code=500, detail=f"Uploaded save missing after refresh: {save_id}")
-    logger.info("save upload completed save_id=%s rel_path=%s bytes=%d", save_id, save.rel_path, bytes_written)
-    return save.model_dump(mode="json")
+            bytes_written = await _write_save_upload(
+                path,
+                file_upload,
+                save_id=save_id,
+                create=False,
+                max_upload_bytes=max_upload_bytes,
+            )
+            refreshed_bundle = index_repo.load(force_refresh=True)
+            save = _save_spec_from_bundle(refreshed_bundle, save_id)
+            if save is None:
+                raise HTTPException(status_code=500, detail=f"Uploaded save missing after refresh: {save_id}")
+            logger.info("save upload completed save_id=%s rel_path=%s bytes=%d", save_id, save.rel_path, bytes_written)
+            return save.model_dump(mode="json")
+    finally:
+        await file_upload.close()

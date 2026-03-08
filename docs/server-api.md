@@ -28,9 +28,10 @@ Base URL: `http://<host>:8000`
   - Upload size is capped by `GAMEHUB_MAX_SAVE_UPLOAD_BYTES` (default `134217728` bytes / `128 MiB`); oversized uploads return `413`
   - Existing-save updates also require `expected_remote_sha256`; the server returns `409` if the remote checksum changed
   - Missing remote saves are created when `binding_id + canonical_suffix` deterministically maps to `save_id`
+  - Concurrent writes for the same `save_id` are serialized inside the server process so stale create/update requests re-check fresh remote state before write
   - Save writes force-refresh index state before conflict checks so stale cache snapshots cannot silently bypass overwrite safety
   - Writes use temp-file + fsync + atomic replace, create a backup before replacing existing user data, force-refresh after write, then return refreshed `SaveSpec` JSON
-  - `409` responses return structured payloads in `detail`: `reason` plus `current` `SaveSpec` when available (for example `remote-sha-mismatch`, `indexed-save-missing-file`, `target-exists-unindexed`)
+  - `409` responses return structured payloads in `detail`: `reason` plus `current` `SaveSpec` when available (for example `remote-sha-mismatch`, `target-exists`, `indexed-save-missing-file`, `target-exists-unindexed`)
 - `GET /v1/firmware/{system}/{filename}`
   - Streams raw firmware file from `firmware/<system>/<filename>`
   - `404` when file is missing

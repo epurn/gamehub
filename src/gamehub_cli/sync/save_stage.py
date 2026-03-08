@@ -171,6 +171,7 @@ def apply_save_stage(
             continue
 
         if dry_run:
+            downloaded += 1
             continue
         if action.destination is None:
             failures.append((action.save_id, "save-path-unavailable"))

@@ -2900,6 +2900,78 @@ def test_apply_save_stage_uploads_and_updates_state(monkeypatch, workspace_tempd
         assert "save_upload" not in state.unresolved_save_conflicts
 
 
+def test_apply_save_stage_dry_run_counts_planned_transfers_without_mutating_state(
+    monkeypatch, workspace_tempdir, capsys
+) -> None:
+    from gamehub_cli.sync import save_stage
+
+    state = SyncState()
+    original_state = state.to_dict()
+    with workspace_tempdir("gamehub-save-stage-dry-run-") as temp_root:
+        upload_destination = temp_root / "upload.sav"
+        upload_destination.write_bytes(b"local-upload")
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_download",
+                    binding_id="savebind_download",
+                    title_id="title_download",
+                    system="N64",
+                    kind="battery",
+                    decision="download",
+                    reason="local-missing",
+                    url="/v1/saves/download",
+                    destination=temp_root / "download.sav",
+                    canonical_suffix="download.sav",
+                    expected_sha256="a" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                ),
+                SavePlanAction(
+                    save_id="save_upload",
+                    binding_id="savebind_upload",
+                    title_id="title_upload",
+                    system="N64",
+                    kind="battery",
+                    decision="upload_existing",
+                    reason="local-changed-remote-unchanged",
+                    url="/v1/saves/upload",
+                    destination=upload_destination,
+                    canonical_suffix="upload.sav",
+                    expected_sha256="b" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                ),
+            ]
+        )
+
+        monkeypatch.setattr(
+            "gamehub_cli.sync.save_stage.stream_to_destination_atomic",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("unexpected download")),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.sync.save_stage.upload_file_to_server",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("unexpected upload")),
+        )
+
+        result = save_stage.apply_save_stage(
+            server_url="http://localhost:8000",
+            plan=plan,
+            state=state,
+            timeout_seconds=20.0,
+            dry_run=True,
+            verbose=False,
+        )
+
+        assert result.downloaded == 1
+        assert result.uploaded == 1
+        assert result.conflicts == 0
+        assert result.skipped == 0
+        assert state.to_dict() == original_state
+        output = capsys.readouterr().out
+        assert "Save sync summary: planned=2 downloaded=1 uploaded=1 conflicts=0 skipped=0" in output
+
+
 def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatch, workspace_tempdir) -> None:
     from gamehub_cli.sync import save_stage
 
