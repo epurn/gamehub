@@ -1460,7 +1460,7 @@ def test_update_cloud_collections_returns_zero_without_path(workspace_tempdir) -
         assert changed == 0
 
 
-def test_prune_grid_noncanonical_variants_is_noop(workspace_tempdir) -> None:
+def test_prune_grid_noncanonical_variants_removes_legacy_signed_appid_files(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-steam-") as temp_root:
         config_dir = temp_root / "userdata" / "76561198000000001" / "config"
         grid_dir = config_dir / "grid"
@@ -1472,14 +1472,43 @@ def test_prune_grid_noncanonical_variants_is_noop(workspace_tempdir) -> None:
             localconfig_path=config_dir / "localconfig.vdf",
             steam_exe=None,
         )
-        (grid_dir / "-602952253p.png").write_bytes(b"grid")
-        (grid_dir / "3692015043p.png").write_bytes(b"grid")
+        (grid_dir / "-602952253p.png").write_bytes(b"portrait-old")
+        (grid_dir / "-602952253.png").write_bytes(b"landscape-old")
+        (grid_dir / "-602952253_icon.png").write_bytes(b"icon-old")
+        (grid_dir / "3692015043p.png").write_bytes(b"portrait-current")
+        (grid_dir / "3692015043.png").write_bytes(b"landscape-current")
+        (grid_dir / "3692015043_logo.png").write_bytes(b"logo-current")
+        (grid_dir / "111111p.png").write_bytes(b"other-managed")
+        (grid_dir / "-602952253_backup.png").write_bytes(b"manual-note")
 
         removed = prune_grid_noncanonical_variants(context, ["-602952253"])
 
-        assert removed == 0
-        assert (grid_dir / "-602952253p.png").exists()
+        assert removed == 3
+        assert not (grid_dir / "-602952253p.png").exists()
+        assert not (grid_dir / "-602952253.png").exists()
+        assert not (grid_dir / "-602952253_icon.png").exists()
+        assert (grid_dir / "-602952253_backup.png").exists()
         assert (grid_dir / "3692015043p.png").exists()
+        assert (grid_dir / "3692015043.png").exists()
+        assert (grid_dir / "3692015043_logo.png").exists()
+        assert (grid_dir / "111111p.png").exists()
+
+
+def test_prune_grid_noncanonical_variants_returns_zero_for_missing_grid_dir(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=config_dir / "shortcuts.vdf",
+            localconfig_path=config_dir / "localconfig.vdf",
+            steam_exe=None,
+        )
+
+        removed = prune_grid_noncanonical_variants(context, ["3692015043"])
+
+        assert removed == 0
 
 
 def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
