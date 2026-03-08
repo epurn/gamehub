@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import plistlib
 from pathlib import Path, PosixPath, WindowsPath
 from typing import Callable, Iterable
 
@@ -58,79 +57,6 @@ def linux_flatpak_azahar_config_root() -> Path:
     return _safe_home_path() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu"
 
 
-def macos_application_support_root() -> Path:
-    return _safe_home_path() / "Library" / "Application Support"
-
-
-def macos_user_applications_dir() -> Path:
-    return _safe_home_path() / "Applications"
-
-
-def macos_system_applications_dir() -> Path:
-    return _host_path("/Applications")
-
-
-def macos_retroarch_root() -> Path:
-    return macos_application_support_root() / "RetroArch"
-
-
-def macos_pcsx2_root() -> Path:
-    return macos_application_support_root() / "PCSX2"
-
-
-def macos_dolphin_root() -> Path:
-    return macos_application_support_root() / "Dolphin"
-
-
-def macos_azahar_root() -> Path:
-    return macos_application_support_root() / "Azahar"
-
-
-def macos_application_bundle_candidates(bundle_names: Iterable[str]) -> list[Path]:
-    normalized_names: list[str] = []
-    for bundle_name in bundle_names:
-        value = str(bundle_name).strip()
-        if not value:
-            continue
-        if not value.lower().endswith(".app"):
-            value = f"{value}.app"
-        normalized_names.append(value)
-
-    values: list[Path] = []
-    for applications_dir in (macos_user_applications_dir(), macos_system_applications_dir()):
-        for bundle_name in normalized_names:
-            values.append(applications_dir / bundle_name)
-    return unique_paths(values)
-
-
-def resolve_macos_app_bundle_executable(bundle_path: Path) -> Path | None:
-    candidate = bundle_path.expanduser()
-    if candidate.suffix.casefold() != ".app" or not candidate.is_dir():
-        return None
-
-    info_plist = candidate / "Contents" / "Info.plist"
-    if not info_plist.is_file():
-        return None
-
-    try:
-        with info_plist.open("rb") as handle:
-            plist = plistlib.load(handle)
-    except (OSError, plistlib.InvalidFileException, ValueError):
-        return None
-
-    executable_name = plist.get("CFBundleExecutable")
-    if not isinstance(executable_name, str):
-        return None
-    executable_name = executable_name.strip().replace("\\", "/")
-    if not executable_name or "/" in executable_name:
-        return None
-
-    executable_path = candidate / "Contents" / "MacOS" / executable_name
-    if executable_path.is_file():
-        return executable_path
-    return None
-
-
 def is_flatpak_command(path_value: str | Path, app_id: str) -> bool:
     if isinstance(path_value, Path):
         raw = path_value.as_posix()
@@ -170,11 +96,9 @@ def retroarch_cfg_candidates(
     explicit_cfg_path: Path | None = None,
     resolve_emulator_executable: Callable[[str], str] | None = None,
     os_name: str | None = None,
-    sys_platform: str | None = None,
 ) -> list[Path]:
     values: list[Path] = []
     current_os_name = _OS_NAME if os_name is None else os_name
-    current_sys_platform = sys_platform if sys_platform is not None else ""
     if explicit_cfg_path is not None:
         values.append(explicit_cfg_path.expanduser())
 
@@ -191,10 +115,6 @@ def retroarch_cfg_candidates(
         values.append(_host_path(appdata) / "RetroArch" / "retroarch.cfg")
 
     if current_os_name != "nt":
-        if current_sys_platform == "darwin":
-            values.append(macos_retroarch_root() / "retroarch.cfg")
-            return unique_paths(values)
-
         home = _safe_home_path()
         native_cfg = home / ".config" / "retroarch" / "retroarch.cfg"
         flatpak_cfg = linux_flatpak_retroarch_root() / "retroarch.cfg"

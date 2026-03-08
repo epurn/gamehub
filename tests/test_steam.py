@@ -9,14 +9,12 @@ import vdf
 
 from gamehub_cli.steam import (
     LINUX_STEAM_PROCESS_NAMES,
-    MACOS_STEAM_PROCESS_NAMES,
     ShortcutSyncResult,
     SteamArtworkAssignment,
     SteamContext,
     SteamShortcutSpec,
     apply_deck_steam_input_templates,
     backup_steam_configs,
-    build_context,
     close_steam_best_effort,
     copy_grid_art,
     discover_steam_id,
@@ -85,44 +83,6 @@ def test_candidate_userdata_dirs_include_steam_deck_paths(monkeypatch) -> None:
         value.endswith("/home/deck/.var/app/com.valvesoftware.steam/.local/share/steam/userdata")
         for value in normalized_values
     )
-
-
-def test_candidate_userdata_dirs_include_macos_path(monkeypatch) -> None:
-    from gamehub_cli.steam import lifecycle as steam_lifecycle
-
-    monkeypatch.setattr(steam_lifecycle, "_is_macos", lambda: True)
-    monkeypatch.setattr(steam_lifecycle.Path, "home", staticmethod(lambda: Path("/Users/tester")))
-
-    candidates = steam_lifecycle._candidate_userdata_dirs()
-
-    assert Path("/Users/tester/Library/Application Support/Steam/userdata") in candidates
-
-
-def test_candidate_macos_steam_apps_include_user_and_system_locations(monkeypatch) -> None:
-    from gamehub_cli.steam import lifecycle as steam_lifecycle
-
-    monkeypatch.setattr(steam_lifecycle.Path, "home", staticmethod(lambda: Path("/Users/tester")))
-
-    candidates = steam_lifecycle._candidate_macos_steam_apps()
-
-    assert candidates == [
-        Path("/Users/tester/Applications/Steam.app"),
-        Path("/Applications/Steam.app"),
-    ]
-
-
-def test_discover_userdata_dir_finds_macos_userdata(monkeypatch, workspace_tempdir) -> None:
-    from gamehub_cli.steam import lifecycle as steam_lifecycle
-
-    with workspace_tempdir("gamehub-steam-") as temp_root:
-        macos_userdata = temp_root / "Library" / "Application Support" / "Steam" / "userdata"
-        macos_userdata.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr(steam_lifecycle, "_is_macos", lambda: True)
-        monkeypatch.setattr(steam_lifecycle.Path, "home", staticmethod(lambda: temp_root))
-
-        resolved = discover_userdata_dir(None)
-
-        assert resolved == macos_userdata
 
 
 def test_discover_steam_id_prefers_most_recent_profile(workspace_tempdir) -> None:
@@ -222,7 +182,6 @@ def test_is_steam_running_linux_checks_exact_process_names(monkeypatch) -> None:
         return type("Completed", (), {"returncode": 0 if process_name == "steam" else 1, "stdout": ""})()
 
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.subprocess.run", fake_run)
 
     running = is_steam_running()
@@ -232,29 +191,9 @@ def test_is_steam_running_linux_checks_exact_process_names(monkeypatch) -> None:
     assert commands[0][2] in LINUX_STEAM_PROCESS_NAMES
 
 
-def test_is_steam_running_macos_checks_native_process_name(monkeypatch) -> None:
-    commands: list[list[str]] = []
-
-    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
-        del check, capture_output, text
-        commands.append(cmd)
-        process_name = cmd[-1]
-        return type("Completed", (), {"returncode": 0 if process_name == "Steam" else 1, "stdout": ""})()
-
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "darwin")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.subprocess.run", fake_run)
-
-    running = is_steam_running()
-
-    assert running is True
-    assert commands[0] == ["pgrep", "-x", MACOS_STEAM_PROCESS_NAMES[0]]
-
-
 def test_close_steam_best_effort_linux_uses_exact_process_names(monkeypatch) -> None:
     commands: list[list[str]] = []
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "linux")
     monkeypatch.setattr(
         "gamehub_cli.steam.lifecycle._run_process_best_effort",
         lambda cmd, timeout_seconds=10: commands.append(cmd),
@@ -266,38 +205,6 @@ def test_close_steam_best_effort_linux_uses_exact_process_names(monkeypatch) -> 
     forced = commands[len(LINUX_STEAM_PROCESS_NAMES) :]
     assert graceful == [["pkill", "-x", name] for name in LINUX_STEAM_PROCESS_NAMES]
     assert forced == [["pkill", "-9", "-x", name] for name in LINUX_STEAM_PROCESS_NAMES]
-
-
-def test_close_steam_best_effort_macos_prefers_graceful_quit_then_kill(monkeypatch) -> None:
-    commands: list[list[str]] = []
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "darwin")
-    monkeypatch.setattr(
-        "gamehub_cli.steam.lifecycle._run_process_best_effort",
-        lambda cmd, timeout_seconds=10: commands.append(cmd),
-    )
-
-    close_steam_best_effort()
-
-    assert commands[0] == ["osascript", "-e", 'tell application id "com.valvesoftware.steam" to quit']
-    graceful = commands[1 : 1 + len(MACOS_STEAM_PROCESS_NAMES)]
-    forced = commands[1 + len(MACOS_STEAM_PROCESS_NAMES) :]
-    assert graceful == [["pkill", "-x", name] for name in MACOS_STEAM_PROCESS_NAMES]
-    assert forced == [["pkill", "-9", "-x", name] for name in MACOS_STEAM_PROCESS_NAMES]
-
-
-def test_build_context_normalizes_macos_inner_steam_executable_to_bundle(monkeypatch) -> None:
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "darwin")
-
-    context = build_context(
-        Path("userdata"),
-        "76561198000000001",
-        Path("/Applications/Steam.app/Contents/MacOS/steam_osx"),
-    )
-
-    assert context.steam_exe is not None
-    assert str(context.steam_exe).replace("\\", "/") == "/Applications/Steam.app"
 
 
 def test_copy_grid_art_copies_existing_and_skips_missing(workspace_tempdir) -> None:
@@ -1607,7 +1514,6 @@ def test_prune_grid_noncanonical_variants_returns_zero_for_missing_grid_dir(work
 def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
     launched: list[tuple[list[str], dict]] = []
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.steam.lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: True)
     monkeypatch.setattr(
         "gamehub_cli.steam.lifecycle.shutil.which",
@@ -1633,39 +1539,8 @@ def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
     assert reopened is True
 
 
-def test_reopen_steam_macos_uses_open_app(monkeypatch, workspace_tempdir) -> None:
-    launched: list[tuple[list[str], dict]] = []
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "darwin")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: True)
-    monkeypatch.setattr(
-        "gamehub_cli.steam.lifecycle.subprocess.Popen",
-        lambda command, **kwargs: launched.append((command, kwargs)),
-    )
-
-    with workspace_tempdir("gamehub-steam-") as temp_root:
-        steam_app = temp_root / "Applications" / "Steam.app"
-        steam_app.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr("gamehub_cli.steam.lifecycle.Path.home", staticmethod(lambda: temp_root))
-        context = SteamContext(
-            userdata_dir=Path("userdata"),
-            steam_id="76561198000000001",
-            shortcuts_path=Path("shortcuts.vdf"),
-            localconfig_path=Path("localconfig.vdf"),
-            steam_exe=None,
-        )
-
-        reopened = reopen_steam(context)
-
-    assert launched[0][0] == ["open", "-a", str(steam_app)]
-    assert launched[0][1]["stdout"] is not None
-    assert launched[0][1]["stderr"] is not None
-    assert reopened is True
-
-
 def test_reopen_steam_linux_returns_false_when_no_launcher_available(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
-    monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.steam.lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: False)
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.shutil.which", lambda command: None)
     context = SteamContext(

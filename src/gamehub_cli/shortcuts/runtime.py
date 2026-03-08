@@ -212,34 +212,26 @@ def _run_linux_dolphin_target_with_exit_hook(payload: ShortcutLaunchPayload) -> 
 def _run_windows_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> int:
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
-    cwd = _resolve_launch_cwd(payload)
+    cwd = None
+    if payload.start_dir:
+        candidate = Path(payload.start_dir)
+        if candidate.exists():
+            cwd = str(candidate)
     process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
     watcher = threading.Thread(target=_monitor_windows_azahar_exit_combo, args=(process,), daemon=True)
     watcher.start()
     return int(process.wait())
 
 
-def _resolve_launch_cwd(payload: ShortcutLaunchPayload) -> str | None:
-    if not payload.start_dir:
-        return None
-    candidate = Path(payload.start_dir)
-    if not candidate.exists():
-        return None
-    return str(candidate)
-
-
 def _run_target(payload: ShortcutLaunchPayload) -> int:
-    if sys.platform == "darwin" and payload.macos_open_app:
-        app_bundle = payload.macos_open_app.strip().strip('"')
-        if app_bundle:
-            command = ["open", "-W", "-a", app_bundle]
-            if payload.macos_open_args:
-                command.extend(["--args", *payload.macos_open_args])
-            process = subprocess.Popen(command, cwd=_resolve_launch_cwd(payload), stdin=subprocess.DEVNULL)
-            return int(process.wait())
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
-    process = subprocess.Popen(command, cwd=_resolve_launch_cwd(payload), stdin=subprocess.DEVNULL)
+    cwd = None
+    if payload.start_dir:
+        candidate = Path(payload.start_dir)
+        if candidate.exists():
+            cwd = str(candidate)
+    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
     return int(process.wait())
 
 

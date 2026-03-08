@@ -12,7 +12,7 @@
 - 
 
 ## Constraints
-- Windows and macOS local development support are required.
+- Windows-first local development support is required.
 - Keep diffs minimal and conflict-resistant for parallel work.
 - No dependency/lockfile/packaging changes unless explicitly required.
 - No repo-wide formatting.

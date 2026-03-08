@@ -1755,63 +1755,6 @@ def test_build_shortcut_specs_wraps_pcsx2_when_controller_autoconfig_enabled(mon
         assert "net.pcsx2.PCSX2" in " ".join(payload.target_args)
 
 
-def test_build_steam_shortcuts_macos_uses_bundle_safe_wrapper_launch(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-sync-shortcuts-macos-ps2-wrap-") as temp_root:
-        config = GamehubConfig(
-            server_url="http://localhost:8000",
-            library_dir=temp_root / "library",
-            firmware_dir=temp_root / "firmware",
-            state_path=temp_root / "state.json",
-            steam_userdata_dir=None,
-            steam_id=None,
-            steam_exe=None,
-            sgdb_api_key=None,
-            sgdb_cache_dir=temp_root / "cache",
-            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-            controllers=ControllersConfig(launch_autoconfig=True),
-            config_path=temp_root / "config.toml",
-        )
-        title = TitleEntry(
-            title_id="title_ps2_gt4",
-            system="PS2",
-            title_name="Gran Turismo 4",
-            title_rel_dir="PS2/Gran Turismo 4.iso",
-            emulator="pcsx2",
-            launch_template='"{emulator}" -fullscreen "{rom}"',
-            rom=RomSpec(
-                file_id="rom_ps2",
-                rel_path="roms/PS2/Gran Turismo 4.iso",
-                sha256="a" * 64,
-                size_bytes=3,
-                extension=".iso",
-            ),
-            assets=(),
-        )
-        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
-        monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.resolve_emulator_executable",
-            lambda value: "/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt",
-        )
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "darwin")
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "/opt/homebrew/bin/python3")
-        monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.shutil.which",
-            lambda name: "/usr/local/bin/gamehub" if name == "gamehub" else None,
-        )
-
-        specs = _build_shortcut_specs(index=index, config=config)
-
-        assert len(specs) == 1
-        assert specs[0].exe == "/usr/local/bin/gamehub"
-        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
-        payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
-        payload = parse_shortcut_payload(payload_token)
-        assert payload.macos_open_app == "/Applications/PCSX2.app"
-        assert payload.macos_open_args
-        assert payload.target_exe == "/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt"
-        assert "Contents/MacOS" not in specs[0].launch_options
-
-
 def test_build_shortcut_specs_wrapper_uses_direct_command_for_frozen_exe(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-sync-shortcuts-win-ps2-wrap-") as temp_root:
         config = GamehubConfig(

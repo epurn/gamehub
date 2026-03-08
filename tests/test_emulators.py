@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import plistlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -32,16 +31,6 @@ def _index_with_emulators(*names: str) -> LibraryIndex:
         for idx, name in enumerate(names, start=1)
     )
     return LibraryIndex(index_version=1, systems=systems, titles=())
-
-
-def _write_macos_app_bundle(bundle_path: Path, executable_name: str) -> Path:
-    info_plist = bundle_path / "Contents" / "Info.plist"
-    executable_path = bundle_path / "Contents" / "MacOS" / executable_name
-    info_plist.parent.mkdir(parents=True, exist_ok=True)
-    executable_path.parent.mkdir(parents=True, exist_ok=True)
-    info_plist.write_bytes(plistlib.dumps({"CFBundleExecutable": executable_name}))
-    executable_path.write_bytes(b"exe")
-    return executable_path
 
 
 def test_ensure_emulators_dry_run_reports_missing(monkeypatch, capsys) -> None:
@@ -858,65 +847,6 @@ def test_resolve_emulator_executable_falls_back_to_known_azahar_paths(monkeypatc
         resolved = resolve_emulator_executable("azahar")
 
         assert resolved == str(candidate)
-
-
-def test_resolve_emulator_executable_macos_prefers_user_applications_bundle(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-emulator-resolve-macos-") as temp_root:
-        home = temp_root / "home"
-        user_executable = _write_macos_app_bundle(
-            home / "Applications" / "RetroArch.app",
-            "retroarch-metal",
-        )
-        _write_macos_app_bundle(
-            temp_root / "Applications" / "RetroArch.app",
-            "retroarch-system",
-        )
-
-        monkeypatch.setattr("gamehub_cli.emulators.resolution._OS_NAME", "posix")
-        monkeypatch.setattr("gamehub_cli.emulators.resolution._SYS_PLATFORM", "darwin")
-        monkeypatch.setattr("gamehub_cli.emulators.resolution.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr(
-            "gamehub_cli.emulators.resolution.shutil.which",
-            lambda cmd: "/opt/homebrew/bin/retroarch",
-        )
-        monkeypatch.setattr(
-            "gamehub_cli.common.platform_paths.macos_system_applications_dir",
-            lambda: temp_root / "Applications",
-        )
-
-        resolved = resolve_emulator_executable("retroarch")
-
-        assert resolved == str(user_executable)
-
-
-def test_resolve_emulator_executable_macos_falls_back_to_system_applications_bundle(
-    monkeypatch,
-    workspace_tempdir,
-) -> None:
-    with workspace_tempdir("gamehub-emulator-resolve-macos-") as temp_root:
-        home = temp_root / "home"
-        system_executable = _write_macos_app_bundle(
-            temp_root / "Applications" / "Dolphin.app",
-            "DolphinQt",
-        )
-
-        monkeypatch.setattr("gamehub_cli.emulators.resolution._OS_NAME", "posix")
-        monkeypatch.setattr("gamehub_cli.emulators.resolution._SYS_PLATFORM", "darwin")
-        monkeypatch.setattr("gamehub_cli.emulators.resolution.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr(
-            "gamehub_cli.emulators.resolution.shutil.which",
-            lambda cmd: "/opt/homebrew/bin/dolphin",
-        )
-        monkeypatch.setattr(
-            "gamehub_cli.common.platform_paths.macos_system_applications_dir",
-            lambda: temp_root / "Applications",
-        )
-
-        resolved = resolve_emulator_executable("dolphin")
-
-        assert resolved == str(system_executable)
 
 
 def test_resolve_emulator_executable_prefers_known_path_over_windowsapps_alias(monkeypatch, workspace_tempdir) -> None:

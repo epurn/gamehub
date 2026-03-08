@@ -16,10 +16,6 @@ from ..common.platform_paths import (
     linux_flatpak_dolphin_root,
     linux_flatpak_pcsx2_root,
     linux_flatpak_retroarch_root,
-    macos_azahar_root,
-    macos_dolphin_root,
-    macos_pcsx2_root,
-    macos_retroarch_root,
     parse_simple_kv_config,
     retroarch_cfg_candidates,
     unique_paths,
@@ -73,10 +69,6 @@ def _path_with_tilde_expanded(raw: str) -> Path:
 def _configured_path(config: GamehubConfig | None, setting_name: str) -> Path | None:
     if config is None:
         return None
-    if sys.platform == "darwin":
-        macos_value = getattr(config.macos, setting_name, None)
-        if isinstance(macos_value, Path):
-            return macos_value.expanduser()
     value = getattr(config.linux, setting_name, None)
     if not isinstance(value, Path):
         return None
@@ -147,8 +139,6 @@ def retroarch_cfg_candidates_for_config(config: GamehubConfig | None = None) -> 
     return retroarch_cfg_candidates(
         explicit_cfg_path=_configured_path(config, "retroarch_cfg_path"),
         resolve_emulator_executable=resolve_emulator_executable,
-        os_name=os.name,
-        sys_platform=sys.platform,
     )
 
 
@@ -188,9 +178,6 @@ def resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[P
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
         values.append(_host_path(appdata) / "RetroArch" / "system")
-    if sys.platform == "darwin":
-        values.append(macos_retroarch_root() / "system")
-        return unique_paths(values)
     home = _safe_home_path()
     native = home / ".config" / "retroarch" / "system"
     flatpak = linux_flatpak_retroarch_root() / "system"
@@ -216,10 +203,6 @@ def pcsx2_ini_candidates(config: GamehubConfig | None = None) -> list[Path]:
     if os.name == "nt" and appdata:
         values.append(_host_path(appdata) / "PCSX2" / "inis" / "PCSX2.ini")
         values.append(_host_path(appdata) / "PCSX2" / "PCSX2.ini")
-    if sys.platform == "darwin":
-        values.append(macos_pcsx2_root() / "inis" / "PCSX2.ini")
-        values.append(macos_pcsx2_root() / "PCSX2.ini")
-        return unique_paths(values)
     home = _safe_home_path()
     values.append(home / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
     values.append(home / "Documents" / "PCSX2" / "PCSX2.ini")
@@ -252,9 +235,6 @@ def resolve_pcsx2_bios_dirs(config: GamehubConfig | None = None) -> list[Path]:
     user_profile = os.environ.get("USERPROFILE")
     if os.name == "nt" and user_profile:
         values.append(_host_path(user_profile) / "Documents" / "PCSX2" / "bios")
-    if sys.platform == "darwin":
-        values.append(macos_pcsx2_root() / "bios")
-        return unique_paths(values)
     home = _safe_home_path()
     native = home / ".config" / "PCSX2" / "bios"
     flatpak = linux_flatpak_pcsx2_root() / "bios"
@@ -287,10 +267,6 @@ def resolve_dolphin_user_dirs(config: GamehubConfig | None = None) -> list[Path]
         if selected is not None:
             return [selected]
         return candidates[:1]
-
-    if sys.platform == "darwin":
-        values.append(macos_dolphin_root())
-        return unique_paths(values)
 
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
@@ -334,9 +310,6 @@ def resolve_dolphin_runtime_user_dir(config: GamehubConfig | None = None) -> Pat
         if appdata:
             return _host_path(appdata) / "Dolphin Emulator"
 
-    if sys.platform == "darwin":
-        return macos_dolphin_root()
-
     home = _safe_home_path()
     if sys.platform.startswith("linux"):
         flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / DOLPHIN_FLATPAK_APP_ID
@@ -366,8 +339,6 @@ def resolve_dolphin_config_dirs(config: GamehubConfig | None = None) -> list[Pat
     values.append(runtime)
     if os.name == "nt":
         return unique_paths(values)
-    if sys.platform == "darwin":
-        return unique_paths(values)
 
     home = _safe_home_path()
     native = home / ".config" / "dolphin-emu"
@@ -396,9 +367,6 @@ def resolve_azahar_user_dirs(config: GamehubConfig | None = None) -> list[Path]:
     if os.name == "nt" and appdata:
         values.append(_host_path(appdata) / "Azahar")
         return unique_paths(values)
-    if sys.platform == "darwin":
-        values.append(macos_azahar_root())
-        return unique_paths(values)
 
     home = _safe_home_path()
     native = home / ".local" / "share" / "azahar"
@@ -424,8 +392,6 @@ def resolve_azahar_runtime_user_dir(config: GamehubConfig | None = None) -> Path
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
         return _host_path(appdata) / "Azahar"
-    if sys.platform == "darwin":
-        return macos_azahar_root()
 
     home = _safe_home_path()
     flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / AZAHAR_FLATPAK_APP_ID
@@ -452,13 +418,6 @@ def default_pcsx2_ini_path(config: GamehubConfig | None = None) -> Path:
     override = _configured_path(config, "pcsx2_ini_path")
     if override is not None:
         return override
-
-    if sys.platform == "darwin":
-        candidates = pcsx2_ini_candidates(config=config)
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-        return macos_pcsx2_root() / "inis" / "PCSX2.ini"
 
     if sys.platform.startswith("linux"):
         pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
