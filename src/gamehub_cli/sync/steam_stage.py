@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from gamehub_common.models import LibraryIndex
 
@@ -349,11 +349,11 @@ def _macos_app_bundle_for_executable(executable: str) -> str | None:
     token = _strip_wrapping_quotes(executable).replace("\\", "/")
     if not token:
         return None
-    path = Path(token)
+    path = PurePosixPath(token)
     candidates = (path, *path.parents)
     for candidate in candidates:
         if candidate.name.casefold().endswith(".app"):
-            return str(candidate)
+            return candidate.as_posix()
     return None
 
 

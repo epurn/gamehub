@@ -9,6 +9,8 @@ from typing import Any, Iterable
 
 from gamehub_common.models import LibraryIndex
 
+from ..common.platform_paths import macos_application_bundle_candidates, resolve_macos_app_bundle_executable
+
 winreg: ModuleType | None
 try:
     import winreg as _winreg
@@ -29,6 +31,13 @@ _EMULATOR_COMMAND_ALIASES = {
     "pcsx2": ("pcsx2", "pcsx2-qt"),
     "dolphin": ("dolphin", "dolphin-emu"),
     "azahar": ("azahar", "azahar-qt"),
+}
+
+_MACOS_APP_BUNDLE_NAMES = {
+    "retroarch": ("RetroArch.app",),
+    "pcsx2": ("PCSX2.app",),
+    "dolphin": ("Dolphin.app", "Dolphin Emulator.app"),
+    "azahar": ("Azahar.app",),
 }
 
 _HOST_PATH_TYPE = type(Path.cwd())
@@ -164,6 +173,13 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
         flatpak_app_id = _FLATPAK_APP_IDS.get(canonical)
         if flatpak_app_id and canonical != "dolphin":
             values.append(home / ".local" / "share" / "flatpak" / "exports" / "bin" / flatpak_app_id)
+        return tuple(values)
+
+    if _SYS_PLATFORM == "darwin":
+        for bundle_path in macos_application_bundle_candidates(_MACOS_APP_BUNDLE_NAMES.get(canonical, ())):
+            executable_path = resolve_macos_app_bundle_executable(bundle_path)
+            if executable_path is not None:
+                values.append(executable_path)
     return tuple(values)
 
 
@@ -325,6 +341,10 @@ def resolve_emulator_executable(emulator_value: str) -> str:
     if not raw:
         return emulator_value
     path = _safe_path(raw)
+    if _SYS_PLATFORM == "darwin" and path.suffix.casefold() == ".app" and path.exists():
+        bundle_executable = resolve_macos_app_bundle_executable(path)
+        if bundle_executable is not None:
+            return str(bundle_executable.resolve())
     if path.exists():
         return str(path.resolve())
     if path.is_absolute() and path.exists():
