@@ -56,9 +56,11 @@ docker compose -f docker/compose.yaml --env-file docker/.env logs gamehub-server
 3. Data root contents:
    - verify `roms/<system>/` exists and files are readable
    - verify required firmware for systems with titles
+   - verify `saves/` exists and is writable when bidirectional save sync is enabled
 4. API checks:
    - `GET /health`
    - `GET /v1/index`
    - `GET /v1/index?refresh=1` (manual cache refresh check)
+   - `GET /v1/save-bindings` when validating save-sync issues
    - `GET /v1/files/{file_id}` for a known title
 

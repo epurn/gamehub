@@ -47,6 +47,12 @@
   - `<appid>_icon.<ext>`
 - GAMEHUB writes grid filenames using unsigned appid values only.
 
+## Managed launch wrappers
+- When `[controllers].launch_autoconfig = true` or `[save_sync].enabled = true`, supported managed shortcuts (`RetroArch`, `PCSX2`, `Dolphin`, `Azahar`) are emitted through the hidden `shortcut-launch` wrapper so launch-time controller and save-session policy stays deterministic.
+- Linux Flatpak Azahar is a special case: sync first emits `python -m gamehub_cli.controllers.azahar_exit_hook --app-id org.azahar_emu.Azahar --rom ...` by default, and `shortcut-launch` treats that wrapper as the target command payload.
+- Linux Dolphin and Windows Azahar exit hooks live in `shortcut-launch` runtime behavior; the Linux Azahar hook lives in the sync-emitted Steam launch command instead.
+- After upgrading from older builds that still emitted `controller-launch`, run one non-dry `gamehub sync` so persisted Steam shortcut commands are rewritten.
+
 ## Steam Input Templates (Steam Deck)
 - On Linux Steam Deck, GAMEHUB syncs seeded Steam Input templates for managed `Wii` and `N3DS` shortcuts (`GC` is intentionally excluded).
 - Files are written by normalized title path, not appid path:

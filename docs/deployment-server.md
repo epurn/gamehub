@@ -7,6 +7,7 @@ This guide covers single-host LAN deployment for GAMEHUB server.
 - Host data directory with:
   - `roms/<system>/<title.ext>`
   - `firmware/<system>/<filename>`
+  - optional existing `saves/<system>/<title_stem>/<kind>/<file...>` data, or an empty writable `saves/` tree for server-side save creation
 
 Optional convenience:
 - Download `gamehub-server-deploy-vX.Y.Z.zip` from the GitHub Release to get:
@@ -23,7 +24,7 @@ Copy-Item docker/.env.template docker/.env
 ```
 
 Required values in `docker/.env`:
-- `GAMEHUB_DATA_HOST_PATH`: host path containing `roms/` and `firmware/`
+- `GAMEHUB_DATA_HOST_PATH`: host path containing `roms/`, `firmware/`, and writable `saves/`
   - Windows example: `D:/GameHubData`
   - Linux example: `/srv/gamehub/data`
 - `GAMEHUB_SERVER_PORT`: exposed host port
@@ -36,6 +37,7 @@ Required values in `docker/.env`:
 - Optional: `GAMEHUB_INDEX_STABLE_SECONDS` (defaults to `2`; changed files must stop changing for this long before auto-reindex)
 - Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`; adds TTL-based rebuilds on top of change detection)
 - Optional: `GAMEHUB_HASH_CACHE_PATH` (path for persistent SHA256 cache DB; default is `/app/.cache/gamehub/hash-cache.sqlite3`)
+- Optional: `GAMEHUB_MAX_SAVE_UPLOAD_BYTES` (defaults to `134217728`; caps streamed save-upload size in bytes)
 
 ## 2) Pull released server image
 ```powershell
@@ -59,13 +61,13 @@ docker compose -f docker/compose.yaml --env-file docker/.env config
 
 ## Notes
 - Server distribution is GHCR image-based for releases (no separate server binary artifact on GitHub Releases).
-- Data volume is mounted read-only in container.
+- Data volume is mounted read-write in container. Bidirectional save sync, including first-time save creation, requires the server to be able to create and update files under `/data/saves`.
 - Hash cache is stored in named Docker volume `gamehub-hash-cache-v2` and persists across container restarts/recreates.
 - Container restart policy is `unless-stopped`.
 - Healthcheck targets `GET /health`.
 - Server performs index/hash warmup during startup; large libraries can increase startup time.
 - Server runs a background index poller by default and waits for changed files to stay stable before rebuilding, which helps avoid hashing partially copied large files.
-- Source-change rebuilds write explicit index-change lines to container logs for added, updated, and removed ROM/firmware entries.
+- Source-change rebuilds write explicit index-change lines to container logs for added, updated, and removed ROM, firmware, and save entries.
 - Rebuilds reuse cached SHA256 values for unchanged files (metadata-keyed), which significantly reduces repeated hash work on large libraries.
 - Startup logs include explicit warmup start/completion lines with elapsed time and indexed system/title counts.
 - Scope is LAN-only in this phase (no TLS/auth in-container).

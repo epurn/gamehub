@@ -1,11 +1,42 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path, PurePosixPath
+
+__all__ = [
+    "from_rel_path",
+    "normalized_local_path",
+    "resolve_rom_destination",
+    "strip_rel_path_root",
+]
 
 
 def _normalized_posix_parts(rel_path: str) -> tuple[str, ...]:
     rel = PurePosixPath(rel_path)
     return tuple(part for part in rel.parts if part not in {"", "."})
+
+
+def normalized_local_path(value: str | Path) -> Path:
+    raw = str(value).strip().strip('"')
+    if not raw:
+        return Path()
+
+    normalized_raw = raw.replace("\\", "/")
+    drive_match = re.match(r"^([A-Za-z]:)/(.*)$", normalized_raw)
+    if drive_match is not None:
+        drive = drive_match.group(1)
+        remainder = drive_match.group(2)
+        posix = PurePosixPath(remainder)
+        parts = tuple(part for part in posix.parts if part not in {"", "."})
+        if not parts:
+            return Path(f"{drive}/")
+        return Path(f"{drive}/", *parts)
+
+    posix = PurePosixPath(normalized_raw)
+    parts = tuple(part for part in posix.parts if part not in {"", "."})
+    if not parts:
+        return Path()
+    return Path(*parts)
 
 
 def from_rel_path(base: Path, rel_path: str, *, preferred_root: str | None = None) -> Path:

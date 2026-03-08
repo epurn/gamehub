@@ -7,7 +7,6 @@ from typer.testing import CliRunner
 
 import gamehub_cli.main as cli_main
 
-
 _RUNNER = CliRunner()
 
 

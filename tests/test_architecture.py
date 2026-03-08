@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-CORE = {"sync", "steam", "emulators", "firmware", "controllers", "common"}
+CORE = {"sync", "steam", "emulators", "firmware", "controllers", "common", "shortcuts"}
 CLI_SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "gamehub_cli"
 SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
 TOP_PACKAGES = {"gamehub_cli", "gamehub_server", "gamehub_common"}
@@ -11,8 +11,9 @@ TOP_PACKAGES = {"gamehub_cli", "gamehub_server", "gamehub_common"}
 ALLOWED_DEPENDENCIES: dict[str, set[str]] = {
     "common": set(),
     "controllers": {"common", "emulators", "firmware"},
-    "emulators": set(),
+    "emulators": {"common"},
     "firmware": {"common", "emulators"},
+    "shortcuts": {"common", "controllers", "emulators", "firmware", "sync"},
     "steam": {"common"},
     "sync": {"common", "controllers", "emulators", "firmware", "steam"},
 }
@@ -147,6 +148,31 @@ def _top_level_graph() -> dict[str, set[str]]:
     return graph
 
 
+def _repo_local_dynamic_imports() -> list[tuple[Path, str]]:
+    violations: list[tuple[Path, str]] = []
+    for py in SRC_ROOT.rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        tree = ast.parse(py.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            name: str | None = None
+            if isinstance(func, ast.Name):
+                name = func.id
+            elif isinstance(func, ast.Attribute):
+                name = func.attr
+            if name not in {"import_module", "__import__"}:
+                continue
+            target = node.args[0]
+            if not isinstance(target, ast.Constant) or not isinstance(target.value, str):
+                continue
+            if target.value.startswith(("gamehub_cli.", "gamehub_server.")):
+                violations.append((py, target.value))
+    return violations
+
+
 def test_core_package_dependencies_are_acyclic() -> None:
     graph = _cli_graph()
     assert not _has_cycle(graph), f"Detected cycle in core package graph: {graph}"
@@ -174,3 +200,8 @@ def test_top_level_package_dependencies_follow_allowed_directions() -> None:
             violations[source] = disallowed
 
     assert not violations, f"Disallowed top-level package dependencies detected: {violations}"
+
+
+def test_runtime_code_does_not_bypass_architecture_with_repo_local_dynamic_imports() -> None:
+    violations = _repo_local_dynamic_imports()
+    assert not violations, f"Repo-local dynamic imports detected: {violations}"

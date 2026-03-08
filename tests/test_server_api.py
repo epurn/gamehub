@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+import errno
 import threading
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import gamehub_server.index_repository as repo_module
 import gamehub_server.main as server_main
+import gamehub_server.save_api as save_api
+from gamehub_common.ids import make_save_id
 from gamehub_common.models import LibraryIndex
 from gamehub_server.index_repository import IndexRepository
 from gamehub_server.indexer import IndexBundle
@@ -26,6 +32,7 @@ def api_client(workspace_tempdir):
         root = temp_dir
         _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom-bytes")
         _write_file(root / "firmware" / "NES" / "dummy.bin", b"firmware-bytes")
+        _write_file(root / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav", b"save-bytes")
 
         original_data_root = server_main.DATA_ROOT
         original_repo = server_main.INDEX_REPO
@@ -82,6 +89,281 @@ def test_index_endpoint_auto_refreshes_when_rom_and_firmware_are_added(api_clien
 
     nes_second = next(system for system in second_payload["systems"] if system["name"] == "NES")
     assert {entry["filename"] for entry in nes_second["firmware"]} == {"dummy.bin", "addon.bin"}
+
+
+def test_save_endpoint_returns_file_and_404_for_unknown(api_client: TestClient) -> None:
+    index_response = api_client.get("/v1/index")
+    assert index_response.status_code == 200
+
+    payload = index_response.json()
+    assert len(payload["saves"]) == 1
+
+    save_id = payload["saves"][0]["save_id"]
+    save_response = api_client.get(f"/v1/saves/{save_id}")
+    assert save_response.status_code == 200
+    assert save_response.content == b"save-bytes"
+
+    missing_response = api_client.get("/v1/saves/save_missing")
+    assert missing_response.status_code == 404
+    assert missing_response.json()["detail"] == "Unknown save_id: save_missing"
+
+
+def test_save_endpoint_blocks_traversal_style_targets_with_id_lookup(api_client: TestClient) -> None:
+    traversal_response = api_client.get("/v1/saves/..%5Csecret.sav")
+    assert traversal_response.status_code == 404
+    assert traversal_response.json()["detail"] == r"Unknown save_id: ..\secret.sav"
+
+
+def test_get_save_bindings_returns_catalog(api_client: TestClient) -> None:
+    response = api_client.get("/v1/save-bindings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["bindings"]
+    assert payload["bindings"][0]["binding_id"].startswith("savebind_")
+
+
+def test_save_upload_route_updates_existing_save_and_returns_refreshed_metadata(api_client: TestClient) -> None:
+    index_response = api_client.get("/v1/index")
+    assert index_response.status_code == 200
+
+    original_save = index_response.json()["saves"][0]
+    save_id = original_save["save_id"]
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav"
+    binding_id = api_client.get("/v1/save-bindings").json()["bindings"][0]["binding_id"]
+    canonical_suffix = "slot1.sav"
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding_id,
+            "canonical_suffix": canonical_suffix,
+            "expected_remote_sha256": original_save["sha256"],
+        },
+        files={"file": ("slot1.sav", b"new-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["save_id"] == save_id
+    assert payload["sha256"] != original_save["sha256"]
+
+    save_response = api_client.get(f"/v1/saves/{save_id}")
+    assert save_response.status_code == 200
+    assert save_response.content == b"new-save"
+    backups = list(save_path.parent.glob(f"{save_path.name}.*.bak"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == b"save-bytes"
+
+
+def test_save_upload_route_creates_unknown_save_from_binding(api_client: TestClient) -> None:
+    binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
+    save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": "SuperMarioBros.srm",
+        },
+        files={"file": ("SuperMarioBros.srm", b"first-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 201
+    assert save_path.read_bytes() == b"first-save"
+
+
+def test_save_upload_route_creates_gc_learned_tree_save_from_binding(api_client: TestClient) -> None:
+    _write_file(server_main.DATA_ROOT / "roms" / "GC" / "WindWaker.iso", b"gc-rom")
+    server_main.INDEX_REPO.load(force_refresh=True)
+
+    bindings = api_client.get("/v1/save-bindings").json()["bindings"]
+    binding = next(item for item in bindings if item["system"] == "GC" and item["kind"] == "per_game")
+    save_rel = "saves/GC/WindWaker/per_game/USA/Card A/01-GZLE-gczelda.gci"
+    save_id = make_save_id(save_rel)
+    save_path = (
+        server_main.DATA_ROOT / "saves" / "GC" / "WindWaker" / "per_game" / "USA" / "Card A" / "01-GZLE-gczelda.gci"
+    )
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": "USA/Card A/01-GZLE-gczelda.gci",
+        },
+        files={"file": ("01-GZLE-gczelda.gci", b"gc-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 201
+    assert save_path.read_bytes() == b"gc-save"
+
+
+def test_save_upload_route_rejects_gamehub_backup_suffix_for_learned_tree_binding(api_client: TestClient) -> None:
+    _write_file(server_main.DATA_ROOT / "roms" / "GC" / "WindWaker.iso", b"gc-rom")
+    server_main.INDEX_REPO.load(force_refresh=True)
+
+    bindings = api_client.get("/v1/save-bindings").json()["bindings"]
+    binding = next(item for item in bindings if item["system"] == "GC" and item["kind"] == "per_game")
+    canonical_suffix = "USA/Card A/01-GZLE-gczelda.gci.20260308175422.bak"
+    save_rel = f"saves/GC/WindWaker/per_game/{canonical_suffix}"
+    save_id = make_save_id(save_rel)
+    save_path = (
+        server_main.DATA_ROOT
+        / "saves"
+        / "GC"
+        / "WindWaker"
+        / "per_game"
+        / "USA"
+        / "Card A"
+        / "01-GZLE-gczelda.gci.20260308175422.bak"
+    )
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": canonical_suffix,
+        },
+        files={"file": ("01-GZLE-gczelda.gci.20260308175422.bak", b"gc-backup", "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "canonical_suffix cannot target a GAMEHUB backup file"
+    assert not save_path.exists()
+
+
+def test_save_upload_route_rejects_expected_sha_mismatch(api_client: TestClient) -> None:
+    index_response = api_client.get("/v1/index")
+    save = index_response.json()["saves"][0]
+    binding_id = api_client.get("/v1/save-bindings").json()["bindings"][0]["binding_id"]
+
+    response = api_client.put(
+        f"/v1/saves/{save['save_id']}",
+        data={
+            "binding_id": binding_id,
+            "canonical_suffix": "slot1.sav",
+            "expected_remote_sha256": "0" * 64,
+        },
+        files={"file": ("slot1.sav", b"new-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "remote-sha-mismatch"
+
+
+def test_save_upload_route_rejects_stale_remote_mutation(api_client: TestClient) -> None:
+    index_response = api_client.get("/v1/index")
+    save = index_response.json()["saves"][0]
+    binding_id = api_client.get("/v1/save-bindings").json()["bindings"][0]["binding_id"]
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav"
+
+    _write_file(save_path, b"externally-mutated")
+
+    response = api_client.put(
+        f"/v1/saves/{save['save_id']}",
+        data={
+            "binding_id": binding_id,
+            "canonical_suffix": "slot1.sav",
+            "expected_remote_sha256": save["sha256"],
+        },
+        files={"file": ("slot1.sav", b"new-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "remote-sha-mismatch"
+    assert save_path.read_bytes() == b"externally-mutated"
+
+
+def test_save_upload_route_rejects_existing_unknown_save_without_expected_sha(api_client: TestClient) -> None:
+    binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
+    save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
+
+    _write_file(save_path, b"existing-out-of-band")
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": "SuperMarioBros.srm",
+        },
+        files={"file": ("SuperMarioBros.srm", b"first-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "expected_remote_sha256 is required for existing saves"
+    assert save_path.read_bytes() == b"existing-out-of-band"
+
+
+def test_save_upload_route_rejects_target_exists_unindexed_conflict(api_client: TestClient, monkeypatch) -> None:
+    binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
+    save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
+    _write_file(save_path, b"existing-out-of-band")
+
+    monkeypatch.setattr(save_api, "_save_spec_from_bundle", lambda bundle, lookup_save_id: None)
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": "SuperMarioBros.srm",
+        },
+        files={"file": ("SuperMarioBros.srm", b"first-save", "application/octet-stream")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "target-exists-unindexed"
+    assert save_path.read_bytes() == b"existing-out-of-band"
+
+
+def test_save_upload_route_enforces_upload_size_limit(api_client: TestClient, monkeypatch) -> None:
+    binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
+    save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
+    monkeypatch.setattr(server_main, "MAX_SAVE_UPLOAD_BYTES", 4)
+
+    response = api_client.put(
+        f"/v1/saves/{save_id}",
+        data={
+            "binding_id": binding["binding_id"],
+            "canonical_suffix": "SuperMarioBros.srm",
+        },
+        files={"file": ("SuperMarioBros.srm", b"too-large", "application/octet-stream")},
+    )
+
+    assert response.status_code == 413
+    assert "Save upload exceeds maximum allowed size" in response.json()["detail"]
+    assert not save_path.exists()
+
+
+def test_write_save_upload_reports_read_only_volume_clearly(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-api-") as temp_dir:
+        target = temp_dir / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav"
+        path_cls = type(target.parent)
+
+        def _readonly_mkdir(self, mode=0o777, parents=False, exist_ok=False):
+            raise OSError(errno.EROFS, "Read-only file system")
+
+        monkeypatch.setattr(path_cls, "mkdir", _readonly_mkdir)
+        upload = save_api.UploadFile(file=BytesIO(b"save"), filename="slot1.sav")
+
+        with pytest.raises(HTTPException) as excinfo:
+            asyncio.run(
+                save_api._write_save_upload(
+                    target,
+                    upload,
+                    save_id="save_test",
+                    create=True,
+                    max_upload_bytes=1024,
+                )
+            )
+
+        assert excinfo.value.status_code == 500
+        assert excinfo.value.detail == (
+            "Server data volume is read-only; save uploads require a writable GAMEHUB_DATA_DIR mount"
+        )
 
 
 def test_unknown_file_and_asset_ids_return_404(api_client: TestClient) -> None:
@@ -268,6 +550,33 @@ def test_index_repository_logs_new_files_when_source_change_refreshes(workspace_
     assert any("index contents changed reason=source_change" in message for message in messages)
     assert any("indexed new rom file" in message and "MegaMan2" in message for message in messages)
     assert any("indexed new firmware file" in message and "addon.bin" in message for message in messages)
+
+
+def test_index_repository_refreshes_when_nested_save_tree_changes(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-index-save-tree-") as root:
+        _write_file(root / "roms" / "Wii" / "SuperMarioGalaxy.iso", b"rom-bytes")
+        nested_save = root / "saves" / "Wii" / "SuperMarioGalaxy" / "per_game" / "profiles" / "slot1.bin"
+        _write_file(nested_save, b"save-a")
+
+        original_build_index = repo_module.build_index
+        calls = {"count": 0}
+
+        def counting_build_index(data_root: Path) -> IndexBundle:
+            calls["count"] += 1
+            return original_build_index(data_root)
+
+        monkeypatch.setattr(repo_module, "build_index", counting_build_index)
+        repo = IndexRepository(root.resolve(), refresh_seconds=0, poll_seconds=0, stable_seconds=0)
+
+        first = repo.load()
+        first_sha = first.index.saves[0].sha256
+
+        nested_save.write_bytes(b"save-b-updated")
+
+        second = repo.load()
+
+        assert calls["count"] == 2
+        assert second.index.saves[0].sha256 != first_sha
 
 
 def test_index_endpoint_refresh_query_forces_reload(api_client: TestClient, monkeypatch) -> None:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -18,8 +20,11 @@ from .index_repository import (
 )
 from .indexer import FIRMWARE_ROOT_NAME
 from .logging_utils import get_server_logger
+from .save_api import get_save as resolve_save_response
+from .save_api import get_save_bindings as build_save_bindings_response
+from .save_api import put_save as put_save_payload
+from .save_api import read_max_save_upload_bytes
 
-app = FastAPI(title="GAMEHUB Server", version=__version__)
 logger = get_server_logger(__name__)
 
 DATA_ROOT = Path(os.environ.get("GAMEHUB_DATA_DIR", "/data")).resolve()
@@ -29,6 +34,7 @@ INDEX_REPO = IndexRepository(
     poll_seconds=read_index_poll_seconds(),
     stable_seconds=read_index_stable_seconds(),
 )
+MAX_SAVE_UPLOAD_BYTES = read_max_save_upload_bytes()
 
 
 def _is_safe_segment(value: str) -> bool:
@@ -37,14 +43,7 @@ def _is_safe_segment(value: str) -> bool:
     return "/" not in value and "\\" not in value
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-@app.on_event("startup")
 def warm_index_cache() -> None:
-    # Preload the index so first /v1/index request does not trigger full-library hashing.
     logger.info("index warmup started data_root=%s", DATA_ROOT)
     started_at = time.monotonic()
     try:
@@ -63,14 +62,30 @@ def warm_index_cache() -> None:
     )
 
 
-@app.on_event("startup")
 def start_index_poller() -> None:
     INDEX_REPO.start_polling()
 
 
-@app.on_event("shutdown")
 def stop_index_poller() -> None:
     INDEX_REPO.stop_polling()
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    warm_index_cache()
+    start_index_poller()
+    try:
+        yield
+    finally:
+        stop_index_poller()
+
+
+app = FastAPI(title="GAMEHUB Server", version=__version__, lifespan=_lifespan)
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 @app.get("/v1/index")
@@ -101,6 +116,28 @@ def get_asset(asset_id: str) -> FileResponse:
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail=f"Unknown asset_id: {asset_id}")
     return FileResponse(path)
+
+
+@app.get("/v1/saves/{save_id}")
+def get_save(save_id: str) -> FileResponse:
+    return resolve_save_response(index_repo=INDEX_REPO, save_id=save_id)
+
+
+@app.get("/v1/save-bindings")
+def get_save_bindings() -> dict[str, object]:
+    return build_save_bindings_response(index_repo=INDEX_REPO)
+
+
+@app.put("/v1/saves/{save_id}")
+async def put_save(save_id: str, request: Request, response: Response) -> dict[str, object]:
+    return await put_save_payload(
+        save_id,
+        request,
+        response,
+        data_root=DATA_ROOT,
+        index_repo=INDEX_REPO,
+        max_upload_bytes=MAX_SAVE_UPLOAD_BYTES,
+    )
 
 
 @app.get("/v1/firmware/{system}/{filename}")

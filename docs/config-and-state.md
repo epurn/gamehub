@@ -69,6 +69,17 @@ launch_autoconfig = true
 # Optional explicit profile root.
 # Default when omitted: <paths.gamehub_dir>/controller_profiles
 profiles_dir = "~/.gamehub/controller_profiles"
+
+[save_sync]
+# Rollout default is disabled.
+enabled = false
+# download | bidirectional
+mode = "download"
+# prefer_server | prefer_local | manual
+conflict_policy = "prefer_server"
+# Optional allow-list of systems; empty means all supported systems.
+systems = ["PS2", "Wii"]
+
 ```
 
 Secret policy:
@@ -143,18 +154,18 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_LINUX_EMULATOR_INSTALL_COMMAND`: overrides `[linux].emulator_install_command`.
 - `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`: overrides the default pinned Windows Azahar installer URL used by emulator auto-install.
-- `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`: enables/disables Windows Azahar `Start+Select` exit hook (`true` by default).
-- `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`: enables/disables Linux Azahar `Select+Start` exit hook wrapper (`true` by default).
-- `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Azahar exit hook (default `4`).
-- `GAMEHUB_AZAHAR_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Azahar exit hook (default `6`).
-- `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Azahar exit hook (for example `/dev/input/js0`).
+- `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`: enables/disables the Windows Azahar `shortcut-launch` `Start+Select` exit hook (`true` by default).
+- `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`: enables/disables the Linux Azahar Steam-launch wrapper emitted during sync (`true` by default).
+- `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for the Linux Azahar wrapper (default `4`).
+- `GAMEHUB_AZAHAR_EXIT_BUTTON_START`: joystick button index used as `Start` for the Linux Azahar wrapper (default `6`).
+- `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`: optional explicit joystick device path for the Linux Azahar wrapper (for example `/dev/input/js0`).
 - `GAMEHUB_AZAHAR_SDL_DIR`: optional directory containing Azahar's `SDL2.dll` for Windows GUID discovery.
-- `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`: enables/disables Linux Dolphin Flatpak `Select+Start` exit hook wrapper in `controller-launch` (`true` by default).
+- `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK`: enables/disables Linux Dolphin Flatpak `Select+Start` exit hook wrapper in `shortcut-launch` (`true` by default).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for Linux Dolphin exit hook (default `6`).
 - `GAMEHUB_DOLPHIN_EXIT_BUTTON_START`: joystick button index used as `Start` for Linux Dolphin exit hook (default `7`).
 - `GAMEHUB_DOLPHIN_EXIT_JS_DEVICE`: optional explicit joystick device path for Linux Dolphin exit hook (for example `/dev/input/js0`).
 - `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG`: force managed shortcut `AllowDesktopConfig` (`true`/`false`).
-- Linux Azahar exit hook input sources:
+- Linux Azahar wrapper input sources:
   - always watches available `/dev/input/js*` joystick devices with configured button indices
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
 - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`: overrides `[controllers].launch_autoconfig` (`true`/`false`).
@@ -164,6 +175,38 @@ Firmware deployment and Linux runtime env overrides:
 - `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
 - `GAMEHUB_MAX_PARALLEL_DOWNLOADS`: overrides `[server].max_parallel_downloads` (clamped to `1..16`).
 
+Save sync config keys (TOML only for now):
+- `[save_sync].enabled`: default `false` (safe rollout).
+- `[save_sync].mode`: `download` (default) or `bidirectional`.
+- `[save_sync].conflict_policy`: `prefer_server` (default), `prefer_local`, or `manual`.
+- `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase). Managed launch-session save sync and managed `PSX`/`PS2` memory-card rewrites only run for included systems.
+- Save planning decisions are deterministic and include explicit reasons for `download`, `upload_existing`, `upload_new`, `conflict`, and `skip` paths (for example: `local-missing`, `download-mode-local-drift`, `local-only-create`, `download-mode-local-new`, `both-changed-manual`, `save-sync-disabled`, `missed-upload-local-newer`, `missed-upload-remote-newer`).
+
+Mode behavior reference:
+- `enabled=false`: planner emits deterministic `skip` reasons (for example `save-sync-disabled`) and performs no save transfers.
+- `mode=download`: planner may emit `download` or `skip`; missing local saves still download, while existing local drift becomes `skip(download-mode-local-drift)` and local-only first-time exact-file saves become `skip(download-mode-local-new)`. Both `upload_existing` and `upload_new` actions are suppressed.
+- `mode=bidirectional`: planner may emit `download`, `upload_existing`, `upload_new`, `conflict`, or `skip` based on checksum lineage, local-only discovery, and `conflict_policy`.
+- `conflict_policy=prefer_server`: conflict path converges to server copy (planned `download`).
+- `conflict_policy=prefer_local`: conflict path converges to local copy (planned `upload`).
+- `conflict_policy=manual`: planner emits `conflict` and records unresolved entries in state until operator intervention.
+- In `mode=bidirectional`, if `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"`, planner and managed `shortcut-launch` pre-launch resolution compare local file mtime vs remote `updated_at` after UTC normalization/truncation to seconds:
+  - local newer -> `upload_existing` (`missed-upload-local-newer`)
+  - remote newer -> `download` (`missed-upload-remote-newer`)
+  - missing/unreadable/tied timestamps -> fall back to the existing checksum/lineage conflict-safe path
+- `offline_shortcut_titles[title_id]` records managed titles that launched while server metadata was unavailable. On the next connected managed pre-launch, GAMEHUB uses that title marker to seed the same `postexit-upload-missed-server-unreachable` timestamp recovery for lineage-missing indexed saves before clearing the title marker.
+- In `mode=bidirectional`, managed `shortcut-launch` sessions run pre-launch download/skip/conflict reconciliation, then attempt post-exit upload when the remote save did not change during play and either the save changed during that session or pre-launch already resolved it toward `upload_existing`.
+- Managed `shortcut-launch` save sync is fail-open: it runs a one-shot `/health` precheck (`1.0s` timeout) before pre-launch and post-exit network save work, and skips launch-session save network steps when the server is unreachable.
+- Managed `shortcut-launch` metadata fetches (`/v1/index`, `/v1/save-bindings`) use launch-only fast-fail settings (`<=5.0s` timeout cap, attempts=`1`, backoff=`0.0s`).
+- First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry `gamehub sync` through `GET /v1/save-bindings`.
+- Managed `shortcut-launch` sessions also auto-create those deterministic `exact_files` saves at post-exit for wrapped titles, so first-time RetroArch battery saves and managed `PSX`/`PS2` memory cards do not need to wait for the next full sync.
+  - `PSX` Swanstation exact-file detection accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.
+- First-time `per_game` saves are learned and uploaded by managed `shortcut-launch` post-exit when one deterministic tree root can be proven (`GC` GCI folders, `Wii` title trees, and `N3DS` title data trees), including local-only saves that already existed before the connected bidirectional launch began.
+- There is no background save watcher service in this release; unmanaged emulator launches reconcile on the next `gamehub sync` or next managed launch.
+
+Dry-run expectations for save sync:
+- Dry-run never writes local save files and never mutates remote save artifacts.
+- Dry-run output should include explicit per-save decision reasons so operators can audit why each save is `download`, `upload_existing`, `upload_new`, `conflict`, or `skip`.
+
 Linux PS2 note:
 - When PCSX2 resolves to Flatpak and no BIOS override is set, GAMEHUB writes `Bios` in `PCSX2.ini` to `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` and mirrors BIOS files there.
 - PCSX2 controller bindings and hotkeys are managed at launch via controller profiles when `launch_autoconfig` is enabled.
@@ -171,6 +214,7 @@ Linux PS2 note:
 RetroArch note:
 - When a RetroArch config file is discovered (`retroarch.cfg` candidates or explicit override), GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) and `all_users_control_menu = "true"` for controller quick-menu access.
 - On Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`.
+- On Linux, when RetroArch resolves to Flatpak, config discovery prefers Flatpak `retroarch.cfg` before native `~/.config/retroarch/retroarch.cfg`.
 - RetroArch `system_directory = ":/system"` (portable-relative) is normalized to `<retroarch.cfg dir>/system` on Windows.
 - RetroArch `libretro_directory = ":/cores"` and `libretro_info_path = ":/info"` (portable-relative) are normalized to `<retroarch.cfg dir>/cores` / `<retroarch.cfg dir>/info` on Windows.
 - GAMEHUB also writes a Swanstation core remap file to `<config remap dir>/SwanStation/SwanStation.rmp` (default `<retroarch.cfg dir>/config/remaps/...`) with the tested DualShock + analog/turbo defaults.
@@ -182,11 +226,12 @@ RetroArch note:
 - GAMEHUB also ensures `swanstation_Controller1.Type = "AnalogController"` and `swanstation_Controller2.Type = "AnalogController"` in `retroarch-core-options.cfg` so PSX games default to DualShock-style pads.
 - On Windows, GAMEHUB keeps PSX controller overrides out of `retroarch.cfg` and applies them only via the Swanstation core remap file.
 
-Controller launch autoconfig:
+Managed shortcut launch autoconfig:
 - Applies to Steam shortcut launches for `PCSX2`, `Dolphin`, and `Azahar`.
-- Does not wrap `RetroArch` launches.
+- Wraps `RetroArch` launches when controller autoconfig or save sync is enabled.
 - Runtime flow: detect Xbox controller count (`0`, `1`, `2+`) -> choose profile (`kbm`, `xbox_1p`, `xbox_2p`) -> apply managed keys -> launch emulator.
-- Linux Steam Deck controller-launch uses a single detect pass and applies `xbox_1p` when detection returns zero.
+- The hidden wrapper command is `shortcut-launch`; older `controller-launch` shortcuts must be rewritten by a non-dry `gamehub sync` after upgrade.
+- Linux Steam Deck `shortcut-launch` uses a single detect pass and applies `xbox_1p` when detection returns zero.
 - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later update.
 - Non-Deck platforms keep standard behavior (`0 -> kbm`).
 - Azahar controller-mode apply keeps pointer/touch keys preservation-first, while managed button keys are always normalized from profile mappings.
@@ -198,6 +243,7 @@ Controller launch autoconfig:
   - `<root>/dolphin/<profile>/Hotkeys.ini`
   - `<root>/azahar/<profile>/qt-config.ini`
 - Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
+- `shortcut-launch` does not seed controller profiles at launch time; run non-dry `gamehub init` or `gamehub sync` first when profile files may be missing.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
 - If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
@@ -242,23 +288,37 @@ N3DS Azahar defaults:
 - GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
-- On Linux, GAMEHUB uses a wrapper launch hook by default to close Azahar when `Select+Start` is pressed (native-controller mode).
-- On Windows, GAMEHUB uses a controller-launch XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
-- On Linux Flatpak Dolphin launches wrapped by `controller-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
+- On Linux Flatpak Azahar, GAMEHUB emits `python -m gamehub_cli.controllers.azahar_exit_hook` in the Steam shortcut by default so `Select+Start` can close Azahar before any optional `shortcut-launch` wrapping runs.
+- On Windows, GAMEHUB uses a `shortcut-launch` XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
+- On Linux Flatpak Dolphin launches wrapped by `shortcut-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
 
 ## State file
 - Format: JSON
 - Tracks:
   - `downloaded_checksums` (`file_id`/`asset_id` -> checksum)
   - `firmware_checksums` (`system/filename` -> checksum)
+  - `save_checksums` (`save_id` -> checksum)
+  - `save_lineage` (`save_id` -> last synced local/remote checksum and timestamps)
+  - `save_binding_roots` (`binding_id` -> learned `canonical_root` + client-local `materialized_root`)
+  - `offline_shortcut_titles` (`title_id` -> UTC timestamp marker for managed launches that lost metadata/server reachability)
+  - `unresolved_save_conflicts` (`save_id` -> last unresolved deterministic conflict reason)
   - `tombstones`
   - `last_sync` (UTC timestamp)
   - `bootstrap_version` (local bootstrap marker written by `gamehub init`; current value `1`)
+
+Save sync state semantics:
+- Missing save keys in older `state.json` files load as empty defaults for backward compatibility.
+- `save_checksums` tracks last-known local checksum by `save_id` for deterministic planner comparisons.
+- `save_lineage` captures last-synced local/remote checksum snapshots and timestamps.
+- `save_binding_roots` persists learned deterministic tree roots for `per_game` save materialization across clients and later runs.
+- `offline_shortcut_titles` persists reconnect-recovery markers for managed launches that skipped metadata/save work while the server was unreachable.
+- `unresolved_save_conflicts` persists manual-resolution-required conflicts between runs.
+- `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` marks a managed launch-session upload miss caused by unreachable server; on reconnect in bidirectional mode, this enables deterministic timestamp comparison before fallback conflict logic.
 
 Bootstrap notes:
 - Fresh installs must run `gamehub init` before the first `gamehub sync`.
 - `gamehub sync` fails fast on fresh installs when `bootstrap_version` is missing and no legacy sync evidence exists.
 - Existing installs upgrade in place:
-  - if older `state.json` files do not include `bootstrap_version` but do include prior sync evidence (`last_sync`, downloaded checksums, or firmware checksums), `gamehub sync` still runs and backfills `bootstrap_version` after a successful non-dry sync.
+  - if older `state.json` files do not include `bootstrap_version` but do include prior sync evidence (`last_sync`, downloaded checksums, firmware checksums, save checksums, or learned save roots), `gamehub sync` still runs and backfills `bootstrap_version` after a successful non-dry sync.
 
-Writes are atomic (`.tmp` then rename).
+State writes back up existing `state.json`, write via `.tmp` + fsync + atomic replace, and emit explicit sync-state log records.

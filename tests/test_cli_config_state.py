@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
-from gamehub_cli.common.config import ControllersConfig, LinuxConfig, default_config_path, load_config
+from gamehub_cli.common.config import ControllersConfig, LinuxConfig, SaveSyncConfig, default_config_path, load_config
 from gamehub_cli.sync.state import SyncState, load_state, save_state_atomic
 
 
@@ -387,6 +388,22 @@ def test_state_round_trip_with_atomic_save(workspace_tempdir) -> None:
         assert loaded.to_dict() == state.to_dict()
 
 
+def test_state_overwrite_creates_backup(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-state-") as temp_root:
+        state_path = temp_root / "state.json"
+        first = SyncState(downloaded_checksums={"file_1": "a" * 64})
+        second = SyncState(downloaded_checksums={"file_2": "b" * 64})
+
+        save_state_atomic(state_path, first)
+        save_state_atomic(state_path, second)
+
+        backups = list(state_path.parent.glob("state.json.*.bak"))
+        assert len(backups) == 1
+        backup_payload = json.loads(backups[0].read_text(encoding="utf-8"))
+        assert backup_payload == first.to_dict()
+        assert load_state(state_path).to_dict() == second.to_dict()
+
+
 def test_load_state_defaults_bootstrap_version_when_missing(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-state-") as temp_root:
         state_path = temp_root / "state.json"
@@ -448,3 +465,124 @@ def test_load_config_rejects_removed_output_dir_env_alias(monkeypatch, workspace
 
         with pytest.raises(ValueError, match="GAMEHUB_OUTPUT_DIR"):
             load_config(config_path)
+
+
+def test_load_config_save_sync_defaults_disabled(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        monkeypatch.delenv("GAMEHUB_SGDB_API_KEY", raising=False)
+        config_path = temp_root / "missing.toml"
+
+        loaded = load_config(config_path)
+
+        assert loaded.save_sync == SaveSyncConfig()
+
+
+def test_load_config_supports_save_sync_block(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[save_sync]",
+                    "enabled = true",
+                    'mode = "bidirectional"',
+                    'conflict_policy = "manual"',
+                    'systems = ["ps2", " Wii ", "ps2"]',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_config(config_path)
+
+        assert loaded.save_sync.enabled is True
+        assert loaded.save_sync.mode == "bidirectional"
+        assert loaded.save_sync.conflict_policy == "manual"
+        assert loaded.save_sync.systems == ("PS2", "WII")
+
+
+def test_load_config_normalizes_invalid_save_sync_values(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[save_sync]",
+                    'enabled = "nope"',
+                    'mode = "download-only"',
+                    'conflict_policy = "unexpected"',
+                    'systems = ["", 123, "  nEs  "]',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_config(config_path)
+
+        assert loaded.save_sync.enabled is False
+        assert loaded.save_sync.mode == "download"
+        assert loaded.save_sync.conflict_policy == "prefer_server"
+        assert loaded.save_sync.systems == ("NES",)
+
+
+def test_load_state_defaults_save_sync_keys_when_missing(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-state-") as temp_root:
+        state_path = temp_root / "state.json"
+        state_path.write_text(
+            "\n".join(
+                [
+                    "{",
+                    '  "downloaded_checksums": {},',
+                    '  "firmware_checksums": {},',
+                    '  "tombstones": [],',
+                    '  "last_sync": null,',
+                    '  "bootstrap_version": 1',
+                    "}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        loaded = load_state(state_path)
+
+        assert loaded.save_checksums == {}
+        assert loaded.save_lineage == {}
+        assert loaded.save_binding_roots == {}
+        assert loaded.offline_shortcut_titles == {}
+        assert loaded.unresolved_save_conflicts == {}
+
+
+def test_state_round_trip_persists_save_sync_lineage(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-state-") as temp_root:
+        state_path = temp_root / "state.json"
+        state = SyncState(
+            downloaded_checksums={"file_1": "a" * 64},
+            firmware_checksums={"PSX/scph5501.bin": "b" * 64},
+            save_checksums={"save_1": "c" * 64},
+            save_lineage={
+                "save_1": {
+                    "local_sha256": "d" * 64,
+                    "remote_sha256": "c" * 64,
+                    "local_updated_at": "2026-02-14T18:00:00+00:00",
+                    "remote_updated_at": "2026-02-14T18:30:00+00:00",
+                    "synced_at": "2026-02-14T19:00:00+00:00",
+                }
+            },
+            save_binding_roots={
+                "savebind_1": {
+                    "canonical_root": "title/00000001/00000002/data",
+                    "materialized_root": "Nintendo 3DS/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/title/00000001/00000002/data",
+                }
+            },
+            offline_shortcut_titles={"title_gbc_pokemon": "2026-02-14T18:05:00+00:00"},
+            unresolved_save_conflicts={"save_2": "both-changed-manual"},
+            tombstones=["title_old"],
+            last_sync="2026-02-14T18:00:00+00:00",
+            bootstrap_version=1,
+        )
+
+        save_state_atomic(state_path, state)
+        loaded = load_state(state_path)
+
+        assert loaded.to_dict() == state.to_dict()

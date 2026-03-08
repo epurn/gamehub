@@ -17,8 +17,22 @@ _N3DS_CONTROLLER_FILE = "3ds_0.vdf"
 _WII_GAMEHUB_FILE = "gamehub_wii.vdf"
 _N3DS_GAMEHUB_FILE = "gamehub_3ds.vdf"
 _SYSTEM_TO_SEED_PATH = {
-    "wii_gc": _REPO_ROOT / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "wii_gc" / _WII_CONTROLLER_FILE,
-    "n3ds": _REPO_ROOT / "src" / "gamehub_cli" / "steam" / "template_seeds" / "steamdeck" / "n3ds" / _N3DS_CONTROLLER_FILE,
+    "wii_gc": _REPO_ROOT
+    / "src"
+    / "gamehub_cli"
+    / "steam"
+    / "template_seeds"
+    / "steamdeck"
+    / "wii_gc"
+    / _WII_CONTROLLER_FILE,
+    "n3ds": _REPO_ROOT
+    / "src"
+    / "gamehub_cli"
+    / "steam"
+    / "template_seeds"
+    / "steamdeck"
+    / "n3ds"
+    / _N3DS_CONTROLLER_FILE,
 }
 _SYSTEM_TO_SOURCE_FILES = {
     "wii_gc": (_WII_GAMEHUB_FILE, _WII_CONTROLLER_FILE),

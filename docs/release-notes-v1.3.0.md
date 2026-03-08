@@ -5,6 +5,7 @@
 - GAMEHUB now auto-syncs Steam Input templates for managed `Wii` and `N3DS` titles on Steam Deck.
 - Controller launch autoconfig is hardened across Dolphin/Azahar/Deck detection paths.
 - Config/path migration cleanup is now strict, with explicit ROM root override support.
+- Save sync now supports stable save IDs, atomic server uploads, and managed launch-session bidirectional upload for wrapped shortcuts.
 
 ## Server
 - Docker image: `ghcr.io/<org>/gamehub-server:v1.3.0`
@@ -32,12 +33,14 @@
 - Legacy unmanaged shortcut adoption is no longer performed.
 - Legacy localconfig collection-path migration is no longer performed.
 - If upgrading from older branch builds, run one sync with `--reseed-profiles`.
+- Managed shortcut wrapper commands are now emitted as `shortcut-launch` instead of `controller-launch`.
+- After upgrading, run one non-dry `gamehub sync` before launching managed shortcuts so existing Steam entries are rewritten to `shortcut-launch`.
 
 ## Steam / Controller Behavior Changes
 - Deck-managed shortcuts default to native-first `AllowDesktopConfig` behavior.
   - Override with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`.
 - Managed app overrides are repaired for Steam Input consistency.
-- Hidden `controller-launch --audit` diagnostics are available for controller profile application.
+- Hidden `shortcut-launch --audit` diagnostics are available for managed shortcut launch diagnostics.
 
 ## Packaging
 - Steam Deck template seed files are now packaged with client artifacts.
@@ -50,6 +53,7 @@
 
 ## Known Limitations
 - Steam Deck external Xbox controller support remains planned for a later release.
+- Automatic save upload is launch-session scoped for GAMEHUB-managed shortcuts only; there is no background watcher service in this release.
 
 ## Checksums
 - See `checksums.txt` in release assets.

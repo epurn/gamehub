@@ -3,10 +3,10 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from urllib.parse import urljoin
 
-from gamehub_common.models import LibraryIndex
+from gamehub_common.models import LibraryIndex, SaveBindingCatalog
 
 from ..common.config import GamehubConfig
 from ..controllers.convergence import converge_controller_state
@@ -15,7 +15,7 @@ from ..emulators import ensure_emulators
 from ..firmware.deploy import deploy_firmware_to_emulators
 from ..firmware.retroarch_cores import ensure_retroarch_cores
 from ..steam import SteamContext, SteamShortcutSpec, steam_id64_from_userdata_id
-from . import artwork_stage, steam_stage, transfer_stage
+from . import artwork_stage, save_stage, steam_stage, transfer_stage
 from . import index as sync_index
 from .planner import create_sync_plan
 from .state import (
@@ -188,6 +188,7 @@ def _fetch_index_with_retries(
         verbose=verbose,
         http_client_module=sync_index.httpx,
         sleep_func=time.sleep,
+        reporter=print,
     )
 
 
@@ -223,7 +224,28 @@ def _load_validated_index(config: GamehubConfig, *, transfer_timeout: float, ver
         retry_backoff_seconds=config.index_retry_backoff_seconds,
         verbose=verbose,
     )
-    return LibraryIndex.model_validate(raw_index)
+    return cast(LibraryIndex, LibraryIndex.model_validate(raw_index))
+
+
+def _load_validated_save_bindings(
+    config: GamehubConfig, *, transfer_timeout: float, verbose: bool
+) -> SaveBindingCatalog | None:
+    if not config.save_sync.enabled:
+        return None
+    bindings_timeout = config.index_timeout_seconds if config.index_timeout_seconds is not None else transfer_timeout
+    bindings_url = urljoin(config.server_url.rstrip("/") + "/", "v1/save-bindings")
+    print(f"Fetching save bindings: {bindings_url}")
+    raw_bindings = sync_index.fetch_save_bindings_with_retries(
+        bindings_url=bindings_url,
+        timeout_seconds=bindings_timeout,
+        attempts=config.index_fetch_attempts,
+        retry_backoff_seconds=config.index_retry_backoff_seconds,
+        verbose=verbose,
+        http_client_module=sync_index.httpx,
+        sleep_func=time.sleep,
+        reporter=print,
+    )
+    return cast(SaveBindingCatalog, SaveBindingCatalog.model_validate(raw_bindings))
 
 
 def _bootstrap_runtime(
@@ -332,8 +354,9 @@ def run_sync(
         return 1
     transfer_timeout = _transfer_timeout_seconds(verbose)
     index = _load_validated_index(config, transfer_timeout=transfer_timeout, verbose=verbose)
+    save_bindings = _load_validated_save_bindings(config, transfer_timeout=transfer_timeout, verbose=verbose)
     _bootstrap_runtime(config, index=index, dry_run=dry_run, verbose=verbose)
-    plan = create_sync_plan(index=index, config=config, state=state, verify=verify)
+    plan = create_sync_plan(index=index, config=config, state=state, verify=verify, save_bindings=save_bindings)
     _print_plan(plan)
     steam_context = _resolve_steam_context(config)
     if steam_context is not None:
@@ -350,6 +373,14 @@ def run_sync(
         verbose=verbose,
     )
     if dry_run:
+        save_stage.apply_save_stage(
+            server_url=config.server_url,
+            plan=plan,
+            state=state,
+            timeout_seconds=transfer_timeout,
+            dry_run=True,
+            verbose=verbose,
+        )
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=verbose)
         _converge_bootstrap_controller_state(
             config,
@@ -367,6 +398,14 @@ def run_sync(
         timeout_seconds=transfer_timeout,
         verbose=verbose,
         max_parallel_downloads=config.max_parallel_downloads,
+    )
+    save_stage.apply_save_stage(
+        server_url=config.server_url,
+        plan=plan,
+        state=state,
+        timeout_seconds=transfer_timeout,
+        dry_run=False,
+        verbose=verbose,
     )
     deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=verbose)
     _converge_bootstrap_controller_state(

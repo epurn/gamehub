@@ -4,14 +4,31 @@ import os
 import sqlite3
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import TypedDict
+
+from typing_extensions import NotRequired
 
 from gamehub_common.ids import make_file_id, make_title_id, sha256_file
-from gamehub_common.models import FirmwareSpec, LibraryIndex, RomSpec, SystemSpec, TitleEntry
+from gamehub_common.models import (
+    FirmwareSpec,
+    LibraryIndex,
+    RomSpec,
+    SaveBindingSpec,
+    SaveSpec,
+    SystemSpec,
+    TitleEntry,
+)
 
 from .logging_utils import get_server_logger
+from .save_index import (
+    SAVES_ROOT_NAME,
+    IndexedSaveBinding,
+    build_save_bindings,
+    save_binding_key_from_title_rel_dir,
+    scan_save_specs,
+)
 
 FIRMWARE_ROOT_NAME = "firmware"
 ROMS_ROOT_NAME = "roms"
@@ -116,6 +133,8 @@ class IndexBundle:
     index: LibraryIndex
     file_paths: dict[str, Path]
     asset_paths: dict[str, Path]
+    save_paths: dict[str, Path] = field(default_factory=dict)
+    save_bindings: tuple[SaveBindingSpec, ...] = ()
 
 
 @dataclass
@@ -245,14 +264,18 @@ def _scan_firmware_specs(
 
 def build_index(data_root: Path) -> IndexBundle:
     roms_root = data_root / ROMS_ROOT_NAME
-    if not roms_root.exists():
-        return IndexBundle(index=LibraryIndex(), file_paths={}, asset_paths={})
+    saves_root = data_root / SAVES_ROOT_NAME
+    if not roms_root.exists() and not saves_root.exists():
+        return IndexBundle(index=LibraryIndex(), file_paths={}, asset_paths={}, save_paths={})
 
     hash_cache = _HashCache.open(data_root)
     systems: list[SystemSpec] = []
     titles: list[TitleEntry] = []
+    saves: list[SaveSpec] = []
     file_paths: dict[str, Path] = {}
     asset_paths: dict[str, Path] = {}
+    save_paths: dict[str, Path] = {}
+    title_bindings: dict[tuple[str, str], IndexedSaveBinding] = {}
     try:
         for system_name in sorted(SYSTEM_CATALOG):
             system_dir = roms_root / system_name
@@ -306,6 +329,8 @@ def build_index(data_root: Path) -> IndexBundle:
 
                 title_rel_dir = _relative_unix(rom_path, roms_root)
                 title_id = make_title_id(system_name, title_rel_dir)
+                binding_key = save_binding_key_from_title_rel_dir(system_name, title_rel_dir)
+                title_bindings[binding_key] = IndexedSaveBinding(title_id=title_id, system=system_name)
 
                 system_titles.append(
                     TitleEntry(
@@ -341,11 +366,36 @@ def build_index(data_root: Path) -> IndexBundle:
             )
             titles.extend(system_titles)
 
+        if saves_root.exists() and not saves_root.is_dir():
+            raise ValueError(f"Saves path is not a directory: {saves_root}")
+
+        if saves_root.is_dir():
+            saves, save_paths = scan_save_specs(
+                data_root=data_root,
+                system_catalog=SYSTEM_CATALOG,
+                title_bindings=title_bindings,
+                hash_sha256=lambda path, rel_path, size_bytes, mtime_ns: hash_cache.get_sha256(
+                    path,
+                    rel_path,
+                    size_bytes=size_bytes,
+                    mtime_ns=mtime_ns,
+                ),
+                relative_unix=_relative_unix,
+            )
+
+        ordered_titles = tuple(sorted(titles, key=lambda item: (item.system, item.title_rel_dir)))
         index = LibraryIndex(
             index_version=1,
             systems=tuple(sorted(systems, key=lambda item: item.name)),
-            titles=tuple(sorted(titles, key=lambda item: (item.system, item.title_rel_dir))),
+            titles=ordered_titles,
+            saves=tuple(sorted(saves, key=lambda item: (item.system, item.rel_path))),
         )
-        return IndexBundle(index=index, file_paths=file_paths, asset_paths=asset_paths)
+        return IndexBundle(
+            index=index,
+            file_paths=file_paths,
+            asset_paths=asset_paths,
+            save_paths=save_paths,
+            save_bindings=build_save_bindings(ordered_titles),
+        )
     finally:
         hash_cache.close()

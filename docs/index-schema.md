@@ -7,6 +7,7 @@
 - `generated_at`: UTC timestamp
 - `systems`: list of `SystemSpec`
 - `titles`: list of `TitleEntry`
+- `saves`: list of `SaveSpec` (may be empty during phased rollout)
 
 ## `SystemSpec`
 - `name`: canonical system name (for Steam collections)
@@ -30,10 +31,44 @@
 - `rom`: one `RomSpec` for each file in `roms/<system>/` matching allowed extensions
 - `assets`: currently empty in flat-ROM layout; reserved for artwork ingestion workflow
 
+
+## `SaveSpec`
+- `save_id`: deterministic from canonical server-relative save path only (stable across content changes)
+- `title_id`: deterministic title binding (must reference a known title)
+- `system`: canonical system name (for strict matching / filtering)
+- `kind`: one of `battery`, `memory_card`, `per_game`
+- `rel_path`: canonical server-relative save path
+- `sha256`: lowercase 64-char hex digest for save content
+- `size_bytes`: save file size in bytes
+- `updated_at`: server UTC timestamp for save artifact freshness
+- `portable`: whether the save format is expected to be portable across clients/emulator variants
+
+Save sync matching rules:
+- Clients must match saves by `save_id`/`title_id` only (never by fuzzy title names or filename heuristics).
+- `save_id` is the stable identity key; `sha256` is the mutable freshness/version signal used for planner decisions.
+- `system` is part of strict filtering behavior (`[save_sync].systems`) and must use canonical uppercase names.
+- `portable=false` indicates the server indexed a known non-portable format; clients should still parse it but may choose conservative conflict behavior.
+
+## `GET /v1/save-bindings`
+- The save-binding catalog is a companion contract for first-time local save uploads.
+- Each `SaveBindingSpec` includes:
+  - `binding_id`: deterministic from `make_save_binding_id(title_id, kind)`
+  - `title_id`, `system`, `kind`
+  - `server_rel_dir`: canonical remote namespace root used to derive `save_id`
+  - `local_root`: deterministic local save-root family (`retroarch_saves`, `retroarch_saves_psx`, `pcsx2_memcards`, `dolphin_gc`, `dolphin_wii`, `azahar_sdmc`)
+  - `strategy`: `exact_files` or `learned_tree`
+  - `candidate_filenames`: exact allowed first-create filenames for `exact_files`
+  - `learn_rule`: structural learned-tree rule for `learned_tree` (`dolphin_gc_gci_tree`, `dolphin_wii_title_tree`, `azahar_title_data_tree`)
+  - `portable`
+- Bindings are generated from indexed titles, not from existing remote save files, so they can exist before any save artifact is uploaded.
+
 ## Validation guarantees
 - Unknown fields are rejected (`extra=forbid`)
 - SHA-256 fields must be lowercase 64-char hex
 - ROM extensions are normalized and deduplicated
+- `server_rel_dir` must be a normalized POSIX relative path without traversal segments
+- `exact_files` bindings require non-empty `candidate_filenames` and must not declare `learn_rule`
+- `learned_tree` bindings require `learn_rule` and must not declare `candidate_filenames`
 - Nested title directories under `roms/<system>/` are rejected (layout is flat files only)
 - Duplicate title stems within a system (for example `Title.iso` + `Title.chd`) are rejected
 - If a system has indexed titles and required firmware is missing on the server, index generation fails (for example: `PS2` `scph10000.bin`)
@@ -42,3 +77,14 @@
 - `title_id`: `make_title_id(system, title_rel_dir)`
 - `file_id`: `make_file_id(server_relative_path, sha256)`
 - `asset_id`: `make_asset_id(server_relative_path, sha256)`
+- `save_id`: `make_save_id(server_relative_path)`
+- `binding_id`: `make_save_binding_id(title_id, kind)`
+
+## Index versioning expectation for save-sync contract freeze
+- Save artifacts are additive contract surface in `index_version=1` for the current rollout phase.
+- Existing clients that ignore unknown fields continue to parse legacy sections, while strict save-aware clients must validate `SaveSpec` when `saves` are present.
+- Any future breaking save contract change must bump `index_version` in a dedicated contract story before implementation.
+
+## Rollout interpretation
+- `saves` may be an empty list during staged rollout even when save sync config is enabled client-side.
+- Empty `saves` is a valid deterministic state and should produce no save transfer actions.

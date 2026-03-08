@@ -1,4 +1,4 @@
-# General Windows template.
+﻿# General Windows template.
 # Validated v1 Windows defaults.
 [server]
 url = "http://<SERVER_IP>:8000"
@@ -27,7 +27,7 @@ cache_dir = "D:/GameHub/artwork-cache/sgdb"
 enabled_kinds = ["grid", "hero", "logo", "icon"]
 
 [controllers]
-# Launch-time controller profile wrapper for PCSX2/Dolphin/Azahar.
+# Launch-time shortcut wrapper for PCSX2/Dolphin/Azahar (with controller profile autoconfig).
 launch_autoconfig = true
 # Optional explicit profile directory.
 # Default when omitted: <paths.gamehub_dir>/controller_profiles
@@ -35,3 +35,4 @@ launch_autoconfig = true
 
 # Optional Windows Azahar installer override for emulator auto-install:
 # set env var GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL to a tested GitHub release installer URL.
+

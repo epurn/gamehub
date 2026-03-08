@@ -38,6 +38,7 @@ Fresh installs must run `gamehub init` before the first `gamehub sync`.
 - `--skip-steam-relaunch`: apply Steam updates but do not relaunch Steam at end
 - `--require-steam-closed`: fail if Steam cannot be closed before config writes
 - `--reseed-profiles`: force-overwrite managed profile/template files during sync (even when bytes already match)
+- Save sync remains config-driven in this phase (`[save_sync]` in `config.toml`); no additional CLI flags are required.
 - `--config <path>`: TOML config path override
 
 Steam close behavior:
@@ -111,11 +112,20 @@ Steam close behavior:
 12. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
    - managed shortcuts persist stable `appid` values on write, so first-run artwork/category mapping does not depend on a later Steam rewrite pass
    - collection membership appids are canonicalized to unsigned numeric values in both localconfig and cloud payloads
-    - when `[controllers].launch_autoconfig = true`, GAMEHUB wraps `PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `controller-launch` command that:
+    - when `[controllers].launch_autoconfig = true` or `[save_sync].enabled = true`, GAMEHUB wraps `RetroArch`/`PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `shortcut-launch` command that:
       - decodes target emulator command payload
       - detects attached controllers (Xbox on non-Deck platforms; built-in controller on Steam Deck)
       - applies controller profile (`kbm`, `xbox_1p`, `xbox_2p`) with managed-key writes only
+      - rewrites managed `PSX`/`PS2` memory-card targets to deterministic GAMEHUB filenames before launch when save sync is enabled
+      - performs a one-shot `/health` reachability precheck (`1.0s` timeout) before launch-session save-sync network work
+      - runs title-scoped pre-launch save reconciliation when save sync is enabled
+      - skips launch-session save-sync network work when the precheck fails (fail-open; launch continues)
+      - uses launch-only metadata fetch limits for `/v1/index` and `/v1/save-bindings` (`<=5.0s` timeout cap, attempts=`1`, backoff=`0.0s`)
       - launches the original emulator command
+      - runs title-scoped post-exit save upload when `save_sync.mode = "bidirectional"`:
+        - uploads changed indexed saves when the remote save did not change during play
+        - creates remote-missing deterministic `exact_files` saves (`battery`, managed `memory_card`) automatically
+        - learns first-time `per_game` save trees for supported `GC`/`Wii`/`N3DS` bindings and uploads newly created remote save files automatically when the learned root is deterministic
    - Linux Steam Deck default shortcut policy:
      - managed shortcuts default to `AllowDesktopConfig = 0` (native-first controller path)
      - override globally with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`
@@ -132,10 +142,38 @@ Steam close behavior:
       - without `--reseed-profiles`, existing managed per-title files and override payloads are preserved; `--reseed-profiles` force-rewrites them
       - managed app overrides are always repaired so `UseSteamControllerConfig = 1` for managed app entries
       - managed `Wii`/`N3DS` app entries are written with `DisableCloud = 1`
-    - Linux Steam Deck zero-controller detection in `controller-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
+    - Linux Steam Deck zero-controller detection in `shortcut-launch` is deterministic: one detect pass, then `xbox_1p` fallback only when Deck detect count is zero
     - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later release
 - with `--skip-steam-relaunch`, Steam relaunch is skipped but all Steam file updates still run
 13. Save `state.json`
+
+Save sync stays disabled by default unless `[save_sync].enabled = true` is set in config.
+
+### Save sync dry-run and conflict interpretation
+- In `mode = "download"`, save planning is read-only: expected actions are `download` or `skip` only.
+- In `mode = "bidirectional"`, planner decisions may include `upload_existing`, `upload_new`, and `conflict` in addition to `download`/`skip` according to checksum lineage, binding discovery, and `conflict_policy`.
+- `conflict_policy = "prefer_server"` resolves conflict paths toward download decisions.
+- `conflict_policy = "prefer_local"` resolves conflict paths toward `upload_existing` decisions.
+- `conflict_policy = "manual"` preserves explicit `conflict` outcomes for operator review.
+- In `mode = "bidirectional"`, if managed post-exit upload is missed because the server is unreachable, GAMEHUB records `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` and keeps local timestamp observation in `save_lineage`.
+- On reconnect (planner and managed pre-launch), that marker enables deterministic UTC-second timestamp comparison (`local mtime` vs remote `updated_at`):
+  - local newer -> `upload_existing` (`missed-upload-local-newer`)
+  - remote newer -> `download` (`missed-upload-remote-newer`)
+  - missing/unreadable/tied timestamps -> fallback to existing checksum/lineage conflict-safe behavior
+- If a managed launch starts while the server is unreachable, GAMEHUB records that title for reconnect recovery. On the next connected managed pre-launch, lineage-missing indexed saves reuse the same timestamp comparison to seed `postexit-upload-missed-server-unreachable` recovery before the session starts.
+- `[save_sync].systems` gates both launch-session save sync and managed `PSX`/`PS2` memory-card path rewrites.
+- `--dry-run` performs no save writes and no remote mutations; it is the required safety preview for save plan auditing before enabling non-dry execution.
+- Managed shortcut launches use launch-session save sync only; there is no resident background watcher in this release.
+- Pre-launch shortcut sync never auto-uploads.
+- Post-exit shortcut sync uploads only when the remote save is unchanged from the pre-launch snapshot and either the local save changed during the session or pre-launch already resolved that indexed save as `keep-local` / `upload_existing`.
+- First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry sync from the server-published save-binding catalog and become `upload_new` actions in `bidirectional`.
+- Managed shortcut launches also auto-create those deterministic `exact_files` saves at post-exit, so wrapped RetroArch and managed `PSX`/`PS2` sessions do not need to wait for the next full `gamehub sync`.
+  - For `PSX` Swanstation, GAMEHUB accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.
+- Managed shortcut launches also auto-create first-time deterministic `learned_tree` saves at post-exit when one root can be proven, even if that local save already existed before the connected bidirectional session began (for example after an offline launch or after switching from `disabled`/`download` to `bidirectional`).
+- `download` mode stays read-only: missing local saves may still download, existing local drift becomes `skip(download-mode-local-drift)`, local-only first-time saves become `skip(download-mode-local-new)`, and the server is never mutated.
+- If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
+- If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
+- After upgrading to the build that introduces `shortcut-launch`, run one non-dry `gamehub sync` before starting managed shortcuts so Steam commands are rewritten.
 
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.
@@ -152,6 +190,7 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - Windows portable executable directory (`<retroarch-dir>/system`) when applicable
 - when a RetroArch config file is found, GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) for controller quick-menu access
   - on Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`
+  - on Linux, when RetroArch resolves to Flatpak, config discovery prefers the Flatpak config path before native `~/.config/retroarch/retroarch.cfg`
   - RetroArch `system_directory = ":/system"` (portable-relative) is normalized to `<retroarch.cfg dir>/system` on Windows
   - RetroArch `libretro_directory = ":/cores"` and `libretro_info_path = ":/info"` (portable-relative) are normalized to `<retroarch.cfg dir>/cores` / `<retroarch.cfg dir>/info` on Windows
   - GAMEHUB writes `config/remaps/SwanStation/SwanStation.rmp` (or the configured `input_remapping_directory`) with the tested DualShock + analog/turbo defaults
@@ -184,18 +223,19 @@ Linux path notes:
 - PCSX2 runtime config defaults are Linux-aware and Flatpak-aware (`~/.config/PCSX2/...` or `~/.var/app/net.pcsx2.PCSX2/...`).
 - Dolphin target selection prefers explicit overrides, then existing user data roots, then a deterministic native/Flatpak default.
 - Linux RetroArch Steam launch options rewrite `-L cores/<core>.dll` templates to Linux core paths (`.so`) and prefer absolute core paths from resolved RetroArch config/overrides.
+- Linux Flatpak RetroArch Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so ROM paths (including SD-card paths) are forwarded reliably to the sandbox.
 - Linux Flatpak PCSX2 Steam launch options use `flatpak run --file-forwarding ... @@ <rom> @@` so host ROM paths are forwarded reliably to the sandbox.
 - Linux Flatpak Dolphin Steam launch options use `flatpak run --device=all --file-forwarding ... -e @@ <rom> @@` so controller devices and host ROM paths are consistently available in the sandbox.
-- Linux Flatpak Azahar Steam launch options default to a Linux-only wrapper (`python -m gamehub_cli.controllers.azahar_exit_hook`) that:
+- Linux Flatpak Azahar Steam launch options default to a sync-emitted Linux-only wrapper (`python -m gamehub_cli.controllers.azahar_exit_hook`) that:
   - launches `flatpak run --device=all --file-forwarding org.azahar_emu.Azahar -f -- @@ <rom> @@`
   - listens for strict `Select+Start` and terminates Azahar when pressed:
     - joystick path (`/dev/input/js*`) using configured Azahar button indices
     - evdev fallback (`/dev/input/event*`) using `BTN_SELECT` + `BTN_START`
   - can be disabled by setting `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false` (falls back to direct flatpak launch)
-- Linux Flatpak Dolphin launches wrapped by `controller-launch` include a fail-open `Select+Start` exit hook by default:
+- Linux Flatpak Dolphin launches wrapped by `shortcut-launch` include a fail-open `Select+Start` exit hook by default:
   - monitors `/dev/input/js*` (configurable button indices) and `/dev/input/event*` (`BTN_SELECT` + `BTN_START`)
   - on combo press, issues `flatpak kill org.DolphinEmu.dolphin-emu`
-- Windows Azahar launches wrapped by `controller-launch` include a fail-open `Start+Select` XInput exit hook by default (disable with `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false`).
+- Windows Azahar launches wrapped by `shortcut-launch` include a fail-open `Start+Select` XInput exit hook by default (disable with `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false`).
 
 Windows path notes:
 - If Dolphin is installed by GAMEHUB (default `LOCALAPPDATA/Programs/Dolphin`), the runtime user dir is pinned to `<dolphin-install>/User`.
@@ -205,6 +245,7 @@ Windows path notes:
 Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
 - Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
+- `shortcut-launch` does not seed controller profiles at launch time; run non-dry `gamehub init` or `gamehub sync` first when managed profiles may not exist yet.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
 - If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
@@ -225,7 +266,7 @@ Controller launch profile defaults:
 - GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available, otherwise keep existing GUIDs and fall back to port-only mappings.
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID for Steam/Flatpak launches.
-- `RetroArch` shortcuts remain direct (not wrapped).
+- `RetroArch` shortcuts are wrapped whenever controller autoconfig or save sync is enabled, so managed launch-time battery save sync can run at post-exit.
 
 Environment overrides:
 - `RETROARCH_SYSTEM_DIR`
@@ -329,7 +370,7 @@ For systems that launch via RetroArch, GAMEHUB uses these general-purpose core d
 Steam shortcut build normalizes emulator launch options for fullscreen:
 - RetroArch shortcuts include `-f` (injected if missing).
 - PCSX2 shortcuts include `-fullscreen` (injected if missing; Flatpak path already includes it).
-- Azahar native shortcuts include `-f` (injected if missing). Linux Flatpak Azahar uses a GAMEHUB wrapper hook by default (or direct `flatpak run` when `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false`).
+- Azahar native shortcuts include `-f` (injected if missing). Linux Flatpak Azahar uses a sync-emitted GAMEHUB wrapper hook by default (or direct `flatpak run` when `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false`).
 - Dolphin shortcuts include `-u "<dolphin-user-dir>"` so launch always uses the same user profile path GAMEHUB configured.
 - Dolphin shortcuts include `-C Dolphin.Display.Fullscreen=True` for non-Flatpak installs when supported by the installed Dolphin CLI parser (injected before `-e/--exec` when missing).
 

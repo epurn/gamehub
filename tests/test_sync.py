@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-from gamehub_cli.common.config import ControllersConfig, GamehubConfig
-from gamehub_cli.controllers.launch import parse_controller_payload
+from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
+from gamehub_cli.common.shortcut_payload import parse_shortcut_payload
 from gamehub_cli.sync.orchestrator import (
     _apply_downloads,
     _apply_steam_updates,
@@ -14,9 +16,10 @@ from gamehub_cli.sync.orchestrator import (
     _build_artwork_assignments,
     run_sync,
 )
-from gamehub_cli.sync.planner import PlanAction, SyncPlan
-from gamehub_cli.sync.state import SyncState
+from gamehub_cli.sync.planner import PlanAction, SavePlanAction, SyncPlan
+from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON, SyncState
 from gamehub_cli.sync.steam_stage import build_shortcut_specs as _build_shortcut_specs
+from gamehub_cli.sync.transfer import SaveUploadConflictError
 from gamehub_common.models import LibraryIndex, RomSpec, SystemSpec, TitleEntry
 
 
@@ -1629,10 +1632,15 @@ def test_build_shortcut_specs_linux_normalizes_retroarch_core_token(monkeypatch,
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert specs[0].exe == '"/home/deck/.local/share/flatpak/exports/bin/org.libretro.RetroArch"'
+        assert specs[0].exe == "flatpak"
+        assert "run --file-forwarding org.libretro.RetroArch" in specs[0].launch_options
+        assert "@@" in specs[0].launch_options
         assert ".dll" not in specs[0].launch_options
         assert "fceumm_libretro.so" in specs[0].launch_options
-        assert "/var/home/deck/.var/app/org.libretro.RetroArch/config/retroarch/cores" in specs[0].launch_options
+        assert (
+            "/var/home/deck/.var/app/org.libretro.RetroArch/config/retroarch/cores/fceumm_libretro.so"
+            in specs[0].launch_options
+        )
 
 
 def test_build_shortcut_specs_linux_flatpak_pcsx2_uses_file_forwarding(monkeypatch, workspace_tempdir) -> None:
@@ -1725,6 +1733,10 @@ def test_build_shortcut_specs_wraps_pcsx2_when_controller_autoconfig_enabled(mon
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "/usr/bin/python3")
         monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.shutil.which",
+            lambda name: "/usr/bin/gamehub" if name == "gamehub" else None,
+        )
+        monkeypatch.setattr(
             "gamehub_cli.sync.steam_stage.resolve_rom_destination",
             lambda **kwargs: Path("/var/home/deck/GameHub/roms/PS2/Gran Turismo 4.iso"),
         )
@@ -1732,11 +1744,11 @@ def test_build_shortcut_specs_wraps_pcsx2_when_controller_autoconfig_enabled(mon
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert _normalize_path_token(specs[0].exe) == "/usr/bin/python3"
-        assert specs[0].launch_options.startswith("-m gamehub_cli.main controller-launch --payload ")
-        assert "controller-launch --payload" in specs[0].launch_options
+        assert _normalize_path_token(specs[0].exe) == "/usr/bin/gamehub"
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
+        assert "shortcut-launch --payload" in specs[0].launch_options
         payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
-        payload = parse_controller_payload(payload_token)
+        payload = parse_shortcut_payload(payload_token)
         assert payload.emulator == "pcsx2"
         assert payload.config_path == str(temp_root / "custom-config.toml")
         assert payload.target_exe == "flatpak"
@@ -1785,15 +1797,15 @@ def test_build_shortcut_specs_wrapper_uses_direct_command_for_frozen_exe(monkeyp
 
         assert len(specs) == 1
         assert _normalize_path_token(specs[0].exe) == "C:/GameHub/gamehub-windows-amd64.exe"
-        assert specs[0].launch_options.startswith("controller-launch --payload ")
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
         payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
-        payload = parse_controller_payload(payload_token)
+        payload = parse_shortcut_payload(payload_token)
         assert payload.emulator == "pcsx2"
         assert _normalize_path_token(payload.target_exe) == "C:/PCSX2/pcsx2-qt.exe"
 
 
-def test_build_shortcut_specs_retroarch_not_wrapped_with_controller_autoconfig(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-sync-shortcuts-retroarch-nowrap-") as temp_root:
+def test_build_shortcut_specs_wraps_retroarch_with_controller_autoconfig(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-retroarch-wrap-") as temp_root:
         config = GamehubConfig(
             server_url="http://localhost:8000",
             library_dir=temp_root / "library",
@@ -1827,12 +1839,70 @@ def test_build_shortcut_specs_retroarch_not_wrapped_with_controller_autoconfig(m
         monkeypatch.setattr(
             "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
         )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "C:\\Python\\python.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.shutil.which",
+            lambda name: "C:\\Python\\gamehub.exe" if name in {"gamehub", "gamehub.exe"} else None,
+        )
 
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert specs[0].exe == '"C:\\RetroArch\\retroarch.exe"'
-        assert "controller-launch" not in specs[0].launch_options
+        assert _normalize_path_token(specs[0].exe) == "C:/Python/gamehub.exe"
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
+        payload_token = specs[0].launch_options.rsplit(" ", 1)[-1]
+        payload = parse_shortcut_payload(payload_token)
+        assert payload.emulator == "retroarch"
+        assert _normalize_path_token(payload.target_exe) == "C:/RetroArch/retroarch.exe"
+
+
+def test_build_shortcut_specs_wraps_retroarch_when_save_sync_enabled(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-retroarch-save-sync-wrap-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True),
+        )
+        title = TitleEntry(
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            title_name="Pokemon Crystal",
+            title_rel_dir="GBC/Pokemon Crystal.gbc",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/gambatte_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_gbc",
+                rel_path="roms/GBC/Pokemon Crystal.gbc",
+                sha256="b" * 64,
+                size_bytes=3,
+                extension=".gbc",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable", lambda value: "C:\\RetroArch\\retroarch.exe"
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "C:\\Python\\python.exe")
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.shutil.which",
+            lambda name: "C:\\Python\\gamehub.exe" if name in {"gamehub", "gamehub.exe"} else None,
+        )
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert _normalize_path_token(specs[0].exe) == "C:/Python/gamehub.exe"
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
 
 
 def test_build_shortcut_specs_windows_azahar_uses_native_launch_template(monkeypatch, workspace_tempdir) -> None:
@@ -2287,7 +2357,7 @@ def test_build_shortcut_specs_deck_wrapped_shortcuts_preserve_allow_desktop_conf
         specs = _build_shortcut_specs(index=index, config=config)
 
         assert len(specs) == 1
-        assert "controller-launch --payload" in specs[0].launch_options
+        assert "shortcut-launch --payload" in specs[0].launch_options
         assert specs[0].allow_desktop_config is False
 
 
@@ -2581,3 +2651,442 @@ def test_build_shortcut_specs_dolphin_skips_config_arg_when_parser_is_legacy(mon
         assert "Dolphin.Display.Fullscreen=True" not in specs[0].launch_options
         assert "-b -u" in specs[0].launch_options
         assert "-e" in specs[0].launch_options
+
+
+def test_run_sync_dry_run_executes_save_stage_without_writes(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": [], "saves": []}
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-dry-run-save-stage.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+    received: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.save_stage.apply_save_stage",
+        lambda **kwargs: received.update(kwargs),
+    )
+
+    exit_code = run_sync(
+        config=config,
+        dry_run=True,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=True,
+    )
+
+    assert exit_code == 0
+    assert received["dry_run"] is True
+
+
+def test_run_sync_dry_run_plans_upload_for_missed_unreachable_local_newer(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-save-marker-") as temp_root:
+        save_root = temp_root / "memcards"
+        save_root.mkdir(parents=True, exist_ok=True)
+        local_save = save_root / "ffx_1.ps2"
+        local_save.write_bytes(b"local-new")
+        remote_updated_at = datetime(2026, 1, 2, 12, 0, tzinfo=timezone.utc)
+        newer_seconds = remote_updated_at.timestamp() + 120.0
+        os.utime(local_save, (newer_seconds, newer_seconds))
+
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=Path("userdata"),
+            steam_id=None,
+            steam_exe=Path("steam.exe"),
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="prefer_server"),
+        )
+        state = SyncState(
+            unresolved_save_conflicts={"save_ps2_ffx_1": MISSED_POSTEXIT_UPLOAD_REASON},
+            bootstrap_version=1,
+        )
+        received: dict[str, object] = {}
+
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.load_state", lambda _path: state)
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._fetch_index_with_retries",
+            lambda **kwargs: {
+                "index_version": 1,
+                "systems": [],
+                "titles": [],
+                "saves": [
+                    {
+                        "save_id": "save_ps2_ffx_1",
+                        "title_id": "title_ps2_ffx",
+                        "system": "PS2",
+                        "kind": "memory_card",
+                        "rel_path": "saves/PS2/Final Fantasy X/memory_card/ffx_1.ps2",
+                        "sha256": "a" * 64,
+                        "size_bytes": 6,
+                        "updated_at": remote_updated_at.isoformat(),
+                        "portable": True,
+                    }
+                ],
+            },
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._load_validated_save_bindings",
+            lambda *args, **kwargs: None,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_system_save_root",
+            lambda _system, **_kwargs: save_root,
+        )
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_emulators", lambda **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_retroarch_cores", lambda **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._build_artwork_assignments", lambda *args, **kwargs: {})
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._resolve_steam_context", lambda _config: None)
+        monkeypatch.setattr(
+            "gamehub_cli.sync.save_stage.apply_save_stage",
+            lambda **kwargs: received.update(kwargs),
+        )
+
+        exit_code = run_sync(
+            config=config,
+            dry_run=True,
+            verbose=False,
+            verify=False,
+            require_steam_closed=False,
+            skip_steam=True,
+        )
+
+        plan = received["plan"]
+        assert isinstance(plan, SyncPlan)
+        assert exit_code == 0
+        assert len(plan.save_actions) == 1
+        assert plan.save_actions[0].decision == "upload_existing"
+        assert plan.save_actions[0].reason == "missed-upload-local-newer"
+        assert received["dry_run"] is True
+
+
+def test_run_sync_save_stage_failure_skips_state_write(monkeypatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return
+
+        def json(self) -> dict:
+            return {"index_version": 1, "systems": [], "titles": [], "saves": []}
+
+    class FakeHttpx:
+        @staticmethod
+        def get(_url: str, timeout: float) -> FakeResponse:
+            assert timeout > 0
+            return FakeResponse()
+
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-save-stage-fail.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.index.httpx", FakeHttpx)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.save_stage.apply_save_stage",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("save transfer failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="save transfer failed"):
+        run_sync(
+            config=config,
+            dry_run=False,
+            verbose=False,
+            verify=False,
+            require_steam_closed=False,
+            skip_steam=True,
+        )
+
+    assert not config.state_path.exists()
+
+
+def test_apply_save_stage_uploads_and_updates_state(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.sync import save_stage
+
+    state = SyncState()
+    with workspace_tempdir("gamehub-save-stage-upload-") as temp_root:
+        destination = temp_root / "upload.sav"
+        destination.write_bytes(b"local-upload")
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_upload",
+                    binding_id="savebind_upload",
+                    title_id="title_upload",
+                    system="N64",
+                    kind="battery",
+                    decision="upload_existing",
+                    reason="local-changed-remote-unchanged",
+                    url="/v1/saves/upload",
+                    destination=destination,
+                    canonical_suffix="upload.sav",
+                    expected_sha256="c" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                )
+            ]
+        )
+
+        remote_sha = "d" * 64
+        upload_calls: list[str] = []
+
+        def _fake_upload(**kwargs) -> dict[str, object]:
+            upload_calls.append(kwargs["url"])
+            assert kwargs["binding_id"] == "savebind_upload"
+            assert kwargs["canonical_suffix"] == "upload.sav"
+            assert kwargs["expected_remote_sha256"] == "c" * 64
+            return {
+                "save_id": "save_upload",
+                "title_id": "title_upload",
+                "system": "N64",
+                "kind": "battery",
+                "rel_path": "saves/N64/Example/battery/upload.sav",
+                "sha256": remote_sha,
+                "size_bytes": 12,
+                "updated_at": "2026-01-02T00:00:00+00:00",
+                "portable": True,
+            }
+
+        monkeypatch.setattr("gamehub_cli.sync.save_stage.upload_file_to_server", _fake_upload)
+
+        result = save_stage.apply_save_stage(
+            server_url="http://localhost:8000",
+            plan=plan,
+            state=state,
+            timeout_seconds=20.0,
+            dry_run=False,
+            verbose=False,
+        )
+
+        assert result.uploaded == 1
+        assert upload_calls == ["/v1/saves/upload"]
+        assert state.save_checksums == {"save_upload": save_stage.local_file_sha256(destination)}
+        assert state.save_lineage["save_upload"]["remote_sha256"] == remote_sha
+        assert "save_upload" not in state.unresolved_save_conflicts
+
+
+def test_apply_save_stage_updates_state_only_for_successful_downloads(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.sync import save_stage
+
+    state = SyncState()
+    with workspace_tempdir("gamehub-save-stage-") as temp_root:
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_a",
+                    binding_id="savebind_a",
+                    title_id="title_a",
+                    system="N64",
+                    kind="battery",
+                    decision="download",
+                    reason="local-missing",
+                    url="/v1/saves/a",
+                    destination=temp_root / "a.sav",
+                    canonical_suffix="a.sav",
+                    expected_sha256="a" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                ),
+                SavePlanAction(
+                    save_id="save_b",
+                    binding_id="savebind_b",
+                    title_id="title_b",
+                    system="N64",
+                    kind="battery",
+                    decision="download",
+                    reason="local-missing",
+                    url="/v1/saves/b",
+                    destination=temp_root / "b.sav",
+                    canonical_suffix="b.sav",
+                    expected_sha256="b" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                ),
+            ]
+        )
+
+    calls: list[str] = []
+
+    def _fake_transfer(**kwargs) -> None:
+        calls.append(kwargs["url"])
+        if kwargs["url"].endswith("/b"):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr("gamehub_cli.sync.save_stage.stream_to_destination_atomic", _fake_transfer)
+
+    with pytest.raises(save_stage.SaveStageError, match="Save sync failed"):
+        save_stage.apply_save_stage(
+            server_url="http://localhost:8000",
+            plan=plan,
+            state=state,
+            timeout_seconds=20.0,
+            dry_run=False,
+            verbose=False,
+        )
+
+    assert calls == ["/v1/saves/a", "/v1/saves/b"]
+    assert state.save_checksums == {"save_a": "a" * 64}
+    assert "save_b" not in state.save_checksums
+
+
+def test_apply_save_stage_preserves_local_drift_skip_without_mutating_state(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.sync import save_stage
+
+    with workspace_tempdir("gamehub-save-stage-download-drift-") as temp_root:
+        destination = temp_root / "drift.sav"
+        destination.write_bytes(b"local-edit")
+        state = SyncState(
+            save_checksums={"save_drift": "c" * 64},
+            save_lineage={
+                "save_drift": {
+                    "local_sha256": "c" * 64,
+                    "remote_sha256": "c" * 64,
+                    "local_updated_at": "2026-01-01T00:00:00+00:00",
+                    "remote_updated_at": "2026-01-01T00:00:00+00:00",
+                    "synced_at": "2026-01-01T00:00:00+00:00",
+                }
+            },
+            unresolved_save_conflicts={"save_drift": "prior-marker"},
+        )
+        original_state = state.to_dict()
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_drift",
+                    binding_id="savebind_drift",
+                    title_id="title_drift",
+                    system="N64",
+                    kind="battery",
+                    decision="skip",
+                    reason="download-mode-local-drift",
+                    url="/v1/saves/drift",
+                    destination=destination,
+                    canonical_suffix="drift.sav",
+                    expected_sha256="d" * 64,
+                    size_bytes=10,
+                    remote_updated_at="2026-01-03T00:00:00+00:00",
+                    local_sha256="e" * 64,
+                )
+            ]
+        )
+
+        monkeypatch.setattr(
+            "gamehub_cli.sync.save_stage.stream_to_destination_atomic",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("unexpected download")),
+        )
+
+        result = save_stage.apply_save_stage(
+            server_url="http://localhost:8000",
+            plan=plan,
+            state=state,
+            timeout_seconds=20.0,
+            dry_run=False,
+            verbose=False,
+        )
+
+        assert result.downloaded == 0
+        assert result.uploaded == 0
+        assert result.conflicts == 0
+        assert result.skipped == 1
+        assert destination.read_bytes() == b"local-edit"
+        assert state.to_dict() == original_state
+
+
+def test_apply_save_stage_treats_identical_upload_conflict_as_success(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.sync import save_stage
+
+    state = SyncState()
+    with workspace_tempdir("gamehub-save-stage-upload-conflict-") as temp_root:
+        destination = temp_root / "upload.sav"
+        destination.write_bytes(b"local-upload")
+        local_sha = save_stage.local_file_sha256(destination)
+        assert local_sha is not None
+
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_upload_conflict",
+                    binding_id="savebind_upload",
+                    title_id="title_upload",
+                    system="N64",
+                    kind="battery",
+                    decision="upload_existing",
+                    reason="local-changed-remote-unchanged",
+                    url="/v1/saves/upload",
+                    destination=destination,
+                    canonical_suffix="upload.sav",
+                    expected_sha256="c" * 64,
+                    size_bytes=1,
+                    remote_updated_at="2026-01-01T00:00:00+00:00",
+                )
+            ]
+        )
+
+        def _fake_upload(**kwargs) -> dict[str, object]:
+            raise SaveUploadConflictError(
+                {
+                    "reason": "remote-changed",
+                    "current": {
+                        "save_id": "save_upload_conflict",
+                        "title_id": "title_upload",
+                        "system": "N64",
+                        "kind": "battery",
+                        "rel_path": "saves/N64/Example/battery/upload.sav",
+                        "sha256": local_sha,
+                        "size_bytes": len(b"local-upload"),
+                        "updated_at": "2026-01-02T00:00:00+00:00",
+                        "portable": True,
+                    },
+                }
+            )
+
+        monkeypatch.setattr("gamehub_cli.sync.save_stage.upload_file_to_server", _fake_upload)
+
+        result = save_stage.apply_save_stage(
+            server_url="http://localhost:8000",
+            plan=plan,
+            state=state,
+            timeout_seconds=20.0,
+            dry_run=False,
+            verbose=False,
+        )
+
+        assert result.uploaded == 1
+        assert state.save_checksums == {"save_upload_conflict": local_sha}
+        assert state.save_lineage["save_upload_conflict"]["remote_sha256"] == local_sha
+        assert "save_upload_conflict" not in state.unresolved_save_conflicts

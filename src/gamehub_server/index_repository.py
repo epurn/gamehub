@@ -7,11 +7,13 @@ import stat
 import threading
 import time
 from pathlib import Path
+from typing import Callable
 
-from gamehub_common.models import FirmwareSpec, LibraryIndex, TitleEntry
+from gamehub_common.models import FirmwareSpec, LibraryIndex, SaveBindingSpec, SaveSpec, TitleEntry
 
 from .indexer import FIRMWARE_ROOT_NAME, IndexBundle, build_index
 from .logging_utils import get_server_logger
+from .save_index import SAVES_ROOT_NAME
 
 logger = get_server_logger(__name__)
 DEFAULT_INDEX_POLL_SECONDS = 1.0
@@ -47,35 +49,34 @@ def _sorted_children(path: Path) -> list[Path]:
     return sorted(children, key=lambda item: item.name.casefold())
 
 
+def _update_signature_tree(
+    path: Path,
+    *,
+    data_root: Path,
+    update: Callable[[str, str, int, int], None],
+) -> None:
+    fields = _path_signature_fields(path, data_root)
+    if fields is None:
+        return
+    update(*fields)
+    if fields[1] != "dir":
+        return
+    for child in _sorted_children(path):
+        _update_signature_tree(child, data_root=data_root, update=update)
+
+
 def _snapshot_data_signature(data_root: Path) -> str:
     digest = hashlib.blake2s(digest_size=16)
 
     def _update(relative: str, kind: str, size_bytes: int, mtime_ns: int) -> None:
         digest.update(f"{relative}|{kind}|{size_bytes}|{mtime_ns}\n".encode("utf-8"))
 
-    for root_name in ("roms", FIRMWARE_ROOT_NAME):
+    for root_name in ("roms", FIRMWARE_ROOT_NAME, SAVES_ROOT_NAME):
         root = data_root / root_name
-        root_fields = _path_signature_fields(root, data_root)
-        if root_fields is None:
+        if _path_signature_fields(root, data_root) is None:
             _update(root_name, "missing", 0, 0)
             continue
-        _update(*root_fields)
-        if root_fields[1] != "dir":
-            continue
-
-        for system_entry in _sorted_children(root):
-            system_fields = _path_signature_fields(system_entry, data_root)
-            if system_fields is None:
-                continue
-            _update(*system_fields)
-            if system_fields[1] != "dir":
-                continue
-
-            for child_entry in _sorted_children(system_entry):
-                child_fields = _path_signature_fields(child_entry, data_root)
-                if child_fields is None:
-                    continue
-                _update(*child_fields)
+        _update_signature_tree(root, data_root=data_root, update=_update)
 
     return digest.hexdigest()
 
@@ -101,6 +102,8 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
     current_roms = _rom_entries_by_rel_path(current_cache.index)
     previous_firmware = _firmware_entries_by_rel_path(previous_cache.index)
     current_firmware = _firmware_entries_by_rel_path(current_cache.index)
+    previous_saves = {save.rel_path: save for save in previous_cache.index.saves}
+    current_saves = {save.rel_path: save for save in current_cache.index.saves}
 
     added_rom_paths = sorted(set(current_roms) - set(previous_roms))
     updated_rom_paths = sorted(
@@ -117,6 +120,13 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
         if current_firmware[path][1].sha256 != previous_firmware[path][1].sha256
     )
     removed_firmware_paths = sorted(set(previous_firmware) - set(current_firmware))
+    added_save_paths = sorted(set(current_saves) - set(previous_saves))
+    updated_save_paths = sorted(
+        path
+        for path in set(current_saves) & set(previous_saves)
+        if current_saves[path].sha256 != previous_saves[path].sha256
+    )
+    removed_save_paths = sorted(set(previous_saves) - set(current_saves))
 
     if not any(
         (
@@ -126,13 +136,17 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
             added_firmware_paths,
             updated_firmware_paths,
             removed_firmware_paths,
+            added_save_paths,
+            updated_save_paths,
+            removed_save_paths,
         )
     ):
         return
 
     logger.info(
         "index contents changed reason=%s roms_added=%d roms_updated=%d roms_removed=%d "
-        "firmware_added=%d firmware_updated=%d firmware_removed=%d",
+        "firmware_added=%d firmware_updated=%d firmware_removed=%d "
+        "saves_added=%d saves_updated=%d saves_removed=%d",
         reason,
         len(added_rom_paths),
         len(updated_rom_paths),
@@ -140,6 +154,9 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
         len(added_firmware_paths),
         len(updated_firmware_paths),
         len(removed_firmware_paths),
+        len(added_save_paths),
+        len(updated_save_paths),
+        len(removed_save_paths),
     )
 
     for rel_path in added_rom_paths:
@@ -195,6 +212,37 @@ def _log_index_changes(previous_cache: IndexBundle | None, current_cache: IndexB
             reason,
             system_name,
             spec.filename,
+            rel_path,
+        )
+
+    for rel_path in added_save_paths:
+        save = current_saves[rel_path]
+        logger.info(
+            "indexed new save file reason=%s system=%s title_id=%s kind=%s rel_path=%s",
+            reason,
+            save.system,
+            save.title_id,
+            save.kind,
+            rel_path,
+        )
+    for rel_path in updated_save_paths:
+        save = current_saves[rel_path]
+        logger.info(
+            "reindexed save file reason=%s system=%s title_id=%s kind=%s rel_path=%s",
+            reason,
+            save.system,
+            save.title_id,
+            save.kind,
+            rel_path,
+        )
+    for rel_path in removed_save_paths:
+        save = previous_saves[rel_path]
+        logger.info(
+            "removed save file from index reason=%s system=%s title_id=%s kind=%s rel_path=%s",
+            reason,
+            save.system,
+            save.title_id,
+            save.kind,
             rel_path,
         )
 
@@ -339,6 +387,30 @@ class IndexRepository:
         if self._payload_json is None:
             raise RuntimeError("Index payload cache was expected but is missing")
         return self._payload_json, False
+
+    def resolve_save_path(self, save_id: str) -> Path | None:
+        bundle = self.load(check_sources=False)
+        path = bundle.save_paths.get(save_id)
+        if path is None or not path.exists() or not path.is_file():
+            return None
+        return path
+
+    def resolve_save_spec(self, save_id: str, *, force_refresh: bool = False) -> SaveSpec | None:
+        bundle = self.load(force_refresh=force_refresh) if force_refresh else self.load(check_sources=False)
+        for save in bundle.index.saves:
+            if save.save_id == save_id:
+                return save
+        return None
+
+    def save_bindings(self, *, force_refresh: bool = False) -> tuple[SaveBindingSpec, ...]:
+        bundle = self.load(force_refresh=force_refresh) if force_refresh else self.load(check_sources=False)
+        return bundle.save_bindings
+
+    def resolve_save_binding(self, binding_id: str, *, force_refresh: bool = False) -> SaveBindingSpec | None:
+        for binding in self.save_bindings(force_refresh=force_refresh):
+            if binding.binding_id == binding_id:
+                return binding
+        return None
 
     def _poll_loop(self) -> None:
         logger.info(

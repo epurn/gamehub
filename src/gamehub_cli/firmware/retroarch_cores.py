@@ -25,11 +25,13 @@ from ..common.platform_paths import (
 from ..emulators import resolve_emulator_executable
 
 httpx: Any
-_httpx: Any | None
+_httpx: Any | None = None
 try:
-    import httpx as _httpx
+    import httpx as _httpx_module
 except ModuleNotFoundError:  # pragma: no cover
-    _httpx = None
+    pass
+else:
+    _httpx = _httpx_module
 httpx = _httpx
 
 

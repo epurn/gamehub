@@ -10,11 +10,13 @@ from urllib.request import urlopen
 from ..common.fsops import replace_file
 
 httpx: Any
-_httpx: Any | None
+_httpx: Any | None = None
 try:
-    import httpx as _httpx
+    import httpx as _httpx_module
 except ModuleNotFoundError:
-    _httpx = None
+    pass
+else:
+    _httpx = _httpx_module
 httpx = _httpx
 
 DEFAULT_DOWNLOAD_CHUNK_BYTES = 1024 * 1024

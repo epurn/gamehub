@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from gamehub_cli.sync.downloads import download_with_atomic_write
+from gamehub_cli.sync.transfer import stream_to_destination_atomic
 
 
 @contextmanager
@@ -75,3 +76,27 @@ def test_download_with_atomic_write_checksum_mismatch_cleans_partial(workspace_t
         part_path = destination.with_suffix(f"{destination.suffix}.part")
         if part_path.exists():
             assert part_path.stat().st_size == 0
+
+
+def test_stream_to_destination_atomic_preserves_existing_file_on_checksum_failure(workspace_tempdir) -> None:
+    payload = b"server-save" * 256
+    existing_payload = b"local-save" * 256
+    with workspace_tempdir("gamehub-save-transfer-") as temp_root:
+        destination = temp_root / "saves" / "N64" / "Mario.srm"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(existing_payload)
+
+        with _http_file_server("/v1/saves/save_n64_mario", payload) as server_url:
+            with pytest.raises(ValueError, match="Checksum mismatch"):
+                stream_to_destination_atomic(
+                    server_url=server_url,
+                    url="/v1/saves/save_n64_mario",
+                    destination=destination,
+                    expected_sha256="f" * 64,
+                    timeout_seconds=20.0,
+                )
+
+        assert destination.read_bytes() == existing_payload
+        backups = list(destination.parent.glob(f"{destination.name}.*.bak"))
+        assert len(backups) == 1
+        assert backups[0].read_bytes() == existing_payload

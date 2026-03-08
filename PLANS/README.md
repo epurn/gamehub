@@ -16,7 +16,6 @@
 5. Ensure PR title/body references the STORY ID and acceptance criteria.
 
 ## Story contract writing rules
-- Keep scope explicit: list exact files/modules allowed.
 - Keep acceptance criteria deterministic and testable.
 - Keep non-goals explicit to prevent scope creep.
 - Include required tests and expected command(s).
@@ -45,7 +44,6 @@ Rules for parallel safety:
 ```md
 ### STORY GH-142
 - Type: CLI
-- Scope: `src/gamehub_cli/steam/lifecycle.py`, `tests/test_steam_lifecycle.py`
 - Goal: Make Steam close-wait logging explicit during sync.
 - Acceptance Criteria:
   - `--verbose` logs close/wait transitions.

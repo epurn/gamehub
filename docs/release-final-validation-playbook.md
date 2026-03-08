@@ -1,6 +1,8 @@
-# Final Validation and Release Playbook
+﻿# Final Validation and Release Playbook
 
 This is the single reference for the final pre-release test flow and publish flow.
+
+For a shorter 2 to 3 hour manual sanity pass after automation is green, use [release-manual-checklist-v1.4.0.md](./release-manual-checklist-v1.4.0.md).
 
 Use this in order:
 1. Windows validation
@@ -28,8 +30,11 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 ```powershell
 .\venv\Scripts\pip.exe install -e .[dev]
 ```
-3. Full test suite:
+3. Required quality gates:
 ```powershell
+.\venv\Scripts\python.exe -m ruff format --check .
+.\venv\Scripts\python.exe -m ruff check .
+.\venv\Scripts\python.exe -m mypy src
 .\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
 4. Audit-critical slices:
@@ -38,7 +43,7 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_architecture.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_runtime.py tests/test_shortcut_save_session.py tests/test_shortcut_orchestrator.py tests/test_shortcut_payload.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
@@ -54,7 +59,7 @@ Get-Process python,python3.13 -ErrorAction SilentlyContinue | Stop-Process -Forc
 ```
 7. Build Windows executable:
 ```powershell
-pyinstaller --noconfirm --clean packaging/windows/gamehub.spec
+.\venv\Scripts\pyinstaller.exe --noconfirm --clean packaging/windows/gamehub.spec
 ```
 8. EXE smoke tests:
 ```powershell
@@ -97,11 +102,52 @@ $env:GAMEHUB_SGDB_API_KEY="<YOUR_KEY>"
 ```powershell
 .\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe sync --config .\config.windows.toml --verbose --require-steam-closed
 ```
+### Windows save-sync validation
+
+Run this after the first non-dry sync rewrites managed shortcuts to `shortcut-launch`.
+
+- Prepare three config states and re-run sync as needed:
+  - `save_sync.enabled = false`
+  - `save_sync.enabled = true`, `mode = "download"`
+  - `save_sync.enabled = true`, `mode = "bidirectional"`
+- Use at least one title for each save shape:
+  - RetroArch battery save
+  - managed `PSX` or `PS2` memory card
+  - learned-tree `GC`, `Wii`, or `N3DS` save
+- Validate disabled mode:
+  - dry-run shows deterministic save `skip` reasons
+  - non-dry sync does not mutate local or remote saves
+- Validate download mode:
+  - start with a remote newer save or missing local save
+  - run dry-run, then non-dry sync
+  - confirm missing-local or remote-newer paths converge so local bytes match `GET /v1/saves/{save_id}`
+  - confirm a locally modified existing save is preserved as `skip(download-mode-local-drift)` and its local bytes remain unchanged
+  - second sync is a no-op
+- Validate bidirectional mode:
+  - edit an existing local save and confirm upload on non-dry sync
+  - create a first-time exact-file save and confirm remote creation
+  - create one deliberate both-side drift and verify `manual`, `prefer_server`, and `prefer_local`
+- Validate managed `shortcut-launch`:
+  - launch a managed shortcut from Steam, modify a save, and confirm post-exit upload
+  - launch a managed shortcut after pre-launch `keep-local` resolution and confirm post-exit upload even when that save is unchanged during the session
+  - launch a managed shortcut with the server offline, reconnect on a later managed launch, and confirm an unchanged reconnect session still uploads the preserved local save
+  - switch one title from `disabled` or `download` to `bidirectional`, keep a first-time deterministic `per_game` save local-only, and confirm the next connected managed exit auto-creates it on the server
+  - repeat once with the server unavailable before exit; confirm deferred recovery on the next reconnect/launch
+- Capture evidence for each scenario:
+  - platform
+  - title/system
+  - local save path
+  - checksum before/after
+  - server route used
+  - Steam/launch result
+  - pass/fail notes
+
 15. Manual Steam verification:
 - Shortcuts exist.
 - Collections exist by exact system name.
 - Artwork appears.
 - A sample title launches.
+- `.\venv\Scripts\python.exe scripts\validate_steam_shortcuts.py --config .\config.windows.toml` returns exit code `0`.
 - If `N3DS` titles are in index, verify `%APPDATA%\\Azahar\\config\\qt-config.ini` contains `fullscreen=true` and `confirmClose=false`.
 
 ## 2. Linux Final Validation (Ubuntu/Fedora host)
@@ -111,8 +157,11 @@ $env:GAMEHUB_SGDB_API_KEY="<YOUR_KEY>"
 python3 -m venv venv
 ./venv/bin/python -m pip install -e .[dev]
 ```
-2. Full test suite:
+2. Required quality gates:
 ```bash
+./venv/bin/python -m ruff format --check .
+./venv/bin/python -m ruff check .
+./venv/bin/python -m mypy src
 ./venv/bin/python -m pytest . -p no:cacheprovider
 ```
 3. Audit-critical slices:
@@ -121,7 +170,7 @@ python3 -m venv venv
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_server_api.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_architecture.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_runtime.py tests/test_shortcut_save_session.py tests/test_shortcut_orchestrator.py tests/test_shortcut_payload.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
@@ -186,11 +235,27 @@ gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
 ```bash
 gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
 ```
+### Bazzite save-sync validation
+
+Run the same save-sync matrix used on Windows after the first non-dry sync rewrites managed shortcuts:
+
+- `save_sync.enabled = false`: save work is `skip` only and non-dry sync leaves saves unchanged
+- `mode = "download"`: remote newer or missing local saves download and converge on second pass
+- `mode = "bidirectional"`:
+  - existing local change uploads successfully
+  - first-time exact-file save creates a remote save
+  - one both-side drift behaves correctly under `manual`, `prefer_server`, and `prefer_local`
+- Managed Steam launch validation:
+  - Steam-managed launch uploads the changed save after exit
+  - one offline post-exit upload miss is recovered correctly on reconnect
+- Capture the same evidence table fields used in Windows validation
+
 8. Manual Steam verification:
 - Shortcuts exist.
 - Collections exist by exact system name.
 - Artwork appears.
 - Sample titles launch through configured emulators.
+- `./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.bazzite.toml` returns exit code `0`.
 - If `N3DS` titles are in index, verify `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini` contains `fullscreen=true` and `confirmClose=false`.
 
 ## 4. GitHub Release Execution
@@ -206,7 +271,7 @@ git push origin <branch>
 - `Audit Regression Gates`
 - `Targeted Regression Matrix`
 4. Merge PR.
-5. Ensure version in `pyproject.toml` is final; commit if needed and push `main`.
+5. Ensure version in `src/gamehub_common/version.py` is final; commit if needed and push `main`.
 6. Create and push release tag:
 ```powershell
 git checkout main

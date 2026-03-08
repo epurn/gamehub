@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gamehub_cli.common.paths import from_rel_path
+from gamehub_cli.common.paths import from_rel_path, normalized_local_path
 from gamehub_cli.common.platform_paths import (
     RETROARCH_FLATPAK_APP_ID,
     is_flatpak_command,
@@ -92,3 +92,31 @@ def test_retroarch_cfg_candidates_includes_portable_windows_cfg(monkeypatch, wor
         )
 
         assert retroarch_root / "retroarch.cfg" in candidates
+
+
+def test_retroarch_cfg_candidates_prefers_flatpak_cfg_when_runtime_is_flatpak(monkeypatch) -> None:
+    home = Path("/var/home/deck")
+    monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+    monkeypatch.setattr("gamehub_cli.common.platform_paths._OS_NAME", "posix")
+
+    candidates = retroarch_cfg_candidates(
+        explicit_cfg_path=None,
+        resolve_emulator_executable=lambda _name: str(
+            home / ".local" / "share" / "flatpak" / "exports" / "bin" / RETROARCH_FLATPAK_APP_ID
+        ),
+    )
+
+    assert candidates[:2] == [
+        home / ".var" / "app" / RETROARCH_FLATPAK_APP_ID / "config" / "retroarch" / "retroarch.cfg",
+        home / ".config" / "retroarch" / "retroarch.cfg",
+    ]
+
+
+def test_normalized_local_path_handles_windows_style_segments() -> None:
+    normalized = normalized_local_path(r"C:\Users\Deck\Saved Games\PCSX2\memcards")
+    assert normalized == Path("C:/Users/Deck/Saved Games/PCSX2/memcards")
+
+
+def test_normalized_local_path_strips_current_directory_segments() -> None:
+    normalized = normalized_local_path("./saves/./PS2/Mcd001.ps2")
+    assert normalized == Path("saves/PS2/Mcd001.ps2")

@@ -1,9 +1,16 @@
-from .ids import make_asset_id, make_file_id, make_title_id
+from .ids import make_asset_id, make_file_id, make_save_binding_id, make_save_id, make_title_id
 from .models import (
     AssetSpec,
     FirmwareSpec,
     LibraryIndex,
     RomSpec,
+    SaveBindingCatalog,
+    SaveBindingLearnRule,
+    SaveBindingLocalRoot,
+    SaveBindingSpec,
+    SaveBindingStrategy,
+    SaveKind,
+    SaveSpec,
     SystemSpec,
     TitleEntry,
 )
@@ -13,9 +20,18 @@ __all__ = [
     "FirmwareSpec",
     "LibraryIndex",
     "RomSpec",
+    "SaveBindingCatalog",
+    "SaveBindingLearnRule",
+    "SaveBindingLocalRoot",
+    "SaveBindingSpec",
+    "SaveBindingStrategy",
+    "SaveKind",
+    "SaveSpec",
     "SystemSpec",
     "TitleEntry",
     "make_asset_id",
     "make_file_id",
+    "make_save_binding_id",
+    "make_save_id",
     "make_title_id",
 ]

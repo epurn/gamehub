@@ -1,4 +1,4 @@
-[server]
+﻿[server]
 url = "http://<SERVER_IP>:8000"
 
 # Optional index fetch hardening for slower/unreliable links.
@@ -34,8 +34,9 @@ cache_dir = "/var/home/<user>/GameHub/artwork-cache/sgdb"
 enabled_kinds = ["grid", "hero", "logo", "icon"]
 
 [controllers]
-# Launch-time controller profile wrapper for PCSX2/Dolphin/Azahar.
+# Launch-time shortcut wrapper for PCSX2/Dolphin/Azahar (with controller profile autoconfig).
 launch_autoconfig = true
 # Optional explicit profile directory.
 # Default when omitted: <paths.gamehub_dir>/controller_profiles
 # profiles_dir = "/var/home/<user>/GameHub/controller_profiles"
+

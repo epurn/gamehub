@@ -17,7 +17,6 @@ services:
       - type: bind
         source: ${GAMEHUB_DATA_HOST_PATH:-../data}
         target: /data
-        read_only: true
       - type: volume
         source: gamehub-hash-cache-v2
         target: /app/.cache/gamehub

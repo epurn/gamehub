@@ -1,4 +1,4 @@
-# Release Process
+﻿# Release Process
 
 Detailed end-to-end validation and publishing steps are in:
 - [release-final-validation-playbook.md](release-final-validation-playbook.md)
@@ -10,6 +10,9 @@ Detailed end-to-end validation and publishing steps are in:
 ## Release Checklist
 1. Ensure tests pass:
 ```powershell
+.\venv\Scripts\python.exe -m ruff format --check .
+.\venv\Scripts\python.exe -m ruff check .
+.\venv\Scripts\python.exe -m mypy src
 .\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
 2. Run audit regression slices:
@@ -18,7 +21,7 @@ Detailed end-to-end validation and publishing steps are in:
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_server_api.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_architecture.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_paths.py tests/test_emulators.py tests/test_firmware_deploy.py tests/test_retroarch_cores.py
-.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_controller_launch.py
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_controller_detection.py tests/test_controller_profiles.py tests/test_controller_apply.py tests/test_shortcut_runtime.py tests/test_shortcut_save_session.py tests/test_shortcut_orchestrator.py tests/test_shortcut_payload.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
@@ -32,7 +35,7 @@ Detailed end-to-end validation and publishing steps are in:
 ```powershell
 .\venv\Scripts\python.exe scripts/audit_repo_readiness.py
 ```
-5. Bump version in `pyproject.toml`.
+5. Bump version in `src/gamehub_common/version.py`.
 6. Update release notes/changelog.
 7. Create and push tag:
 ```powershell
@@ -72,3 +75,4 @@ git push origin vX.Y.Z
 ## Known Scope Limits (Current Phase)
 - Architecture: `amd64` only
 - Deployment: LAN-only/no auth
+

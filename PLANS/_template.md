@@ -31,7 +31,6 @@
 
 ### STORY <ID>
 - Type: SERVER | CLI | COMMON | DOCS | CROSS-BOUNDARY
-- Scope (explicit files/modules allowed):
 - Goal:
 - Acceptance Criteria (deterministic):
   - [ ]
@@ -45,7 +44,6 @@
 
 ### STORY <ID>
 - Type: SERVER | CLI | COMMON | DOCS | CROSS-BOUNDARY
-- Scope (explicit files/modules allowed):
 - Goal:
 - Acceptance Criteria (deterministic):
   - [ ]

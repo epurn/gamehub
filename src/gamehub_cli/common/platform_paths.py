@@ -95,12 +95,14 @@ def parse_simple_kv_config(path: Path) -> dict[str, str]:
 def retroarch_cfg_candidates(
     explicit_cfg_path: Path | None = None,
     resolve_emulator_executable: Callable[[str], str] | None = None,
+    os_name: str | None = None,
 ) -> list[Path]:
     values: list[Path] = []
+    current_os_name = _OS_NAME if os_name is None else os_name
     if explicit_cfg_path is not None:
         values.append(explicit_cfg_path.expanduser())
 
-    if _OS_NAME == "nt":
+    if current_os_name == "nt":
         if resolve_emulator_executable is not None:
             exe_raw = resolve_emulator_executable("retroarch").strip('"')
             if exe_raw:
@@ -109,11 +111,25 @@ def retroarch_cfg_candidates(
                     values.append(exe_path.parent / "retroarch.cfg")
 
     appdata = os.environ.get("APPDATA")
-    if _OS_NAME == "nt" and appdata:
+    if current_os_name == "nt" and appdata:
         values.append(_host_path(appdata) / "RetroArch" / "retroarch.cfg")
 
-    if _OS_NAME != "nt":
+    if current_os_name != "nt":
         home = _safe_home_path()
-        values.append(home / ".config" / "retroarch" / "retroarch.cfg")
-        values.append(linux_flatpak_retroarch_root() / "retroarch.cfg")
+        native_cfg = home / ".config" / "retroarch" / "retroarch.cfg"
+        flatpak_cfg = linux_flatpak_retroarch_root() / "retroarch.cfg"
+        prefer_flatpak = False
+        if resolve_emulator_executable is not None:
+            try:
+                retroarch_raw = resolve_emulator_executable("retroarch").strip().strip('"')
+            except Exception:
+                retroarch_raw = ""
+            if retroarch_raw and is_flatpak_command(retroarch_raw, RETROARCH_FLATPAK_APP_ID):
+                prefer_flatpak = True
+        if prefer_flatpak:
+            values.append(flatpak_cfg)
+            values.append(native_cfg)
+        else:
+            values.append(native_cfg)
+            values.append(flatpak_cfg)
     return unique_paths(values)

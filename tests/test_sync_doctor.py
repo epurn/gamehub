@@ -34,7 +34,9 @@ def _empty_index() -> LibraryIndex:
 def test_run_init_writes_bootstrap_version_without_last_sync(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-init-") as temp_root:
         config = _config(temp_root)
-        monkeypatch.setattr("gamehub_cli.sync.orchestrator._load_validated_index", lambda *args, **kwargs: _empty_index())
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._load_validated_index", lambda *args, **kwargs: _empty_index()
+        )
         monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_runtime", lambda *args, **kwargs: None)
         monkeypatch.setattr("gamehub_cli.sync.orchestrator.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
         monkeypatch.setattr(
@@ -91,7 +93,9 @@ def test_run_sync_allows_legacy_state_and_backfills_bootstrap_version(monkeypatc
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr("gamehub_cli.sync.orchestrator._load_validated_index", lambda *args, **kwargs: _empty_index())
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._load_validated_index", lambda *args, **kwargs: _empty_index()
+        )
         monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_runtime", lambda *args, **kwargs: None)
         monkeypatch.setattr("gamehub_cli.sync.orchestrator._apply_downloads", lambda *args, **kwargs: None)
         monkeypatch.setattr("gamehub_cli.sync.orchestrator.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
@@ -192,15 +196,11 @@ def test_run_doctor_all_aggregates_controller_and_sync_audits(monkeypatch) -> No
     )
     monkeypatch.setattr(
         "gamehub_cli.main.run_firmware_doctor",
-        lambda loaded, verify, verbose, snapshot=None: (
-            order.append(f"firmware:{snapshot is diagnostic_snapshot}") or 0
-        ),
+        lambda loaded, verify, verbose, snapshot=None: order.append(f"firmware:{snapshot is diagnostic_snapshot}") or 0,
     )
     monkeypatch.setattr(
         "gamehub_cli.main.run_roms_doctor",
-        lambda loaded, verify, verbose, snapshot=None: (
-            order.append(f"roms:{snapshot is diagnostic_snapshot}") or 1
-        ),
+        lambda loaded, verify, verbose, snapshot=None: order.append(f"roms:{snapshot is diagnostic_snapshot}") or 1,
     )
 
     exit_code = _run_doctor_all_command(config_path=None, verbose=False, verify=True)

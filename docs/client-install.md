@@ -93,21 +93,23 @@ grep -nE "^(fullscreen|confirmClose)=" ~/.var/app/org.azahar_emu.Azahar/config/a
 ```bash
 python - <<'PY'
 from pathlib import Path
-from gamehub_cli import controller_apply as ca
+from gamehub_cli.controllers import sdl_guid
+from gamehub_cli.firmware.pcsx2_ini import read_ini_lines
 qt = Path.home()/".var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini"
 if not qt.exists():
     qt = Path.home()/".var/app/org.azahar_emu.Azahar/config/azahar/qt-config.ini"
-lines = ca.read_ini_lines(qt)
-_guid, port = ca._azahar_detect_sdl_identity(lines)
-print("runtime_guid:", ca._probe_azahar_flatpak_guid(port=port))
-print("host_guid:", ca._discover_linux_sdl_guid(port=port))
+lines = read_ini_lines(qt)
+_guid, port = sdl_guid._azahar_detect_sdl_identity(lines)
+print("runtime_guid:", sdl_guid._probe_azahar_flatpak_guid(port=port))
+print("host_guid:", sdl_guid._discover_linux_sdl_guid(port=port))
 PY
 ```
-14. N3DS Linux native controller mode uses an Azahar wrapper hook by default:
+14. N3DS Linux Flatpak Steam shortcuts default to a sync-emitted Azahar exit hook wrapper:
 ```bash
-gamehub sync --config ./config.bazzite.toml --verbose --skip-steam
+gamehub sync --config ./config.bazzite.toml --verbose
 ```
-   - The wrapper closes Azahar on strict `Select+Start` using:
+   - During the Steam stage, GAMEHUB emits `python -m gamehub_cli.controllers.azahar_exit_hook --app-id org.azahar_emu.Azahar --rom ...` by default.
+   - The Linux Azahar wrapper closes Azahar on strict `Select+Start` using:
      - `/dev/input/js*` joystick events, and
      - `/dev/input/event*` fallback (`BTN_SELECT` + `BTN_START`) when needed.
    - Optional overrides:
@@ -118,6 +120,7 @@ export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
 # Optional explicit joystick device:
 # export GAMEHUB_AZAHAR_EXIT_JS_DEVICE=/dev/input/js0
 ```
+   - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK` changes the Steam launch command emitted by sync. The Windows-only `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK` controls the `shortcut-launch` runtime hook instead.
 15. N3DS Steam Input templates on Steam Deck:
    - GAMEHUB auto-syncs managed per-title Steam Input templates for `N3DS` shortcuts during non-dry sync.
    - Use `gamehub sync --reseed-profiles` to refresh managed Deck template seeds when needed.

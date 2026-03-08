@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import gamehub_server.indexer as indexer_module
-from gamehub_common.ids import make_file_id, make_title_id, sha256_file
+from gamehub_common.ids import make_file_id, make_save_binding_id, make_save_id, make_title_id, sha256_file
 from gamehub_server.indexer import SYSTEM_CATALOG, build_index
 
 INITIAL_SYSTEM_SET = {
@@ -51,6 +51,7 @@ def test_build_index_scans_single_title(workspace_tempdir) -> None:
         assert title.rom.file_id in bundle.file_paths
         assert title.assets == ()
         assert bundle.asset_paths == {}
+        assert bundle.save_paths == {}
 
 
 def test_build_index_rejects_nested_title_directories(workspace_tempdir) -> None:
@@ -253,3 +254,112 @@ def test_build_index_rehashes_changed_files(monkeypatch, workspace_tempdir) -> N
         build_index(root)
 
         assert calls == [rom_path]
+
+
+def test_build_index_includes_canonical_save_metadata(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        rom_path = root / "roms" / "NES" / "SuperMarioBros.nes"
+        save_path = root / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.srm"
+        _write_file(rom_path, b"rom")
+        _write_file(save_path, b"save")
+
+        bundle = build_index(root)
+
+        assert len(bundle.index.saves) == 1
+        save = bundle.index.saves[0]
+        save_rel = "saves/NES/SuperMarioBros/battery/slot1.srm"
+        assert save.rel_path == save_rel
+        assert save.save_id == make_save_id(save_rel)
+        assert save.title_id == make_title_id("NES", "NES/SuperMarioBros.nes")
+        assert save.kind == "battery"
+        assert save.portable is True
+        assert save.save_id in bundle.save_paths
+
+
+def test_build_index_rejects_save_unknown_system(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "saves" / "UNKNOWN" / "Title" / "battery" / "slot1.srm", b"save")
+
+        with pytest.raises(ValueError, match="unknown system"):
+            build_index(root)
+
+
+def test_build_index_rejects_save_without_title_binding(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom")
+        _write_file(root / "saves" / "NES" / "WrongTitle" / "battery" / "slot1.srm", b"save")
+
+        with pytest.raises(ValueError, match="does not map to indexed title"):
+            build_index(root)
+
+
+def test_build_index_rejects_unknown_save_kind(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom")
+        _write_file(root / "saves" / "NES" / "SuperMarioBros" / "state" / "slot1.state", b"save")
+
+        with pytest.raises(ValueError, match="unknown save kind"):
+            build_index(root)
+
+
+def test_build_index_allows_nested_per_game_save_trees(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
+        _write_file(root / "saves" / "Wii" / "MarioGalaxy" / "per_game" / "title" / "banner.bin", b"banner")
+        _write_file(root / "saves" / "Wii" / "MarioGalaxy" / "per_game" / "profiles" / "slot1.dat", b"profile")
+
+        bundle = build_index(root)
+
+        rel_paths = {save.rel_path for save in bundle.index.saves}
+        assert rel_paths == {
+            "saves/Wii/MarioGalaxy/per_game/profiles/slot1.dat",
+            "saves/Wii/MarioGalaxy/per_game/title/banner.bin",
+        }
+
+
+def test_build_index_emits_save_bindings_without_existing_saves(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom")
+        _write_file(root / "roms" / "GC" / "WindWaker.iso", b"rom")
+        _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
+        _write_file(root / "roms" / "PSX" / "CrashTeamRacing.chd", b"rom")
+        _write_file(root / "firmware" / "PSX" / "scph5501.bin", b"fw")
+
+        bundle = build_index(root)
+
+        by_id = {binding.binding_id: binding for binding in bundle.save_bindings}
+        nes_id = make_save_binding_id(make_title_id("NES", "NES/SuperMarioBros.nes"), "battery")
+        gc_id = make_save_binding_id(make_title_id("GC", "GC/WindWaker.iso"), "per_game")
+        wii_id = make_save_binding_id(make_title_id("Wii", "Wii/MarioGalaxy.iso"), "per_game")
+        psx_title_id = make_title_id("PSX", "PSX/CrashTeamRacing.chd")
+        psx_id = make_save_binding_id(psx_title_id, "memory_card")
+
+        assert by_id[nes_id].candidate_filenames == ("SuperMarioBros.srm",)
+        assert by_id[gc_id].local_root == "dolphin_gc"
+        assert by_id[gc_id].learn_rule == "dolphin_gc_gci_tree"
+        assert by_id[wii_id].learn_rule == "dolphin_wii_title_tree"
+        assert by_id[psx_id].candidate_filenames == (
+            f"GH_{psx_title_id}_1.mcd",
+            f"GH_{psx_title_id}_2.mcd",
+            "CrashTeamRacing.srm",
+            "CrashTeamRacing_1.mcd",
+            "CrashTeamRacing_2.mcd",
+        )
+
+
+def test_build_index_ignores_server_generated_save_backups(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "GBC" / "PokemonCrystal.gbc", b"rom")
+        _write_file(root / "saves" / "GBC" / "PokemonCrystal" / "battery" / "PokemonCrystal.srm", b"save")
+        _write_file(
+            root / "saves" / "GBC" / "PokemonCrystal" / "battery" / "PokemonCrystal.srm.20260304001806.bak",
+            b"backup",
+        )
+        _write_file(
+            root / "saves" / "GBC" / "PokemonCrystal" / "battery" / "PokemonCrystal.srm.20260304001806.1.bak",
+            b"backup-2",
+        )
+
+        bundle = build_index(root)
+
+        assert [save.rel_path for save in bundle.index.saves] == ["saves/GBC/PokemonCrystal/battery/PokemonCrystal.srm"]
