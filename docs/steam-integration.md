@@ -46,6 +46,7 @@
   - `<appid>_logo.<ext>`
   - `<appid>_icon.<ext>`
 - GAMEHUB writes grid filenames using unsigned appid values only.
+- During sync, GAMEHUB prunes legacy signed-appid grid variants (for managed appids) so only unsigned canonical filenames remain.
 
 ## Managed launch wrappers
 - When `[controllers].launch_autoconfig = true` or `[save_sync].enabled = true`, supported managed shortcuts (`RetroArch`, `PCSX2`, `Dolphin`, `Azahar`) are emitted through the hidden `shortcut-launch` wrapper so launch-time controller and save-session policy stays deterministic.
