@@ -296,7 +296,8 @@ def test_build_context_normalizes_macos_inner_steam_executable_to_bundle(monkeyp
         Path("/Applications/Steam.app/Contents/MacOS/steam_osx"),
     )
 
-    assert context.steam_exe == Path("/Applications/Steam.app")
+    assert context.steam_exe is not None
+    assert str(context.steam_exe).replace("\\", "/") == "/Applications/Steam.app"
 
 
 def test_copy_grid_art_copies_existing_and_skips_missing(workspace_tempdir) -> None:

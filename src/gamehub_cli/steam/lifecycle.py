@@ -5,9 +5,32 @@ import shutil
 import subprocess
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PosixPath, WindowsPath
 
 from .types import LINUX_STEAM_PROCESS_NAMES, MACOS_STEAM_PROCESS_NAMES, STEAM_ID64_BASE, SteamContext
+
+try:
+    _HOST_PATH_CLS = type(Path.cwd())
+except Exception:
+    _HOST_PATH_CLS = WindowsPath if os.name == "nt" else PosixPath
+
+
+def _host_path(raw: str | os.PathLike[str]) -> Path:
+    normalized = str(raw).replace("\\", "/")
+    return _HOST_PATH_CLS(normalized)
+
+
+def _safe_home_path() -> Path:
+    try:
+        return _host_path(str(Path.home()))
+    except Exception:
+        pass
+    for raw in (os.path.expanduser("~"), os.environ.get("USERPROFILE", ""), os.environ.get("HOME", "")):
+        value = str(raw).strip()
+        if not value or value == "~":
+            continue
+        return _host_path(value)
+    return _host_path(os.getcwd())
 
 
 def _run_process_best_effort(command: list[str], timeout_seconds: int = 10) -> None:
@@ -41,7 +64,7 @@ def _unique_paths(values: list[Path]) -> list[Path]:
 def _normalize_macos_steam_app_path(path: Path | None) -> Path | None:
     if path is None:
         return None
-    expanded = path.expanduser()
+    expanded = _host_path(path).expanduser()
     if expanded.name.casefold() == "steam.app":
         return expanded
     for parent in expanded.parents:
@@ -55,9 +78,9 @@ def _candidate_macos_steam_apps(explicit: Path | None = None) -> list[Path]:
     normalized_explicit = _normalize_macos_steam_app_path(explicit)
     if normalized_explicit is not None:
         candidates.append(normalized_explicit)
-    home = Path.home()
+    home = _safe_home_path()
     candidates.append(home / "Applications" / "Steam.app")
-    candidates.append(Path("/Applications/Steam.app"))
+    candidates.append(_host_path("/Applications/Steam.app"))
     return _unique_paths(candidates)
 
 
@@ -67,10 +90,10 @@ def _candidate_userdata_dirs() -> list[Path]:
         pf86 = os.environ.get("PROGRAMFILES(X86)")
         pf = os.environ.get("PROGRAMFILES")
         if pf86:
-            candidates.append(Path(pf86) / "Steam" / "userdata")
+            candidates.append(_host_path(pf86) / "Steam" / "userdata")
         if pf:
-            candidates.append(Path(pf) / "Steam" / "userdata")
-    home = Path.home()
+            candidates.append(_host_path(pf) / "Steam" / "userdata")
+    home = _safe_home_path()
     if _is_macos():
         candidates.append(home / "Library" / "Application Support" / "Steam" / "userdata")
     candidates.append(home / ".steam" / "steam" / "userdata")
@@ -161,13 +184,14 @@ def discover_steam_id(userdata_dir: Path, preferred_steam_id: str | None = None)
 
 
 def build_context(userdata_dir: Path, steam_id: str, steam_exe: Path | None) -> SteamContext:
-    config_dir = userdata_dir / steam_id / "config"
+    normalized_userdata_dir = _host_path(userdata_dir)
+    config_dir = normalized_userdata_dir / steam_id / "config"
     cloudstorage_path = config_dir / "cloudstorage" / "cloud-storage-namespace-1.json"
-    normalized_steam_exe = steam_exe.expanduser() if steam_exe is not None else None
+    normalized_steam_exe = _host_path(steam_exe).expanduser() if steam_exe is not None else None
     if _is_macos():
         normalized_steam_exe = _normalize_macos_steam_app_path(steam_exe) or normalized_steam_exe
     return SteamContext(
-        userdata_dir=userdata_dir,
+        userdata_dir=normalized_userdata_dir,
         steam_id=steam_id,
         shortcuts_path=config_dir / "shortcuts.vdf",
         localconfig_path=config_dir / "localconfig.vdf",
