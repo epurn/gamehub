@@ -16,7 +16,7 @@ Historical note:
 
 - This document reflects an earlier branch checkpoint and is no longer the current source of truth for save-sync rollout behavior.
 - Save uploads are now implemented, and the managed shortcut wrapper has been renamed to `shortcut-launch`.
-- Use the current runtime docs (`docs/server-api.md`, `docs/cli-sync.md`, `docs/config-and-state.md`) for active behavior.
+- Use the current runtime docs ([server-api.md](./server-api.md), [cli-sync.md](./cli-sync.md), [config-and-state.md](./config-and-state.md)) for active behavior.
 
 ## What was reviewed
 
