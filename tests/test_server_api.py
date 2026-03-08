@@ -275,7 +275,7 @@ def test_save_upload_route_rejects_stale_remote_mutation(api_client: TestClient)
     assert save_path.read_bytes() == b"externally-mutated"
 
 
-def test_save_upload_route_rejects_existing_unknown_save_without_expected_sha(api_client: TestClient) -> None:
+def test_save_upload_route_rejects_existing_indexed_save_without_expected_sha(api_client: TestClient) -> None:
     binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
     save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")
     save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
@@ -291,8 +291,9 @@ def test_save_upload_route_rejects_existing_unknown_save_without_expected_sha(ap
         files={"file": ("SuperMarioBros.srm", b"first-save", "application/octet-stream")},
     )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "expected_remote_sha256 is required for existing saves"
+    assert response.status_code == 409
+    assert response.json()["detail"]["reason"] == "target-exists"
+    assert response.json()["detail"]["current"]["save_id"] == save_id
     assert save_path.read_bytes() == b"existing-out-of-band"
 
 
@@ -316,6 +317,122 @@ def test_save_upload_route_rejects_target_exists_unindexed_conflict(api_client: 
     assert response.status_code == 409
     assert response.json()["detail"]["reason"] == "target-exists-unindexed"
     assert save_path.read_bytes() == b"existing-out-of-band"
+
+
+def test_save_upload_route_serializes_concurrent_existing_updates(api_client: TestClient, monkeypatch) -> None:
+    index_response = api_client.get("/v1/index")
+    original_save = index_response.json()["saves"][0]
+    save_id = original_save["save_id"]
+    binding_id = api_client.get("/v1/save-bindings").json()["bindings"][0]["binding_id"]
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav"
+    original_write = save_api._write_save_upload
+    first_started = threading.Event()
+    allow_finish = threading.Event()
+    write_calls: list[str] = []
+    responses: dict[str, tuple[int, dict[str, object]]] = {}
+    errors: list[BaseException] = []
+
+    async def _delayed_write(*args, **kwargs):
+        write_calls.append(kwargs["save_id"])
+        if len(write_calls) == 1:
+            first_started.set()
+            if not await asyncio.to_thread(allow_finish.wait, 2.0):
+                raise AssertionError("timed out waiting to release first save upload")
+        return await original_write(*args, **kwargs)
+
+    def _request(name: str, payload: bytes) -> None:
+        try:
+            response = api_client.put(
+                f"/v1/saves/{save_id}",
+                data={
+                    "binding_id": binding_id,
+                    "canonical_suffix": "slot1.sav",
+                    "expected_remote_sha256": original_save["sha256"],
+                },
+                files={"file": ("slot1.sav", payload, "application/octet-stream")},
+            )
+            responses[name] = (response.status_code, response.json())
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    monkeypatch.setattr(save_api, "_write_save_upload", _delayed_write)
+
+    first_thread = threading.Thread(target=_request, args=("first", b"first-write"), name="save-update-first")
+    second_thread = threading.Thread(target=_request, args=("second", b"second-write"), name="save-update-second")
+
+    first_thread.start()
+    assert first_started.wait(timeout=2.0)
+    second_thread.start()
+    allow_finish.set()
+    first_thread.join(timeout=2.0)
+    second_thread.join(timeout=2.0)
+
+    assert not first_thread.is_alive()
+    assert not second_thread.is_alive()
+    assert not errors
+    assert write_calls == [save_id]
+    assert responses["first"][0] == 200
+    assert responses["second"][0] == 409
+    assert responses["second"][1]["detail"]["reason"] == "remote-sha-mismatch"
+    assert responses["second"][1]["detail"]["current"]["sha256"] == responses["first"][1]["sha256"]
+    assert save_path.read_bytes() == b"first-write"
+
+
+def test_save_upload_route_serializes_concurrent_creates(api_client: TestClient, monkeypatch) -> None:
+    binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
+    save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "SuperMarioBros.srm"
+    original_write = save_api._write_save_upload
+    first_started = threading.Event()
+    allow_finish = threading.Event()
+    write_calls: list[str] = []
+    responses: dict[str, tuple[int, dict[str, object]]] = {}
+    errors: list[BaseException] = []
+
+    async def _delayed_write(*args, **kwargs):
+        write_calls.append(kwargs["save_id"])
+        if len(write_calls) == 1:
+            first_started.set()
+            if not await asyncio.to_thread(allow_finish.wait, 2.0):
+                raise AssertionError("timed out waiting to release first save upload")
+        return await original_write(*args, **kwargs)
+
+    def _request(name: str, payload: bytes) -> None:
+        try:
+            response = api_client.put(
+                f"/v1/saves/{save_id}",
+                data={
+                    "binding_id": binding["binding_id"],
+                    "canonical_suffix": "SuperMarioBros.srm",
+                },
+                files={"file": ("SuperMarioBros.srm", payload, "application/octet-stream")},
+            )
+            responses[name] = (response.status_code, response.json())
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    monkeypatch.setattr(save_api, "_write_save_upload", _delayed_write)
+
+    first_thread = threading.Thread(target=_request, args=("first", b"first-create"), name="save-create-first")
+    second_thread = threading.Thread(target=_request, args=("second", b"second-create"), name="save-create-second")
+
+    first_thread.start()
+    assert first_started.wait(timeout=2.0)
+    second_thread.start()
+    allow_finish.set()
+    first_thread.join(timeout=2.0)
+    second_thread.join(timeout=2.0)
+
+    assert not first_thread.is_alive()
+    assert not second_thread.is_alive()
+    assert not errors
+    assert write_calls == [save_id]
+    assert responses["first"][0] == 201
+    assert responses["second"][0] == 409
+    assert responses["second"][1]["detail"]["reason"] == "target-exists"
+    assert responses["second"][1]["detail"]["current"]["save_id"] == save_id
+    assert responses["second"][1]["detail"]["current"]["sha256"] == responses["first"][1]["sha256"]
+    assert save_path.read_bytes() == b"first-create"
 
 
 def test_save_upload_route_enforces_upload_size_limit(api_client: TestClient, monkeypatch) -> None:
