@@ -9,6 +9,7 @@ This page is the short validation matrix only.
 
 ## Validation Status
 - Windows: verified
+- macOS: in progress (v1 target)
 - Bazzite: tested
 - SteamOS (Deck): verified
 - Fedora: untested
@@ -42,6 +43,11 @@ Legacy/general templates are still available:
   - `[linux].emulator_install_backend = "flatpak"`
   - `[linux].flatpak_remote = "flathub"`
 - Keep Bazzite sync runs in an active desktop session so Steam relaunch works.
+
+### macOS (v1 target, validation in progress)
+- macOS support is in scope for v1.
+- Validated operator setup steps and a checked-in macOS config template will land with the macOS implementation work.
+- Until then, do not treat macOS as an excluded platform in plans or support notes.
 
 ### SteamOS (Deck) (verified)
 - Start from:
