@@ -43,6 +43,7 @@ Details: [Platform Support (v1)](docs/platform-support.md)
 - Steam lifecycle safety: close -> backup -> write -> reopen.
 - Launch-time controller autoconfig for `PCSX2`, `Dolphin`, and `Azahar` with user-overridable profile files (including Steam Deck built-in controller defaults).
 - Controller state convergence for managed profile templates and assisted emulator controller keys, with metadata markers and `doctor controllers` repair flow.
+- Optional indexed save sync for managed titles, with rollout-safe defaults and explicit conflict handling.
 - On Steam Deck, managed `Wii`/`N3DS` shortcuts auto-sync Steam Input template seeds and repair app override flags for native-first controller behavior.
 
 Supported systems in current release:
@@ -85,6 +86,39 @@ Invoke-WebRequest https://github.com/epurn/gamehub/releases/latest/download/game
 ```
 
 More detail: [docs/client-install.md](docs/client-install.md), [docs/config-and-state.md](docs/config-and-state.md), [docs/cli-sync.md](docs/cli-sync.md)
+
+### Save Sync Quick Start
+Save sync is off by default. Fresh installs and upgrades will not download or upload saves until you explicitly enable `[save_sync]` in `config.toml`.
+
+Start with read-only download mode:
+```toml
+[save_sync]
+enabled = true
+mode = "download"
+conflict_policy = "prefer_server"
+```
+
+Then run a safety preview before the first real save pass:
+```bash
+gamehub sync --dry-run --require-steam-closed
+gamehub sync --require-steam-closed
+```
+
+If you want uploads as well, switch to bidirectional mode after reviewing the dry-run output:
+```toml
+[save_sync]
+enabled = true
+mode = "bidirectional"
+conflict_policy = "manual"
+# Optional: limit save sync to specific systems only.
+# systems = ["PSX", "PS2", "Wii"]
+```
+
+Notes:
+- `mode = "download"` is read-only for saves. GAMEHUB may download missing/newer remote saves, but it will not mutate the server.
+- `mode = "bidirectional"` allows upload planning and managed post-exit upload for supported save types.
+- Run one non-dry `gamehub sync` after upgrading before launching managed Steam shortcuts so existing commands are rewritten to `shortcut-launch`.
+- Review `gamehub sync --dry-run` output first when enabling save sync on an existing library.
 
 ### Controller Autoconfig Quick Start (PCSX2/Dolphin/Azahar)
 - Ensure `[controllers].launch_autoconfig = true` (or `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG=true`).
