@@ -464,7 +464,9 @@ async def put_save(
 
             if not target_exists:
                 if expected_remote_sha256 is not None:
-                    raise HTTPException(status_code=400, detail="expected_remote_sha256 is only valid for existing saves")
+                    raise HTTPException(
+                        status_code=400, detail="expected_remote_sha256 is only valid for existing saves"
+                    )
                 bytes_written = await _write_save_upload(
                     path,
                     file_upload,
@@ -476,7 +478,9 @@ async def put_save(
                 save = _save_spec_from_bundle(refreshed_bundle, save_id)
                 if save is None:
                     raise HTTPException(status_code=500, detail=f"Uploaded save missing after refresh: {save_id}")
-                logger.info("save create completed save_id=%s rel_path=%s bytes=%d", save_id, save.rel_path, bytes_written)
+                logger.info(
+                    "save create completed save_id=%s rel_path=%s bytes=%d", save_id, save.rel_path, bytes_written
+                )
                 response.status_code = 201
                 return save.model_dump(mode="json")
 
