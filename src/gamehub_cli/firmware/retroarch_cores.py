@@ -85,18 +85,28 @@ def _core_suffix() -> str:
     return ""
 
 
+def _machine_name() -> str:
+    uname = getattr(os, "uname", None)
+    if uname is None:
+        return ""
+    try:
+        return str(uname().machine).lower()
+    except Exception:
+        return ""
+
+
 def _core_base_url(explicit_override: str | None = None) -> str | None:
     if explicit_override:
         return explicit_override.rstrip("/") + "/"
     if os.name == "nt":
         return "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
     if sys.platform == "darwin":
-        machine = os.uname().machine.lower() if hasattr(os, "uname") else ""
+        machine = _machine_name()
         if machine in {"arm64", "aarch64"}:
             return "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/"
         return None
     if sys.platform.startswith("linux"):
-        machine = os.uname().machine.lower() if hasattr(os, "uname") else ""
+        machine = _machine_name()
         if machine in {"x86_64", "amd64"}:
             return "https://buildbot.libretro.com/nightly/linux/x86_64/latest/"
     return None

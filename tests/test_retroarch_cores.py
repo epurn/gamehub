@@ -227,10 +227,7 @@ def test_ensure_retroarch_cores_macos_uses_dylib_suffix(monkeypatch, workspace_t
 
         monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.sys.platform", "darwin")
-        monkeypatch.setattr(
-            "gamehub_cli.firmware.retroarch_cores.os.uname",
-            lambda: type("UName", (), {"machine": "arm64"})(),
-        )
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores._machine_name", lambda: "arm64")
         monkeypatch.setattr(
             "gamehub_cli.firmware.retroarch_cores.resolve_retroarch_paths",
             lambda: RetroArchPaths(cores_dir=cores_dir, info_dir=info_dir),

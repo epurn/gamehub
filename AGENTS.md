@@ -150,6 +150,7 @@ New platform-specific logic must be isolated and fail-open.
 - Do not assume one default host OS for commands or paths.
 - Agent behavior must remain cross-platform unless a task explicitly scopes to one OS.
 - When simulating another OS in code or tests, do not instantiate raw `pathlib.Path(...)` from strings after monkeypatching `os.name`; use a host-safe path helper cached from the real host path class.
+- Wrap optional host-specific stdlib APIs (for example `os.uname`) behind module-local helpers before mocking them in tests.
 - gate platform branches behind explicit detection
 - preserve non-target platform behavior
 - do not regress existing platforms as collateral damage
