@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 from pathlib import Path
 
@@ -198,6 +199,61 @@ def test_ensure_retroarch_cores_read_only_info_dir_warns_without_download_label(
         assert "failed to download RetroArch info.zip" not in out
 
 
+def test_ensure_retroarch_cores_macos_uses_dylib_suffix(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-retroarch-macos-") as temp_root:
+        cores_dir = temp_root / "cores"
+        info_dir = temp_root / "info"
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="GB",
+                    rom_extensions=(".gb",),
+                    default_emulator="retroarch",
+                    launch_template='"{emulator}" -L cores/gambatte_libretro.dylib "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+        calls: list[str] = []
+
+        def fake_download(url: str, timeout_seconds: float = 30.0) -> bytes:
+            del timeout_seconds
+            calls.append(url)
+            if url.endswith("assets/frontend/info.zip"):
+                return _zip_blob("gambatte_libretro.info", b"info")
+            return _zip_blob("gambatte_libretro.dylib", b"core")
+
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores._machine_name", lambda: "arm64")
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.retroarch_cores.resolve_retroarch_paths",
+            lambda: RetroArchPaths(cores_dir=cores_dir, info_dir=info_dir),
+        )
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores._download_bytes", fake_download)
+
+        ensure_retroarch_cores(index=index, dry_run=False, verbose=False)
+
+        assert (cores_dir / "gambatte_libretro.dylib").read_bytes() == b"core"
+        assert calls[0] == "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/gambatte_libretro.dylib.zip"
+
+
+def test_resolve_retroarch_paths_explicit_dirs_are_host_safe_when_os_name_is_monkeypatched(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-retroarch-host-safe-") as temp_root:
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "nt" if os.name != "nt" else "posix")
+
+        paths = resolve_retroarch_paths(
+            explicit_cores_dir=temp_root / "cores",
+            explicit_info_dir=temp_root / "info",
+        )
+
+        assert paths == RetroArchPaths(cores_dir=temp_root / "cores", info_dir=temp_root / "info")
+
+
 def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-retroarch-linux-") as temp_root:
         home = temp_root / "home"
@@ -301,3 +357,25 @@ def test_resolve_retroarch_paths_windows_colon_cfg_values(monkeypatch, workspace
         assert paths is not None
         assert paths.cores_dir == temp_root / "cores"
         assert paths.info_dir == temp_root / "info"
+
+
+def test_resolve_retroarch_paths_macos_defaults_to_application_support_root(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-retroarch-macos-root-") as temp_root:
+        home = temp_root / "home"
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.retroarch_cores.retroarch_cfg_candidates",
+            lambda explicit_cfg_path=None, resolve_emulator_executable=None: [],
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.firmware.retroarch_cores.resolve_emulator_executable", lambda _name: "/usr/bin/retroarch"
+        )
+
+        paths = resolve_retroarch_paths()
+
+        assert paths is not None
+        assert paths.cores_dir == home / "Library" / "Application Support" / "RetroArch" / "cores"
+        assert paths.info_dir == home / "Library" / "Application Support" / "RetroArch" / "info"

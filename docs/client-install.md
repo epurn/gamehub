@@ -3,7 +3,40 @@
 Platform status and recommended templates:
 - [Platform Support (v1)](platform-support.md)
 - macOS support is now in scope for v1.
-- This page currently documents the validated Linux and Windows install flows; macOS-specific operator steps will land with the macOS implementation work.
+
+## macOS (Apple Silicon)
+
+Start from template [docs/templates/config.macos.template.toml](templates/config.macos.template.toml).
+
+### macOS first-run install checklist
+1. Install native Steam manually first. GAMEHUB integrates with an existing `Steam.app` and never auto-installs Steam.
+2. Choose the macOS emulator install backend in `[macos]`:
+   - `emulator_install_backend = "auto"` (default) maps to `official`
+   - `emulator_install_backend = "official"` installs only official Apple Silicon or universal upstream assets into `~/Applications`
+   - `emulator_install_backend = "command"` runs your configured `emulator_install_command`
+   - `emulator_install_backend = "none"` disables emulator auto-install
+3. Supported official macOS auto-install targets are currently:
+   - `RetroArch`
+   - `Dolphin`
+   - `Azahar`
+4. `PCSX2` remains a manual macOS install for now. GAMEHUB does not fall back to Rosetta when upstream native Apple Silicon support is unavailable.
+5. Optional command backend placeholders:
+   - `{package}`: canonical install token (`retroarch`, `dolphin`, `azahar`, `pcsx2`)
+   - `{emulator}`: emulator name from the index/config
+6. Run bootstrap dry-run:
+```bash
+gamehub init --dry-run --verbose
+```
+7. Run bootstrap:
+```bash
+gamehub init
+```
+8. RetroArch macOS core provisioning defaults to:
+   - cores: `~/Library/Application Support/RetroArch/cores`
+   - info: `~/Library/Application Support/RetroArch/info`
+   - Apple Silicon buildbot base: `https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/`
+9. If your RetroArch config uses non-default locations, set `[macos].retroarch_cfg_path`, `[macos].retroarch_cores_dir`, `[macos].retroarch_info_dir`, or `[macos].retroarch_cores_base_url` explicitly and re-run sync.
+10. Combined end-to-end manual validation for `MACOS-CLI-03 + MACOS-CLI-04 + MACOS-CLI-07` remains deferred; this page only documents the current install/bootstrap contract.
 
 ## Linux (distro-agnostic) via pip
 
