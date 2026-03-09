@@ -307,6 +307,13 @@ def _resolved_existing_path(path: Path) -> str | None:
     return str(candidate.absolute())
 
 
+def _is_absolute_runtime_path(value: str) -> bool:
+    if value.startswith("/"):
+        return True
+    path = Path(value).expanduser()
+    return path.is_absolute()
+
+
 def _normalize_wrapper_candidate(value: str) -> str | None:
     normalized = _strip_wrapping_quotes(value)
     if not normalized:
@@ -318,7 +325,7 @@ def _normalize_wrapper_candidate(value: str) -> str | None:
     path = Path(normalized).expanduser()
     if path.exists():
         return _resolved_existing_path(path)
-    if path.is_absolute():
+    if _is_absolute_runtime_path(normalized):
         return str(path)
     return None
 
@@ -340,7 +347,7 @@ def _resolve_invoked_gamehub_wrapper_executable() -> str | None:
             if not path.is_absolute():
                 resolved = shutil.which(argv0)
                 if resolved:
-                    return str(Path(resolved).resolve())
+                    return _normalize_wrapper_candidate(resolved) or resolved
 
     exe_path = Path(sys.executable)
     exe_name = exe_path.name.casefold()

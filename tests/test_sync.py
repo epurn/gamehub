@@ -36,6 +36,10 @@ def _normalize_path_token(value: str) -> str:
     return value.strip().strip('"').replace("\\", "/")
 
 
+def _normalize_rendered_script(value: str) -> str:
+    return value.replace("\\", "/")
+
+
 @pytest.fixture(autouse=True)
 def _default_initialized_sync_state(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.load_state", lambda _path: SyncState(bootstrap_version=1))
@@ -2025,7 +2029,9 @@ def test_build_shortcut_specs_macos_uses_absolute_python_module_launcher(monkeyp
         assert len(specs) == 1
         assert specs[0].exe == str(launcher_path)
         assert specs[0].launch_options == title.title_id
-        assert f"{str(venv_bin / 'python3')} -m gamehub_cli.main shortcut-launch" in rendered
+        assert f"{_normalize_path_token(str(venv_bin / 'python3'))} -m gamehub_cli.main shortcut-launch" in (
+            _normalize_rendered_script(rendered)
+        )
         assert "unset PYTHONHOME PYTHONPATH PYTHONEXECUTABLE __PYVENV_LAUNCHER__" in rendered
         assert '--payload-ref "$1"' in rendered
 
@@ -2093,7 +2099,9 @@ def test_build_shortcut_specs_macos_prefers_virtual_env_prefix_python(monkeypatc
         assert len(specs) == 1
         assert specs[0].exe == str(launcher_path)
         assert specs[0].launch_options == title.title_id
-        assert f"{interpreter_path} -m gamehub_cli.main shortcut-launch" in rendered
+        assert f"{_normalize_path_token(str(interpreter_path))} -m gamehub_cli.main shortcut-launch" in (
+            _normalize_rendered_script(rendered)
+        )
 
 
 def test_build_shortcut_specs_macos_preserves_virtualenv_python_symlink(monkeypatch, workspace_tempdir) -> None:
