@@ -242,7 +242,7 @@ def _install_from_zip_blob(zip_blob: bytes, member_name: str, destination: Path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         with archive.open(member) as src:
             with tempfile.NamedTemporaryFile(delete=False, dir=destination.parent, suffix=".tmp") as tmp:
-                tmp_path = Path(tmp.name)
+                tmp_path = host_path(tmp.name)
                 while True:
                     chunk = src.read(1024 * 256)
                     if not chunk:
