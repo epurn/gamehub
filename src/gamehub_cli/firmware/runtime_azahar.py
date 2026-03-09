@@ -15,6 +15,7 @@ from ..common.platform_paths import (
 )
 from ..emulators import resolve_emulator_executable
 from .pcsx2_ini import read_ini_lines, write_ini_atomic
+from .targets import resolve_azahar_runtime_user_dir
 
 _AZAHAR_FULLSCREEN_KEY = "fullscreen"
 _AZAHAR_FULLSCREEN_DEFAULT_KEY = r"fullscreen\default"
@@ -33,6 +34,8 @@ def default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
         if sys.platform.startswith("win"):
             return Path(appdata) / "Azahar" / "config" / "qt-config.ini"
         return PosixPath(appdata) / "Azahar" / "config" / "qt-config.ini"
+    if sys.platform == "darwin":
+        return resolve_azahar_runtime_user_dir(config=config) / "config" / "qt-config.ini"
 
     home = Path.home()
     flatpak_qt_config = linux_flatpak_azahar_config_root() / "qt-config.ini"

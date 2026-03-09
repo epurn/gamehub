@@ -9,7 +9,7 @@ This page is the short validation matrix only.
 
 ## Validation Status
 - Windows: verified
-- macOS: in progress (v1 target)
+- macOS: partial parity (`MACOS-CLI-01` through `MACOS-CLI-04`, `MACOS-CLI-07` complete; save/controller/docs lanes pending)
 - Bazzite: tested
 - SteamOS (Deck): verified
 - Fedora: untested
@@ -46,13 +46,15 @@ Legacy/general templates are still available:
   - `[linux].flatpak_remote = "flathub"`
 - Keep Bazzite sync runs in an active desktop session so Steam relaunch works.
 
-### macOS (v1 target, validation in progress)
+### macOS (partial parity, validation in progress)
 - macOS support is in scope for v1.
 - Start from:
   - [docs/templates/config.macos.template.toml](templates/config.macos.template.toml)
 - Current frozen host contract targets the latest stable Apple Silicon macOS release with native Steam.
 - Prefer `~/Applications` for admin-free Steam/emulator app installs; `/Applications` remains an expected native install location.
 - Rosetta and Intel Mac fallback are not part of the supported path.
+- Landed on this branch: config contract, native Steam lifecycle, managed shortcut bundle launching, runtime-root discovery, and native installer/core provisioning.
+- Still open: save-sync/runtime mutation parity, controller autoconfig parity, and final release-validation docs.
 
 ### SteamOS (Deck) (verified)
 - Start from:

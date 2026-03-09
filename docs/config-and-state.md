@@ -72,7 +72,7 @@ emulator_install_backend = "auto"
 emulator_install_command = "brew install --cask {package}"
 
 # Optional macOS path hints (all optional)
-retroarch_cfg_path = "~/.config/retroarch/retroarch.cfg"
+retroarch_cfg_path = "~/Library/Application Support/RetroArch/retroarch.cfg"
 retroarch_system_dir = "~/Library/Application Support/RetroArch/system"
 retroarch_cores_dir = "~/Library/Application Support/RetroArch/cores"
 retroarch_info_dir = "~/Library/Application Support/RetroArch/info"

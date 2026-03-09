@@ -128,9 +128,16 @@ def _retroarch_all_users_menu_requires_migration(binding: str | None) -> bool:
 
 
 def _resolve_retroarch_cfg_target(config: GamehubConfig) -> Path | None:
-    for candidate in retroarch_cfg_candidates_for_config(config=config):
+    candidates = list(retroarch_cfg_candidates_for_config(config=config))
+    if sys.platform == "darwin" and config.macos.retroarch_cfg_path is not None:
+        return config.macos.retroarch_cfg_path.expanduser()
+    for candidate in candidates:
         if candidate.exists():
             return candidate
+    if sys.platform == "darwin":
+        if candidates:
+            return candidates[0]
+        return None
     if config.linux.retroarch_cfg_path is not None:
         return config.linux.retroarch_cfg_path.expanduser()
     return None

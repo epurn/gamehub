@@ -77,6 +77,7 @@ def _configured_path(config: GamehubConfig | None, setting_name: str) -> Path | 
         macos_value = getattr(config.macos, setting_name, None)
         if isinstance(macos_value, Path):
             return macos_value.expanduser()
+        return None
     value = getattr(config.linux, setting_name, None)
     if not isinstance(value, Path):
         return None

@@ -68,6 +68,38 @@ def test_ensure_managed_memory_card_paths_prefers_payload_retroarch_cfg_on_windo
         assert "swanstation_MemoryCard1Path" not in appdata_text
 
 
+def test_ensure_managed_memory_card_paths_macos_uses_application_support_cfg(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-psx-managed-card-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Library" / "Application Support" / "RetroArch"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.write_text("", encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+            target_args=(),
+            title_id="title_psx_macos",
+            system="PSX",
+            rom_rel_path="roms/PSX/Gran Turismo 2.chd",
+        )
+
+        changed = launch_module._ensure_managed_memory_card_paths(payload, _config())
+
+        assert changed is True
+        text = (retroarch_root / "retroarch-core-options.cfg").read_text(encoding="utf-8")
+        assert 'swanstation_MemoryCard1Path = "GH_title_psx_macos_1.mcd"' in text
+        assert 'swanstation_MemoryCard2Path = "GH_title_psx_macos_2.mcd"' in text
+
+
 def test_snapshot_exact_binding_tracks_remote_missing_local_file(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-launch-save-") as temp_root:
         save_path = temp_root / "GH_title_ps2_test_1.ps2"

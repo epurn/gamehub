@@ -7,6 +7,7 @@ from pathlib import Path
 
 import vdf
 
+from gamehub_cli.common.platform_paths import host_path
 from gamehub_cli.steam import (
     LINUX_STEAM_PROCESS_NAMES,
     MACOS_STEAM_PROCESS_NAMES,
@@ -291,9 +292,9 @@ def test_build_context_normalizes_macos_inner_steam_executable_to_bundle(monkeyp
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "darwin")
 
     context = build_context(
-        Path("userdata"),
+        host_path("userdata"),
         "76561198000000001",
-        Path("/Applications/Steam.app/Contents/MacOS/steam_osx"),
+        host_path("/Applications/Steam.app/Contents/MacOS/steam_osx"),
     )
 
     assert context.steam_exe is not None
@@ -1618,10 +1619,10 @@ def test_reopen_steam_linux_uses_steam_command(monkeypatch) -> None:
         lambda command, **kwargs: launched.append((command, kwargs)),
     )
     context = SteamContext(
-        userdata_dir=Path("userdata"),
+        userdata_dir=host_path("userdata"),
         steam_id="76561198000000001",
-        shortcuts_path=Path("shortcuts.vdf"),
-        localconfig_path=Path("localconfig.vdf"),
+        shortcuts_path=host_path("shortcuts.vdf"),
+        localconfig_path=host_path("localconfig.vdf"),
         steam_exe=None,
     )
 
@@ -1648,10 +1649,10 @@ def test_reopen_steam_macos_uses_open_app(monkeypatch, workspace_tempdir) -> Non
         steam_app.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr("gamehub_cli.steam.lifecycle.Path.home", staticmethod(lambda: temp_root))
         context = SteamContext(
-            userdata_dir=Path("userdata"),
+            userdata_dir=host_path("userdata"),
             steam_id="76561198000000001",
-            shortcuts_path=Path("shortcuts.vdf"),
-            localconfig_path=Path("localconfig.vdf"),
+            shortcuts_path=host_path("shortcuts.vdf"),
+            localconfig_path=host_path("localconfig.vdf"),
             steam_exe=None,
         )
 
@@ -1669,10 +1670,10 @@ def test_reopen_steam_linux_returns_false_when_no_launcher_available(monkeypatch
     monkeypatch.setattr("gamehub_cli.steam.lifecycle._wait_for_steam_start", lambda timeout_seconds=12.0: False)
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.shutil.which", lambda command: None)
     context = SteamContext(
-        userdata_dir=Path("userdata"),
+        userdata_dir=host_path("userdata"),
         steam_id="76561198000000001",
-        shortcuts_path=Path("shortcuts.vdf"),
-        localconfig_path=Path("localconfig.vdf"),
+        shortcuts_path=host_path("shortcuts.vdf"),
+        localconfig_path=host_path("localconfig.vdf"),
         steam_exe=None,
     )
 
