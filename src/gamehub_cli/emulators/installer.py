@@ -6,7 +6,7 @@ import subprocess
 
 from gamehub_common.models import LibraryIndex
 
-from . import install_common, install_flatpak, install_linux, install_windows
+from . import install_common, install_flatpak, install_linux, install_macos, install_windows
 from . import resolution as emulator_resolution
 from .resolution import _is_emulator_available, _linux_dist_id, _required_emulators
 
@@ -18,6 +18,8 @@ _install_dolphin_from_official_release_archive = install_windows._install_dolphi
 _install_azahar_from_windows_installer = install_windows._install_azahar_from_windows_installer
 _download_azahar_windows_installer = install_windows._download_azahar_windows_installer
 _flatpak_app_export_candidates = install_flatpak._flatpak_app_export_candidates
+_install_macos_official = install_macos._install_macos_official
+_install_macos_command = install_macos._install_macos_command
 
 
 def _sync_resolution_runtime_overrides() -> None:
@@ -35,6 +37,8 @@ def _sync_resolution_runtime_overrides() -> None:
     install_windows.subprocess = subprocess
     install_linux.os = os
     install_linux.shutil = shutil
+    install_macos.shutil = shutil
+    install_macos.subprocess = subprocess
     install_flatpak.shutil = shutil
     install_flatpak.subprocess = subprocess
     emulator_resolution.shutil = shutil
@@ -43,6 +47,8 @@ def _sync_resolution_runtime_overrides() -> None:
     install_windows._install_azahar_from_windows_installer = _install_azahar_from_windows_installer
     install_windows._download_azahar_windows_installer = _download_azahar_windows_installer
     install_flatpak._flatpak_app_export_candidates = _flatpak_app_export_candidates
+    install_macos._install_macos_official = _install_macos_official
+    install_macos._install_macos_command = _install_macos_command
 
 
 def ensure_emulators(
@@ -52,6 +58,8 @@ def ensure_emulators(
     linux_install_backend: str | None = None,
     linux_install_command: str | None = None,
     linux_flatpak_remote: str | None = None,
+    macos_install_backend: str | None = None,
+    macos_install_command: str | None = None,
 ) -> None:
     _sync_resolution_runtime_overrides()
 
@@ -67,6 +75,8 @@ def ensure_emulators(
         linux_backend = (linux_install_backend or "auto").strip().casefold()
         linux_dist_id = _linux_dist_id()
         missing = install_linux._linux_missing_emulators(required, backend=linux_backend, dist_id=linux_dist_id)
+    elif _SYS_PLATFORM == "darwin":
+        missing = [name for name in required if not _is_emulator_available(name)]
     else:
         missing = [name for name in required if not _is_emulator_available(name)]
 
@@ -155,4 +165,26 @@ def ensure_emulators(
         )
         return
 
-    print("Emulator auto-install is currently supported on Windows and Linux only")
+    if _SYS_PLATFORM == "darwin":
+        backend = (macos_install_backend or "auto").strip().casefold()
+        custom_command = macos_install_command
+
+        if backend in {"auto", "", "official"}:
+            _install_macos_official(missing, verbose=verbose)
+            return
+        if backend == "none":
+            print("macOS emulator auto-install disabled by configuration")
+            return
+        if backend == "command":
+            if not custom_command:
+                print(
+                    "macOS emulator install backend is 'command' but no command template is configured. "
+                    "Set [macos].emulator_install_command and re-run sync."
+                )
+                return
+            _install_macos_command(missing, custom_command, verbose=verbose)
+            return
+        print(f"Unsupported macOS emulator install backend: {backend}. Valid values: auto, official, none, command.")
+        return
+
+    print("Emulator auto-install is currently supported on Windows, Linux, and macOS only")

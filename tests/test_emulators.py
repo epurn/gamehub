@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from gamehub_cli.emulators import ensure_emulators, resolve_emulator_executable
+from gamehub_cli.emulators.install_macos import MacOSOfficialAsset
 from gamehub_cli.emulators.save_resolution import (
     canonical_suffix_for_learned_path,
     default_emulator_for_system,
@@ -577,6 +578,114 @@ def test_ensure_emulators_linux_command_backend(monkeypatch, capsys) -> None:
     assert commands
     assert commands[0] == ["sudo", "apt", "install", "-y", "dolphin-emu"]
     assert "Installed emulator: dolphin" in capsys.readouterr().out
+
+
+def test_ensure_emulators_macos_auto_uses_official_backend(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("retroarch")
+    calls: list[tuple[list[str], bool]] = []
+
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "darwin")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", lambda name: None)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr(
+        "gamehub_cli.emulators.installer._install_macos_official",
+        lambda missing, verbose: calls.append((missing, verbose)),
+    )
+
+    ensure_emulators(index=index, dry_run=False, verbose=False, macos_install_backend="auto")
+
+    assert calls == [(["retroarch"], False)]
+    assert "Missing emulators: retroarch" in capsys.readouterr().out
+
+
+def test_ensure_emulators_macos_none_backend_reports_disabled(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("retroarch")
+
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "darwin")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", lambda name: None)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+
+    ensure_emulators(index=index, dry_run=False, verbose=False, macos_install_backend="none")
+
+    out = capsys.readouterr().out
+    assert "Missing emulators: retroarch" in out
+    assert "macOS emulator auto-install disabled by configuration" in out
+
+
+def test_ensure_emulators_macos_command_backend_runs_template(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("dolphin")
+    state = {"installed": False}
+    commands: list[list[str]] = []
+
+    class FakeCompleted:
+        returncode = 0
+
+    def fake_which(name: str) -> str | None:
+        if name in {"dolphin", "dolphin-emu"}:
+            return "/Users/tester/Applications/Dolphin.app/Contents/MacOS/DolphinQt" if state["installed"] else None
+        return None
+
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+        del check, capture_output, text
+        commands.append(cmd)
+        state["installed"] = True
+        return FakeCompleted()
+
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "darwin")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
+
+    ensure_emulators(
+        index=index,
+        dry_run=False,
+        verbose=False,
+        macos_install_backend="command",
+        macos_install_command="brew install --cask {package}",
+    )
+
+    assert commands == [["brew", "install", "--cask", "dolphin"]]
+    assert "Installed emulator: dolphin" in capsys.readouterr().out
+
+
+def test_ensure_emulators_macos_official_backend_rejects_non_native_asset(monkeypatch, capsys) -> None:
+    index = _index_with_emulators("dolphin")
+
+    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "darwin")
+    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", lambda name: None)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+    monkeypatch.setattr(
+        "gamehub_cli.emulators.install_macos._resolve_macos_official_asset",
+        lambda emulator: (
+            MacOSOfficialAsset(
+                emulator=emulator,
+                archive_kind="dmg",
+                bundle_name="Dolphin.app",
+                download_url="https://dl.dolphin-emu.org/releases/2509/dolphin-2509-universal.dmg",
+                source_url="https://dolphin-emu.org/download/",
+                asset_label="universal",
+            ),
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.emulators.install_macos._install_macos_official_asset",
+        lambda asset, verbose: (
+            "unsupported",
+            "upstream asset is not native Apple Silicon or universal (architectures: x86_64)",
+        ),
+    )
+
+    ensure_emulators(index=index, dry_run=False, verbose=False, macos_install_backend="official")
+
+    out = capsys.readouterr().out
+    assert "official macOS Apple Silicon install unavailable for dolphin" in out
+    assert "architectures: x86_64" in out
+    assert "install dolphin manually from https://dolphin-emu.org/download/ and re-run sync." in out
 
 
 def test_ensure_emulators_detects_known_install_without_winget(monkeypatch, capsys, workspace_tempdir) -> None:

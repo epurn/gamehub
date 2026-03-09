@@ -19,6 +19,7 @@ from ..common.platform_paths import (
     RETROARCH_FLATPAK_APP_ID,
     is_flatpak_command,
     linux_flatpak_retroarch_root,
+    macos_retroarch_root,
     parse_simple_kv_config,
     retroarch_cfg_candidates,
 )
@@ -75,6 +76,8 @@ def _normalize_retroarch_cfg_path(raw: str, *, cfg_path: Path) -> Path | None:
 def _core_suffix() -> str:
     if os.name == "nt":
         return ".dll"
+    if sys.platform == "darwin":
+        return ".dylib"
     if sys.platform.startswith("linux"):
         return ".so"
     return ""
@@ -85,6 +88,11 @@ def _core_base_url(explicit_override: str | None = None) -> str | None:
         return explicit_override.rstrip("/") + "/"
     if os.name == "nt":
         return "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
+    if sys.platform == "darwin":
+        machine = os.uname().machine.lower() if hasattr(os, "uname") else ""
+        if machine in {"arm64", "aarch64"}:
+            return "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/"
+        return None
     if sys.platform.startswith("linux"):
         machine = os.uname().machine.lower() if hasattr(os, "uname") else ""
         if machine in {"x86_64", "amd64"}:
@@ -102,6 +110,8 @@ def _parse_core_name(token: str) -> str | None:
         normalized = normalized.rsplit("/", 1)[-1]
     if normalized.endswith(".dll"):
         normalized = normalized[:-4]
+    elif normalized.endswith(".dylib"):
+        normalized = normalized[:-6]
     elif normalized.endswith(".so"):
         normalized = normalized[:-3]
     if not normalized.endswith("_libretro"):
@@ -208,6 +218,9 @@ def resolve_retroarch_paths(
                 return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
         fallback = roots[0]
         return RetroArchPaths(cores_dir=fallback / "cores", info_dir=fallback / "info")
+    if sys.platform == "darwin":
+        root = macos_retroarch_root()
+        return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
     return None
 
 
