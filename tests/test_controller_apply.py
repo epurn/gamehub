@@ -28,11 +28,12 @@ def _config(root: Path) -> GamehubConfig:
     )
 
 
-def test_apply_controller_profile_pcsx2_kbm_preserves_unmanaged_sections(workspace_tempdir) -> None:
+def test_apply_controller_profile_pcsx2_kbm_preserves_unmanaged_sections(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
         seed_default_profiles(config)
         ini_path.parent.mkdir(parents=True, exist_ok=True)
         ini_path.write_text("[Audio]\nLatency = 42\n", encoding="utf-8")
@@ -47,11 +48,12 @@ def test_apply_controller_profile_pcsx2_kbm_preserves_unmanaged_sections(workspa
         assert "Cross = Keyboard/K" in text
 
 
-def test_apply_controller_profile_pcsx2_xbox_modes(workspace_tempdir) -> None:
+def test_apply_controller_profile_pcsx2_xbox_modes(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
         seed_default_profiles(config)
 
         profile_1 = apply_controller_profile(config, emulator_name="pcsx2", controller_count=1)
@@ -71,11 +73,12 @@ def test_apply_controller_profile_pcsx2_xbox_modes(workspace_tempdir) -> None:
         assert "ConfirmShutdown = false" in text_2
 
 
-def test_apply_controller_profile_pcsx2_writes_confirm_shutdown_false(workspace_tempdir) -> None:
+def test_apply_controller_profile_pcsx2_writes_confirm_shutdown_false(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
         seed_default_profiles(config)
         ini_path.parent.mkdir(parents=True, exist_ok=True)
         ini_path.write_text("[UI]\nConfirmShutdown = true\n", encoding="utf-8")
@@ -86,11 +89,12 @@ def test_apply_controller_profile_pcsx2_writes_confirm_shutdown_false(workspace_
         assert "ConfirmShutdown = false" in text
 
 
-def test_apply_controller_profile_accepts_emulator_family_alias(workspace_tempdir) -> None:
+def test_apply_controller_profile_accepts_emulator_family_alias(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
         seed_default_profiles(config)
 
         profile = apply_controller_profile(config, emulator_name="PCSX2-nightly", controller_count=1)
@@ -132,6 +136,10 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
         assert "WiimoteSource0 = 1" in dolphin_text
         assert "WiimoteSource1 = 1" in dolphin_text
         if sys.platform.startswith("linux"):
+            assert "Device = SDL/0/Gamepad" in gcpad_text
+            assert "Device = SDL/1/Gamepad" in gcpad_text
+            assert "Device = All Devices" in hotkeys_text
+        elif sys.platform == "darwin":
             assert "Device = SDL/0/Gamepad" in gcpad_text
             assert "Device = SDL/1/Gamepad" in gcpad_text
             assert "Device = All Devices" in hotkeys_text
@@ -570,6 +578,60 @@ def test_apply_controller_profile_azahar_linux_non_flatpak_uses_host_guid_when_r
         monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
         monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: False)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
+            lambda port=0: "040018dc5e040000130b000000006800",
+        )
+
+        apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
+        text = qt_config.read_text(encoding="utf-8")
+
+        assert r'profiles\1\button_a="button:0,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
+
+
+def test_apply_dolphin_profile_macos_uses_sdl_device_names(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "darwin")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [
+                XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
+                XboxController(slot=1, name="Xbox Elite Wireless Controller", subtype=None),
+            ],
+        )
+
+        apply_named_controller_profile(config, emulator_name="dolphin", profile_name="xbox_2p")
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+        hotkeys_text = (config_dir / "Hotkeys.ini").read_text(encoding="utf-8")
+
+        assert "Device = SDL/0/Xbox Wireless Controller" in gcpad_text
+        assert "Device = SDL/1/Xbox Elite Wireless Controller" in gcpad_text
+        assert "Device = All Devices" in hotkeys_text
+
+
+def test_apply_azahar_profile_macos_injects_sdl_identity(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text("profile=0\n", encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
         monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
         monkeypatch.setattr(
             "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from gamehub_cli.controllers import detection as controller_detection
 from gamehub_cli.controllers.detection import XboxController, detect_xbox_controllers
 
@@ -149,3 +151,34 @@ def test_detect_xbox_controllers_windows_uses_xinput_slots_and_subtypes(monkeypa
         XboxController(slot=0, name="XInput/0", subtype=7),
         XboxController(slot=2, name="XInput/2", subtype=9),
     ]
+
+
+def test_detect_xbox_controllers_macos_uses_sdl_probe(monkeypatch) -> None:
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_detection,
+        "_discover_host_sdl_joysticks",
+        lambda max_devices=2: [
+            SimpleNamespace(slot=0, name="Xbox Wireless Controller", guid="a" * 32),
+            SimpleNamespace(slot=1, name="Motion Sensors", guid="b" * 32),
+            SimpleNamespace(slot=2, name="XInput Controller", guid="c" * 32),
+        ],
+    )
+
+    devices = detect_xbox_controllers(max_devices=2)
+
+    assert devices == [
+        XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
+        XboxController(slot=2, name="XInput Controller", subtype=None),
+    ]
+
+
+def test_detect_xbox_controllers_macos_failure_returns_empty(monkeypatch) -> None:
+    def _raise(*, max_devices: int | None = None):
+        del max_devices
+        raise RuntimeError("SDL unavailable")
+
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(controller_detection, "_discover_host_sdl_joysticks", _raise)
+
+    assert detect_xbox_controllers(max_devices=2) == []

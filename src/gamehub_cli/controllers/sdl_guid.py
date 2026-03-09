@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID
@@ -23,6 +24,13 @@ _AZAHAR_WINDOWS_SDL_DIR_ENV = "GAMEHUB_AZAHAR_SDL_DIR"
 
 class _SDLJoystickGUID(ctypes.Structure):
     _fields_ = [("data", ctypes.c_uint8 * 16)]
+
+
+@dataclass(frozen=True)
+class _SDLJoystickDevice:
+    slot: int
+    name: str
+    guid: str | None
 
 
 def _azahar_detect_sdl_identity(lines: list[str]) -> tuple[str | None, int]:
@@ -50,78 +58,30 @@ def _azahar_detect_sdl_identity(lines: list[str]) -> tuple[str | None, int]:
     return guid, port
 
 
-def _discover_linux_sdl_guid(*, port: int) -> str | None:
-    if not sys.platform.startswith("linux"):
+def _normalize_sdl_guid(raw: str) -> str | None:
+    guid = raw.strip().lower()
+    if len(guid) != 32 or set(guid) == {"0"}:
         return None
+    return guid
 
-    library_candidates: list[str] = []
-    detected = ctypes.util.find_library("SDL2")
-    if detected:
-        library_candidates.append(detected)
-    library_candidates.extend(["libSDL2-2.0.so.0", "libSDL2.so"])
 
-    sdl = None
-    for library_candidate in library_candidates:
-        try:
-            sdl = ctypes.CDLL(library_candidate)
-            break
-        except OSError:
+def _candidate_dirs_from_emulators() -> list[Path]:
+    try:
+        from ..emulators import resolve_emulator_executable
+    except Exception:
+        return []
+    dirs: list[Path] = []
+    for emulator_name in ("azahar", "retroarch", "pcsx2", "dolphin"):
+        raw = str(resolve_emulator_executable(emulator_name)).strip('"')
+        if not raw:
             continue
-    if sdl is None:
-        return None
-
-    try:
-        sdl.SDL_Init.argtypes = [ctypes.c_uint32]
-        sdl.SDL_Init.restype = ctypes.c_int
-        sdl.SDL_Quit.argtypes = []
-        sdl.SDL_Quit.restype = None
-        sdl.SDL_NumJoysticks.argtypes = []
-        sdl.SDL_NumJoysticks.restype = ctypes.c_int
-        sdl.SDL_JoystickGetDeviceGUID.argtypes = [ctypes.c_int]
-        sdl.SDL_JoystickGetDeviceGUID.restype = _SDLJoystickGUID
-        sdl.SDL_JoystickGetGUIDString.argtypes = [_SDLJoystickGUID, ctypes.c_char_p, ctypes.c_int]
-        sdl.SDL_JoystickGetGUIDString.restype = None
-    except AttributeError:
-        return None
-
-    # SDL_INIT_JOYSTICK
-    if sdl.SDL_Init(0x00000200) != 0:
-        return None
-
-    try:
-        count = int(sdl.SDL_NumJoysticks())
-        if count <= 0 or port < 0 or port >= count:
-            return None
-        guid_value = sdl.SDL_JoystickGetDeviceGUID(port)
-        text = ctypes.create_string_buffer(33)
-        sdl.SDL_JoystickGetGUIDString(guid_value, text, len(text))
-        guid = text.value.decode("ascii", errors="ignore").strip().lower()
-        if len(guid) != 32 or set(guid) == {"0"}:
-            return None
-        return guid
-    finally:
-        sdl.SDL_Quit()
+        candidate = Path(raw)
+        if candidate.exists():
+            dirs.append(candidate.parent)
+    return dirs
 
 
-def _discover_windows_sdl_guid(*, port: int) -> str | None:
-    if not sys.platform.startswith("win"):
-        return None
-
-    def _candidate_dirs_from_emulators() -> list[Path]:
-        try:
-            from ..emulators import resolve_emulator_executable
-        except Exception:
-            return []
-        dirs: list[Path] = []
-        for emulator_name in ("azahar", "retroarch", "pcsx2", "dolphin"):
-            raw = str(resolve_emulator_executable(emulator_name)).strip('"')
-            if not raw:
-                continue
-            candidate = Path(raw)
-            if candidate.exists():
-                dirs.append(candidate.parent)
-        return dirs
-
+def _windows_sdl_library_candidates() -> list[str]:
     library_candidates: list[str] = []
     env_dir = os.environ.get(_AZAHAR_WINDOWS_SDL_DIR_ENV)
     if env_dir:
@@ -142,17 +102,46 @@ def _discover_windows_sdl_guid(*, port: int) -> str | None:
     if detected:
         library_candidates.append(detected)
     library_candidates.extend(["SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"])
+    return library_candidates
 
-    sdl = None
+
+def _linux_sdl_library_candidates() -> list[str]:
+    library_candidates: list[str] = []
+    detected = ctypes.util.find_library("SDL2")
+    if detected:
+        library_candidates.append(detected)
+    library_candidates.extend(["libSDL2-2.0.so.0", "libSDL2.so"])
+    return library_candidates
+
+
+def _macos_sdl_library_candidates() -> list[str]:
+    library_candidates: list[str] = []
+    detected = ctypes.util.find_library("SDL2")
+    if detected:
+        library_candidates.append(detected)
+    library_candidates.extend(
+        [
+            "/Library/Frameworks/SDL2.framework/Versions/A/SDL2",
+            "/opt/homebrew/lib/libSDL2-2.0.0.dylib",
+            "/usr/local/lib/libSDL2-2.0.0.dylib",
+            "libSDL2-2.0.0.dylib",
+            "libSDL2.dylib",
+            "SDL2",
+        ]
+    )
+    return library_candidates
+
+
+def _load_sdl_library(library_candidates: list[str]) -> ctypes.CDLL | None:
     for library_candidate in library_candidates:
         try:
-            sdl = ctypes.CDLL(library_candidate)
-            break
+            return ctypes.CDLL(library_candidate)
         except OSError:
             continue
-    if sdl is None:
-        return None
+    return None
 
+
+def _configure_sdl_joystick_api(sdl: ctypes.CDLL) -> bool:
     try:
         sdl.SDL_Init.argtypes = [ctypes.c_uint32]
         sdl.SDL_Init.restype = ctypes.c_int
@@ -160,30 +149,83 @@ def _discover_windows_sdl_guid(*, port: int) -> str | None:
         sdl.SDL_Quit.restype = None
         sdl.SDL_NumJoysticks.argtypes = []
         sdl.SDL_NumJoysticks.restype = ctypes.c_int
+        sdl.SDL_JoystickNameForIndex.argtypes = [ctypes.c_int]
+        sdl.SDL_JoystickNameForIndex.restype = ctypes.c_char_p
         sdl.SDL_JoystickGetDeviceGUID.argtypes = [ctypes.c_int]
         sdl.SDL_JoystickGetDeviceGUID.restype = _SDLJoystickGUID
         sdl.SDL_JoystickGetGUIDString.argtypes = [_SDLJoystickGUID, ctypes.c_char_p, ctypes.c_int]
         sdl.SDL_JoystickGetGUIDString.restype = None
     except AttributeError:
-        return None
+        return False
+    return True
 
-    # SDL_INIT_JOYSTICK
+
+def _enumerate_sdl_joysticks(
+    library_candidates: list[str],
+    *,
+    max_devices: int | None = None,
+) -> list[_SDLJoystickDevice]:
+    sdl = _load_sdl_library(library_candidates)
+    if sdl is None or not _configure_sdl_joystick_api(sdl):
+        return []
     if sdl.SDL_Init(0x00000200) != 0:
-        return None
+        return []
 
     try:
         count = int(sdl.SDL_NumJoysticks())
-        if count <= 0 or port < 0 or port >= count:
-            return None
-        guid_value = sdl.SDL_JoystickGetDeviceGUID(port)
-        text = ctypes.create_string_buffer(33)
-        sdl.SDL_JoystickGetGUIDString(guid_value, text, len(text))
-        guid = text.value.decode("ascii", errors="ignore").strip().lower()
-        if len(guid) != 32 or set(guid) == {"0"}:
-            return None
-        return guid
+        if count <= 0:
+            return []
+        devices: list[_SDLJoystickDevice] = []
+        for slot in range(count):
+            if max_devices is not None and len(devices) >= max_devices:
+                break
+            name_raw = sdl.SDL_JoystickNameForIndex(slot)
+            name = name_raw.decode("utf-8", errors="ignore").strip() if name_raw else ""
+            guid_value = sdl.SDL_JoystickGetDeviceGUID(slot)
+            text = ctypes.create_string_buffer(33)
+            sdl.SDL_JoystickGetGUIDString(guid_value, text, len(text))
+            guid = _normalize_sdl_guid(text.value.decode("ascii", errors="ignore"))
+            devices.append(_SDLJoystickDevice(slot=slot, name=name, guid=guid))
+        return devices
     finally:
         sdl.SDL_Quit()
+
+
+def _discover_host_sdl_joysticks(*, max_devices: int | None = None) -> list[_SDLJoystickDevice]:
+    if sys.platform.startswith("linux"):
+        return _enumerate_sdl_joysticks(_linux_sdl_library_candidates(), max_devices=max_devices)
+    if sys.platform.startswith("win"):
+        return _enumerate_sdl_joysticks(_windows_sdl_library_candidates(), max_devices=max_devices)
+    if sys.platform == "darwin":
+        return _enumerate_sdl_joysticks(_macos_sdl_library_candidates(), max_devices=max_devices)
+    return []
+
+
+def _discover_sdl_guid(*, port: int) -> str | None:
+    if port < 0:
+        return None
+    for device in _discover_host_sdl_joysticks(max_devices=port + 1):
+        if device.slot == port:
+            return device.guid
+    return None
+
+
+def _discover_linux_sdl_guid(*, port: int) -> str | None:
+    if not sys.platform.startswith("linux"):
+        return None
+    return _discover_sdl_guid(port=port)
+
+
+def _discover_windows_sdl_guid(*, port: int) -> str | None:
+    if not sys.platform.startswith("win"):
+        return None
+    return _discover_sdl_guid(port=port)
+
+
+def _discover_macos_sdl_guid(*, port: int) -> str | None:
+    if sys.platform != "darwin":
+        return None
+    return _discover_sdl_guid(port=port)
 
 
 def _discover_host_sdl_guid(*, port: int) -> str | None:
@@ -191,6 +233,8 @@ def _discover_host_sdl_guid(*, port: int) -> str | None:
         return _discover_linux_sdl_guid(port=port)
     if sys.platform.startswith("win"):
         return _discover_windows_sdl_guid(port=port)
+    if sys.platform == "darwin":
+        return _discover_macos_sdl_guid(port=port)
     return None
 
 

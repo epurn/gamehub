@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -7,7 +8,7 @@ from ..common.config import GamehubConfig
 from ..common.platform_paths import PCSX2_FLATPAK_APP_ID, is_flatpak_command, linux_flatpak_pcsx2_root
 from ..emulators import resolve_emulator_executable
 from .pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
-from .targets import default_pcsx2_ini_path
+from .targets import default_pcsx2_ini_path, resolve_pcsx2_bios_dirs
 
 
 def configure_pcsx2_runtime(
@@ -16,18 +17,24 @@ def configure_pcsx2_runtime(
     verbose: bool,
     writer: Callable[[str], None],
 ) -> Path:
-    override_bios_dir = config.linux.pcsx2_bios_dir.expanduser() if config.linux.pcsx2_bios_dir is not None else None
-    pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
-    pcsx2_exe = Path(pcsx2_raw)
-    prefer_flatpak = is_flatpak_command(pcsx2_exe, PCSX2_FLATPAK_APP_ID) or (
-        PCSX2_FLATPAK_APP_ID.casefold() in pcsx2_raw.casefold()
-    )
-    if override_bios_dir is not None:
-        bios_dir = override_bios_dir
-    elif prefer_flatpak:
-        bios_dir = linux_flatpak_pcsx2_root() / "bios"
+    if sys.platform == "darwin":
+        bios_candidates = resolve_pcsx2_bios_dirs(config=config)
+        bios_dir = bios_candidates[0] if bios_candidates else config.firmware_dir / "PS2"
     else:
-        bios_dir = config.firmware_dir / "PS2"
+        override_bios_dir = (
+            config.linux.pcsx2_bios_dir.expanduser() if config.linux.pcsx2_bios_dir is not None else None
+        )
+        pcsx2_raw = resolve_emulator_executable("pcsx2").strip('"')
+        pcsx2_exe = Path(pcsx2_raw)
+        prefer_flatpak = is_flatpak_command(pcsx2_exe, PCSX2_FLATPAK_APP_ID) or (
+            PCSX2_FLATPAK_APP_ID.casefold() in pcsx2_raw.casefold()
+        )
+        if override_bios_dir is not None:
+            bios_dir = override_bios_dir
+        elif prefer_flatpak:
+            bios_dir = linux_flatpak_pcsx2_root() / "bios"
+        else:
+            bios_dir = config.firmware_dir / "PS2"
 
     bios_dir_for_config = bios_dir.resolve(strict=False)
     ini_path = default_pcsx2_ini_path(config=config)

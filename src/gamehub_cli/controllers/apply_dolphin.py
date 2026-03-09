@@ -86,6 +86,29 @@ def _dolphin_windows_device_pair(profile_name: str) -> tuple[str, str]:
     return "DInput/0/Keyboard Mouse", "DInput/0/Keyboard Mouse"
 
 
+def _macos_sdl_device_name(slot: int, name: str) -> str:
+    normalized_name = name.strip()
+    if not normalized_name or normalized_name.casefold() in _DOLPHIN_GENERIC_SDL_DEVICE_NAMES:
+        return f"SDL/{slot}/Gamepad"
+    return f"SDL/{slot}/{normalized_name}"
+
+
+def _dolphin_macos_device_pair(profile_name: str) -> tuple[str, str]:
+    controllers = detect_xbox_controllers(max_devices=2)
+    if profile_name == PROFILE_XBOX_2P:
+        if len(controllers) >= 2:
+            return (
+                _macos_sdl_device_name(controllers[0].slot, controllers[0].name),
+                _macos_sdl_device_name(controllers[1].slot, controllers[1].name),
+            )
+        if len(controllers) == 1:
+            return _macos_sdl_device_name(controllers[0].slot, controllers[0].name), "SDL/1/Gamepad"
+        return "SDL/0/Gamepad", "SDL/1/Gamepad"
+    if len(controllers) >= 1:
+        return _macos_sdl_device_name(controllers[0].slot, controllers[0].name), "None"
+    return "SDL/0/Gamepad", "None"
+
+
 def _override_dolphin_device_sections(
     sections: dict[str, dict[str, str]],
     *,
@@ -106,6 +129,11 @@ def _override_dolphin_device_sections(
             if profile_name == PROFILE_XBOX_1P:
                 pad_device1 = "None"
             hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
+    elif sys.platform == "darwin":
+        if profile_name == PROFILE_KBM:
+            return sections, "preserve", selected_device
+        pad_device0, pad_device1 = _dolphin_macos_device_pair(profile_name)
+        hotkey_device0, hotkey_device1 = "All Devices", "All Devices"
     elif sys.platform.startswith("win"):
         pad_device0, pad_device1 = _dolphin_windows_device_pair(profile_name)
         hotkey_device0, hotkey_device1 = pad_device0, pad_device1

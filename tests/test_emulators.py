@@ -1294,6 +1294,7 @@ def test_resolve_emulator_save_root_linux_flatpak_retroarch(monkeypatch) -> None
 
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: temp_root)
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: temp_root))
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "linux")
 
         resolved = resolve_emulator_save_root(
             "retroarch",
@@ -1303,6 +1304,70 @@ def test_resolve_emulator_save_root_linux_flatpak_retroarch(monkeypatch) -> None
         )
 
         assert resolved == saves
+
+
+def test_resolve_system_save_root_macos_retroarch(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        saves = home / "Library" / "Application Support" / "RetroArch" / "saves"
+        saves.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        resolved = resolve_system_save_root("GBC", resolve_executable=lambda _name: "")
+
+        assert resolved == saves
+
+
+def test_resolve_system_save_root_macos_pcsx2(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        memcards = home / "Library" / "Application Support" / "PCSX2" / "memcards"
+        memcards.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        resolved = resolve_system_save_root("PS2", resolve_executable=lambda _name: "")
+
+        assert resolved == memcards
+
+
+def test_resolve_system_save_root_macos_dolphin(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        gc_root = home / "Library" / "Application Support" / "Dolphin" / "GC"
+        gc_root.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        resolved = resolve_system_save_root("GC", resolve_executable=lambda _name: "")
+
+        assert resolved == gc_root
+
+
+def test_resolve_system_save_root_macos_azahar(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        sdmc_root = home / "Library" / "Application Support" / "Azahar" / "sdmc"
+        sdmc_root.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        resolved = resolve_system_save_root("N3DS", resolve_executable=lambda _name: "")
+
+        assert resolved == sdmc_root
 
 
 def test_discover_local_exact_save_candidates_finds_sorted_retroarch_subdir(monkeypatch, workspace_tempdir) -> None:
@@ -1397,6 +1462,7 @@ def test_resolve_exact_local_save_destination_prefers_flatpak_runtime_cfg_on_lin
         save_root = temp_root / "saves"
 
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "linux")
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
 
         resolved = resolve_exact_local_save_destination(
@@ -1528,6 +1594,7 @@ def test_resolve_system_save_root_uses_default_emulator(monkeypatch) -> None:
         gc_root = temp_root / ".local" / "share" / "dolphin-emu" / "GC"
         gc_root.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "linux")
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: temp_root)
 
         resolved = resolve_system_save_root("GC", resolve_executable=lambda _name: "")
@@ -1541,6 +1608,7 @@ def test_resolve_system_save_root_uses_wii_directory_for_wii(monkeypatch) -> Non
         wii_root = temp_root / ".local" / "share" / "dolphin-emu" / "Wii"
         wii_root.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "linux")
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: temp_root)
 
         resolved = resolve_system_save_root("Wii", resolve_executable=lambda _name: "")
@@ -1554,6 +1622,7 @@ def test_resolve_system_save_root_uses_azahar_for_n3ds(monkeypatch) -> None:
         sdmc_root = temp_root / ".local" / "share" / "azahar-emu" / "sdmc"
         sdmc_root.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "linux")
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: temp_root)
 
         resolved = resolve_system_save_root("N3DS", resolve_executable=lambda _name: "")

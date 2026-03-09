@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable, Literal, Mapping, cast
@@ -26,15 +27,20 @@ from ..common.platform_paths import (
     is_flatpak_command as _is_flatpak_command,
 )
 from ..common.platform_paths import (
-    parse_simple_kv_config as _parse_simple_kv_config,
-)
-from ..common.platform_paths import (
+    macos_azahar_root,
+    macos_dolphin_root,
+    macos_pcsx2_root,
+    macos_retroarch_root,
     retroarch_cfg_candidates,
     unique_paths,
+)
+from ..common.platform_paths import (
+    parse_simple_kv_config as _parse_simple_kv_config,
 )
 from .resolution import resolve_emulator_executable
 
 _OS_NAME = os.name
+_SYS_PLATFORM = sys.platform
 
 _DOLPHIN_GC_REGIONS = {"USA", "EUR", "JAP"}
 _DOLPHIN_GC_CARDS = {"Card A", "Card B"}
@@ -102,7 +108,13 @@ def _resolve_retroarch_cfg_path_value(raw: str, *, cfg_path: Path) -> Path:
 
 
 def _retroarch_cfg_candidates(resolve_executable: Callable[[str], str]) -> tuple[Path, ...]:
-    return tuple(retroarch_cfg_candidates(resolve_emulator_executable=resolve_executable, os_name=_OS_NAME))
+    return tuple(
+        retroarch_cfg_candidates(
+            resolve_emulator_executable=resolve_executable,
+            os_name=_OS_NAME,
+            sys_platform=_SYS_PLATFORM,
+        )
+    )
 
 
 def _existing_dir(path: Path) -> Path | None:
@@ -133,6 +145,8 @@ def _retroarch_save_root(resolve_executable: Callable[[str], str]) -> Path | Non
         if appdata:
             return _existing_dir(_normalized_local_path(appdata) / "RetroArch" / "saves")
         return None
+    if _SYS_PLATFORM == "darwin":
+        return _existing_dir(macos_retroarch_root() / "saves")
 
     home = _normalized_local_path(Path.home())
     return _existing_dir(home / ".config" / "retroarch" / "saves")
@@ -154,6 +168,8 @@ def _retroarch_system_roots(resolve_executable: Callable[[str], str]) -> tuple[P
         appdata = os.environ.get("APPDATA")
         if appdata:
             values.append(_normalized_local_path(appdata) / "RetroArch" / "system")
+    elif _SYS_PLATFORM == "darwin":
+        values.append(macos_retroarch_root() / "system")
     else:
         home = _normalized_local_path(Path.home())
         values.append(home / ".config" / "retroarch" / "system")
@@ -181,6 +197,9 @@ def _pcsx2_ini_candidates() -> tuple[Path, ...]:
             home = _normalized_local_path(Path.home())
             values.append(home / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
             values.append(home / "Documents" / "PCSX2" / "PCSX2.ini")
+    elif _SYS_PLATFORM == "darwin":
+        values.append(macos_pcsx2_root() / "inis" / "PCSX2.ini")
+        values.append(macos_pcsx2_root() / "PCSX2.ini")
     else:
         home = _normalized_local_path(Path.home())
         values.append(home / ".config" / "PCSX2" / "inis" / "PCSX2.ini")
@@ -230,6 +249,8 @@ def _pcsx2_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
         if documents:
             return _existing_dir(_normalized_local_path(documents) / "Documents" / "PCSX2" / "memcards")
         return None
+    if _SYS_PLATFORM == "darwin":
+        return _existing_dir(macos_pcsx2_root() / "memcards")
 
     home = _normalized_local_path(Path.home())
     return _existing_dir(home / ".config" / "PCSX2" / "memcards")
@@ -269,6 +290,8 @@ def _dolphin_data_root(resolve_executable: Callable[[str], str]) -> Path | None:
             if existing is not None:
                 return existing
         return None
+    if _SYS_PLATFORM == "darwin":
+        return _existing_dir(macos_dolphin_root())
 
     home = _normalized_local_path(Path.home())
     native = _existing_dir(home / ".local" / "share" / "dolphin-emu")
@@ -295,6 +318,8 @@ def _azahar_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
         if not appdata:
             return None
         return _existing_dir(_normalized_local_path(appdata) / "Azahar" / "sdmc")
+    if _SYS_PLATFORM == "darwin":
+        return _existing_dir(macos_azahar_root() / "sdmc")
 
     home = _normalized_local_path(Path.home())
     return _existing_dir(home / ".local" / "share" / "azahar-emu" / "sdmc")

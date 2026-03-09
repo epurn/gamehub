@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, cast
 
+from .sdl_guid import _discover_host_sdl_joysticks
+
 _PROC_INPUT_DEVICES_PATH = Path("/proc/bus/input/devices")
 _INPUT_DEVICE_NAME_RE = re.compile(r'^N:\s+Name="(?P<name>.*)"$')
 _INPUT_DEVICE_HANDLERS_RE = re.compile(r"^H:\s+Handlers=(?P<handlers>.+)$")
@@ -186,6 +188,28 @@ def _detect_windows_xbox_controllers(*, max_devices: int) -> list[XboxController
     return controllers
 
 
+def _is_supported_macos_controller_name(name: str) -> bool:
+    normalized = name.casefold()
+    if any(marker in normalized for marker in _LINUX_NON_GAMEPAD_NAME_MARKERS):
+        return False
+    return any(marker in normalized for marker in ("xbox", "x-box", "xinput"))
+
+
+def _detect_macos_xbox_controllers(*, max_devices: int) -> list[XboxController]:
+    try:
+        devices = _discover_host_sdl_joysticks(max_devices=max_devices)
+    except Exception:
+        return []
+    controllers: list[XboxController] = []
+    for device in devices:
+        if not _is_supported_macos_controller_name(device.name):
+            continue
+        controllers.append(XboxController(slot=device.slot, name=device.name, subtype=None))
+        if len(controllers) >= max_devices:
+            break
+    return controllers
+
+
 def is_steam_deck_linux() -> bool:
     return _is_steam_deck_linux()
 
@@ -197,4 +221,6 @@ def detect_xbox_controllers(*, max_devices: int = 2) -> list[XboxController]:
         return _detect_linux_xbox_controllers(max_devices=max_devices)
     if sys.platform.startswith("win"):
         return _detect_windows_xbox_controllers(max_devices=max_devices)
+    if sys.platform == "darwin":
+        return _detect_macos_xbox_controllers(max_devices=max_devices)
     return []

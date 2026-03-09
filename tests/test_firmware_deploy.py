@@ -7,6 +7,8 @@ from gamehub_cli.common.config import GamehubConfig
 from gamehub_cli.firmware.deploy import deploy_firmware_to_emulators
 from gamehub_cli.firmware.runtime_azahar import default_azahar_qt_config_path
 from gamehub_cli.firmware.runtime_dolphin import default_dolphin_ini_path
+from gamehub_cli.firmware.runtime_pcsx2 import configure_pcsx2_runtime
+from gamehub_cli.firmware.runtime_retroarch import configure_retroarch_runtime
 from gamehub_cli.firmware.targets import (
     default_pcsx2_ini_path,
     resolve_azahar_runtime_user_dir,
@@ -123,6 +125,7 @@ def test_target_dirs_support_env_overrides(monkeypatch, workspace_tempdir) -> No
                 dolphin_user_path=Path("D:/Dolphin/User"),
             ),
         )
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
 
         psx_dirs = target_dirs_for_system("PSX", config=config)
         ps2_dirs = target_dirs_for_system("PS2", config=config)
@@ -131,6 +134,34 @@ def test_target_dirs_support_env_overrides(monkeypatch, workspace_tempdir) -> No
         assert Path("D:/RetroArch/system") in psx_dirs
         assert Path("D:/PCSX2/bios") in ps2_dirs
         assert Path("D:/Dolphin/User/Wii") in wii_dirs
+
+
+def test_resolve_runtime_targets_macos_ignore_linux_override_block(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-macos-") as temp_root:
+        base = _config(temp_root)
+        config = replace(
+            base,
+            linux=replace(
+                base.linux,
+                retroarch_system_dir=Path("/linux/retroarch/system"),
+                pcsx2_bios_dir=Path("/linux/PCSX2/bios"),
+                dolphin_user_path=Path("/linux/Dolphin"),
+            ),
+            macos=replace(
+                base.macos,
+                retroarch_system_dir=Path("/mac/RetroArch/system"),
+                pcsx2_bios_dir=Path("/mac/PCSX2/bios"),
+                dolphin_user_path=Path("/mac/Dolphin"),
+            ),
+        )
+
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+
+        assert resolve_retroarch_system_dirs(config=config)[0] == Path("/mac/RetroArch/system")
+        assert resolve_pcsx2_bios_dirs(config=config)[0] == Path("/mac/PCSX2/bios")
+        assert resolve_dolphin_user_dirs(config=config)[0] == Path("/mac/Dolphin")
+        assert target_dirs_for_system("Wii", config=config) == [Path("/mac/Dolphin/Wii")]
 
 
 def test_deploy_firmware_n3ds_configures_azahar_fullscreen_without_firmware(monkeypatch, workspace_tempdir) -> None:
@@ -191,6 +222,45 @@ def test_deploy_firmware_n3ds_dry_run_does_not_mutate_fullscreen_config(monkeypa
         assert not (appdata / "Azahar" / "sysdata").exists()
         assert not (appdata / "Azahar" / "config" / "qt-config.ini").exists()
         assert any("azahar\tdry-run\tconfigure" in line for line in logs)
+
+
+def test_deploy_firmware_n3ds_macos_configures_application_support_qt_config(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-deploy-azahar-") as temp_root:
+        home = temp_root / "home"
+        config = _config(temp_root)
+        index = LibraryIndex(
+            index_version=1,
+            systems=(
+                SystemSpec(
+                    name="N3DS",
+                    rom_extensions=(".3ds", ".cci", ".cxi"),
+                    default_emulator="azahar",
+                    launch_template='"{emulator}" "{rom}"',
+                    firmware=(),
+                ),
+            ),
+            titles=(),
+        )
+
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.resolve_emulator_executable", lambda _name: "")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+
+        deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
+
+        qt_config = home / "Library" / "Application Support" / "Azahar" / "config" / "qt-config.ini"
+        assert qt_config.exists()
+        text = qt_config.read_text(encoding="utf-8")
+        assert "fullscreen=true" in text
+        assert r"fullscreen\default=false" in text
+        assert "confirmClose=false" in text
+        assert r"confirmClose\default=false" in text
 
 
 def test_default_azahar_qt_config_path_prefers_flatpak_config_root(monkeypatch, workspace_tempdir) -> None:
@@ -289,6 +359,7 @@ def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch, w
             encoding="utf-8",
         )
         monkeypatch.setattr("gamehub_cli.firmware.targets.pcsx2_ini_candidates", lambda config=None: [ini_path])
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.sys.platform", "linux")
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -707,6 +778,50 @@ def test_resolve_runtime_targets_macos_use_application_support_roots(monkeypatch
         assert resolve_azahar_user_dirs() == [azahar_root]
 
 
+def test_configure_retroarch_runtime_macos_uses_explicit_cfg_target(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-macos-") as temp_root:
+        base = _config(temp_root)
+        cfg_path = temp_root / "custom-retroarch" / "retroarch.cfg"
+        config = replace(base, macos=replace(base.macos, retroarch_cfg_path=cfg_path))
+
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+
+        resolved = configure_retroarch_runtime(config=config, dry_run=False, verbose=False, writer=lambda _line: None)
+
+        assert resolved == cfg_path
+        assert cfg_path.exists()
+        text = cfg_path.read_text(encoding="utf-8")
+        assert 'input_menu_toggle_gamepad_combo = "4"' in text
+        assert 'all_users_control_menu = "true"' in text
+
+
+def test_configure_pcsx2_runtime_macos_uses_application_support_bios(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-macos-") as temp_root:
+        home = temp_root / "home"
+        config = _config(temp_root)
+        ini_path = home / "Library" / "Application Support" / "PCSX2" / "inis" / "PCSX2.ini"
+
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.default_pcsx2_ini_path", lambda config=None: ini_path)
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+
+        bios_dir = configure_pcsx2_runtime(config=config, dry_run=False, verbose=False, writer=lambda _line: None)
+
+        expected_bios = home / "Library" / "Application Support" / "PCSX2" / "bios"
+        assert bios_dir == expected_bios
+        assert expected_bios.exists()
+        text = ini_path.read_text(encoding="utf-8")
+        assert f"Bios = {expected_bios}" in text
+        assert "SetupWizardIncomplete = false" in text
+
+
 def test_default_pcsx2_ini_path_prefers_flatpak_when_detected(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         home = temp_root / "home"
@@ -766,6 +881,7 @@ def test_deploy_firmware_dry_run_reports_flatpak_pcsx2_bios_target(monkeypatch, 
 
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.sys.platform", "linux")
         monkeypatch.setattr(
             "gamehub_cli.firmware.runtime_pcsx2.resolve_emulator_executable",
             lambda _name: "/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2",

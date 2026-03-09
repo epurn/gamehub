@@ -116,17 +116,22 @@
 2. M2: Deliver macOS runtime parity: emulator bundle resolution, save/firmware/runtime paths, and controller/runtime behavior.
 3. M3: Deliver macOS operator parity: native install automation, RetroArch core provisioning, template config, and release-validation docs.
 
+### Progress Snapshot
+- `M1`: Complete.
+- `M2`: In progress; blocked only by `MACOS-CLI-05` and `MACOS-CLI-06`.
+- `M3`: Behavior work complete through `MACOS-CLI-07`; docs and final validation remain.
+
 ## Story Contracts
 ### Completed Stories
 - `MACOS-CLI-01`: Complete
 - `MACOS-CLI-02`: Complete
+- `MACOS-CLI-03`: Complete
+- `MACOS-CLI-04`: Complete
+- `MACOS-CLI-07`: Complete
 
 ### Pending Stories
-- `MACOS-CLI-03`
-- `MACOS-CLI-04`
 - `MACOS-CLI-05`
 - `MACOS-CLI-06`
-- `MACOS-CLI-07`
 - `MACOS-DOCS-01`
 
 ### STORY MACOS-CLI-01
@@ -219,7 +224,7 @@
 
 ### STORY MACOS-CLI-03
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/sync/steam_stage.py`
@@ -237,11 +242,11 @@
   - `tests/test_sync.py`
 - Goal: emit macOS-managed Steam shortcuts with app-bundle-safe launch semantics and keep the wrapper able to wait for real session exit before post-launch save sync.
 - Acceptance Criteria (deterministic):
-  - [ ] On macOS, GAMEHUB does not emit managed shortcuts that directly run `Contents/MacOS/...` for app bundles.
-  - [ ] Managed shortcut payloads preserve enough structured information for the runtime wrapper to launch bundle apps natively and still know which emulator/session is being managed.
-  - [ ] macOS launch-option parsing and joining use POSIX-safe behavior and do not regress current Windows quoting behavior.
-  - [ ] The shortcut runtime waits for the launched macOS app session to exit before post-exit save sync runs.
-  - [ ] Existing non-mac shortcut wrapper behavior remains unchanged.
+  - [x] On macOS, GAMEHUB does not emit managed shortcuts that directly run `Contents/MacOS/...` for app bundles.
+  - [x] Managed shortcut payloads preserve enough structured information for the runtime wrapper to launch bundle apps natively and still know which emulator/session is being managed.
+  - [x] macOS launch-option parsing and joining use POSIX-safe behavior and do not regress current Windows quoting behavior.
+  - [x] The shortcut runtime waits for the launched macOS app session to exit before post-exit save sync runs.
+  - [x] Existing non-mac shortcut wrapper behavior remains unchanged.
 - Non-Goals:
   - Steam process lifecycle.
   - Emulator discovery/install.
@@ -265,7 +270,7 @@
 
 ### STORY MACOS-CLI-04
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-01`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/common/platform_paths.py`
@@ -279,13 +284,13 @@
   - `tests/test_emulators.py`
 - Goal: make emulator resolution and runtime config root discovery deterministic on macOS, with `.app` bundle support and frozen default roots.
 - Acceptance Criteria (deterministic):
-  - [ ] Emulator resolution discovers `.app` bundles in `~/Applications` first, then `/Applications`, then PATH aliases.
-  - [ ] When a `.app` bundle is discovered, GAMEHUB resolves the actual executable from the bundle metadata instead of assuming a fixed binary name.
-  - [ ] RetroArch default roots resolve under `~/Library/Application Support/RetroArch`.
-  - [ ] Dolphin default roots resolve under `~/Library/Application Support/Dolphin`.
-  - [ ] PCSX2 default roots resolve under `~/Library/Application Support/PCSX2`.
-  - [ ] Azahar default roots resolve under `~/Library/Application Support/Azahar`.
-  - [ ] Windows and Linux resolution order remains unchanged.
+  - [x] Emulator resolution discovers `.app` bundles in `~/Applications` first, then `/Applications`, then PATH aliases.
+  - [x] When a `.app` bundle is discovered, GAMEHUB resolves the actual executable from the bundle metadata instead of assuming a fixed binary name.
+  - [x] RetroArch default roots resolve under `~/Library/Application Support/RetroArch`.
+  - [x] Dolphin default roots resolve under `~/Library/Application Support/Dolphin`.
+  - [x] PCSX2 default roots resolve under `~/Library/Application Support/PCSX2`.
+  - [x] Azahar default roots resolve under `~/Library/Application Support/Azahar`.
+  - [x] Windows and Linux resolution order remains unchanged.
 - Non-Goals:
   - Save artifact mapping.
   - Controller profile behavior.
@@ -398,7 +403,7 @@
 
 ### STORY MACOS-CLI-07
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-01`, `MACOS-CLI-04`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/emulators/installer.py`
@@ -416,12 +421,12 @@
   - `tests/test_retroarch_cores.py`
 - Goal: add native Apple Silicon macOS emulator install automation and RetroArch core provisioning, using only supported native/universal upstream assets.
 - Acceptance Criteria (deterministic):
-  - [ ] `ensure_emulators()` supports macOS with `auto -> official`, `command`, and `none`.
-  - [ ] The supported default install target is `~/Applications`.
-  - [ ] Steam is never auto-installed by GAMEHUB.
-  - [ ] Official install logic consumes only native Apple Silicon or universal upstream assets.
-  - [ ] Missing or non-native upstream assets produce a deterministic unsupported/manual-install message instead of Rosetta fallback.
-  - [ ] RetroArch core provisioning supports macOS `.dylib` cores and a macOS Apple Silicon buildbot base URL.
+  - [x] `ensure_emulators()` supports macOS with `auto -> official`, `command`, and `none`.
+  - [x] The supported default install target is `~/Applications`.
+  - [x] Steam is never auto-installed by GAMEHUB.
+  - [x] Official install logic consumes only native Apple Silicon or universal upstream assets.
+  - [x] Missing or non-native upstream assets produce a deterministic unsupported/manual-install message instead of Rosetta fallback.
+  - [x] RetroArch core provisioning supports macOS `.dylib` cores and a macOS Apple Silicon buildbot base URL.
 - Non-Goals:
   - Homebrew as a first-class built-in backend.
   - Rosetta fallback.
