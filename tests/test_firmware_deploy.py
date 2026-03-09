@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from gamehub_cli.common.config import GamehubConfig
+from gamehub_cli.common.platform_paths import host_path
 from gamehub_cli.firmware.deploy import deploy_firmware_to_emulators
 from gamehub_cli.firmware.runtime_azahar import default_azahar_qt_config_path
 from gamehub_cli.firmware.runtime_dolphin import default_dolphin_ini_path
@@ -143,25 +144,25 @@ def test_resolve_runtime_targets_macos_ignore_linux_override_block(monkeypatch, 
             base,
             linux=replace(
                 base.linux,
-                retroarch_system_dir=Path("/linux/retroarch/system"),
-                pcsx2_bios_dir=Path("/linux/PCSX2/bios"),
-                dolphin_user_path=Path("/linux/Dolphin"),
+                retroarch_system_dir=host_path("/linux/retroarch/system"),
+                pcsx2_bios_dir=host_path("/linux/PCSX2/bios"),
+                dolphin_user_path=host_path("/linux/Dolphin"),
             ),
             macos=replace(
                 base.macos,
-                retroarch_system_dir=Path("/mac/RetroArch/system"),
-                pcsx2_bios_dir=Path("/mac/PCSX2/bios"),
-                dolphin_user_path=Path("/mac/Dolphin"),
+                retroarch_system_dir=host_path("/mac/RetroArch/system"),
+                pcsx2_bios_dir=host_path("/mac/PCSX2/bios"),
+                dolphin_user_path=host_path("/mac/Dolphin"),
             ),
         )
 
         monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
 
-        assert resolve_retroarch_system_dirs(config=config)[0] == Path("/mac/RetroArch/system")
-        assert resolve_pcsx2_bios_dirs(config=config)[0] == Path("/mac/PCSX2/bios")
-        assert resolve_dolphin_user_dirs(config=config)[0] == Path("/mac/Dolphin")
-        assert target_dirs_for_system("Wii", config=config) == [Path("/mac/Dolphin/Wii")]
+        assert resolve_retroarch_system_dirs(config=config)[0] == host_path("/mac/RetroArch/system")
+        assert resolve_pcsx2_bios_dirs(config=config)[0] == host_path("/mac/PCSX2/bios")
+        assert resolve_dolphin_user_dirs(config=config)[0] == host_path("/mac/Dolphin")
+        assert target_dirs_for_system("Wii", config=config) == [host_path("/mac/Dolphin/Wii")]
 
 
 def test_deploy_firmware_n3ds_configures_azahar_fullscreen_without_firmware(monkeypatch, workspace_tempdir) -> None:
@@ -704,7 +705,7 @@ def test_resolve_retroarch_system_dirs_linux_ignores_usr_bin_parent(monkeypatch,
 
         dirs = resolve_retroarch_system_dirs()
 
-        assert Path("/usr/bin/system") not in dirs
+        assert host_path("/usr/bin/system") not in dirs
 
 
 def test_resolve_retroarch_system_dirs_expands_tilde_cfg_values(monkeypatch, workspace_tempdir) -> None:

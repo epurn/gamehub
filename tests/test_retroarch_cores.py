@@ -3,8 +3,8 @@ from __future__ import annotations
 import io
 import os
 import zipfile
-from pathlib import Path
 
+from gamehub_cli.common.platform_paths import host_path
 from gamehub_cli.firmware.retroarch_cores import (
     RetroArchPaths,
     ensure_retroarch_cores,
@@ -272,8 +272,8 @@ def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch, works
         paths = resolve_retroarch_paths()
 
         assert paths is not None
-        assert paths.cores_dir != Path("/usr/bin/cores")
-        assert paths.info_dir != Path("/usr/bin/info")
+        assert paths.cores_dir != host_path("/usr/bin/cores")
+        assert paths.info_dir != host_path("/usr/bin/info")
 
 
 def test_resolve_retroarch_paths_linux_prefers_flatpak_when_export_detected(monkeypatch, workspace_tempdir) -> None:
