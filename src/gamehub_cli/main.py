@@ -215,7 +215,13 @@ if typer is not None:
 
     @app.command("shortcut-launch", hidden=True)
     def shortcut_launch(
-        payload: str = typer.Option(..., "--payload", help="Encoded shortcut-launch payload."),
+        payload: str | None = typer.Option(None, "--payload", help="Encoded shortcut-launch payload."),
+        payload_ref: str | None = typer.Option(None, "--payload-ref", help="Shortcut payload registry reference."),
+        payload_registry: Path | None = typer.Option(
+            None,
+            "--payload-registry",
+            help="Path to shortcut payload registry.",
+        ),
         config: Path | None = typer.Option(
             None,
             "--config",
@@ -223,7 +229,15 @@ if typer is not None:
         ),
         audit: bool = typer.Option(False, "--audit", help="Print controller profile apply diagnostics."),
     ) -> None:
-        raise typer.Exit(code=run_shortcut_launch(payload_token=payload, config_path=config, audit=audit))
+        raise typer.Exit(
+            code=run_shortcut_launch(
+                payload_token=payload,
+                payload_ref=payload_ref,
+                payload_registry_path=payload_registry,
+                config_path=config,
+                audit=audit,
+            )
+        )
 
     @doctor_app.command("controllers")
     def doctor_controllers(
@@ -354,7 +368,9 @@ def main() -> None:
     )
 
     shortcut_launch_parser = subparsers.add_parser("shortcut-launch", help=argparse.SUPPRESS)
-    shortcut_launch_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
+    shortcut_launch_parser.add_argument("--payload", default=None, help=argparse.SUPPRESS)
+    shortcut_launch_parser.add_argument("--payload-ref", default=None, help=argparse.SUPPRESS)
+    shortcut_launch_parser.add_argument("--payload-registry", type=Path, default=None, help=argparse.SUPPRESS)
     shortcut_launch_parser.add_argument("--config", type=Path, default=None, help=argparse.SUPPRESS)
     shortcut_launch_parser.add_argument("--audit", action="store_true", help=argparse.SUPPRESS)
 
@@ -428,7 +444,15 @@ def main() -> None:
             )
         )
     if args.command == "shortcut-launch":
-        raise SystemExit(run_shortcut_launch(payload_token=args.payload, config_path=args.config, audit=args.audit))
+        raise SystemExit(
+            run_shortcut_launch(
+                payload_token=args.payload,
+                payload_ref=args.payload_ref,
+                payload_registry_path=args.payload_registry,
+                config_path=args.config,
+                audit=args.audit,
+            )
+        )
     if args.command == "doctor":
         if args.doctor_command == "controllers":
             try:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes
 import os
+import shlex
 import subprocess
 import sys
 import threading
@@ -27,10 +28,20 @@ _XINPUT_GAMEPAD_START = 0x0010
 _XINPUT_GAMEPAD_BACK = 0x0020
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
 _WM_CLOSE = 0x0010
+_MACOS_OPEN_EXECUTABLE = "/usr/bin/open"
 
 
 def warn_shortcut_runtime(message: str) -> None:
-    print(f"Warning: {message}")
+    rendered = f"Warning: {message}"
+    try:
+        sys.stderr.write(f"{rendered}\n")
+        sys.stderr.flush()
+    except (BrokenPipeError, OSError, ValueError):
+        pass
+
+
+class ShortcutLaunchError(RuntimeError):
+    """Raised when the managed shortcut target cannot be spawned."""
 
 
 class _XInputGamepad(ctypes.Structure):
@@ -190,7 +201,7 @@ def _run_linux_dolphin_target_with_exit_hook(payload: ShortcutLaunchPayload) -> 
         candidate = Path(payload.start_dir)
         if candidate.exists():
             cwd = str(candidate)
-    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    process = _spawn_shortcut_process(command, cwd=cwd)
     select_button = _int_env_optional(_DOLPHIN_EXIT_BUTTON_SELECT_ENV)
     start_button = _int_env_optional(_DOLPHIN_EXIT_BUTTON_START_ENV)
     js_devices = _discover_js_devices(_DOLPHIN_EXIT_JS_DEVICE_ENV)
@@ -213,7 +224,7 @@ def _run_windows_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) ->
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
     cwd = _resolve_launch_cwd(payload)
-    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    process = _spawn_shortcut_process(command, cwd=cwd)
     watcher = threading.Thread(target=_monitor_windows_azahar_exit_combo, args=(process,), daemon=True)
     watcher.start()
     return int(process.wait())
@@ -228,18 +239,39 @@ def _resolve_launch_cwd(payload: ShortcutLaunchPayload) -> str | None:
     return str(candidate)
 
 
+def _render_launch_command(command: list[str]) -> str:
+    if sys.platform.startswith("win"):
+        return subprocess.list2cmdline(command)
+    return shlex.join(command)
+
+
+def _spawn_shortcut_process(command: list[str], *, cwd: str | None) -> subprocess.Popen[bytes]:
+    try:
+        return subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    except OSError as exc:
+        raise ShortcutLaunchError(f"launch failed (command={_render_launch_command(command)}, error={exc})") from exc
+
+
+def _run_macos_bundle_target(payload: ShortcutLaunchPayload) -> int:
+    raw_app_bundle = payload.macos_open_app
+    if raw_app_bundle is None:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    app_bundle = raw_app_bundle.strip().strip('"')
+    if not app_bundle:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    command = [_MACOS_OPEN_EXECUTABLE, "-W", "-a", app_bundle]
+    if payload.macos_open_args:
+        command.extend(["--args", *payload.macos_open_args])
+    process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
+    return int(process.wait())
+
+
 def _run_target(payload: ShortcutLaunchPayload) -> int:
     if sys.platform == "darwin" and payload.macos_open_app:
-        app_bundle = payload.macos_open_app.strip().strip('"')
-        if app_bundle:
-            command = ["open", "-W", "-a", app_bundle]
-            if payload.macos_open_args:
-                command.extend(["--args", *payload.macos_open_args])
-            process = subprocess.Popen(command, cwd=_resolve_launch_cwd(payload), stdin=subprocess.DEVNULL)
-            return int(process.wait())
+        return _run_macos_bundle_target(payload)
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
-    process = subprocess.Popen(command, cwd=_resolve_launch_cwd(payload), stdin=subprocess.DEVNULL)
+    process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
     return int(process.wait())
 
 

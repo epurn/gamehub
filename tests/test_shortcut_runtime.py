@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 import gamehub_cli.shortcuts.runtime as runtime_module
 from gamehub_cli.common.shortcut_payload import ShortcutLaunchPayload
 from gamehub_cli.controllers.detection import XboxController
@@ -192,7 +194,7 @@ def test_run_target_with_optional_exit_hook_can_disable_dolphin_linux_exit_hook(
     assert exit_code == 4
 
 
-def test_run_target_macos_uses_open_wait_args(monkeypatch) -> None:
+def test_run_target_macos_uses_bundle_safe_open_command(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     class _Process:
@@ -211,23 +213,25 @@ def test_run_target_macos_uses_open_wait_args(monkeypatch) -> None:
 
     exit_code = runtime_module._run_target(
         _payload(
-            emulator="pcsx2",
-            target_exe="/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt",
-            target_args=("-fullscreen", "/Users/test/Games/Gran Turismo 4.iso"),
-            macos_open_app="/Applications/PCSX2.app",
-            macos_open_args=("-fullscreen", "/Users/test/Games/Gran Turismo 4.iso"),
+            emulator="retroarch",
+            target_exe="/Users/tester/Applications/RetroArch.app/Contents/MacOS/retroarch-metal",
+            target_args=("-f", "-L", "cores/gambatte_libretro.dylib", "/Users/tester/Games/Pokemon.gbc"),
+            macos_open_app="/Users/tester/Applications/RetroArch.app",
+            macos_open_args=("-f", "-L", "cores/gambatte_libretro.dylib", "/Users/tester/Games/Pokemon.gbc"),
         )
     )
 
     assert exit_code == 0
     assert captured["command"] == [
-        "open",
+        "/usr/bin/open",
         "-W",
         "-a",
-        "/Applications/PCSX2.app",
+        "/Users/tester/Applications/RetroArch.app",
         "--args",
-        "-fullscreen",
-        "/Users/test/Games/Gran Turismo 4.iso",
+        "-f",
+        "-L",
+        "cores/gambatte_libretro.dylib",
+        "/Users/tester/Games/Pokemon.gbc",
     ]
     assert captured["cwd"] is None
     assert captured["stdin"] is runtime_module.subprocess.DEVNULL
@@ -252,16 +256,36 @@ def test_run_target_macos_waits_for_session_exit_before_return(monkeypatch) -> N
     exit_code = runtime_module._run_target(
         _payload(
             emulator="dolphin",
-            target_exe="/Applications/Dolphin.app/Contents/MacOS/Dolphin",
-            target_args=("-b", "-e", "/Users/test/Games/Super Mario Galaxy.rvz"),
-            macos_open_app="/Applications/Dolphin.app",
-            macos_open_args=("-b", "-e", "/Users/test/Games/Super Mario Galaxy.rvz"),
+            target_exe="/Users/tester/Applications/Dolphin.app/Contents/MacOS/DolphinQt",
+            target_args=("-b", "-e", "/Users/tester/Games/Super Mario Galaxy.rvz"),
+            macos_open_app="/Users/tester/Applications/Dolphin.app",
+            macos_open_args=("-b", "-e", "/Users/tester/Games/Super Mario Galaxy.rvz"),
         )
     )
     call_order.append("returned")
 
     assert exit_code == 37
     assert call_order == ["popen", "wait", "returned"]
+
+
+def test_run_target_macos_launch_failure_raises_shortcut_launch_error(monkeypatch) -> None:
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        runtime_module.subprocess,
+        "Popen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("open missing")),
+    )
+
+    with pytest.raises(runtime_module.ShortcutLaunchError, match="launch failed"):
+        runtime_module._run_target(
+            _payload(
+                emulator="azahar",
+                target_exe="/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
+                target_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+                macos_open_app="/Users/tester/Applications/Azahar.app",
+                macos_open_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+            )
+        )
 
 
 def test_apply_shortcut_controller_configuration_deck_zero_detect_defaults_to_xbox_1p(monkeypatch, capsys) -> None:
@@ -311,3 +335,16 @@ def test_apply_shortcut_controller_configuration_non_deck_zero_detect_behavior_u
     )
 
     assert observed["count"] == 0
+
+
+def test_warn_shortcut_runtime_swallows_broken_pipe(monkeypatch) -> None:
+    class _BrokenStderr:
+        def write(self, _text: str) -> int:
+            raise BrokenPipeError("closed pipe")
+
+        def flush(self) -> None:
+            raise BrokenPipeError("closed pipe")
+
+    monkeypatch.setattr(runtime_module.sys, "stderr", _BrokenStderr())
+
+    runtime_module.warn_shortcut_runtime("controller autoconfig failed")
