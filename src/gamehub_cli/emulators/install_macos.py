@@ -59,6 +59,7 @@ _MANUAL_SOURCE_BY_EMULATOR = {
     "azahar": _AZAHAR_RELEASES_TAG_URL,
 }
 _MACH_O_ARCH_RE = re.compile(r"\b(arm64e|arm64|x86_64|i386)\b")
+_UNKNOWN_ARCHITECTURE_REASON = "could not verify app bundle architecture from upstream asset"
 _PINNED_MACOS_OFFICIAL_ASSETS = {
     "retroarch": MacOSOfficialAsset(
         emulator="retroarch",
@@ -188,11 +189,31 @@ def _extract_app_bundle_from_tar_archive(
     return _find_app_bundle(extract_root, expected_bundle)
 
 
+def _copy_app_bundle(source_bundle: Path, destination_bundle: Path, *, verbose: bool) -> bool:
+    ditto_cmd = shutil.which("ditto")
+    if ditto_cmd:
+        result = subprocess.run(  # noqa: S603
+            [ditto_cmd, str(source_bundle), str(destination_bundle)],
+            check=False,
+            capture_output=not verbose,
+            text=True,
+        )
+        if result.returncode == 0:
+            return True
+    try:
+        shutil.copytree(source_bundle, destination_bundle, symlinks=True, copy_function=shutil.copy2)
+    except OSError:
+        return False
+    return True
+
+
 def _extract_app_bundle_from_dmg(
     dmg_path: Path, expected_bundle: str, *, temp_root: Path, verbose: bool
 ) -> Path | None:
     mount_root = temp_root / "mount"
+    extract_root = temp_root / "extract"
     mount_root.mkdir(parents=True, exist_ok=True)
+    extract_root.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(  # noqa: S603
         ["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", str(mount_root), str(dmg_path)],
         check=False,
@@ -202,7 +223,13 @@ def _extract_app_bundle_from_dmg(
     if result.returncode != 0:
         return None
     try:
-        return _find_app_bundle(mount_root, expected_bundle)
+        source_bundle = _find_app_bundle(mount_root, expected_bundle)
+        if source_bundle is None:
+            return None
+        staged_bundle = extract_root / expected_bundle
+        if not _copy_app_bundle(source_bundle, staged_bundle, verbose=verbose):
+            return None
+        return staged_bundle
     finally:
         subprocess.run(  # noqa: S603
             ["hdiutil", "detach", str(mount_root)],
@@ -240,29 +267,25 @@ def _bundle_architectures(bundle_path: Path) -> set[str]:
 def _bundle_supports_apple_silicon(bundle_path: Path) -> tuple[bool, str | None]:
     architectures = _bundle_architectures(bundle_path)
     if not architectures:
-        return False, "could not verify app bundle architecture from upstream asset"
+        return False, _UNKNOWN_ARCHITECTURE_REASON
     if "arm64" in architectures:
         return True, None
     joined = ", ".join(sorted(architectures))
     return False, f"upstream asset is not native Apple Silicon or universal (architectures: {joined})"
 
 
-def _copy_app_bundle(source_bundle: Path, destination_bundle: Path, *, verbose: bool) -> bool:
-    ditto_cmd = shutil.which("ditto")
-    if ditto_cmd:
-        result = subprocess.run(  # noqa: S603
-            [ditto_cmd, str(source_bundle), str(destination_bundle)],
-            check=False,
-            capture_output=not verbose,
-            text=True,
-        )
-        if result.returncode == 0:
-            return True
-    try:
-        shutil.copytree(source_bundle, destination_bundle, symlinks=True, copy_function=shutil.copy2)
-    except OSError:
-        return False
-    return True
+def _asset_label_supports_apple_silicon(asset_label: str) -> bool:
+    normalized = asset_label.strip().casefold()
+    return normalized in {"universal", "apple-silicon", "apple silicon", "arm64", "aarch64"}
+
+
+def _asset_supports_apple_silicon(asset: MacOSOfficialAsset, bundle_path: Path) -> tuple[bool, str | None]:
+    supported, unsupported_reason = _bundle_supports_apple_silicon(bundle_path)
+    if supported:
+        return True, None
+    if unsupported_reason == _UNKNOWN_ARCHITECTURE_REASON and _asset_label_supports_apple_silicon(asset.asset_label):
+        return True, None
+    return False, unsupported_reason
 
 
 def _install_bundle_into_applications(source_bundle: Path, *, bundle_name: str, verbose: bool) -> Path | None:
@@ -331,7 +354,7 @@ def _install_macos_official_asset(
             return "failed", f"unsupported archive kind: {asset.archive_kind}"
         if source_bundle is None:
             return "failed", f"upstream archive did not contain {asset.bundle_name}"
-        supported, unsupported_reason = _bundle_supports_apple_silicon(source_bundle)
+        supported, unsupported_reason = _asset_supports_apple_silicon(asset, source_bundle)
         if not supported:
             return "unsupported", unsupported_reason
         installed_bundle = _install_bundle_into_applications(

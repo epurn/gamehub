@@ -787,6 +787,100 @@ def test_install_macos_official_asset_supports_tar_xz_archive(monkeypatch, works
         assert captured["archive_path"].name == "pcsx2-v2.6.3-macos-Qt.tar.xz"
 
 
+def test_install_macos_official_asset_accepts_universal_label_when_probe_is_inconclusive(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-macos-dmg-asset-") as temp_root:
+        source_bundle = temp_root / "Dolphin.app"
+        installed_bundle = temp_root / "Applications" / "Dolphin.app"
+
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos._download_file",
+            lambda url, destination, timeout_seconds=120.0: destination.write_bytes(b"dmg") or True,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos._extract_app_bundle_from_dmg",
+            lambda archive_path, expected_bundle, temp_root, verbose: source_bundle,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos._bundle_supports_apple_silicon",
+            lambda bundle_path: (
+                False,
+                "could not verify app bundle architecture from upstream asset",
+            ),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos._install_bundle_into_applications",
+            lambda source_bundle, bundle_name, verbose: installed_bundle,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos.resolve_macos_app_bundle_executable",
+            lambda bundle_path: bundle_path / "Contents" / "MacOS" / "Dolphin",
+        )
+
+        status, detail = install_macos_module._install_macos_official_asset(
+            MacOSOfficialAsset(
+                emulator="dolphin",
+                archive_kind="dmg",
+                bundle_name="Dolphin.app",
+                download_url="https://dl.dolphin-emu.org/releases/2512/dolphin-2512-universal.dmg",
+                source_url="https://dl.dolphin-emu.org/releases/2512/dolphin-2512-universal.dmg",
+                asset_label="universal",
+            ),
+            verbose=False,
+        )
+
+        assert status == "installed"
+        assert detail is None
+
+
+def test_extract_app_bundle_from_dmg_stages_bundle_before_detach(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-macos-dmg-stage-") as temp_root:
+        commands: list[list[str]] = []
+        copied: list[tuple[Path, Path]] = []
+
+        class FakeCompleted:
+            def __init__(self, returncode: int = 0) -> None:
+                self.returncode = returncode
+                self.stdout = ""
+                self.stderr = ""
+
+        def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+            del check, capture_output, text
+            commands.append(cmd)
+            return FakeCompleted(0)
+
+        def fake_copy(source_bundle: Path, destination_bundle: Path, *, verbose: bool) -> bool:
+            del verbose
+            copied.append((source_bundle, destination_bundle))
+            destination_bundle.mkdir(parents=True, exist_ok=True)
+            return True
+
+        monkeypatch.setattr("gamehub_cli.emulators.install_macos.subprocess.run", fake_run)
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos._find_app_bundle",
+            lambda root, expected_bundle: root / expected_bundle,
+        )
+        monkeypatch.setattr("gamehub_cli.emulators.install_macos._copy_app_bundle", fake_copy)
+
+        staged = install_macos_module._extract_app_bundle_from_dmg(
+            temp_root / "Dolphin.dmg",
+            "Dolphin.app",
+            temp_root=temp_root,
+            verbose=False,
+        )
+
+        assert staged == temp_root / "extract" / "Dolphin.app"
+        assert copied == [
+            (
+                temp_root / "mount" / "Dolphin.app",
+                temp_root / "extract" / "Dolphin.app",
+            )
+        ]
+        assert commands[0][:2] == ["hdiutil", "attach"]
+        assert commands[1][:2] == ["hdiutil", "detach"]
+
+
 def test_ensure_emulators_detects_known_install_without_winget(monkeypatch, capsys, workspace_tempdir) -> None:
     index = _index_with_emulators("retroarch")
     with workspace_tempdir("gamehub-emulator-detect-") as temp_root:
