@@ -8,8 +8,8 @@ import tempfile
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import urlparse
-from urllib.request import urlopen
 
+from ..common.http import open_url
 from . import install_common
 from .resolution import _is_emulator_available, _resolve_winget_command, resolve_emulator_executable
 
@@ -37,7 +37,7 @@ _AZAHAR_WINDOWS_SILENT_INSTALL_FLAGS: tuple[tuple[str, ...], ...] = (
 
 def _latest_dolphin_windows_archive_url() -> tuple[str | None, str | None]:
     try:
-        with urlopen(_DOLPHIN_DOWNLOAD_PAGE_URL, timeout=20) as response:
+        with open_url(_DOLPHIN_DOWNLOAD_PAGE_URL, timeout=20) as response:
             html = response.read().decode("utf-8", errors="ignore")
     except (URLError, TimeoutError, OSError):
         return None, None
@@ -100,7 +100,7 @@ def _install_dolphin_from_official_release_archive(*, verbose: bool) -> bool:
         extract_root = temp_root / "extract"
         extract_root.mkdir(parents=True, exist_ok=True)
         try:
-            with urlopen(archive_url, timeout=60) as response:
+            with open_url(archive_url, timeout=60) as response:
                 archive_path.write_bytes(response.read())
         except (URLError, TimeoutError, OSError):
             return False
@@ -147,7 +147,7 @@ def _download_azahar_windows_installer(url: str) -> Path | None:
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
         installer_path = cache_dir / filename
-        with urlopen(url, timeout=120) as response:
+        with open_url(url, timeout=120) as response:
             installer_path.write_bytes(response.read())
     except (URLError, TimeoutError, OSError):
         return None

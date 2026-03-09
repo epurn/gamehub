@@ -10,11 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
-from urllib.request import urlopen
 
 from gamehub_common.models import LibraryIndex
 
 from ..common.fsops import replace_file
+from ..common.http import open_url
 from ..common.platform_paths import (
     RETROARCH_FLATPAK_APP_ID,
     host_home_path,
@@ -239,7 +239,7 @@ def _download_bytes(url: str, timeout_seconds: float = 30.0) -> bytes:
         response = httpx.get(url, timeout=timeout_seconds, follow_redirects=True)
         response.raise_for_status()
         return bytes(response.content)
-    with urlopen(url, timeout=timeout_seconds) as response:  # noqa: S310
+    with open_url(url, timeout=timeout_seconds) as response:  # noqa: S310
         return bytes(response.read())
 
 

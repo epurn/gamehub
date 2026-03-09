@@ -1,0 +1,99 @@
+Effective config: server=http://192.168.0.12:8000 gamehub_dir=/Users/epurn/Gamehub firmware_dir=/Users/epurn/Gamehub/firmware state=/Users/epurn/Gamehub/state.json steam_userdata=/Users/epurn/Library/Application Support/Steam/userdata steam_id=<auto>
+Loading local sync state...
+Fetching index: http://192.168.0.12:8000/v1/index
+Fetching index attempt 1/3
+Missing emulators: azahar, dolphin, pcsx2, retroarch
+Dry-run: emulator auto-install skipped
+RetroArch cores ready: fceumm_libretro, gambatte_libretro, genesis_plus_gx_libretro, melondsds_libretro, mgba_libretro, mupen64plus_next_libretro, snes9x_libretro, swanstation_libretro
+GAMEHUB Sync Plan
+kind	system	item	destination	size
+save:skip	GB	title_955333b776602f07:battery	<save-path-unavailable>	32768
+save:skip	GBA	title_6b662796cb604b02:battery	<save-path-unavailable>	32768
+save:skip	GBA	title_99395c7b8d5d07c4:battery	<save-path-unavailable>	8192
+save:skip	GBA	title_abdb993a522f6259:battery	<save-path-unavailable>	131072
+save:skip	GBC	title_ad0345163ddb5229:battery	<save-path-unavailable>	32768
+save:skip	GC	title_006277707852a1eb:per_game	<save-path-unavailable>	41024
+save:skip	N3DS	title_0a9a4c08db130101:per_game	<save-path-unavailable>	16
+save:skip	N3DS	title_0a9a4c08db130101:per_game	<save-path-unavailable>	483328
+save:skip	N3DS	title_57e62933bf35a8c7:per_game	<save-path-unavailable>	4
+save:skip	N3DS	title_57e62933bf35a8c7:per_game	<save-path-unavailable>	75024
+save:skip	N3DS	title_7b2646437f2b5ec2:per_game	<save-path-unavailable>	1985688
+save:skip	N64	title_3049958d6b6f8d73:battery	<save-path-unavailable>	296960
+save:skip	N64	title_a2716cb2d6867fc5:battery	<save-path-unavailable>	296960
+save:skip	N64	title_e845f88dce1fb532:battery	<save-path-unavailable>	296960
+save:skip	NDS	title_f168c2f450803613:battery	<save-path-unavailable>	524288
+save:skip	NES	title_4495d87cbd0f0396:battery	<save-path-unavailable>	8192
+save:skip	PS2	title_4158a2845ce8eed6:memory_card	<save-path-unavailable>	8650752
+save:skip	PS2	title_4158a2845ce8eed6:memory_card	<save-path-unavailable>	8650752
+save:skip	PS2	title_aa064f2460999bc3:memory_card	<save-path-unavailable>	8650752
+save:skip	PS2	title_aa064f2460999bc3:memory_card	<save-path-unavailable>	8650752
+save:skip	PS2	title_afb75d61a82d6409:memory_card	<save-path-unavailable>	8650752
+save:skip	PS2	title_afb75d61a82d6409:memory_card	<save-path-unavailable>	8650752
+save:skip	PSX	title_79e2b58b22c38d5b:memory_card	<save-path-unavailable>	131072
+save:skip	PSX	title_cd2d33c2af011575:memory_card	<save-path-unavailable>	131072
+save:skip	SNES	title_4d38ae03e83d86bf:battery	<save-path-unavailable>	8192
+save:skip	SNES	title_78ef2a1c01e374ce:battery	<save-path-unavailable>	2048
+save:skip	SNES	title_e280712a3eeb0530:battery	<save-path-unavailable>	8192
+save:skip	Wii	title_7d7687ffbf1d0991:per_game	<save-path-unavailable>	520
+save:skip	Wii	title_7d7687ffbf1d0991:per_game	<save-path-unavailable>	48640
+save:skip	Wii	title_7d7687ffbf1d0991:per_game	<save-path-unavailable>	29344
+
+Summary
+Total actions: 30
+Blocked systems: 0
+Skipped titles: 0
+save:skip: 30
+Steam target: userdata_id=95402412 steamid64=76561198055668140 userdata=/Users/epurn/Library/Application Support/Steam/userdata
+SGDB dry-run: key=cf4...be3 titles=3 kinds=grid,hero,logo,icon cached_skip=53
+sgdb	lookup	Pirates! Gold	grid,hero,logo,icon
+sgdb	lookup	Adventures of Cookie & Cream, The	grid,hero,logo,icon
+sgdb	lookup	Torino 2006	grid,hero,logo,icon
+save	skip	GB	title_955333b776602f07	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	GBA	title_6b662796cb604b02	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	GBA	title_99395c7b8d5d07c4	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	GBA	title_abdb993a522f6259	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	GBC	title_ad0345163ddb5229	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	GC	title_006277707852a1eb	per_game	save-sync-disabled	<save-path-unavailable>
+save	skip	N3DS	title_0a9a4c08db130101	per_game	save-sync-disabled	<save-path-unavailable>
+save	skip	N3DS	title_0a9a4c08db130101	per_game	save-sync-disabled	<save-path-unavailable>
+save	skip	N3DS	title_57e62933bf35a8c7	per_game	save-sync-disabled	<save-path-unavailable>
+save	skip	N3DS	title_57e62933bf35a8c7	per_game	save-sync-disabled	<save-path-unavailable>
+save	skip	N3DS	title_7b2646437f2b5ec2	per_game	save-sync-disabled	<save-path-unavailable>
+save	skip	N64	title_3049958d6b6f8d73	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	N64	title_a2716cb2d6867fc5	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	N64	title_e845f88dce1fb532	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	NDS	title_f168c2f450803613	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	NES	title_4495d87cbd0f0396	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	PS2	title_4158a2845ce8eed6	memory_card	save-sync-disabled	<save-path-unavailable>
+save	skip	PS2	title_4158a2845ce8eed6	memory_card	save-sync-disabled	<save-path-unavailable>
+save	skip	PS2	title_aa064f2460999bc3	memory_card	save-sync-disabled	<save-path-unavailable>
+save	skip	PS2	title_aa064f2460999bc3	memory_card	save-sync-disabled	<save-path-unavailable>
+save	skip	PS2	title_afb75d61a82d6409	memory_card	save-sync-disabled	<save-path-unavailable>
+save	skip	PS2	title_afb75d61a82d6409	memory_card	save-sync-disabled	<save-path-unavailable>
+save	skip	PSX	title_79e2b58b22c38d5b	memory_card	save-sync-disabled	<save-path-unavailable>
+save	skip	PSX	title_cd2d33c2af011575	memory_card	save-sync-disabled	<save-path-unavailable>
+save	skip	SNES	title_4d38ae03e83d86bf	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	SNES	title_78ef2a1c01e374ce	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	SNES	title_e280712a3eeb0530	battery	save-sync-disabled	<save-path-unavailable>
+save	skip	Wii	title_7d7687ffbf1d0991	per_game	save-sync-disabled	<save-path-unavailable>
+save	skip	Wii	title_7d7687ffbf1d0991	per_game	save-sync-disabled	<save-path-unavailable>
+save	skip	Wii	title_7d7687ffbf1d0991	per_game	save-sync-disabled	<save-path-unavailable>
+Save sync summary: planned=30 downloaded=0 uploaded=0 conflicts=0 skipped=30
+retroarch	dry-run	configure	/Users/epurn/Library/Application Support/RetroArch/retroarch.cfg	menu_combo=Start+Select	all_users_menu=true	analog_dpad_mode=0	libretro_device_p1=261
+retroarch	dry-run	core-options	/Users/epurn/Library/Application Support/RetroArch/retroarch-core-options.cfg	psx_controller=AnalogController
+retroarch	dry-run	remap	/Users/epurn/Library/Application Support/RetroArch/config/remaps/SwanStation/SwanStation.rmp
+pcsx2	dry-run	configure	/Users/epurn/Library/Application Support/PCSX2/inis/PCSX2.ini	bios=/Users/epurn/Gamehub/firmware/PS2
+dolphin	dry-run	configure	/Users/epurn/Library/Application Support/Dolphin/Config/Dolphin.ini	fullscreen=true	confirm_stop=false	background_input=true	analytics_enabled=false	analytics_permission_asked=true
+azahar	dry-run	configure	/Users/epurn/Library/Application Support/Azahar/config/qt-config.ini	fullscreen=true	confirm_exit_dialog=false
+firmware	dry-run	/Users/epurn/Gamehub/firmware/PS2/scph-30004r.bin	->	/Users/epurn/Gamehub/firmware/PS2/scph-30004r.bin
+firmware	dry-run	/Users/epurn/Gamehub/firmware/PS2/scph-39001.bin	->	/Users/epurn/Gamehub/firmware/PS2/scph-39001.bin
+firmware	dry-run	/Users/epurn/Gamehub/firmware/PS2/scph-70004.bin	->	/Users/epurn/Gamehub/firmware/PS2/scph-70004.bin
+firmware	dry-run	/Users/epurn/Gamehub/firmware/PS2/scph10000.bin	->	/Users/epurn/Gamehub/firmware/PS2/scph10000.bin
+firmware	dry-run	/Users/epurn/Gamehub/firmware/PSX/ps1_rom.bin	->	/Users/epurn/Library/Application Support/RetroArch/system/ps1_rom.bin
+firmware	dry-run	/Users/epurn/Gamehub/firmware/PSX/psxonpsp660.bin	->	/Users/epurn/Library/Application Support/RetroArch/system/psxonpsp660.bin
+firmware	dry-run	/Users/epurn/Gamehub/firmware/PSX/scph5500.bin	->	/Users/epurn/Library/Application Support/RetroArch/system/scph5500.bin
+firmware	dry-run	/Users/epurn/Gamehub/firmware/PSX/scph5501.bin	->	/Users/epurn/Library/Application Support/RetroArch/system/scph5501.bin
+firmware	dry-run	/Users/epurn/Gamehub/firmware/PSX/scph5502.bin	->	/Users/epurn/Library/Application Support/RetroArch/system/scph5502.bin
+Firmware deployment dry-run targets: 9
+controller-convergence	runtime_rules=0->kbm,1->xbox_1p,2+->xbox_2p	managed_targets=15	assisted_targets=3
+controller-convergence	repaired=0	unchanged=18	drift=0	unmanaged=0	errors=0

@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import urlparse
-from urllib.request import urlopen
 
+from ..common.http import open_url
 from ..common.platform_paths import macos_user_applications_dir, resolve_macos_app_bundle_executable
 from . import install_common
 from .resolution import _canonical_emulator_name, _is_emulator_available
@@ -97,7 +97,7 @@ _PINNED_MACOS_OFFICIAL_ASSETS = {
 
 def _download_file(url: str, destination: Path, *, timeout_seconds: float = 120.0) -> bool:
     try:
-        with urlopen(url, timeout=timeout_seconds) as response:  # noqa: S310
+        with open_url(url, timeout=timeout_seconds) as response:  # noqa: S310
             destination.write_bytes(response.read())
     except (URLError, TimeoutError, OSError):
         return False
