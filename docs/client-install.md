@@ -12,14 +12,16 @@ Start from template [docs/templates/config.macos.template.toml](templates/config
 1. Install native Steam manually first. GAMEHUB integrates with an existing `Steam.app` and never auto-installs Steam.
 2. Choose the macOS emulator install backend in `[macos]`:
    - `emulator_install_backend = "auto"` (default) maps to `official`
-   - `emulator_install_backend = "official"` installs only official Apple Silicon or universal upstream assets into `~/Applications`
+   - `emulator_install_backend = "official"` installs only official Apple Silicon or universal assets into `~/Applications`
+     - the current macOS implementation uses pinned official asset URLs in code; no extra macOS-only asset config is required
    - `emulator_install_backend = "command"` runs your configured `emulator_install_command`
    - `emulator_install_backend = "none"` disables emulator auto-install
 3. Supported official macOS auto-install targets are currently:
    - `RetroArch`
    - `Dolphin`
    - `Azahar`
-4. `PCSX2` remains a manual macOS install for now. GAMEHUB does not fall back to Rosetta when upstream native Apple Silicon support is unavailable.
+   - `PCSX2`
+4. GAMEHUB does not fall back to Rosetta when a native Apple Silicon or universal asset is unavailable.
 5. Optional command backend placeholders:
    - `{package}`: canonical install token (`retroarch`, `dolphin`, `azahar`, `pcsx2`)
    - `{emulator}`: emulator name from the index/config

@@ -7,12 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
+from gamehub_cli.common.config import ControllersConfig, GamehubConfig, MacOSConfig, SaveSyncConfig
 from gamehub_cli.common.shortcut_payload import parse_shortcut_payload
 from gamehub_cli.sync.orchestrator import (
     _apply_downloads,
     _apply_steam_updates,
     _bootstrap_firmware_dirs,
+    _bootstrap_runtime,
     _build_artwork_assignments,
     run_sync,
 )
@@ -66,6 +67,40 @@ def test_apply_downloads_runs_firmware_before_content(monkeypatch) -> None:
     assert calls == ["/v1/firmware/PSX/scph5501.bin", "/v1/files/file_mgs"]
     assert state.firmware_checksums["PSX/scph5501.bin"] == "a" * 64
     assert state.downloaded_checksums["file_mgs"] == "b" * 64
+
+
+def test_bootstrap_runtime_forwards_macos_emulator_install_config(monkeypatch) -> None:
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path("state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        macos=MacOSConfig(
+            emulator_install_backend="official",
+            emulator_install_command="ignored",
+        ),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+    index = LibraryIndex(index_version=1, systems=(), titles=())
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "gamehub_cli.sync.orchestrator.ensure_emulators",
+        lambda **kwargs: captured.update(kwargs),
+    )
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator.ensure_retroarch_cores", lambda **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_firmware_dirs", lambda *args, **kwargs: None)
+
+    _bootstrap_runtime(config, index=index, dry_run=False, verbose=False)
+
+    assert captured["macos_install_backend"] == "official"
+    assert captured["macos_install_command"] == "ignored"
 
 
 def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:

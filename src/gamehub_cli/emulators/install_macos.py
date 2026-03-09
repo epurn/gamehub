@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import re
 import shlex
 import shutil
@@ -10,7 +9,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from ..common.platform_paths import macos_user_applications_dir, resolve_macos_app_bundle_executable
@@ -30,8 +29,14 @@ class MacOSOfficialAsset:
 
 _RETROARCH_INSTALL_DOC_URL = "https://docs.libretro.com/guides/install-macos/"
 _DOLPHIN_DOWNLOAD_PAGE_URL = "https://dolphin-emu.org/download/"
-_AZAHAR_RELEASES_LATEST_URL = "https://github.com/azahar-emu/azahar/releases/latest"
+_AZAHAR_RELEASES_TAG_URL = "https://github.com/azahar-emu/azahar/releases/tag/2124.3"
 _PCSX2_DOWNLOADS_URL = "https://pcsx2.net/downloads/"
+_RETROARCH_MACOS_DMG_URL = "https://buildbot.libretro.com/stable/1.22.2/apple/osx/universal/RetroArch_Metal.dmg"
+_DOLPHIN_MACOS_DMG_URL = "https://dl.dolphin-emu.org/releases/2512/dolphin-2512-universal.dmg"
+_AZAHAR_MACOS_ZIP_URL = (
+    "https://github.com/azahar-emu/azahar/releases/download/2124.3/azahar-2124.3-macos-universal.zip"
+)
+_PCSX2_MACOS_ARCHIVE_URL = "https://github.com/PCSX2/pcsx2/releases/download/v2.6.3/pcsx2-v2.6.3-macos-Qt.tar.xz"
 
 _MACOS_COMMAND_PACKAGES = {
     "retroarch": "retroarch",
@@ -42,6 +47,7 @@ _MACOS_COMMAND_PACKAGES = {
 
 _MACOS_BUNDLE_NAMES = {
     "retroarch": "RetroArch.app",
+    "pcsx2": "PCSX2.app",
     "dolphin": "Dolphin.app",
     "azahar": "Azahar.app",
 }
@@ -50,34 +56,43 @@ _MANUAL_SOURCE_BY_EMULATOR = {
     "retroarch": _RETROARCH_INSTALL_DOC_URL,
     "pcsx2": _PCSX2_DOWNLOADS_URL,
     "dolphin": _DOLPHIN_DOWNLOAD_PAGE_URL,
-    "azahar": _AZAHAR_RELEASES_LATEST_URL,
+    "azahar": _AZAHAR_RELEASES_TAG_URL,
 }
-
-_RETROARCH_MACOS_DMG_URL_RE = re.compile(
-    r"(?P<url>https://buildbot\.libretro\.com/"
-    r"(?P<channel>stable|nightly)/"
-    r'(?:(?P<version>[^/"\']+)/)?'
-    r"apple/osx/(?P<kind>universal|arm64)/RetroArch_Metal\.dmg)"
-)
-_DOLPHIN_MACOS_DMG_URL_RE = re.compile(
-    r"(?P<url>https://dl\.dolphin-emu\.org/releases/"
-    r"(?P<version>\d+)/dolphin-(?P=version)-(?P<kind>universal|arm64)\.dmg)",
-    re.IGNORECASE,
-)
-_AZAHAR_MACOS_ZIP_URL_RE = re.compile(
-    r"(?P<href>(?:https://github\.com)?/azahar-emu/azahar/releases/download/"
-    r'(?P<tag>[^/"\']+)/azahar-[^/"\']+-macos-(?P<kind>arm64|universal)\.zip)',
-    re.IGNORECASE,
-)
 _MACH_O_ARCH_RE = re.compile(r"\b(arm64e|arm64|x86_64|i386)\b")
-
-
-def _download_text(url: str, *, timeout_seconds: float = 20.0) -> str | None:
-    try:
-        with urlopen(url, timeout=timeout_seconds) as response:  # noqa: S310
-            return str(response.read(), encoding="utf-8", errors="ignore")
-    except (URLError, TimeoutError, OSError):
-        return None
+_PINNED_MACOS_OFFICIAL_ASSETS = {
+    "retroarch": MacOSOfficialAsset(
+        emulator="retroarch",
+        archive_kind="dmg",
+        bundle_name=_MACOS_BUNDLE_NAMES["retroarch"],
+        download_url=_RETROARCH_MACOS_DMG_URL,
+        source_url=_RETROARCH_MACOS_DMG_URL,
+        asset_label="universal",
+    ),
+    "dolphin": MacOSOfficialAsset(
+        emulator="dolphin",
+        archive_kind="dmg",
+        bundle_name=_MACOS_BUNDLE_NAMES["dolphin"],
+        download_url=_DOLPHIN_MACOS_DMG_URL,
+        source_url=_DOLPHIN_MACOS_DMG_URL,
+        asset_label="universal",
+    ),
+    "azahar": MacOSOfficialAsset(
+        emulator="azahar",
+        archive_kind="zip",
+        bundle_name=_MACOS_BUNDLE_NAMES["azahar"],
+        download_url=_AZAHAR_MACOS_ZIP_URL,
+        source_url=_AZAHAR_RELEASES_TAG_URL,
+        asset_label="universal",
+    ),
+    "pcsx2": MacOSOfficialAsset(
+        emulator="pcsx2",
+        archive_kind="tar_xz",
+        bundle_name=_MACOS_BUNDLE_NAMES["pcsx2"],
+        download_url=_PCSX2_MACOS_ARCHIVE_URL,
+        source_url=_PCSX2_MACOS_ARCHIVE_URL,
+        asset_label="archive",
+    ),
+}
 
 
 def _download_file(url: str, destination: Path, *, timeout_seconds: float = 120.0) -> bool:
@@ -94,101 +109,13 @@ def _manual_install_source(emulator: str) -> str:
     return _MANUAL_SOURCE_BY_EMULATOR.get(canonical, "")
 
 
-def _latest_retroarch_macos_asset() -> MacOSOfficialAsset | None:
-    page_html = _download_text(_RETROARCH_INSTALL_DOC_URL)
-    if not page_html:
-        return None
-    candidates: list[tuple[tuple[int, tuple[int, ...]], str, str]] = []
-    for match in _RETROARCH_MACOS_DMG_URL_RE.finditer(page_html):
-        channel = match.group("channel").lower()
-        version = match.group("version") or "0"
-        priority = 0 if channel == "stable" else 1
-        candidates.append(
-            (
-                (priority, tuple(-part for part in install_common._version_key(version))),
-                match.group("url"),
-                match.group("kind"),
-            )
-        )
-    if not candidates:
-        return None
-    _sort_key, download_url, asset_kind = sorted(candidates, key=lambda item: item[0])[0]
-    return MacOSOfficialAsset(
-        emulator="retroarch",
-        archive_kind="dmg",
-        bundle_name=_MACOS_BUNDLE_NAMES["retroarch"],
-        download_url=download_url,
-        source_url=_RETROARCH_INSTALL_DOC_URL,
-        asset_label=asset_kind,
-    )
-
-
-def _latest_dolphin_macos_asset() -> MacOSOfficialAsset | None:
-    page_html = _download_text(_DOLPHIN_DOWNLOAD_PAGE_URL)
-    if not page_html:
-        return None
-    candidates: list[tuple[tuple[int, ...], str, str]] = []
-    for match in _DOLPHIN_MACOS_DMG_URL_RE.finditer(page_html):
-        candidates.append(
-            (install_common._version_key(match.group("version")), match.group("url"), match.group("kind"))
-        )
-    if not candidates:
-        return None
-    _version, download_url, asset_kind = max(candidates, key=lambda item: item[0])
-    return MacOSOfficialAsset(
-        emulator="dolphin",
-        archive_kind="dmg",
-        bundle_name=_MACOS_BUNDLE_NAMES["dolphin"],
-        download_url=download_url,
-        source_url=_DOLPHIN_DOWNLOAD_PAGE_URL,
-        asset_label=asset_kind,
-    )
-
-
-def _latest_azahar_macos_asset() -> MacOSOfficialAsset | None:
-    page_html = _download_text(_AZAHAR_RELEASES_LATEST_URL)
-    if not page_html:
-        return None
-    candidates: list[tuple[int, str]] = []
-    for match in _AZAHAR_MACOS_ZIP_URL_RE.finditer(page_html):
-        href = html.unescape(match.group("href"))
-        download_url = urljoin("https://github.com", href)
-        kind = match.group("kind").lower()
-        priority = 0 if kind == "arm64" else 1
-        candidates.append((priority, download_url))
-    if not candidates:
-        return None
-    _priority, download_url = sorted(candidates, key=lambda item: item[0])[0]
-    asset_kind = "arm64" if "macos-arm64" in download_url.casefold() else "universal"
-    return MacOSOfficialAsset(
-        emulator="azahar",
-        archive_kind="zip",
-        bundle_name=_MACOS_BUNDLE_NAMES["azahar"],
-        download_url=download_url,
-        source_url=_AZAHAR_RELEASES_LATEST_URL,
-        asset_label=asset_kind,
-    )
-
-
 def _resolve_macos_official_asset(emulator: str) -> tuple[MacOSOfficialAsset | None, str | None]:
     canonical = _canonical_emulator_name(emulator)
     if canonical == "steam":
         return None, "Steam must be installed manually; GAMEHUB never auto-installs Steam"
-    if canonical == "pcsx2":
-        return (
-            None,
-            "current upstream does not provide a reliable native Apple Silicon or universal macOS asset",
-        )
-    if canonical == "retroarch":
-        asset = _latest_retroarch_macos_asset()
-    elif canonical == "dolphin":
-        asset = _latest_dolphin_macos_asset()
-    elif canonical == "azahar":
-        asset = _latest_azahar_macos_asset()
-    else:
-        asset = None
+    asset = _PINNED_MACOS_OFFICIAL_ASSETS.get(canonical)
     if asset is None:
-        return None, "no supported native Apple Silicon or universal upstream asset was found"
+        return None, "no supported official macOS asset is pinned for this emulator"
     return asset, None
 
 
@@ -228,12 +155,35 @@ def _extract_zip_archive(zip_path: Path, destination: Path, *, verbose: bool) ->
     return True
 
 
+def _extract_tar_archive(archive_path: Path, destination: Path, *, verbose: bool) -> bool:
+    tar_cmd = shutil.which("tar")
+    if not tar_cmd:
+        return False
+    result = subprocess.run(  # noqa: S603
+        [tar_cmd, "-xf", str(archive_path), "-C", str(destination)],
+        check=False,
+        capture_output=not verbose,
+        text=True,
+    )
+    return result.returncode == 0
+
+
 def _extract_app_bundle_from_zip(
     zip_path: Path, expected_bundle: str, *, temp_root: Path, verbose: bool
 ) -> Path | None:
     extract_root = temp_root / "extract"
     extract_root.mkdir(parents=True, exist_ok=True)
     if not _extract_zip_archive(zip_path, extract_root, verbose=verbose):
+        return None
+    return _find_app_bundle(extract_root, expected_bundle)
+
+
+def _extract_app_bundle_from_tar_archive(
+    archive_path: Path, expected_bundle: str, *, temp_root: Path, verbose: bool
+) -> Path | None:
+    extract_root = temp_root / "extract"
+    extract_root.mkdir(parents=True, exist_ok=True)
+    if not _extract_tar_archive(archive_path, extract_root, verbose=verbose):
         return None
     return _find_app_bundle(extract_root, expected_bundle)
 
@@ -370,6 +320,13 @@ def _install_macos_official_asset(
                 temp_root=temp_root,
                 verbose=verbose,
             )
+        elif asset.archive_kind == "tar_xz":
+            source_bundle = _extract_app_bundle_from_tar_archive(
+                archive_path,
+                asset.bundle_name,
+                temp_root=temp_root,
+                verbose=verbose,
+            )
         else:
             return "failed", f"unsupported archive kind: {asset.archive_kind}"
         if source_bundle is None:
@@ -402,10 +359,7 @@ def _install_macos_official(missing: list[str], *, verbose: bool) -> None:
             if source_url:
                 print(f"Warning: install {emulator} manually from {source_url} and re-run sync.")
             continue
-        print(
-            f"Installing emulator '{emulator}' via official macOS {asset.asset_label} upstream asset "
-            "into ~/Applications..."
-        )
+        print(f"Installing emulator '{emulator}' via official macOS asset into ~/Applications...")
         status, detail = _install_macos_official_asset(asset, verbose=verbose)
         if status == "installed" and _is_emulator_available(emulator):
             print(f"Installed emulator: {emulator}")
