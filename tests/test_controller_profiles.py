@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
+import gamehub_cli.common.fsops as fsops
 import gamehub_cli.controllers.profiles as controller_profiles
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig
 from gamehub_cli.controllers.profiles import (
@@ -58,6 +61,7 @@ def test_seed_default_profiles_creates_profile_tree(workspace_tempdir) -> None:
         assert metadata["schema_version"] == 1
         assert metadata["entries"]["PCSX2.ini"]["ownership"] == "managed"
         assert metadata["entries"]["PCSX2.ini"]["source_profile"] == "kbm"
+        assert not list(root.rglob("*.bak"))
 
         pcsx2_xbox_1p = (root / "pcsx2" / "xbox_1p" / "PCSX2.ini").read_text(encoding="utf-8")
         assert "Cross = SDL-0/A" in pcsx2_xbox_1p
@@ -145,3 +149,55 @@ def test_load_profile_file_prefers_user_override(workspace_tempdir) -> None:
         )
 
         assert "OpenPauseMenu = Keyboard/F1" in "\n".join(lines)
+
+
+def test_seed_default_profiles_force_creates_backup_for_existing_file(workspace_tempdir, caplog) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        root = resolve_profiles_root(config)
+        profile_file = root / "pcsx2" / "kbm" / "PCSX2.ini"
+        profile_file.write_text("[Custom]\nOpenPauseMenu = Keyboard/F1\n", encoding="utf-8")
+
+        caplog.set_level(logging.INFO)
+        created = seed_default_profiles(config, force=True)
+
+        assert profile_file in created
+        backups = sorted(profile_file.parent.glob("PCSX2.ini.*.bak"))
+        assert len(backups) == 1
+        assert backups[0].read_text(encoding="utf-8") == "[Custom]\nOpenPauseMenu = Keyboard/F1\n"
+        assert (
+            profile_file.read_text(encoding="utf-8")
+            == controller_profiles.DEFAULT_PROFILE_TEXTS["pcsx2"]["kbm"]["PCSX2.ini"]
+        )
+        assert any("controller profile backup created" in record.getMessage() for record in caplog.records)
+        assert any("controller profile saved" in record.getMessage() for record in caplog.records)
+
+
+def test_seed_default_profiles_force_uses_unique_backup_name_when_collision_exists(
+    workspace_tempdir,
+    monkeypatch,
+) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        root = resolve_profiles_root(config)
+        profile_file = root / "pcsx2" / "kbm" / "PCSX2.ini"
+        profile_file.write_text("[Custom]\nOpenPauseMenu = Keyboard/F1\n", encoding="utf-8")
+
+        fixed_now = datetime(2026, 3, 9, 12, 0, 0, tzinfo=UTC)
+
+        class _FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed_now if tz is None else fixed_now.astimezone(tz)
+
+        monkeypatch.setattr(fsops, "datetime", _FixedDateTime)
+        existing_backup = profile_file.with_name(f"{profile_file.name}.20260309120000.bak")
+        existing_backup.write_text("earlier backup\n", encoding="utf-8")
+
+        seed_default_profiles(config, force=True)
+
+        collision_backup = profile_file.with_name(f"{profile_file.name}.20260309120000.1.bak")
+        assert existing_backup.read_text(encoding="utf-8") == "earlier backup\n"
+        assert collision_backup.read_text(encoding="utf-8") == "[Custom]\nOpenPauseMenu = Keyboard/F1\n"
