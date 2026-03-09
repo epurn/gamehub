@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+import gamehub_cli.emulators.install_macos as install_macos_module
 from gamehub_cli.emulators import ensure_emulators, resolve_emulator_executable
 from gamehub_cli.emulators.install_macos import MacOSOfficialAsset
 from gamehub_cli.emulators.save_resolution import (
@@ -686,6 +687,104 @@ def test_ensure_emulators_macos_official_backend_rejects_non_native_asset(monkey
     assert "official macOS Apple Silicon install unavailable for dolphin" in out
     assert "architectures: x86_64" in out
     assert "install dolphin manually from https://dolphin-emu.org/download/ and re-run sync." in out
+
+
+def test_resolve_macos_official_asset_returns_pinned_urls() -> None:
+    expected_assets = {
+        "retroarch": MacOSOfficialAsset(
+            emulator="retroarch",
+            archive_kind="dmg",
+            bundle_name="RetroArch.app",
+            download_url="https://buildbot.libretro.com/stable/1.22.2/apple/osx/universal/RetroArch_Metal.dmg",
+            source_url="https://buildbot.libretro.com/stable/1.22.2/apple/osx/universal/RetroArch_Metal.dmg",
+            asset_label="universal",
+        ),
+        "dolphin": MacOSOfficialAsset(
+            emulator="dolphin",
+            archive_kind="dmg",
+            bundle_name="Dolphin.app",
+            download_url="https://dl.dolphin-emu.org/releases/2512/dolphin-2512-universal.dmg",
+            source_url="https://dl.dolphin-emu.org/releases/2512/dolphin-2512-universal.dmg",
+            asset_label="universal",
+        ),
+        "azahar": MacOSOfficialAsset(
+            emulator="azahar",
+            archive_kind="zip",
+            bundle_name="Azahar.app",
+            download_url="https://github.com/azahar-emu/azahar/releases/download/2124.3/azahar-2124.3-macos-universal.zip",
+            source_url="https://github.com/azahar-emu/azahar/releases/tag/2124.3",
+            asset_label="universal",
+        ),
+        "pcsx2": MacOSOfficialAsset(
+            emulator="pcsx2",
+            archive_kind="tar_xz",
+            bundle_name="PCSX2.app",
+            download_url="https://github.com/PCSX2/pcsx2/releases/download/v2.6.3/pcsx2-v2.6.3-macos-Qt.tar.xz",
+            source_url="https://github.com/PCSX2/pcsx2/releases/download/v2.6.3/pcsx2-v2.6.3-macos-Qt.tar.xz",
+            asset_label="archive",
+        ),
+    }
+
+    for emulator, expected in expected_assets.items():
+        asset, reason = install_macos_module._resolve_macos_official_asset(emulator)
+        assert reason is None
+        assert asset == expected
+
+
+def test_install_macos_official_asset_supports_tar_xz_archive(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-macos-tar-asset-") as temp_root:
+        source_bundle = temp_root / "PCSX2.app"
+        installed_bundle = temp_root / "Applications" / "PCSX2.app"
+        captured: dict[str, Path] = {}
+
+        def fake_extract(
+            archive_path: Path,
+            expected_bundle: str,
+            *,
+            temp_root: Path,
+            verbose: bool,
+        ) -> Path:
+            del temp_root, verbose
+            captured["archive_path"] = archive_path
+            assert expected_bundle == "PCSX2.app"
+            return source_bundle
+
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos._download_file",
+            lambda url, destination, timeout_seconds=120.0: destination.write_bytes(b"tar") or True,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos._extract_app_bundle_from_tar_archive",
+            fake_extract,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos._bundle_supports_apple_silicon",
+            lambda bundle_path: (bundle_path == source_bundle, None),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos._install_bundle_into_applications",
+            lambda source_bundle, bundle_name, verbose: installed_bundle,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.install_macos.resolve_macos_app_bundle_executable",
+            lambda bundle_path: bundle_path / "Contents" / "MacOS" / "pcsx2-qt",
+        )
+
+        status, detail = install_macos_module._install_macos_official_asset(
+            MacOSOfficialAsset(
+                emulator="pcsx2",
+                archive_kind="tar_xz",
+                bundle_name="PCSX2.app",
+                download_url="https://github.com/PCSX2/pcsx2/releases/download/v2.6.3/pcsx2-v2.6.3-macos-Qt.tar.xz",
+                source_url="https://github.com/PCSX2/pcsx2/releases/download/v2.6.3/pcsx2-v2.6.3-macos-Qt.tar.xz",
+                asset_label="archive",
+            ),
+            verbose=False,
+        )
+
+        assert status == "installed"
+        assert detail is None
+        assert captured["archive_path"].name == "pcsx2-v2.6.3-macos-Qt.tar.xz"
 
 
 def test_ensure_emulators_detects_known_install_without_winget(monkeypatch, capsys, workspace_tempdir) -> None:

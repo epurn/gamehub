@@ -262,6 +262,8 @@ def _bootstrap_runtime(
         linux_install_backend=config.linux.emulator_install_backend,
         linux_install_command=config.linux.emulator_install_command,
         linux_flatpak_remote=config.linux.flatpak_remote,
+        macos_install_backend=config.macos.emulator_install_backend,
+        macos_install_command=config.macos.emulator_install_command,
     )
     ensure_retroarch_cores(
         index=index,
