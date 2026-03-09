@@ -3,10 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 import gamehub_cli.shortcuts.shortcut_launch as launch_module
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
+from gamehub_cli.common.shortcut_payload_registry import save_shortcut_payload_registry_atomic
 from gamehub_cli.shortcuts.shortcut_launch import encode_shortcut_payload, run_shortcut_launch
 
 
@@ -246,7 +245,7 @@ def test_run_shortcut_launch_prelaunch_save_sync_failure_does_not_block_launch(m
     exit_code = run_shortcut_launch(payload_token=token)
 
     assert exit_code == 17
-    assert "pre-launch save sync failed; continuing launch" in capsys.readouterr().out
+    assert "pre-launch save sync failed; continuing launch" in capsys.readouterr().err
 
 
 def test_run_shortcut_launch_postexit_save_sync_failure_does_not_replace_exit_code(monkeypatch, capsys) -> None:
@@ -292,10 +291,10 @@ def test_run_shortcut_launch_postexit_save_sync_failure_does_not_replace_exit_co
     exit_code = run_shortcut_launch(payload_token=token)
 
     assert exit_code == 23
-    assert "post-exit save sync failed" in capsys.readouterr().out
+    assert "post-exit save sync failed" in capsys.readouterr().err
 
 
-def test_run_shortcut_launch_persists_prelaunch_state_when_launch_fails(monkeypatch) -> None:
+def test_run_shortcut_launch_spawn_failure_warns_and_persists_prelaunch_state(monkeypatch, capsys) -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
@@ -343,13 +342,112 @@ def test_run_shortcut_launch_persists_prelaunch_state_when_launch_fails(monkeypa
     )
     monkeypatch.setattr(
         "gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook",
-        lambda payload: (_ for _ in ()).throw(RuntimeError("launch failed")),
+        lambda payload: (_ for _ in ()).throw(launch_module.ShortcutLaunchError("launch failed (command=open)")),
     )
 
-    with pytest.raises(RuntimeError, match="launch failed"):
-        run_shortcut_launch(payload_token=token)
+    exit_code = run_shortcut_launch(payload_token=token)
 
+    assert exit_code == 1
+    assert "launch failed (command=open)" in capsys.readouterr().err
     assert saved == [(config.state_path, state)]
+
+
+def test_run_shortcut_launch_loads_payload_from_registry_ref(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-shortcut-launch-registry-") as temp_root:
+        token = encode_shortcut_payload(
+            {
+                "v": 1,
+                "emulator": "dolphin",
+                "target_exe": "/Users/tester/Applications/Dolphin.app/Contents/MacOS/DolphinQt",
+                "target_args": ["-b", "-e", "/Users/tester/Games/Super Mario Galaxy.rvz"],
+                "title_id": "title_wii_mario",
+                "system": "Wii",
+                "rom_rel_path": "roms/Wii/Super Mario Galaxy.rvz",
+                "config_path": str(temp_root / "config.toml"),
+                "macos_open_app": "/Users/tester/Applications/Dolphin.app",
+                "macos_open_args": ["-b", "-e", "/Users/tester/Games/Super Mario Galaxy.rvz"],
+            }
+        )
+        registry_path = temp_root / "shortcut_payloads.json"
+        save_shortcut_payload_registry_atomic(registry_path, {"title_wii_mario": token})
+
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=Path("/Users/tester/GameHub"),
+            firmware_dir=Path("/Users/tester/GameHub/firmware"),
+            state_path=Path("/Users/tester/GameHub/state.json"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=Path("/Users/tester/GameHub/cache"),
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
+        launched: list[launch_module.ShortcutLaunchPayload] = []
+
+        monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook",
+            lambda payload: launched.append(payload) or 0,
+        )
+
+        exit_code = run_shortcut_launch(
+            payload_ref="title_wii_mario",
+            payload_registry_path=registry_path,
+        )
+
+        assert exit_code == 0
+        assert launched[0].emulator == "dolphin"
+        assert launched[0].macos_open_app == "/Users/tester/Applications/Dolphin.app"
+
+
+def test_run_shortcut_launch_unexpected_launch_error_returns_nonzero_and_warns(monkeypatch, capsys) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "retroarch",
+            "target_args": ["-f", "game.gbc"],
+            "title_id": "title_gbc_pokemon",
+            "system": "GBC",
+            "rom_rel_path": "roms/GBC/Pokemon Crystal.gbc",
+        }
+    )
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._load_shortcut_state", lambda path: state)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._run_shortcut_prelaunch_save_sync",
+        lambda **kwargs: (
+            launch_module._ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={}),
+            False,
+        ),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook",
+        lambda payload: (_ for _ in ()).throw(RuntimeError("unexpected launch error")),
+    )
+
+    exit_code = run_shortcut_launch(payload_token=token)
+
+    assert exit_code == 1
+    assert "unexpected shortcut launch error (RuntimeError: unexpected launch error)" in capsys.readouterr().err
 
 
 def test_run_shortcut_launch_respects_save_sync_system_filter_for_memory_card_setup(monkeypatch) -> None:

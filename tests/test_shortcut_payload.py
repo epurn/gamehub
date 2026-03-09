@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from gamehub_cli.common.shortcut_payload import encode_shortcut_payload, parse_shortcut_payload
+from gamehub_cli.common.shortcut_payload_registry import (
+    load_shortcut_payload_token,
+    save_shortcut_payload_registry_atomic,
+)
 
 
 def test_parse_shortcut_payload_round_trip() -> None:
@@ -51,18 +55,60 @@ def test_parse_shortcut_payload_preserves_macos_open_args() -> None:
     token = encode_shortcut_payload(
         {
             "v": 1,
-            "emulator": "pcsx2",
-            "target_exe": "/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt",
-            "target_args": ["-fullscreen", "/Users/test/Games/Gran Turismo 4.iso"],
-            "macos_open_app": "/Applications/PCSX2.app",
-            "macos_open_args": ["-fullscreen", "/Users/test/Games/Gran Turismo 4.iso"],
-            "start_dir": "/Applications/PCSX2.app/Contents/MacOS",
+            "emulator": "dolphin",
+            "target_exe": "/Users/tester/Applications/Dolphin.app/Contents/MacOS/DolphinQt",
+            "target_args": ["-b", "-e", "/Users/tester/Games/Super Mario Galaxy.rvz"],
+            "macos_open_app": "/Users/tester/Applications/Dolphin.app",
+            "macos_open_args": ["-b", "-e", "/Users/tester/Games/Super Mario Galaxy.rvz"],
+            "start_dir": "/Users/tester/Applications/Dolphin.app/Contents/MacOS",
         }
     )
 
     payload = parse_shortcut_payload(token)
 
-    assert payload.target_exe == "/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt"
-    assert payload.target_args == ("-fullscreen", "/Users/test/Games/Gran Turismo 4.iso")
-    assert payload.macos_open_app == "/Applications/PCSX2.app"
-    assert payload.macos_open_args == ("-fullscreen", "/Users/test/Games/Gran Turismo 4.iso")
+    assert payload.target_exe == "/Users/tester/Applications/Dolphin.app/Contents/MacOS/DolphinQt"
+    assert payload.target_args == ("-b", "-e", "/Users/tester/Games/Super Mario Galaxy.rvz")
+    assert payload.macos_open_app == "/Users/tester/Applications/Dolphin.app"
+    assert payload.macos_open_args == ("-b", "-e", "/Users/tester/Games/Super Mario Galaxy.rvz")
+
+
+def test_parse_shortcut_payload_preserves_macos_user_app_bundle_target() -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "/Users/tester/Applications/RetroArch.app/Contents/MacOS/retroarch-metal",
+            "target_args": ["-f", "-L", "cores/gambatte_libretro.dylib", "/Users/tester/Games/Pokemon.gbc"],
+            "macos_open_app": "/Users/tester/Applications/RetroArch.app",
+            "macos_open_args": ["-f", "-L", "cores/gambatte_libretro.dylib", "/Users/tester/Games/Pokemon.gbc"],
+        }
+    )
+
+    payload = parse_shortcut_payload(token)
+
+    assert payload.target_exe == "/Users/tester/Applications/RetroArch.app/Contents/MacOS/retroarch-metal"
+    assert payload.macos_open_app == "/Users/tester/Applications/RetroArch.app"
+    assert payload.macos_open_args == (
+        "-f",
+        "-L",
+        "cores/gambatte_libretro.dylib",
+        "/Users/tester/Games/Pokemon.gbc",
+    )
+
+
+def test_shortcut_payload_registry_round_trip(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-shortcut-payload-registry-") as temp_root:
+        token = encode_shortcut_payload(
+            {
+                "v": 1,
+                "emulator": "dolphin",
+                "target_exe": "/Users/tester/Applications/Dolphin.app/Contents/MacOS/DolphinQt",
+                "target_args": ["-b", "-e", "/Users/tester/Games/Super Mario Galaxy.rvz"],
+                "config_path": "/Users/tester/.gamehub/config.toml",
+            }
+        )
+        registry_path = temp_root / "shortcut_payloads.json"
+
+        save_shortcut_payload_registry_atomic(registry_path, {"title_wii_mario": token})
+
+        assert load_shortcut_payload_token(registry_path, "title_wii_mario") == token
