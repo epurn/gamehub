@@ -34,6 +34,14 @@ def _host_path(raw: str) -> Path:
     return _HOST_PATH_CLS(raw)
 
 
+def host_path(raw: str | os.PathLike[str]) -> Path:
+    return _host_path(os.fspath(raw))
+
+
+def host_home_path() -> Path:
+    return _safe_home_path()
+
+
 def linux_flatpak_retroarch_root() -> Path:
     return _safe_home_path() / ".var" / "app" / RETROARCH_FLATPAK_APP_ID / "config" / "retroarch"
 

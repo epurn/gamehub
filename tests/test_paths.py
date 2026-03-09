@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from gamehub_cli.common.paths import from_rel_path, normalized_local_path
 from gamehub_cli.common.platform_paths import (
     RETROARCH_FLATPAK_APP_ID,
+    host_path,
     is_flatpak_command,
     parse_simple_kv_config,
     retroarch_cfg_candidates,
@@ -48,6 +50,15 @@ def test_is_flatpak_command_matches_flatpak_export_path() -> None:
 def test_unique_paths_dedupes_expanduser_results(monkeypatch) -> None:
     values = unique_paths([Path("C:/RetroArch"), Path("C:/RetroArch"), Path("D:/RetroArch")])
     assert values == [Path("C:/RetroArch"), Path("D:/RetroArch")]
+
+
+def test_host_path_uses_host_path_class_when_os_name_is_monkeypatched(monkeypatch) -> None:
+    expected_type = type(host_path("."))
+    monkeypatch.setattr("gamehub_cli.common.platform_paths.os.name", "nt" if os.name != "nt" else "posix")
+
+    candidate = host_path("/Applications/RetroArch.app")
+
+    assert type(candidate) is expected_type
 
 
 def test_parse_simple_kv_config_reads_key_value_pairs(workspace_tempdir) -> None:

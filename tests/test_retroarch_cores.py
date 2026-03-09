@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 from pathlib import Path
 
@@ -240,6 +241,20 @@ def test_ensure_retroarch_cores_macos_uses_dylib_suffix(monkeypatch, workspace_t
 
         assert (cores_dir / "gambatte_libretro.dylib").read_bytes() == b"core"
         assert calls[0] == "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/gambatte_libretro.dylib.zip"
+
+
+def test_resolve_retroarch_paths_explicit_dirs_are_host_safe_when_os_name_is_monkeypatched(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-retroarch-host-safe-") as temp_root:
+        monkeypatch.setattr("gamehub_cli.firmware.retroarch_cores.os.name", "nt" if os.name != "nt" else "posix")
+
+        paths = resolve_retroarch_paths(
+            explicit_cores_dir=temp_root / "cores",
+            explicit_info_dir=temp_root / "info",
+        )
+
+        assert paths == RetroArchPaths(cores_dir=temp_root / "cores", info_dir=temp_root / "info")
 
 
 def test_resolve_retroarch_paths_linux_ignores_usr_bin_parent(monkeypatch, workspace_tempdir) -> None:

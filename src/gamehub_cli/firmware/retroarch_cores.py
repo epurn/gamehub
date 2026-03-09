@@ -17,6 +17,8 @@ from gamehub_common.models import LibraryIndex
 from ..common.fsops import replace_file
 from ..common.platform_paths import (
     RETROARCH_FLATPAK_APP_ID,
+    host_home_path,
+    host_path,
     is_flatpak_command,
     linux_flatpak_retroarch_root,
     macos_retroarch_root,
@@ -61,10 +63,10 @@ class RetroArchPaths:
 def _path_with_tilde_expanded(raw: str) -> Path:
     value = raw.strip()
     if value == "~":
-        return Path.home()
+        return host_home_path()
     if value.startswith("~/") or value.startswith("~\\"):
-        return Path.home() / value[2:]
-    return Path(value)
+        return host_home_path() / value[2:]
+    return host_path(value)
 
 
 def _normalize_retroarch_cfg_path(raw: str, *, cfg_path: Path) -> Path | None:
@@ -155,11 +157,9 @@ def resolve_retroarch_paths(
     explicit_info_dir: Path | None = None,
     explicit_cfg_path: Path | None = None,
 ) -> RetroArchPaths | None:
-    explicit_cores = str(explicit_cores_dir) if explicit_cores_dir is not None else None
-    explicit_info = str(explicit_info_dir) if explicit_info_dir is not None else None
-    if explicit_cores:
-        cores_dir = Path(explicit_cores).expanduser()
-        info_dir = Path(explicit_info).expanduser() if explicit_info else cores_dir.parent / "info"
+    if explicit_cores_dir is not None:
+        cores_dir = explicit_cores_dir.expanduser()
+        info_dir = explicit_info_dir.expanduser() if explicit_info_dir is not None else cores_dir.parent / "info"
         return RetroArchPaths(cores_dir=cores_dir, info_dir=info_dir)
 
     config_cores: Path | None = None
@@ -192,11 +192,11 @@ def resolve_retroarch_paths(
         return RetroArchPaths(cores_dir=config_cores, info_dir=config_info or config_cores.parent / "info")
 
     exe_raw = resolve_emulator_executable("retroarch").strip('"')
-    exe = Path(exe_raw)
+    exe = host_path(exe_raw) if exe_raw else None
     flatpak_hint = (
-        is_flatpak_command(exe, RETROARCH_FLATPAK_APP_ID) or RETROARCH_FLATPAK_APP_ID.casefold() in exe_raw.casefold()
-    )
-    if exe.exists() and os.name == "nt":
+        exe is not None and is_flatpak_command(exe, RETROARCH_FLATPAK_APP_ID)
+    ) or RETROARCH_FLATPAK_APP_ID.casefold() in exe_raw.casefold()
+    if exe is not None and exe.exists() and os.name == "nt":
         return RetroArchPaths(cores_dir=exe.parent / "cores", info_dir=exe.parent / "info")
     if sys.platform.startswith("linux") and flatpak_hint:
         root = linux_flatpak_retroarch_root()
@@ -206,10 +206,10 @@ def resolve_retroarch_paths(
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
         if appdata:
-            root = Path(appdata) / "RetroArch"
+            root = host_path(appdata) / "RetroArch"
             return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
     if sys.platform.startswith("linux"):
-        native_root = Path.home() / ".config" / "retroarch"
+        native_root = host_home_path() / ".config" / "retroarch"
         flatpak_root = linux_flatpak_retroarch_root()
         prefer_flatpak = flatpak_hint
         roots = [flatpak_root, native_root] if prefer_flatpak else [native_root, flatpak_root]
@@ -235,7 +235,7 @@ def _download_bytes(url: str, timeout_seconds: float = 30.0) -> bytes:
 
 def _install_from_zip_blob(zip_blob: bytes, member_name: str, destination: Path) -> bool:
     with zipfile.ZipFile(io.BytesIO(zip_blob)) as archive:
-        matches = [name for name in archive.namelist() if Path(name).name == member_name]
+        matches = [name for name in archive.namelist() if host_path(name).name == member_name]
         if not matches:
             return False
         member = matches[0]

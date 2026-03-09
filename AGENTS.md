@@ -149,6 +149,7 @@ New platform-specific logic must be isolated and fail-open.
 - macOS and Windows are both in-scope host platforms for v1 work; do not document macOS as post-v1 or out of scope unless the task explicitly changes product scope.
 - Do not assume one default host OS for commands or paths.
 - Agent behavior must remain cross-platform unless a task explicitly scopes to one OS.
+- When simulating another OS in code or tests, do not instantiate raw `pathlib.Path(...)` from strings after monkeypatching `os.name`; use a host-safe path helper cached from the real host path class.
 - gate platform branches behind explicit detection
 - preserve non-target platform behavior
 - do not regress existing platforms as collateral damage
