@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import plistlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -1474,7 +1475,10 @@ def test_resolve_emulator_save_root_macos_retroarch_prefers_configured_cfg_path(
         cfg_path = retroarch_root / "retroarch.cfg"
         cfg_path.write_text('savefile_directory = "portable-saves"\n', encoding="utf-8")
         config_path = temp_root / "config.toml"
-        config_path.write_text(f'[macos]\nretroarch_cfg_path = "{cfg_path}"\n', encoding="utf-8")
+        config_path.write_text(
+            f"[macos]\nretroarch_cfg_path = {json.dumps(str(cfg_path))}\n",
+            encoding="utf-8",
+        )
 
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
@@ -1498,7 +1502,10 @@ def test_resolve_system_save_root_macos_dolphin_prefers_configured_user_path(mon
         gc_root = dolphin_root / "GC"
         gc_root.mkdir(parents=True, exist_ok=True)
         config_path = temp_root / "config.toml"
-        config_path.write_text(f'[macos]\ndolphin_user_path = "{dolphin_root}"\n', encoding="utf-8")
+        config_path.write_text(
+            f"[macos]\ndolphin_user_path = {json.dumps(str(dolphin_root))}\n",
+            encoding="utf-8",
+        )
 
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
