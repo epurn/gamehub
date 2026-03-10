@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -108,7 +109,10 @@ def test_build_shortcut_save_resolver_uses_payload_macos_config_overrides(monkey
         gc_root = dolphin_root / "GC"
         gc_root.mkdir(parents=True, exist_ok=True)
         config_path = temp_root / "config.toml"
-        config_path.write_text(f'[macos]\ndolphin_user_path = "{dolphin_root}"\n', encoding="utf-8")
+        config_path.write_text(
+            f"[macos]\ndolphin_user_path = {json.dumps(str(dolphin_root))}\n",
+            encoding="utf-8",
+        )
 
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
