@@ -3,13 +3,17 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any, Iterable
 
 from gamehub_common.models import LibraryIndex
 
-from ..common.platform_paths import macos_application_bundle_candidates, resolve_macos_app_bundle_executable
+from ..common.platform_paths import (
+    macos_application_bundle_candidates,
+    macos_user_applications_dir,
+    resolve_macos_app_bundle_executable,
+)
 
 winreg: ModuleType | None
 try:
@@ -73,7 +77,40 @@ def _canonical_emulator_name(emulator_value: str) -> str:
     for canonical, aliases in _EMULATOR_COMMAND_ALIASES.items():
         if raw in aliases:
             return canonical
+    normalized = raw.replace("\\", "/")
+    path = PurePosixPath(normalized)
+    bundle_candidates = (path, *path.parents)
+    for candidate in bundle_candidates:
+        bundle_name = candidate.name.casefold()
+        if not bundle_name.endswith(".app"):
+            continue
+        for canonical, bundle_names in _MACOS_APP_BUNDLE_NAMES.items():
+            if any(bundle_name == bundle.casefold() for bundle in bundle_names):
+                return canonical
+        break
+    basename = path.name.casefold()
+    stem = path.stem.casefold()
+    for canonical, aliases in _EMULATOR_COMMAND_ALIASES.items():
+        if basename in aliases or stem in aliases:
+            return canonical
     return raw
+
+
+def resolve_macos_preferred_bundle_executable(emulator_value: str, *, user_only: bool = False) -> str | None:
+    canonical = _canonical_emulator_name(emulator_value)
+    if _OS_NAME == "nt" or _SYS_PLATFORM != "darwin":
+        return None
+    bundle_names = _MACOS_APP_BUNDLE_NAMES.get(canonical, ())
+    if not bundle_names:
+        return None
+    user_applications_dir = macos_user_applications_dir()
+    for bundle_path in macos_application_bundle_candidates(bundle_names):
+        if user_only and bundle_path.parent != user_applications_dir:
+            continue
+        executable_path = resolve_macos_app_bundle_executable(bundle_path)
+        if executable_path is not None:
+            return str(executable_path.resolve())
+    return None
 
 
 def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
@@ -176,10 +213,9 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
         return tuple(values)
 
     if _SYS_PLATFORM == "darwin":
-        for bundle_path in macos_application_bundle_candidates(_MACOS_APP_BUNDLE_NAMES.get(canonical, ())):
-            executable_path = resolve_macos_app_bundle_executable(bundle_path)
-            if executable_path is not None:
-                values.append(executable_path)
+        preferred_executable = resolve_macos_preferred_bundle_executable(emulator_value)
+        if preferred_executable is not None:
+            values.append(_safe_path(preferred_executable))
     return tuple(values)
 
 
@@ -340,6 +376,10 @@ def resolve_emulator_executable(emulator_value: str) -> str:
     raw = emulator_value.strip().strip('"')
     if not raw:
         return emulator_value
+    if _SYS_PLATFORM == "darwin" and _canonical_emulator_name(raw) == "azahar":
+        preferred_user_executable = resolve_macos_preferred_bundle_executable(raw, user_only=True)
+        if preferred_user_executable is not None:
+            return preferred_user_executable
     path = _safe_path(raw)
     if _SYS_PLATFORM == "darwin" and path.suffix.casefold() == ".app" and path.exists():
         bundle_executable = resolve_macos_app_bundle_executable(path)

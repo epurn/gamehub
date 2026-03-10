@@ -121,7 +121,7 @@
 ### Progress Snapshot
 - `M1`: Complete.
 - `M2`: In progress; `MACOS-CLI-03` launch hardening is complete and the milestone is blocked only by `MACOS-CLI-05` and `MACOS-CLI-06`.
-- `M3`: Behavior work complete through `MACOS-CLI-07`; docs and final validation remain.
+- `M3`: Behavior work complete through `MACOS-CLI-09`; docs, final validation, and macOS launcher cleanup remain.
 
 ## Story Contracts
 ### Completed Stories
@@ -143,6 +143,7 @@
 - `MACOS-CLI-05`
 - `MACOS-CLI-06`
 - `MACOS-CLI-09`
+- `MACOS-CLI-10`
 - `MACOS-DOCS-01`
 
 ### Deferred Stories
@@ -556,10 +557,54 @@
 - PR Title Template: `CLI: pin macOS Azahar launch to user Applications bundle`
 - Rollback Risk: Medium
 
+### STORY MACOS-CLI-10
+- Type: CLI
+- Status: Pending
+- Depends On: `MACOS-CLI-03`, `MACOS-CLI-09`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `tests/test_sync.py`
+  - `tests/test_shortcut_runtime.py`
+  - `docs/steam-integration.md`
+  - `docs/client-install.md`
+- Read This First:
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `tests/test_sync.py`
+  - `tests/test_shortcut_runtime.py`
+- Goal: remove the shared macOS shell launcher from managed shortcuts while aligning the macOS managed launch chain with the existing Windows/Linux shape as closely as possible, without regressing the current payload-registry contract, Apple Silicon Python handoff, wait semantics, or pre/post-launch save work.
+- Acceptance Criteria (deterministic):
+  - [ ] Managed macOS shortcuts no longer emit or depend on `steam-shortcut-launch.sh`.
+  - [ ] Steam still launches managed macOS shortcuts through `shortcut-launch` with the payload registry or an equally explicit replacement contract.
+  - [ ] The macOS managed shortcut emission/runtime path conforms to the existing Windows/Linux launch-chain structure as closely as possible; platform-specific differences are limited to what macOS app-bundle/native execution actually requires.
+  - [ ] Apple Silicon macOS still executes the managed launch path natively without Rosetta-only fallback behavior.
+  - [ ] Wait-for-exit behavior and post-exit save sync remain intact for RetroArch, Dolphin, and Azahar managed macOS launches.
+  - [ ] Windows and Linux shortcut emission/runtime behavior remain unchanged.
+- Non-Goals:
+  - Azahar-specific launch heuristics beyond what already landed in `MACOS-CLI-09`.
+  - Save-root/controller-profile changes.
+  - Replacing the payload registry with a new cross-boundary contract.
+- Implementation Notes:
+  - Keep this as a launch-chain cleanup story, not a broad macOS shortcut redesign.
+  - Prefer reusing the same `shortcut-launch` entry model and overall control flow that Windows/Linux already use; only retain macOS-specific divergence where bundle launch/runtime semantics require it.
+  - If Steam still needs an intermediary on macOS, prefer a non-shell path and keep the diff scoped to managed shortcut emission/runtime.
+  - Preserve the safety properties that motivated the current shell wrapper: deterministic payload lookup, arm64 execution, and save-sync/wait coordination.
+- Tests Required (exact locations / names):
+  - `tests/test_sync.py::test_build_shortcut_specs_macos_managed_launch_does_not_emit_shell_launcher`
+  - `tests/test_shortcut_runtime.py::test_run_target_macos_managed_launch_without_shell_wrapper_preserves_wait_behavior`
+  - existing affected coverage in `tests/test_sync.py` and `tests/test_shortcut_runtime.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_sync.py tests/test_shortcut_runtime.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-10 from PLANS/mac-support. Stay within the explicit scope and remove the shared macOS shell launcher from managed shortcuts, conforming to the Windows/Linux managed launch shape as much as possible while preserving any macOS-specific differences still required for correct behavior.`
+- PR Title Template: `CLI: remove macOS managed shell launcher`
+- Rollback Risk: Medium
+
 ### STORY MACOS-DOCS-01
 - Type: DOCS
 - Status: Pending
-- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`
 - Scope (explicit files/modules allowed):
   - `docs/client-install.md`
   - `docs/platform-support.md`
@@ -620,6 +665,7 @@
   - `MACOS-CLI-04` should land before `MACOS-CLI-05` and `MACOS-CLI-06` so root resolution is shared rather than duplicated.
   - `MACOS-CLI-07` depends on the config contract and emulator resolution contract but should avoid reopening save/controller/runtime files.
   - `MACOS-CLI-08` is intentionally deferred; if it is pulled in later, keep its scope limited to PCSX2-only Rosetta policy and do not widen native checks for other emulators.
+  - `MACOS-CLI-10` should land after `MACOS-CLI-09`; it is a launch-chain cleanup and should not reopen broader runtime-policy questions.
   - `MACOS-DOCS-01` lands last unless a prior story changes a public contract that cannot wait. If `MACOS-CLI-08` remains deferred, docs should continue to describe the native-only path.
 - Merge order constraints:
   - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03`
@@ -627,6 +673,7 @@
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-06`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-07`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-07` -> `MACOS-CLI-08`
+  - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03` -> `MACOS-CLI-09` -> `MACOS-CLI-10`
   - `MACOS-DOCS-01` after all behavior stories
 
 ## Manual Validation Matrix

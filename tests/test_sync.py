@@ -1956,6 +1956,11 @@ def test_build_shortcut_specs_macos_supported_apps_use_bundle_safe_wrapper_launc
             "gamehub_cli.sync.steam_stage.resolve_emulator_executable",
             lambda value: bundle_path,
         )
+        if emulator == "azahar":
+            monkeypatch.setattr(
+                "gamehub_cli.sync.steam_stage.resolve_macos_preferred_bundle_executable",
+                lambda emulator_name, user_only=False: bundle_path if user_only else None,
+            )
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "darwin")
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "/opt/homebrew/bin/python3")
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.argv", [str(wrapper_path), "sync"])
@@ -1971,6 +1976,60 @@ def test_build_shortcut_specs_macos_supported_apps_use_bundle_safe_wrapper_launc
         assert payload.macos_open_app == bundle_path.rsplit("/Contents/MacOS/", 1)[0]
         assert payload.macos_open_args == payload.target_args
         assert payload.target_exe == bundle_path
+
+
+def test_build_steam_shortcuts_macos_azahar_pins_user_applications_bundle(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-macos-azahar-pin-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=True),
+        )
+        title = TitleEntry(
+            title_id="title_azahar_user_bundle",
+            system="N3DS",
+            title_name="Pilotwings Resort",
+            title_rel_dir="roms/N3DS/Pilotwings Resort.3ds",
+            emulator="azahar",
+            launch_template='"{emulator}" "{rom}"',
+            rom=RomSpec(
+                file_id="rom_n3ds_user_bundle",
+                rel_path="roms/N3DS/Pilotwings Resort.3ds",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".3ds",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable",
+            lambda value: "/Applications/Azahar.app/Contents/MacOS/azahar-system",
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_macos_preferred_bundle_executable",
+            lambda emulator, user_only=False: (
+                "/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar" if user_only else None
+            ),
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", "/opt/homebrew/bin/python3")
+
+        specs, payload_tokens_by_ref = _build_shortcut_specs_and_payloads(index=index, config=config)
+
+        assert len(specs) == 1
+        payload = parse_shortcut_payload(payload_tokens_by_ref[title.title_id])
+        assert payload.target_exe == "/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar"
+        assert payload.macos_open_app == "/Users/tester/Applications/Azahar.app"
+        assert specs[0].launch_options == title.title_id
 
 
 def test_build_shortcut_specs_macos_uses_absolute_python_module_launcher(monkeypatch, workspace_tempdir) -> None:

@@ -29,6 +29,8 @@ _XINPUT_GAMEPAD_BACK = 0x0020
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
 _WM_CLOSE = 0x0010
 _MACOS_OPEN_EXECUTABLE = "/usr/bin/open"
+_AZAHAR_MACOS_DOCUMENT_EXTENSIONS = {".3dsx", ".cci", ".cxi", ".cia", ".3ds", ".elf", ".axf"}
+_AZAHAR_FULLSCREEN_ARGS = {"-f", "--fullscreen"}
 
 
 def warn_shortcut_runtime(message: str) -> None:
@@ -259,15 +261,74 @@ def _run_macos_bundle_target(payload: ShortcutLaunchPayload) -> int:
     app_bundle = raw_app_bundle.strip().strip('"')
     if not app_bundle:
         raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
-    command = [_MACOS_OPEN_EXECUTABLE, "-W", "-a", app_bundle]
+    command = [_MACOS_OPEN_EXECUTABLE, "-W"]
+    if "azahar" in payload.emulator:
+        command.append(app_bundle)
+    else:
+        command.extend(["-a", app_bundle])
     if payload.macos_open_args:
         command.extend(["--args", *payload.macos_open_args])
     process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
     return int(process.wait())
 
 
+def _split_macos_azahar_launch_args(payload: ShortcutLaunchPayload) -> tuple[list[str], list[str]]:
+    documents: list[str] = []
+    passthrough_args: list[str] = []
+    for arg in payload.macos_open_args or payload.target_args:
+        normalized = str(arg).strip()
+        if not normalized:
+            continue
+        if normalized in _AZAHAR_FULLSCREEN_ARGS:
+            continue
+        if Path(normalized).suffix.casefold() in _AZAHAR_MACOS_DOCUMENT_EXTENSIONS:
+            documents.append(normalized)
+            continue
+        passthrough_args.append(normalized)
+    return documents, passthrough_args
+
+
+def _run_macos_azahar_target_as_document(payload: ShortcutLaunchPayload) -> int:
+    raw_app_bundle = payload.macos_open_app
+    if raw_app_bundle is None:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    app_bundle = raw_app_bundle.strip().strip('"')
+    if not app_bundle:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    documents, passthrough_args = _split_macos_azahar_launch_args(payload)
+    if not documents:
+        raise ShortcutLaunchError("launch failed (error=missing Azahar document target)")
+    command = [_MACOS_OPEN_EXECUTABLE, "-W", "-a", app_bundle, *documents]
+    if passthrough_args:
+        command.extend(["--args", *passthrough_args])
+    process = _spawn_shortcut_process(command, cwd=None)
+    return int(process.wait())
+
+
+def _run_macos_azahar_target_direct(payload: ShortcutLaunchPayload) -> int:
+    executable = unquote_executable(payload.target_exe)
+    if not executable:
+        raise ShortcutLaunchError("launch failed (error=missing Azahar executable target)")
+    candidate = Path(executable)
+    cwd = _resolve_launch_cwd(payload)
+    if candidate.exists():
+        cwd = str(candidate.parent)
+    command = [executable, *payload.target_args]
+    process = _spawn_shortcut_process(command, cwd=cwd)
+    return int(process.wait())
+
+
 def _run_target(payload: ShortcutLaunchPayload) -> int:
     if sys.platform == "darwin" and payload.macos_open_app:
+        if "azahar" in payload.emulator:
+            try:
+                return _run_macos_azahar_target_as_document(payload)
+            except Exception as exc:
+                warn_shortcut_runtime(f"Azahar document launch failed (error={exc}); falling back to direct launch")
+            try:
+                return _run_macos_azahar_target_direct(payload)
+            except Exception as exc:
+                warn_shortcut_runtime(f"Azahar direct launch failed (error={exc}); falling back to bundle launch")
         return _run_macos_bundle_target(payload)
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
