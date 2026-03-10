@@ -268,22 +268,118 @@ def test_run_target_macos_waits_for_session_exit_before_return(monkeypatch) -> N
     assert call_order == ["popen", "wait", "returned"]
 
 
-def test_run_target_macos_uses_explicit_azahar_user_bundle_path(monkeypatch) -> None:
-    captured: dict[str, object] = {}
+def test_run_target_macos_uses_explicit_azahar_user_bundle_path(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-azahar-runtime-") as temp_root:
+        captured: dict[str, object] = {}
+        executable = temp_root / "Applications" / "Azahar.app" / "Contents" / "MacOS" / "azahar"
+        executable.parent.mkdir(parents=True, exist_ok=True)
+        executable.write_text("", encoding="utf-8")
+
+        class _Process:
+            def wait(self) -> int:
+                captured["wait_called"] = True
+                return 0
+
+        def _fake_popen(command, cwd=None, stdin=None):
+            captured["command"] = command
+            captured["cwd"] = cwd
+            captured["stdin"] = stdin
+            return _Process()
+
+        monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+        monkeypatch.setattr(runtime_module.subprocess, "Popen", _fake_popen)
+
+        exit_code = runtime_module._run_target(
+            _payload(
+                emulator="azahar",
+                target_exe=str(executable),
+                target_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+                macos_open_app=str(executable.parents[2]),
+                macos_open_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+            )
+        )
+
+        assert exit_code == 0
+        assert captured["command"] == [
+            "/usr/bin/open",
+            "-W",
+            "-a",
+            str(executable.parents[2]),
+            "/Users/tester/Games/Pilotwings Resort.3ds",
+        ]
+        assert captured["cwd"] is None
+        assert captured["stdin"] is runtime_module.subprocess.DEVNULL
+        assert captured["wait_called"] is True
+
+
+def test_run_target_macos_azahar_falls_back_to_direct_launch_when_document_launch_fails(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-azahar-runtime-fallback-") as temp_root:
+        commands: list[list[str]] = []
+        executable = temp_root / "Applications" / "Azahar.app" / "Contents" / "MacOS" / "azahar"
+        executable.parent.mkdir(parents=True, exist_ok=True)
+        executable.write_text("", encoding="utf-8")
+
+        class _Process:
+            def wait(self) -> int:
+                return 0
+
+        def _fake_spawn(command: list[str], *, cwd: str | None):
+            commands.append(command)
+            if len(commands) == 1:
+                raise runtime_module.ShortcutLaunchError("document launch boom")
+            assert cwd == str(executable.parent)
+            return _Process()
+
+        monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+        monkeypatch.setattr(runtime_module, "_spawn_shortcut_process", _fake_spawn)
+
+        exit_code = runtime_module._run_target(
+            _payload(
+                emulator="azahar",
+                target_exe=str(executable),
+                target_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+                macos_open_app=str(executable.parents[2]),
+                macos_open_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+            )
+        )
+
+        assert exit_code == 0
+        assert commands == [
+            [
+                "/usr/bin/open",
+                "-W",
+                "-a",
+                str(executable.parents[2]),
+                "/Users/tester/Games/Pilotwings Resort.3ds",
+            ],
+            [
+                str(executable),
+                "-f",
+                "/Users/tester/Games/Pilotwings Resort.3ds",
+            ],
+        ]
+
+
+def test_run_target_macos_azahar_falls_back_to_bundle_launch_when_document_and_direct_fail(monkeypatch) -> None:
+    commands: list[list[str]] = []
 
     class _Process:
         def wait(self) -> int:
-            captured["wait_called"] = True
             return 0
 
-    def _fake_popen(command, cwd=None, stdin=None):
-        captured["command"] = command
-        captured["cwd"] = cwd
-        captured["stdin"] = stdin
+    def _fake_spawn(command: list[str], *, cwd: str | None):
+        commands.append(command)
+        if len(commands) == 1:
+            raise runtime_module.ShortcutLaunchError("document launch boom")
+        if len(commands) == 2:
+            raise runtime_module.ShortcutLaunchError("direct exec boom")
+        assert cwd is None
         return _Process()
 
     monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
-    monkeypatch.setattr(runtime_module.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(runtime_module, "_spawn_shortcut_process", _fake_spawn)
 
     exit_code = runtime_module._run_target(
         _payload(
@@ -296,17 +392,28 @@ def test_run_target_macos_uses_explicit_azahar_user_bundle_path(monkeypatch) -> 
     )
 
     assert exit_code == 0
-    assert captured["command"] == [
-        "/usr/bin/open",
-        "-W",
-        "/Users/tester/Applications/Azahar.app",
-        "--args",
-        "-f",
-        "/Users/tester/Games/Pilotwings Resort.3ds",
+    assert commands == [
+        [
+            "/usr/bin/open",
+            "-W",
+            "-a",
+            "/Users/tester/Applications/Azahar.app",
+            "/Users/tester/Games/Pilotwings Resort.3ds",
+        ],
+        [
+            "/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
+            "-f",
+            "/Users/tester/Games/Pilotwings Resort.3ds",
+        ],
+        [
+            "/usr/bin/open",
+            "-W",
+            "/Users/tester/Applications/Azahar.app",
+            "--args",
+            "-f",
+            "/Users/tester/Games/Pilotwings Resort.3ds",
+        ],
     ]
-    assert captured["cwd"] is None
-    assert captured["stdin"] is runtime_module.subprocess.DEVNULL
-    assert captured["wait_called"] is True
 
 
 def test_run_target_macos_launch_failure_raises_shortcut_launch_error(monkeypatch) -> None:
