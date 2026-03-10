@@ -39,6 +39,10 @@ def _split_posix_launch_options(value: str) -> list[str]:
     return shlex.split(value, posix=True)
 
 
+def _normalize_path_tokens(values: list[str]) -> list[str]:
+    return [_normalize_path_token(value) for value in values]
+
+
 @pytest.fixture(autouse=True)
 def _default_initialized_sync_state(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.load_state", lambda _path: SyncState(bootstrap_version=1))
@@ -1974,16 +1978,17 @@ def test_build_shortcut_specs_macos_managed_launch_does_not_emit_shell_launcher(
 
         assert len(specs) == 1
         launch_parts = _split_posix_launch_options(specs[0].launch_options)
+        normalized_launch_parts = _normalize_path_tokens(launch_parts)
         assert specs[0].exe == "/usr/bin/arch"
-        assert specs[0].start_dir == "/opt/homebrew/bin"
-        assert launch_parts == [
+        assert _normalize_path_token(specs[0].start_dir) == "/opt/homebrew/bin"
+        assert normalized_launch_parts == [
             "-arm64",
             "/opt/homebrew/bin/python3",
             "-m",
             "gamehub_cli.main",
             "shortcut-launch",
             "--payload-registry",
-            str(temp_root / "shortcut_payloads.json"),
+            _normalize_path_token(str(temp_root / "shortcut_payloads.json")),
             "--payload-ref",
             title.title_id,
         ]
@@ -2105,18 +2110,19 @@ def test_build_shortcut_specs_macos_uses_absolute_python_module_launcher(monkeyp
 
         specs, _ = _build_shortcut_specs_and_payloads(index=index, config=config)
         launch_parts = _split_posix_launch_options(specs[0].launch_options)
+        normalized_launch_parts = _normalize_path_tokens(launch_parts)
 
         assert len(specs) == 1
         assert specs[0].exe == "/usr/bin/arch"
-        assert specs[0].start_dir == str(venv_bin)
-        assert launch_parts[:5] == [
+        assert _normalize_path_token(specs[0].start_dir) == _normalize_path_token(str(venv_bin))
+        assert normalized_launch_parts[:5] == [
             "-arm64",
-            str(venv_bin / "python3"),
+            _normalize_path_token(str(venv_bin / "python3")),
             "-m",
             "gamehub_cli.main",
             "shortcut-launch",
         ]
-        assert launch_parts[-2:] == ["--payload-ref", title.title_id]
+        assert normalized_launch_parts[-2:] == ["--payload-ref", title.title_id]
 
 
 def test_build_shortcut_specs_macos_prefers_virtual_env_prefix_python(monkeypatch, workspace_tempdir) -> None:
@@ -2177,12 +2183,13 @@ def test_build_shortcut_specs_macos_prefers_virtual_env_prefix_python(monkeypatc
 
         specs, _ = _build_shortcut_specs_and_payloads(index=index, config=config)
         launch_parts = _split_posix_launch_options(specs[0].launch_options)
+        normalized_launch_parts = _normalize_path_tokens(launch_parts)
 
         assert len(specs) == 1
         assert specs[0].exe == "/usr/bin/arch"
-        assert launch_parts[1] == str(interpreter_path)
-        assert launch_parts[2:5] == ["-m", "gamehub_cli.main", "shortcut-launch"]
-        assert launch_parts[-2:] == ["--payload-ref", title.title_id]
+        assert normalized_launch_parts[1] == _normalize_path_token(str(interpreter_path))
+        assert normalized_launch_parts[2:5] == ["-m", "gamehub_cli.main", "shortcut-launch"]
+        assert normalized_launch_parts[-2:] == ["--payload-ref", title.title_id]
 
 
 def test_build_shortcut_specs_macos_preserves_virtualenv_python_symlink(monkeypatch, workspace_tempdir) -> None:
@@ -2239,11 +2246,12 @@ def test_build_shortcut_specs_macos_preserves_virtualenv_python_symlink(monkeypa
 
         specs, _ = _build_shortcut_specs_and_payloads(index=index, config=config)
         launch_parts = _split_posix_launch_options(specs[0].launch_options)
+        normalized_launch_parts = _normalize_path_tokens(launch_parts)
 
         assert len(specs) == 1
         assert specs[0].exe == "/usr/bin/arch"
-        assert launch_parts[1] == str(symlink_python)
-        assert str(framework_python) not in specs[0].launch_options
+        assert normalized_launch_parts[1] == _normalize_path_token(str(symlink_python))
+        assert _normalize_path_token(str(framework_python)) not in _normalize_path_token(specs[0].launch_options)
 
 
 def test_prune_legacy_macos_shortcut_artifacts_removes_debug_launcher_dir(workspace_tempdir) -> None:
