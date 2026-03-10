@@ -238,8 +238,9 @@ def test_run_target_macos_uses_bundle_safe_open_command(monkeypatch) -> None:
     assert captured["wait_called"] is True
 
 
-def test_run_target_macos_waits_for_session_exit_before_return(monkeypatch) -> None:
+def test_run_target_macos_managed_launch_without_shell_wrapper_preserves_wait_behavior(monkeypatch) -> None:
     call_order: list[str] = []
+    captured: dict[str, object] = {}
 
     class _Process:
         def wait(self) -> int:
@@ -248,12 +249,15 @@ def test_run_target_macos_waits_for_session_exit_before_return(monkeypatch) -> N
 
     def _fake_popen(command, cwd=None, stdin=None):
         call_order.append("popen")
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["stdin"] = stdin
         return _Process()
 
     monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
     monkeypatch.setattr(runtime_module.subprocess, "Popen", _fake_popen)
 
-    exit_code = runtime_module._run_target(
+    exit_code = runtime_module._run_target_with_optional_exit_hook(
         _payload(
             emulator="dolphin",
             target_exe="/Users/tester/Applications/Dolphin.app/Contents/MacOS/DolphinQt",
@@ -266,6 +270,18 @@ def test_run_target_macos_waits_for_session_exit_before_return(monkeypatch) -> N
 
     assert exit_code == 37
     assert call_order == ["popen", "wait", "returned"]
+    assert captured["command"] == [
+        "/usr/bin/open",
+        "-W",
+        "-a",
+        "/Users/tester/Applications/Dolphin.app",
+        "--args",
+        "-b",
+        "-e",
+        "/Users/tester/Games/Super Mario Galaxy.rvz",
+    ]
+    assert captured["cwd"] is None
+    assert captured["stdin"] is runtime_module.subprocess.DEVNULL
 
 
 def test_run_target_macos_uses_explicit_azahar_user_bundle_path(monkeypatch, workspace_tempdir) -> None:

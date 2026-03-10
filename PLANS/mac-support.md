@@ -121,7 +121,7 @@
 ### Progress Snapshot
 - `M1`: Complete.
 - `M2`: In progress; `MACOS-CLI-03` launch hardening is complete and the milestone is blocked only by `MACOS-CLI-05` and `MACOS-CLI-06`.
-- `M3`: Behavior work complete through `MACOS-CLI-09`; docs, final validation, and macOS launcher cleanup remain.
+- `M3`: Behavior work complete through `MACOS-CLI-10`; docs and final validation remain.
 
 ## Story Contracts
 ### Completed Stories
@@ -130,20 +130,21 @@
 - `MACOS-CLI-03`: Complete
 - `MACOS-CLI-04`: Complete
 - `MACOS-CLI-07`: Complete
+- `MACOS-CLI-09`: Complete
+- `MACOS-CLI-10`: Complete
 
 ### Completed Hardening Notes
 - `MACOS-CLI-03` shipped additional launch hardening after the initial story landed:
   - macOS managed shortcuts now store payloads in the shortcut payload registry and pass only `title_id` through Steam.
-  - sync writes one shared macOS launcher script beside `state.json` instead of generating one launcher per title.
-  - the shared launcher forces Apple Silicon Python execution under Steam via `/usr/bin/arch -arm64` before invoking `shortcut-launch`.
+  - managed macOS Azahar launches now pin to `~/Applications/Azahar.app` when that bundle is present.
+  - macOS managed shortcuts now invoke `shortcut-launch` directly instead of emitting `steam-shortcut-launch.sh`.
+  - Apple Silicon managed launches still force native Python execution under Steam via `/usr/bin/arch -arm64` before invoking `shortcut-launch`.
   - the runtime keeps bundle-safe launch via `/usr/bin/open -W -a <App> --args ...` and still waits for app exit before post-exit save work.
-  - legacy per-title macOS launcher/debug artifacts are pruned on sync rewrite so backups stay minimal and useful.
+  - legacy macOS shell-launcher/debug artifacts are pruned on sync rewrite so backups stay minimal and useful.
 
 ### Pending Stories
 - `MACOS-CLI-05`
 - `MACOS-CLI-06`
-- `MACOS-CLI-09`
-- `MACOS-CLI-10`
 - `MACOS-DOCS-01`
 
 ### Deferred Stories
@@ -514,7 +515,7 @@
 
 ### STORY MACOS-CLI-09
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-07`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/emulators/resolution.py`
@@ -531,10 +532,10 @@
   - `tests/test_shortcut_runtime.py`
 - Goal: make managed macOS Azahar launches always target the working user-installed bundle under `~/Applications` when present, so Steam launch does not depend on Spotlight or LaunchServices choosing the right Azahar copy.
 - Acceptance Criteria (deterministic):
-  - [ ] When `~/Applications/Azahar.app` exists, emulator resolution and managed shortcut payloads pin Azahar launch to that exact bundle path rather than relying on app-name lookup or another discovered copy.
-  - [ ] Managed macOS runtime launch uses an explicit app path that reproduces the working Finder launch behavior for Azahar and still waits for process exit before post-exit save work.
-  - [ ] If the user-installed Azahar bundle is absent, existing fallback order remains deterministic (`/Applications` bundle, then PATH alias) and non-Azahar macOS emulator behavior is unchanged.
-  - [ ] Existing Windows/Linux launch behavior remains unchanged.
+  - [x] When `~/Applications/Azahar.app` exists, emulator resolution and managed shortcut payloads pin Azahar launch to that exact bundle path rather than relying on app-name lookup or another discovered copy.
+  - [x] Managed macOS runtime launch uses an explicit app path that reproduces the working Finder launch behavior for Azahar and still waits for process exit before post-exit save work.
+  - [x] If the user-installed Azahar bundle is absent, existing fallback order remains deterministic (`/Applications` bundle, then PATH alias) and non-Azahar macOS emulator behavior is unchanged.
+  - [x] Existing Windows/Linux launch behavior remains unchanged.
 - Non-Goals:
   - Azahar save-root fixes.
   - Controller binding changes.
@@ -559,7 +560,7 @@
 
 ### STORY MACOS-CLI-10
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-03`, `MACOS-CLI-09`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/sync/steam_stage.py`
@@ -575,12 +576,12 @@
   - `tests/test_shortcut_runtime.py`
 - Goal: remove the shared macOS shell launcher from managed shortcuts while aligning the macOS managed launch chain with the existing Windows/Linux shape as closely as possible, without regressing the current payload-registry contract, Apple Silicon Python handoff, wait semantics, or pre/post-launch save work.
 - Acceptance Criteria (deterministic):
-  - [ ] Managed macOS shortcuts no longer emit or depend on `steam-shortcut-launch.sh`.
-  - [ ] Steam still launches managed macOS shortcuts through `shortcut-launch` with the payload registry or an equally explicit replacement contract.
-  - [ ] The macOS managed shortcut emission/runtime path conforms to the existing Windows/Linux launch-chain structure as closely as possible; platform-specific differences are limited to what macOS app-bundle/native execution actually requires.
-  - [ ] Apple Silicon macOS still executes the managed launch path natively without Rosetta-only fallback behavior.
-  - [ ] Wait-for-exit behavior and post-exit save sync remain intact for RetroArch, Dolphin, and Azahar managed macOS launches.
-  - [ ] Windows and Linux shortcut emission/runtime behavior remain unchanged.
+  - [x] Managed macOS shortcuts no longer emit or depend on `steam-shortcut-launch.sh`.
+  - [x] Steam still launches managed macOS shortcuts through `shortcut-launch` with the payload registry or an equally explicit replacement contract.
+  - [x] The macOS managed shortcut emission/runtime path conforms to the existing Windows/Linux launch-chain structure as closely as possible; platform-specific differences are limited to what macOS app-bundle/native execution actually requires.
+  - [x] Apple Silicon macOS still executes the managed launch path natively without Rosetta-only fallback behavior.
+  - [x] Wait-for-exit behavior and post-exit save sync remain intact for RetroArch, Dolphin, and Azahar managed macOS launches.
+  - [x] Windows and Linux shortcut emission/runtime behavior remain unchanged.
 - Non-Goals:
   - Azahar-specific launch heuristics beyond what already landed in `MACOS-CLI-09`.
   - Save-root/controller-profile changes.
