@@ -13,7 +13,6 @@ from pathlib import Path, PurePosixPath
 from gamehub_common.models import LibraryIndex
 
 from ..common.config import GamehubConfig
-from ..common.fsops import backup_existing_file, replace_file
 from ..common.paths import resolve_rom_destination
 from ..common.platform_paths import (
     AZAHAR_FLATPAK_APP_ID,
@@ -66,8 +65,9 @@ _DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
 _AZAHAR_LINUX_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_LINUX_EXIT_HOOK"
 _STEAM_ALLOW_DESKTOP_CONFIG_ENV = "GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG"
 _WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar", "retroarch"}
-_MACOS_SHORTCUT_LAUNCHER_FILENAME = "steam-shortcut-launch.sh"
+_MACOS_ARCH_EXECUTABLE = "/usr/bin/arch"
 _LEGACY_MACOS_SHORTCUT_LAUNCHER_DIRNAME = "steam-shortcut-launchers"
+_LEGACY_MACOS_SHORTCUT_LAUNCHER_FILENAMES = ("steam-shortcut-launch.sh",)
 _LEGACY_MACOS_SHORTCUT_DEBUG_LOG_FILENAMES = (
     "shortcut-launch.log",
     "shortcut-launch-bootstrap.log",
@@ -528,73 +528,42 @@ def _managed_shortcut_payload_ref(spec: SteamShortcutSpec) -> str:
     return spec.title_id
 
 
-def _macos_shortcut_launcher_path(state_path: Path) -> Path:
-    return state_path.with_name(_MACOS_SHORTCUT_LAUNCHER_FILENAME)
+def _start_dir_for_launch_executable(executable: str) -> str:
+    normalized = executable.replace("\\", "/").strip().strip('"')
+    if "/" not in normalized:
+        return ""
+    return normalized.rsplit("/", 1)[0]
 
 
-def _render_macos_shortcut_launcher(
-    *,
-    state_path: Path,
-    python_exe: str,
-) -> str:
-    payload_registry = shortcut_payload_registry_path(state_path)
-    home_dir = str(Path.home())
-    command_prefix = [
-        python_exe,
-        "-m",
-        "gamehub_cli.main",
-        "shortcut-launch",
-        "--payload-registry",
-        str(payload_registry),
-        "--payload-ref",
-    ]
+def _macos_managed_shortcut_executable_and_args() -> tuple[str, list[str], str]:
+    wrapper_exe, wrapper_args = _wrapper_executable_and_args()
+    launch_exe = wrapper_exe
+    launch_args = list(wrapper_args)
+    start_dir = _start_dir_for_launch_executable(wrapper_exe)
+
     if _machine_name() in {"arm64", "aarch64"}:
-        command_prefix = ["/usr/bin/arch", "-arm64", *command_prefix]
-    command = f'{shlex.join(command_prefix)} "$1"'
-    return "\n".join(
-        (
-            "#!/bin/sh",
-            "set -eu",
-            '[ "$#" -ge 1 ]',
-            'export PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
-            f"export HOME={shlex.quote(home_dir)}",
-            "unset PYTHONHOME PYTHONPATH PYTHONEXECUTABLE __PYVENV_LAUNCHER__",
-            f"exec {command}",
-            "",
-        )
-    )
+        active_python = _resolve_active_python_interpreter()
+        if active_python is not None:
+            launch_exe = active_python
+            launch_args = ["-m", "gamehub_cli.main", "shortcut-launch"]
+            start_dir = _start_dir_for_launch_executable(active_python)
+        launch_args = ["-arm64", launch_exe, *launch_args]
+        launch_exe = _MACOS_ARCH_EXECUTABLE
 
-
-def _save_macos_shortcut_launcher_atomic(config: GamehubConfig) -> None:
-    launcher_path = _macos_shortcut_launcher_path(config.state_path)
-    launcher_path.parent.mkdir(parents=True, exist_ok=True)
-    python_exe = _resolve_active_python_interpreter() or (
-        _normalize_wrapper_candidate(str(sys.executable)) or str(sys.executable)
-    )
-    rendered = _render_macos_shortcut_launcher(
-        state_path=config.state_path,
-        python_exe=_strip_wrapping_quotes(python_exe),
-    )
-    if launcher_path.exists():
-        existing = launcher_path.read_text(encoding="utf-8")
-        if existing == rendered:
-            launcher_path.chmod(0o755)
-            return
-    backup_path = backup_existing_file(launcher_path)
-    if backup_path is not None:
-        print(f"backed up macOS shortcut launcher: {launcher_path} -> {backup_path}")
-    tmp_path = launcher_path.with_suffix(f"{launcher_path.suffix}.tmp")
-    with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(rendered)
-        handle.flush()
-        os.fsync(handle.fileno())
-    tmp_path.chmod(0o755)
-    replace_file(tmp_path, launcher_path)
-    launcher_path.chmod(0o755)
+    return launch_exe, launch_args, start_dir
 
 
 def _prune_legacy_macos_shortcut_artifacts(state_path: Path) -> tuple[Path, ...]:
     removed: list[Path] = []
+    for filename in _LEGACY_MACOS_SHORTCUT_LAUNCHER_FILENAMES:
+        candidate = state_path.with_name(filename)
+        if not candidate.exists():
+            continue
+        try:
+            candidate.unlink()
+        except OSError:
+            continue
+        removed.append(candidate)
     legacy_launcher_dir = state_path.with_name(_LEGACY_MACOS_SHORTCUT_LAUNCHER_DIRNAME)
     if legacy_launcher_dir.exists():
         try:
@@ -667,15 +636,22 @@ def _wrap_shortcut_for_managed_launch(
     payload_ref: str | None = None
     if sys.platform == "darwin" and isinstance(payload.get("macos_open_app"), str):
         payload_ref = _managed_shortcut_payload_ref(spec)
-        launcher_path = _macos_shortcut_launcher_path(config.state_path)
+        wrapper_exe, wrapper_args, start_dir = _macos_managed_shortcut_executable_and_args()
+        launch_args = [
+            *wrapper_args,
+            "--payload-registry",
+            str(shortcut_payload_registry_path(config.state_path)),
+            "--payload-ref",
+            payload_ref,
+        ]
         return (
             SteamShortcutSpec(
                 title_id=spec.title_id,
                 system=spec.system,
                 title_name=spec.title_name,
-                exe=str(launcher_path),
-                launch_options=payload_ref,
-                start_dir=str(launcher_path.parent),
+                exe=_maybe_quote_executable(wrapper_exe),
+                launch_options=_join_launch_options(launch_args),
+                start_dir=start_dir,
                 icon_path=spec.icon_path,
                 allow_desktop_config=spec.allow_desktop_config,
             ),
@@ -1023,7 +999,6 @@ def apply_steam_updates(
             shortcut_payload_registry_path(config.state_path),
             payload_tokens_by_ref,
         )
-        _save_macos_shortcut_launcher_atomic(config)
     shortcut_result = upsert_shortcuts(context, shortcut_specs)
     if sys.platform == "darwin":
         removed_paths = _prune_legacy_macos_shortcut_artifacts(config.state_path)
