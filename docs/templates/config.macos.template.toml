@@ -32,9 +32,10 @@ emulator_install_backend = "auto"
 # emulator_install_command = "brew install --cask {package}"
 
 # Optional macOS path hints (uncomment as needed):
-# RetroArch config is still tracked separately from its runtime/system roots.
-# retroarch_cfg_path = "~/Library/Application Support/RetroArch/retroarch.cfg"
-# retroarch_system_dir = "~/Library/Application Support/RetroArch/system"
+# RetroArch config/save discovery checks ~/Documents/RetroArch first, then
+# ~/Library/Application Support/RetroArch.
+# retroarch_cfg_path = "~/Documents/RetroArch/retroarch.cfg"
+# retroarch_system_dir = "~/Documents/RetroArch/system"
 # retroarch_cores_dir = "~/Library/Application Support/RetroArch/cores"
 # retroarch_info_dir = "~/Library/Application Support/RetroArch/info"
 # retroarch_cores_base_url = "https://example.invalid/apple-silicon/"

@@ -82,6 +82,18 @@ def macos_retroarch_root() -> Path:
     return macos_application_support_root() / "RetroArch"
 
 
+def macos_retroarch_documents_root() -> Path:
+    return _safe_home_path() / "Documents" / "RetroArch"
+
+
+def macos_retroarch_root_candidates() -> list[Path]:
+    values = [macos_retroarch_documents_root(), macos_retroarch_root()]
+    existing = [value for value in values if value.exists()]
+    if existing:
+        return unique_paths([*existing, *values])
+    return unique_paths(values)
+
+
 def macos_pcsx2_root() -> Path:
     return macos_application_support_root() / "PCSX2"
 
@@ -200,7 +212,8 @@ def retroarch_cfg_candidates(
 
     if current_os_name != "nt":
         if current_sys_platform == "darwin":
-            values.append(macos_retroarch_root() / "retroarch.cfg")
+            for root in macos_retroarch_root_candidates():
+                values.append(root / "retroarch.cfg")
             return unique_paths(values)
 
         home = _safe_home_path()

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import gamehub_cli.emulators.save_resolution as save_resolution_module
 import gamehub_cli.shortcuts.save_session as launch_module
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.common.shortcut_payload import ShortcutLaunchPayload
@@ -98,6 +100,40 @@ def test_ensure_managed_memory_card_paths_macos_uses_application_support_cfg(mon
         text = (retroarch_root / "retroarch-core-options.cfg").read_text(encoding="utf-8")
         assert 'swanstation_MemoryCard1Path = "GH_title_psx_macos_1.mcd"' in text
         assert 'swanstation_MemoryCard2Path = "GH_title_psx_macos_2.mcd"' in text
+
+
+def test_build_shortcut_save_resolver_uses_payload_macos_config_overrides(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-shortcut-macos-save-") as temp_root:
+        home = temp_root / "home"
+        dolphin_root = temp_root / "custom-dolphin"
+        gc_root = dolphin_root / "GC"
+        gc_root.mkdir(parents=True, exist_ok=True)
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            f"[macos]\ndolphin_user_path = {json.dumps(str(dolphin_root))}\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="dolphin",
+            target_exe="/Applications/Dolphin.app/Contents/MacOS/Dolphin",
+            target_args=(),
+            config_path=str(config_path),
+            title_id="title_gc_macos",
+            system="GC",
+            rom_rel_path="roms/GC/F-Zero GX.iso",
+        )
+
+        resolver = launch_module.build_shortcut_save_resolver(payload)
+        resolved = save_resolution_module.resolve_system_save_root("GC", resolve_executable=resolver)
+
+        assert resolved == gc_root
 
 
 def test_snapshot_exact_binding_tracks_remote_missing_local_file(monkeypatch, workspace_tempdir) -> None:

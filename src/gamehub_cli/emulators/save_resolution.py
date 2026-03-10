@@ -10,6 +10,7 @@ from typing import Callable, Literal, Mapping, cast
 from gamehub_common.ids import make_save_binding_id, make_save_id, sha256_file
 from gamehub_common.models import SaveBindingLocalRoot, SaveBindingSpec, SaveKind, SaveSpec
 
+from ..common.config import GamehubConfig
 from ..common.paths import normalized_local_path as _normalized_local_path
 from ..common.platform_paths import (
     AZAHAR_FLATPAK_APP_ID as _AZAHAR_FLATPAK_APP_ID,
@@ -30,7 +31,7 @@ from ..common.platform_paths import (
     macos_azahar_root,
     macos_dolphin_root,
     macos_pcsx2_root,
-    macos_retroarch_root,
+    macos_retroarch_root_candidates,
     retroarch_cfg_candidates,
     unique_paths,
 )
@@ -108,8 +109,13 @@ def _resolve_retroarch_cfg_path_value(raw: str, *, cfg_path: Path) -> Path:
 
 
 def _retroarch_cfg_candidates(resolve_executable: Callable[[str], str]) -> tuple[Path, ...]:
+    explicit_cfg_path: Path | None = None
+    resolver_config = _resolver_config(resolve_executable)
+    if resolver_config is not None and _SYS_PLATFORM == "darwin":
+        explicit_cfg_path = resolver_config.macos.retroarch_cfg_path
     return tuple(
         retroarch_cfg_candidates(
+            explicit_cfg_path=explicit_cfg_path,
             resolve_emulator_executable=resolve_executable,
             os_name=_OS_NAME,
             sys_platform=_SYS_PLATFORM,
@@ -120,6 +126,11 @@ def _retroarch_cfg_candidates(resolve_executable: Callable[[str], str]) -> tuple
 def _existing_dir(path: Path) -> Path | None:
     normalized = _normalized_local_path(path)
     return normalized if normalized.exists() else None
+
+
+def _resolver_config(resolve_executable: Callable[[str], str]) -> GamehubConfig | None:
+    config = getattr(resolve_executable, "_gamehub_config", None)
+    return config if isinstance(config, GamehubConfig) else None
 
 
 def _retroarch_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
@@ -146,7 +157,11 @@ def _retroarch_save_root(resolve_executable: Callable[[str], str]) -> Path | Non
             return _existing_dir(_normalized_local_path(appdata) / "RetroArch" / "saves")
         return None
     if _SYS_PLATFORM == "darwin":
-        return _existing_dir(macos_retroarch_root() / "saves")
+        for root in macos_retroarch_root_candidates():
+            existing = _existing_dir(root / "saves")
+            if existing is not None:
+                return existing
+        return None
 
     home = _normalized_local_path(Path.home())
     return _existing_dir(home / ".config" / "retroarch" / "saves")
@@ -154,6 +169,13 @@ def _retroarch_save_root(resolve_executable: Callable[[str], str]) -> Path | Non
 
 def _retroarch_system_roots(resolve_executable: Callable[[str], str]) -> tuple[Path, ...]:
     values: list[Path] = []
+    resolver_config = _resolver_config(resolve_executable)
+    if (
+        resolver_config is not None
+        and _SYS_PLATFORM == "darwin"
+        and resolver_config.macos.retroarch_system_dir is not None
+    ):
+        values.append(_normalized_local_path(resolver_config.macos.retroarch_system_dir))
     for cfg_path in _retroarch_cfg_candidates(resolve_executable=resolve_executable):
         cfg = _parse_simple_kv_config(cfg_path)
         system_dir = cfg.get("system_directory", "").strip()
@@ -169,7 +191,8 @@ def _retroarch_system_roots(resolve_executable: Callable[[str], str]) -> tuple[P
         if appdata:
             values.append(_normalized_local_path(appdata) / "RetroArch" / "system")
     elif _SYS_PLATFORM == "darwin":
-        values.append(macos_retroarch_root() / "system")
+        for root in macos_retroarch_root_candidates():
+            values.append(root / "system")
     else:
         home = _normalized_local_path(Path.home())
         values.append(home / ".config" / "retroarch" / "system")
@@ -180,8 +203,9 @@ def _retroarch_system_roots(resolve_executable: Callable[[str], str]) -> tuple[P
     return tuple(deduped)
 
 
-def _pcsx2_ini_candidates() -> tuple[Path, ...]:
+def _pcsx2_ini_candidates(resolve_executable: Callable[[str], str] = resolve_emulator_executable) -> tuple[Path, ...]:
     values: list[Path] = []
+    resolver_config = _resolver_config(resolve_executable)
     if _OS_NAME == "nt":
         appdata = os.environ.get("APPDATA")
         if appdata:
@@ -198,6 +222,8 @@ def _pcsx2_ini_candidates() -> tuple[Path, ...]:
             values.append(home / "Documents" / "PCSX2" / "inis" / "PCSX2.ini")
             values.append(home / "Documents" / "PCSX2" / "PCSX2.ini")
     elif _SYS_PLATFORM == "darwin":
+        if resolver_config is not None and resolver_config.macos.pcsx2_ini_path is not None:
+            values.append(resolver_config.macos.pcsx2_ini_path)
         values.append(macos_pcsx2_root() / "inis" / "PCSX2.ini")
         values.append(macos_pcsx2_root() / "PCSX2.ini")
     else:
@@ -226,7 +252,7 @@ def _pcsx2_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
         return _existing_dir(home / ".var" / "app" / _PCSX2_FLATPAK_APP_ID / "config" / "PCSX2" / "memcards")
 
     if _OS_NAME == "nt":
-        for ini_path in _pcsx2_ini_candidates():
+        for ini_path in _pcsx2_ini_candidates(resolve_executable):
             parsed = _parse_simple_kv_config(ini_path)
             memcards_value = (
                 parsed.get("memorycards")
@@ -250,6 +276,18 @@ def _pcsx2_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
             return _existing_dir(_normalized_local_path(documents) / "Documents" / "PCSX2" / "memcards")
         return None
     if _SYS_PLATFORM == "darwin":
+        for ini_path in _pcsx2_ini_candidates(resolve_executable):
+            parsed = _parse_simple_kv_config(ini_path)
+            memcards_value = (
+                parsed.get("memorycards")
+                or parsed.get("folders.memorycards")
+                or parsed.get("folders/memorycards")
+                or ""
+            ).strip()
+            if memcards_value:
+                configured = _existing_dir(_resolve_pcsx2_folder_path(memcards_value, ini_path=ini_path))
+                if configured is not None:
+                    return configured
         return _existing_dir(macos_pcsx2_root() / "memcards")
 
     home = _normalized_local_path(Path.home())
@@ -291,6 +329,11 @@ def _dolphin_data_root(resolve_executable: Callable[[str], str]) -> Path | None:
                 return existing
         return None
     if _SYS_PLATFORM == "darwin":
+        resolver_config = _resolver_config(resolve_executable)
+        if resolver_config is not None and resolver_config.macos.dolphin_user_path is not None:
+            configured = _existing_dir(resolver_config.macos.dolphin_user_path)
+            if configured is not None:
+                return configured
         return _existing_dir(macos_dolphin_root())
 
     home = _normalized_local_path(Path.home())

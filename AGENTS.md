@@ -150,6 +150,7 @@ New platform-specific logic must be isolated and fail-open.
 - Do not assume one default host OS for commands or paths.
 - Agent behavior must remain cross-platform unless a task explicitly scopes to one OS.
 - When simulating another OS in code or tests, do not instantiate raw `pathlib.Path(...)` from strings after monkeypatching `os.name`; use a host-safe path helper cached from the real host path class.
+- When writing config fixtures in tests, do not interpolate raw `Path` values directly into quoted TOML/JSON strings; encode them with a serializer such as `json.dumps(str(path))` so Windows backslashes stay valid.
 - Wrap optional host-specific stdlib APIs (for example `os.uname`) behind module-local helpers before mocking them in tests.
 - gate platform branches behind explicit detection
 - preserve non-target platform behavior
@@ -188,6 +189,7 @@ Tests should verify behavior, not just happy paths:
 - positive and negative paths
 - idempotency where config or files are mutated
 - platform-specific branches when added
+- cross-platform fixture correctness when tests serialize host paths into config files
 
 Required quality gates before calling work done:
 

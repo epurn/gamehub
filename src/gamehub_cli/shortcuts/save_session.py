@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 from gamehub_common.ids import make_save_id
 from gamehub_common.models import LibraryIndex, SaveBindingCatalog, SaveBindingSpec, SaveSpec
 
-from ..common.config import GamehubConfig
+from ..common.config import GamehubConfig, load_config
 from ..common.config_edit import upsert_simple_cfg_key
 from ..common.fsops import backup_existing_file
 from ..common.save_sync import (
@@ -143,10 +143,20 @@ def _shortcut_flatpak_app_id(payload: ShortcutLaunchPayload) -> str | None:
     return None
 
 
+def _shortcut_resolver_config(payload: ShortcutLaunchPayload) -> GamehubConfig | None:
+    if not payload.config_path:
+        return None
+    try:
+        return load_config(Path(payload.config_path).expanduser())
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def build_shortcut_save_resolver(payload: ShortcutLaunchPayload) -> Callable[[str], str]:
     target_exe = unquote_executable(payload.target_exe).strip()
     payload_emulator = payload.emulator.casefold()
     flatpak_app_id = _shortcut_flatpak_app_id(payload)
+    resolver_config = _shortcut_resolver_config(payload)
     if not target_exe:
         return resolve_emulator_executable
 
@@ -168,6 +178,8 @@ def build_shortcut_save_resolver(payload: ShortcutLaunchPayload) -> Callable[[st
             return target_exe
         return resolve_emulator_executable(name)
 
+    if resolver_config is not None:
+        setattr(_resolve, "_gamehub_config", resolver_config)
     return _resolve
 
 

@@ -72,8 +72,8 @@ emulator_install_backend = "auto"
 emulator_install_command = "brew install --cask {package}"
 
 # Optional macOS path hints (all optional)
-retroarch_cfg_path = "~/Library/Application Support/RetroArch/retroarch.cfg"
-retroarch_system_dir = "~/Library/Application Support/RetroArch/system"
+retroarch_cfg_path = "~/Documents/RetroArch/retroarch.cfg"
+retroarch_system_dir = "~/Documents/RetroArch/system"
 retroarch_cores_dir = "~/Library/Application Support/RetroArch/cores"
 retroarch_info_dir = "~/Library/Application Support/RetroArch/info"
 retroarch_cores_base_url = "https://example.invalid/apple-silicon/"
@@ -235,6 +235,7 @@ Linux PS2 note:
 - PCSX2 controller bindings and hotkeys are managed at launch via controller profiles when `launch_autoconfig` is enabled.
 
 RetroArch note:
+- On macOS, config/save discovery checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`.
 - When a RetroArch config file is discovered (`retroarch.cfg` candidates or explicit override), GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) and `all_users_control_menu = "true"` for controller quick-menu access.
 - On Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`.
 - On Linux, when RetroArch resolves to Flatpak, config discovery prefers Flatpak `retroarch.cfg` before native `~/.config/retroarch/retroarch.cfg`.

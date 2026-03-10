@@ -107,8 +107,8 @@
   - New env overrides:
     - `GAMEHUB_MACOS_EMULATOR_INSTALL_BACKEND`
     - `GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND`
-  - `steam.steam_exe` accepts either a `.app` bundle path or the inner executable path on macOS and normalizes internally.
-  - macOS managed shortcuts use app-bundle-safe launch semantics so Apple Silicon apps start natively and the wrapper can still wait for session exit.
+- `steam.steam_exe` accepts either a `.app` bundle path or the inner executable path on macOS and normalizes internally.
+  - macOS managed shortcuts use a shared launcher script plus payload registry, preserving app-bundle-safe launch semantics so Apple Silicon apps start natively and the wrapper can still wait for session exit.
 - Cross-boundary implications:
   - No `gamehub_common` or server changes are expected.
   - If a story discovers a missing shared contract, do not implement around it silently; freeze the new contract in this plan first.
@@ -120,7 +120,7 @@
 
 ### Progress Snapshot
 - `M1`: Complete.
-- `M2`: In progress; blocked only by `MACOS-CLI-05` and `MACOS-CLI-06`.
+- `M2`: In progress; `MACOS-CLI-03` launch hardening is complete and the milestone is blocked only by `MACOS-CLI-05` and `MACOS-CLI-06`.
 - `M3`: Behavior work complete through `MACOS-CLI-07`; docs and final validation remain.
 
 ## Story Contracts
@@ -131,9 +131,18 @@
 - `MACOS-CLI-04`: Complete
 - `MACOS-CLI-07`: Complete
 
+### Completed Hardening Notes
+- `MACOS-CLI-03` shipped additional launch hardening after the initial story landed:
+  - macOS managed shortcuts now store payloads in the shortcut payload registry and pass only `title_id` through Steam.
+  - sync writes one shared macOS launcher script beside `state.json` instead of generating one launcher per title.
+  - the shared launcher forces Apple Silicon Python execution under Steam via `/usr/bin/arch -arm64` before invoking `shortcut-launch`.
+  - the runtime keeps bundle-safe launch via `/usr/bin/open -W -a <App> --args ...` and still waits for app exit before post-exit save work.
+  - legacy per-title macOS launcher/debug artifacts are pruned on sync rewrite so backups stay minimal and useful.
+
 ### Pending Stories
 - `MACOS-CLI-05`
 - `MACOS-CLI-06`
+- `MACOS-CLI-09`
 - `MACOS-DOCS-01`
 
 ### Deferred Stories
@@ -251,13 +260,15 @@
   - [x] Managed shortcut payloads preserve enough structured information for the runtime wrapper to launch bundle apps natively and still know which emulator/session is being managed.
   - [x] macOS launch-option parsing and joining use POSIX-safe behavior and do not regress current Windows quoting behavior.
   - [x] The shortcut runtime waits for the launched macOS app session to exit before post-exit save sync runs.
+  - [x] On Apple Silicon macOS, managed shortcuts bootstrap native Python execution under Steam without per-title launcher churn.
   - [x] Existing non-mac shortcut wrapper behavior remains unchanged.
 - Non-Goals:
   - Steam process lifecycle.
   - Emulator discovery/install.
   - Save root resolution changes.
 - Implementation Notes:
-  - `open -W -a <App> --args ...` is the default design direction unless implementation reveals a more reliable bundle-safe equivalent.
+  - Final implementation uses a shared macOS launcher script plus the shortcut payload registry so Steam launch options stay short and deterministic.
+  - `open -W -a <App> --args ...` remains the bundle-safe runtime launch contract.
   - If the payload contract must expand for macOS, keep it explicit and backwards-compatible in `parse_shortcut_payload`.
   - Preserve existing fail-open runtime warnings and save-session ordering.
 - Tests Required (exact locations / names):
@@ -500,10 +511,55 @@
 - PR Title Template: `CLI: add opt-in macOS Rosetta support for PCSX2`
 - Rollback Risk: High
 
+### STORY MACOS-CLI-09
+- Type: CLI
+- Status: Pending
+- Depends On: `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-07`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/emulators/resolution.py`
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `tests/test_emulators.py`
+  - `tests/test_shortcut_runtime.py`
+  - `tests/test_sync.py`
+  - `docs/client-install.md`
+- Read This First:
+  - `src/gamehub_cli/emulators/resolution.py`
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `tests/test_shortcut_runtime.py`
+- Goal: make managed macOS Azahar launches always target the working user-installed bundle under `~/Applications` when present, so Steam launch does not depend on Spotlight or LaunchServices choosing the right Azahar copy.
+- Acceptance Criteria (deterministic):
+  - [ ] When `~/Applications/Azahar.app` exists, emulator resolution and managed shortcut payloads pin Azahar launch to that exact bundle path rather than relying on app-name lookup or another discovered copy.
+  - [ ] Managed macOS runtime launch uses an explicit app path that reproduces the working Finder launch behavior for Azahar and still waits for process exit before post-exit save work.
+  - [ ] If the user-installed Azahar bundle is absent, existing fallback order remains deterministic (`/Applications` bundle, then PATH alias) and non-Azahar macOS emulator behavior is unchanged.
+  - [ ] Existing Windows/Linux launch behavior remains unchanged.
+- Non-Goals:
+  - Azahar save-root fixes.
+  - Controller binding changes.
+  - Rosetta support or architecture fallback.
+  - General macOS LaunchServices refactors beyond what is required to pin Azahar to the working bundle path.
+- Implementation Notes:
+  - Reuse the macOS bundle-resolution helpers from `MACOS-CLI-04`; do not add a second app-discovery path for Azahar.
+  - Prefer explicit bundle-path launch over app-name launch when building the managed payload/runtime command for macOS Azahar.
+  - Treat `~/Applications/Azahar.app` as the canonical working install when present, even if another Azahar copy is discoverable elsewhere.
+  - Preserve the existing shared launcher/payload-registry contract from `MACOS-CLI-03`.
+- Tests Required (exact locations / names):
+  - `tests/test_emulators.py::test_resolve_emulator_executable_macos_prefers_user_applications_bundle`
+  - `tests/test_sync.py::test_build_steam_shortcuts_macos_azahar_pins_user_applications_bundle`
+  - `tests/test_shortcut_runtime.py::test_run_target_macos_uses_explicit_azahar_user_bundle_path`
+  - existing affected coverage in `tests/test_emulators.py`, `tests/test_shortcut_runtime.py`, and `tests/test_sync.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_emulators.py tests/test_shortcut_runtime.py tests/test_sync.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-09 from PLANS/mac-support. Stay within the explicit scope and make managed macOS Azahar launch pin to the working ~/Applications bundle path when present, preserving wrapper wait behavior and leaving non-Azahar platforms unchanged.`
+- PR Title Template: `CLI: pin macOS Azahar launch to user Applications bundle`
+- Rollback Risk: Medium
+
 ### STORY MACOS-DOCS-01
 - Type: DOCS
 - Status: Pending
-- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`
 - Scope (explicit files/modules allowed):
   - `docs/client-install.md`
   - `docs/platform-support.md`
