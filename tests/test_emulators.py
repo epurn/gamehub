@@ -1168,12 +1168,12 @@ def test_resolve_emulator_executable_macos_prefers_user_applications_bundle(monk
     with workspace_tempdir("gamehub-emulator-resolve-macos-") as temp_root:
         home = temp_root / "home"
         user_executable = _write_macos_app_bundle(
-            home / "Applications" / "RetroArch.app",
-            "retroarch-metal",
+            home / "Applications" / "Azahar.app",
+            "azahar",
         )
-        _write_macos_app_bundle(
-            temp_root / "Applications" / "RetroArch.app",
-            "retroarch-system",
+        system_executable = _write_macos_app_bundle(
+            temp_root / "Applications" / "Azahar.app",
+            "azahar-system",
         )
 
         monkeypatch.setattr("gamehub_cli.emulators.resolution._OS_NAME", "posix")
@@ -1181,15 +1181,18 @@ def test_resolve_emulator_executable_macos_prefers_user_applications_bundle(monk
         monkeypatch.setattr("gamehub_cli.emulators.resolution.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr(
+            "gamehub_cli.common.platform_paths.macos_user_applications_dir", lambda: home / "Applications"
+        )
+        monkeypatch.setattr(
             "gamehub_cli.emulators.resolution.shutil.which",
-            lambda cmd: "/opt/homebrew/bin/retroarch",
+            lambda cmd: "/opt/homebrew/bin/azahar",
         )
         monkeypatch.setattr(
             "gamehub_cli.common.platform_paths.macos_system_applications_dir",
             lambda: temp_root / "Applications",
         )
 
-        resolved = resolve_emulator_executable("retroarch")
+        resolved = resolve_emulator_executable(str(system_executable))
 
         assert resolved == str(user_executable)
 
@@ -1209,6 +1212,9 @@ def test_resolve_emulator_executable_macos_falls_back_to_system_applications_bun
         monkeypatch.setattr("gamehub_cli.emulators.resolution._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.emulators.resolution.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.common.platform_paths.macos_user_applications_dir", lambda: home / "Applications"
+        )
         monkeypatch.setattr(
             "gamehub_cli.emulators.resolution.shutil.which",
             lambda cmd: "/opt/homebrew/bin/dolphin",

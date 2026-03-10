@@ -268,6 +268,47 @@ def test_run_target_macos_waits_for_session_exit_before_return(monkeypatch) -> N
     assert call_order == ["popen", "wait", "returned"]
 
 
+def test_run_target_macos_uses_explicit_azahar_user_bundle_path(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _Process:
+        def wait(self) -> int:
+            captured["wait_called"] = True
+            return 0
+
+    def _fake_popen(command, cwd=None, stdin=None):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["stdin"] = stdin
+        return _Process()
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", _fake_popen)
+
+    exit_code = runtime_module._run_target(
+        _payload(
+            emulator="azahar",
+            target_exe="/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
+            target_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+            macos_open_app="/Users/tester/Applications/Azahar.app",
+            macos_open_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+        )
+    )
+
+    assert exit_code == 0
+    assert captured["command"] == [
+        "/usr/bin/open",
+        "-W",
+        "/Users/tester/Applications/Azahar.app",
+        "--args",
+        "-f",
+        "/Users/tester/Games/Pilotwings Resort.3ds",
+    ]
+    assert captured["cwd"] is None
+    assert captured["stdin"] is runtime_module.subprocess.DEVNULL
+    assert captured["wait_called"] is True
+
+
 def test_run_target_macos_launch_failure_raises_shortcut_launch_error(monkeypatch) -> None:
     monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
     monkeypatch.setattr(

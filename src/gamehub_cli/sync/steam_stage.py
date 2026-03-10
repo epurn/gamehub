@@ -30,6 +30,7 @@ from ..common.shortcut_payload_registry import (
 )
 from ..controllers.detection import is_steam_deck_linux
 from ..emulators import resolve_emulator_executable
+from ..emulators.resolution import resolve_macos_preferred_bundle_executable
 from ..firmware.retroarch_cores import resolve_retroarch_paths
 from ..firmware.targets import resolve_dolphin_runtime_user_dir
 from ..steam import (
@@ -621,6 +622,11 @@ def _build_managed_shortcut_payload(
     config: GamehubConfig,
     rom_rel_path: str,
 ) -> dict[str, object]:
+    target_exe = spec.exe
+    if sys.platform == "darwin" and emulator_name.casefold() == "azahar":
+        preferred_executable = resolve_macos_preferred_bundle_executable("azahar", user_only=True)
+        if preferred_executable is not None:
+            target_exe = preferred_executable
     windows_style = _is_windows_style_runtime_path(spec.exe)
     target_args = _split_launch_options(spec.launch_options, windows_style=windows_style)
     payload: dict[str, object] = {
@@ -629,12 +635,12 @@ def _build_managed_shortcut_payload(
         "title_id": spec.title_id,
         "system": spec.system,
         "rom_rel_path": rom_rel_path,
-        "target_exe": spec.exe,
+        "target_exe": target_exe,
         "target_args": target_args,
         "start_dir": spec.start_dir,
     }
     if sys.platform == "darwin":
-        app_bundle = _macos_app_bundle_for_executable(spec.exe)
+        app_bundle = _macos_app_bundle_for_executable(target_exe)
         if app_bundle:
             payload["macos_open_app"] = app_bundle
             payload["macos_open_args"] = target_args

@@ -259,7 +259,11 @@ def _run_macos_bundle_target(payload: ShortcutLaunchPayload) -> int:
     app_bundle = raw_app_bundle.strip().strip('"')
     if not app_bundle:
         raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
-    command = [_MACOS_OPEN_EXECUTABLE, "-W", "-a", app_bundle]
+    command = [_MACOS_OPEN_EXECUTABLE, "-W"]
+    if "azahar" in payload.emulator:
+        command.append(app_bundle)
+    else:
+        command.extend(["-a", app_bundle])
     if payload.macos_open_args:
         command.extend(["--args", *payload.macos_open_args])
     process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
