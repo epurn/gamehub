@@ -19,7 +19,7 @@ from ..common.platform_paths import (
     macos_azahar_root,
     macos_dolphin_root,
     macos_pcsx2_root,
-    macos_retroarch_root,
+    macos_retroarch_root_candidates,
     parse_simple_kv_config,
     retroarch_cfg_candidates,
     unique_paths,
@@ -190,7 +190,7 @@ def resolve_retroarch_system_dirs(config: GamehubConfig | None = None) -> list[P
     if os.name == "nt" and appdata:
         values.append(_host_path(appdata) / "RetroArch" / "system")
     if sys.platform == "darwin":
-        values.append(macos_retroarch_root() / "system")
+        values.append(macos_retroarch_root_candidates()[0] / "system")
         return unique_paths(values)
     home = _safe_home_path()
     native = home / ".config" / "retroarch" / "system"

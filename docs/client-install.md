@@ -37,7 +37,7 @@ gamehub init
    - cores: `~/Library/Application Support/RetroArch/cores`
    - info: `~/Library/Application Support/RetroArch/info`
    - Apple Silicon buildbot base: `https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/`
-9. If your RetroArch config uses non-default locations, set `[macos].retroarch_cfg_path`, `[macos].retroarch_cores_dir`, `[macos].retroarch_info_dir`, or `[macos].retroarch_cores_base_url` explicitly and re-run sync.
+9. RetroArch config/save discovery checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`. If your RetroArch config uses different locations, set `[macos].retroarch_cfg_path`, `[macos].retroarch_cores_dir`, `[macos].retroarch_info_dir`, or `[macos].retroarch_cores_base_url` explicitly and re-run sync.
 10. Combined end-to-end manual validation for `MACOS-CLI-03 + MACOS-CLI-04 + MACOS-CLI-07` remains deferred; this page only documents the current install/bootstrap contract.
 11. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code still resolve to Apple Silicon or universal builds.
 

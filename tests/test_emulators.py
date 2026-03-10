@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 import gamehub_cli.emulators.install_macos as install_macos_module
+from gamehub_cli.common.config import load_config
 from gamehub_cli.emulators import ensure_emulators, resolve_emulator_executable
 from gamehub_cli.emulators.install_macos import MacOSOfficialAsset
 from gamehub_cli.emulators.save_resolution import (
@@ -1403,7 +1404,7 @@ def test_resolve_emulator_save_root_linux_flatpak_retroarch(monkeypatch) -> None
 def test_resolve_system_save_root_macos_retroarch(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
         home = temp_root / "home"
-        saves = home / "Library" / "Application Support" / "RetroArch" / "saves"
+        saves = home / "Documents" / "RetroArch" / "saves"
         saves.mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
@@ -1462,6 +1463,56 @@ def test_resolve_system_save_root_macos_azahar(monkeypatch, workspace_tempdir) -
         resolved = resolve_system_save_root("N3DS", resolve_executable=lambda _name: "")
 
         assert resolved == sdmc_root
+
+
+def test_resolve_emulator_save_root_macos_retroarch_prefers_configured_cfg_path(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = temp_root / "custom-retroarch"
+        saves = retroarch_root / "portable-saves"
+        saves.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.write_text('savefile_directory = "portable-saves"\n', encoding="utf-8")
+        config_path = temp_root / "config.toml"
+        config_path.write_text(f'[macos]\nretroarch_cfg_path = "{cfg_path}"\n', encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        def resolver(_name: str) -> str:
+            return "/Applications/RetroArch.app/Contents/MacOS/RetroArch"
+
+        setattr(resolver, "_gamehub_config", load_config(config_path))
+
+        resolved = resolve_emulator_save_root("retroarch", resolve_executable=resolver)
+
+        assert resolved == saves
+
+
+def test_resolve_system_save_root_macos_dolphin_prefers_configured_user_path(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        dolphin_root = temp_root / "custom-dolphin"
+        gc_root = dolphin_root / "GC"
+        gc_root.mkdir(parents=True, exist_ok=True)
+        config_path = temp_root / "config.toml"
+        config_path.write_text(f'[macos]\ndolphin_user_path = "{dolphin_root}"\n', encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        def resolver(_name: str) -> str:
+            return "/Applications/Dolphin.app/Contents/MacOS/Dolphin"
+
+        setattr(resolver, "_gamehub_config", load_config(config_path))
+
+        resolved = resolve_system_save_root("GC", resolve_executable=resolver)
+
+        assert resolved == gc_root
 
 
 def test_discover_local_exact_save_candidates_finds_sorted_retroarch_subdir(monkeypatch, workspace_tempdir) -> None:

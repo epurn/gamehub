@@ -178,6 +178,23 @@ def test_retroarch_cfg_candidates_prefers_flatpak_cfg_when_runtime_is_flatpak(mo
     ]
 
 
+def test_retroarch_cfg_candidates_macos_prefers_documents_root(monkeypatch) -> None:
+    home = Path("/Users/tester")
+    monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+    monkeypatch.setattr("gamehub_cli.common.platform_paths._OS_NAME", "posix")
+
+    candidates = retroarch_cfg_candidates(
+        explicit_cfg_path=None,
+        resolve_emulator_executable=lambda _name: "",
+        sys_platform="darwin",
+    )
+
+    assert candidates[:2] == [
+        home / "Documents" / "RetroArch" / "retroarch.cfg",
+        home / "Library" / "Application Support" / "RetroArch" / "retroarch.cfg",
+    ]
+
+
 def test_normalized_local_path_handles_windows_style_segments() -> None:
     normalized = normalized_local_path(r"C:\Users\Deck\Saved Games\PCSX2\memcards")
     assert normalized == Path("C:/Users/Deck/Saved Games/PCSX2/memcards")

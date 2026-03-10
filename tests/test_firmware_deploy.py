@@ -749,10 +749,12 @@ def test_resolve_retroarch_system_dirs_windows_colon_prefix(monkeypatch, workspa
         assert all("/~/" not in path.as_posix() for path in dirs)
 
 
-def test_resolve_runtime_targets_macos_use_application_support_roots(monkeypatch, workspace_tempdir) -> None:
+def test_resolve_runtime_targets_macos_use_default_retroarch_and_application_support_roots(
+    monkeypatch, workspace_tempdir
+) -> None:
     with workspace_tempdir("gamehub-firmware-macos-") as temp_root:
         home = temp_root / "home"
-        retroarch_root = home / "Library" / "Application Support" / "RetroArch"
+        retroarch_root = home / "Documents" / "RetroArch"
         pcsx2_root = home / "Library" / "Application Support" / "PCSX2"
         dolphin_root = home / "Library" / "Application Support" / "Dolphin"
         azahar_root = home / "Library" / "Application Support" / "Azahar"
