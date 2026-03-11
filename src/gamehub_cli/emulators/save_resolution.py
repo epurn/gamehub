@@ -25,6 +25,9 @@ from ..common.platform_paths import (
     RETROARCH_FLATPAK_APP_ID as _RETROARCH_FLATPAK_APP_ID,
 )
 from ..common.platform_paths import (
+    host_path as _platform_host_path,
+)
+from ..common.platform_paths import (
     is_flatpak_command as _is_flatpak_command,
 )
 from ..common.platform_paths import (
@@ -133,7 +136,7 @@ def _existing_dir(path: Path) -> Path | None:
 
 
 def _host_local_path(path: Path) -> Path:
-    return _normalized_local_path(path)
+    return _platform_host_path(os.fspath(path))
 
 
 def _resolver_config(resolve_executable: Callable[[str], str]) -> GamehubConfig | None:
