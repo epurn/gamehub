@@ -121,7 +121,7 @@
 ### Progress Snapshot
 - `M1`: Complete.
 - `M2`: In progress; `MACOS-CLI-03` launch hardening is complete and the milestone is blocked only by `MACOS-CLI-05` and `MACOS-CLI-06`.
-- `M3`: Behavior work complete through `MACOS-CLI-10`; docs and final validation remain.
+- `M3`: Behavior work complete through `MACOS-CLI-10`; docs/final validation remain, and `MACOS-CLI-11` tracks a targeted macOS RetroArch N64 black-screen remediation pass discovered during manual validation.
 
 ## Story Contracts
 ### Completed Stories
@@ -145,6 +145,7 @@
 ### Pending Stories
 - `MACOS-CLI-05`
 - `MACOS-CLI-06`
+- `MACOS-CLI-11`
 - `MACOS-DOCS-01`
 
 ### Deferred Stories
@@ -602,10 +603,54 @@
 - PR Title Template: `CLI: remove macOS managed shell launcher`
 - Rollback Risk: Medium
 
+### STORY MACOS-CLI-11
+- Type: CLI
+- Status: Pending
+- Depends On: `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-07`, `MACOS-CLI-10`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/firmware/runtime_retroarch.py`
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `tests/test_firmware_deploy.py`
+  - `tests/test_shortcut_save_session.py`
+  - `docs/config-and-state.md`
+  - `docs/client-install.md`
+- Read This First:
+  - `src/gamehub_cli/firmware/runtime_retroarch.py`
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `tests/test_firmware_deploy.py`
+  - `tests/test_shortcut_save_session.py`
+- Goal: diagnose and remediate the macOS RetroArch N64 black-screen launch issue on Apple Silicon, preferring a deterministic config/core-options fix that GAMEHUB can manage safely.
+- Acceptance Criteria (deterministic):
+  - [ ] Manual validation for a managed macOS RetroArch N64 launch no longer produces the current "audio works, video stays black" failure on the tested Apple Silicon baseline.
+  - [ ] Any required RetroArch or core-option mutation is scoped narrowly to the N64/macOS case and continues to follow backup + temp write + atomic replace + explicit log rules.
+  - [ ] Repeated sync/launch passes remain deterministic and idempotent; no unrelated RetroArch keys churn after the first converged write.
+  - [ ] Existing non-N64 RetroArch behavior and Windows/Linux RetroArch behavior remain unchanged.
+  - [ ] If a safe config-only remediation is not reliable enough, GAMEHUB fails clearly for managed macOS N64 launches instead of silently preserving the broken black-screen path.
+- Non-Goals:
+  - Broad RetroArch video-driver redesign.
+  - Non-N64 core tuning or per-game hacks beyond the tested macOS N64 path.
+  - Rosetta fallback or alternate emulator support for N64.
+  - Reopening general Steam shortcut launch semantics outside the N64-specific diagnosis.
+- Implementation Notes:
+  - Start with the smallest plausible operator-safe remediation: RetroArch video-driver/default runtime keys and `retroarch-core-options.cfg` values for the N64 core path already provisioned by GAMEHUB.
+  - Prefer a config/core-options solution over launch-argument surgery. If launch-time overrides outside the listed scope become necessary, stop and update this plan first.
+  - Keep the fix explicit and testable; do not add heuristics that silently vary by title name or ROM content.
+  - Preserve existing save-session and runtime mutation guarantees while adding any N64-specific overrides.
+- Tests Required (exact locations / names):
+  - `tests/test_firmware_deploy.py::test_configure_retroarch_runtime_macos_applies_n64_video_remediation`
+  - `tests/test_shortcut_save_session.py::test_run_shortcut_prelaunch_save_sync_macos_n64_preserves_retroarch_n64_runtime_override_idempotently`
+  - existing affected coverage in `tests/test_firmware_deploy.py` and `tests/test_shortcut_save_session.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_firmware_deploy.py tests/test_shortcut_save_session.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-11 from PLANS/mac-support. Stay within the explicit scope and remediate the managed macOS RetroArch N64 black-screen issue with a deterministic config/core-options fix if possible; otherwise fail clearly instead of preserving the broken path.`
+- PR Title Template: `CLI: remediate macOS RetroArch N64 black screen`
+- Rollback Risk: Medium
+
 ### STORY MACOS-DOCS-01
 - Type: DOCS
 - Status: Pending
-- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`
 - Scope (explicit files/modules allowed):
   - `docs/client-install.md`
   - `docs/platform-support.md`
@@ -652,6 +697,7 @@
   - Runtime lane:
     - `MACOS-CLI-04`
     - `MACOS-CLI-05`
+    - `MACOS-CLI-11`
   - Controller lane:
     - `MACOS-CLI-06`
   - Installer lane:
@@ -667,6 +713,7 @@
   - `MACOS-CLI-07` depends on the config contract and emulator resolution contract but should avoid reopening save/controller/runtime files.
   - `MACOS-CLI-08` is intentionally deferred; if it is pulled in later, keep its scope limited to PCSX2-only Rosetta policy and do not widen native checks for other emulators.
   - `MACOS-CLI-10` should land after `MACOS-CLI-09`; it is a launch-chain cleanup and should not reopen broader runtime-policy questions.
+  - `MACOS-CLI-11` is a targeted follow-up from manual validation; keep it narrowly focused on the macOS RetroArch N64 black-screen failure and do not widen it into a general RetroArch graphics policy rewrite.
   - `MACOS-DOCS-01` lands last unless a prior story changes a public contract that cannot wait. If `MACOS-CLI-08` remains deferred, docs should continue to describe the native-only path.
 - Merge order constraints:
   - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03`
@@ -674,6 +721,7 @@
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-06`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-07`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-07` -> `MACOS-CLI-08`
+  - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-05` -> `MACOS-CLI-07` -> `MACOS-CLI-10` -> `MACOS-CLI-11`
   - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03` -> `MACOS-CLI-09` -> `MACOS-CLI-10`
   - `MACOS-DOCS-01` after all behavior stories
 
@@ -693,6 +741,7 @@
   - no duplicate shortcuts or repeated config churn
 - Managed launch:
   - launch one RetroArch title from Steam
+  - launch one RetroArch N64 title from Steam and verify video output is present, not audio-only black screen
   - launch one Dolphin title from Steam
   - launch one Azahar title from Steam
   - wrapper waits for emulator exit before post-exit save sync

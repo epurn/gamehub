@@ -6,9 +6,8 @@ from pathlib import Path
 
 from ..common.config import GamehubConfig
 from ..common.config_edit import parse_qsettings_pairs, read_qsettings_key, upsert_qsettings_key
-from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID
+from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID, macos_azahar_qt_config_candidates
 from ..firmware.pcsx2_ini import read_ini_lines, write_ini_atomic
-from ..firmware.targets import resolve_azahar_runtime_user_dir
 from .profiles import PROFILE_KBM, load_profile_file
 from .sdl_guid import (
     _azahar_detect_sdl_identity,
@@ -46,7 +45,11 @@ def _default_azahar_qt_config_path() -> Path:
     if os.name == "nt" and appdata:
         return Path(appdata) / "Azahar" / "config" / "qt-config.ini"
     if sys.platform == "darwin":
-        return resolve_azahar_runtime_user_dir() / "config" / _AZAHAR_QT_CONFIG_FILENAME
+        candidates = macos_azahar_qt_config_candidates()
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
     home = Path.home()
     flatpak_qt_candidates = (
         home / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu" / _AZAHAR_QT_CONFIG_FILENAME,
@@ -67,8 +70,11 @@ def _azahar_target_config_paths() -> list[Path]:
     if os.name == "nt" and appdata:
         return [Path(appdata) / "Azahar" / "config" / _AZAHAR_QT_CONFIG_FILENAME]
     if sys.platform == "darwin":
-        candidate = resolve_azahar_runtime_user_dir() / "config" / _AZAHAR_QT_CONFIG_FILENAME
-        return [candidate] if candidate.exists() else [candidate]
+        candidates = macos_azahar_qt_config_candidates()
+        existing = [candidate for candidate in candidates if candidate.exists()]
+        if existing:
+            return existing
+        return [candidates[0]]
 
     home = Path.home()
     candidates = [

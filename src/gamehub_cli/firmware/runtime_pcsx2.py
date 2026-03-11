@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from typing import Callable
 
 from ..common.config import GamehubConfig
+from ..common.fsops import backup_existing_file
 from ..common.platform_paths import PCSX2_FLATPAK_APP_ID, is_flatpak_command, linux_flatpak_pcsx2_root
 from ..emulators import resolve_emulator_executable
 from .pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
 from .targets import default_pcsx2_ini_path, resolve_pcsx2_bios_dirs
+
+logger = logging.getLogger(__name__)
 
 
 def configure_pcsx2_runtime(
@@ -47,7 +51,12 @@ def configure_pcsx2_runtime(
     lines, changed_ui = upsert_ini_key(lines, "UI", "SetupWizardIncomplete", "false")
     lines, changed_bios = upsert_ini_key(lines, "Folders", "Bios", str(bios_dir_for_config))
     if changed_ui or changed_bios or not ini_path.exists():
+        if ini_path.exists():
+            backup = backup_existing_file(ini_path)
+            if backup is not None:
+                logger.info("pcsx2 runtime backup created path=%s backup=%s", ini_path, backup)
         write_ini_atomic(ini_path, lines)
+        logger.info("pcsx2 runtime config updated path=%s bios=%s", ini_path, bios_dir_for_config)
     bios_dir_for_config.mkdir(parents=True, exist_ok=True)
     if verbose:
         writer(f"pcsx2\tconfigured\t{ini_path}\tbios={bios_dir_for_config}")

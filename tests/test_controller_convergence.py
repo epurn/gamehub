@@ -67,7 +67,7 @@ def test_controller_convergence_first_apply_writes_expected_state(monkeypatch, w
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
 
         result = converge_controller_state(
             config,
@@ -100,7 +100,7 @@ def test_controller_convergence_second_apply_is_no_op(monkeypatch, workspace_tem
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         index = _pcsx2_index()
 
         converge_controller_state(
@@ -130,7 +130,7 @@ def test_controller_convergence_detects_managed_profile_drift(monkeypatch, works
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         index = _pcsx2_index()
 
         converge_controller_state(
@@ -156,7 +156,7 @@ def test_controller_convergence_apply_repairs_managed_profile_drift(monkeypatch,
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         index = _pcsx2_index()
 
         converge_controller_state(
@@ -184,7 +184,7 @@ def test_controller_convergence_does_not_overwrite_unmanaged_profile_without_mar
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         profile_file = config.library_dir / "controller_profiles" / "pcsx2" / "kbm" / "PCSX2.ini"
         profile_file.parent.mkdir(parents=True, exist_ok=True)
         profile_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")
@@ -202,7 +202,7 @@ def test_controller_convergence_force_replaces_unmanaged_profile_with_backup(mon
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         profile_file = config.library_dir / "controller_profiles" / "pcsx2" / "kbm" / "PCSX2.ini"
         profile_file.parent.mkdir(parents=True, exist_ok=True)
         profile_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")
@@ -225,7 +225,7 @@ def test_controller_convergence_force_archives_extra_unmanaged_profile_file(monk
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         extra_file = config.library_dir / "controller_profiles" / "pcsx2" / "kbm" / "custom.ini"
         extra_file.parent.mkdir(parents=True, exist_ok=True)
         extra_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")

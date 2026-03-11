@@ -79,7 +79,7 @@ retroarch_info_dir = "~/Library/Application Support/RetroArch/info"
 retroarch_cores_base_url = "https://example.invalid/apple-silicon/"
 pcsx2_ini_path = "~/Library/Application Support/PCSX2/inis/PCSX2.ini"
 pcsx2_bios_dir = "~/Library/Application Support/PCSX2/bios"
-dolphin_user_path = "~/Library/Application Support/Dolphin"
+dolphin_user_path = "~/.local/share/dolphin-emu"
 
 [controllers]
 # Launch-time controller profile application for non-RetroArch emulators.
@@ -236,6 +236,10 @@ Linux PS2 note:
 
 RetroArch note:
 - On macOS, config/save discovery checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`.
+- Deterministic RetroArch save downloads can materialize that root on first sync even before RetroArch has created the `saves/` directory tree itself.
+- When RetroArch save sorting-by-core is enabled, GAMEHUB treats the core-specific subdirectory as the canonical destination instead of a legacy root-level filename match.
+- That canonical sorted-core rule applies across RetroArch exact-file save systems that GAMEHUB manages (`GB`, `GBC`, `GBA`, `GEN_MD`, `NES`, `SNES`, `N64`, `NDS`, `PSX`) rather than only `N64`.
+- If RetroArch config evidence for sorted-core mode is missing but the save root already contains known core subdirectories (for example `mGBA`, `Gambatte`, or `Mupen64Plus-Next`), GAMEHUB infers that sorted-core layout and keeps those core-specific paths canonical.
 - When a RetroArch config file is discovered (`retroarch.cfg` candidates or explicit override), GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) and `all_users_control_menu = "true"` for controller quick-menu access.
 - On Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`.
 - On Linux, when RetroArch resolves to Flatpak, config discovery prefers Flatpak `retroarch.cfg` before native `~/.config/retroarch/retroarch.cfg`.
@@ -301,11 +305,17 @@ Linux Dolphin defaults:
 - Native runtime user dir: `~/.local/share/dolphin-emu`
 - Flatpak runtime user dir: `~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu`
 
+macOS Dolphin defaults:
+- Runtime/save discovery prefers an existing native-style `~/.local/share/dolphin-emu` root first.
+- If no existing XDG-style Dolphin root is present, GAMEHUB falls back to `~/Library/Application Support/Dolphin`.
+
 N3DS Azahar defaults:
 - No required firmware files are enforced for N3DS.
 - GAMEHUB bootstraps Azahar runtime config in:
   - Windows: `%APPDATA%/Azahar/config/qt-config.ini`
+  - macOS preferred native-style config: `~/.config/azahar-emu/qt-config.ini`
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
+- On macOS, GAMEHUB prefers an existing native-style Azahar save root `~/.local/share/azahar-emu/sdmc` before falling back to `~/Library/Application Support/Azahar/sdmc`.
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
 - Azahar controller bindings are applied at launch via controller profiles. GUID normalization is always detect-based.
 - GUID discovery order (Linux Flatpak config paths): probe Azahar Flatpak runtime first; if unavailable, preserve existing GUID and otherwise keep port-only mappings (host GUID is not injected into Flatpak configs).
