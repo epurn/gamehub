@@ -236,6 +236,10 @@ Linux PS2 note:
 
 RetroArch note:
 - On macOS, config/save discovery checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`.
+- Deterministic RetroArch save downloads can materialize that root on first sync even before RetroArch has created the `saves/` directory tree itself.
+- When RetroArch save sorting-by-core is enabled, GAMEHUB treats the core-specific subdirectory as the canonical destination instead of a legacy root-level filename match.
+- That canonical sorted-core rule applies across RetroArch exact-file save systems that GAMEHUB manages (`GB`, `GBC`, `GBA`, `GEN_MD`, `NES`, `SNES`, `N64`, `NDS`, `PSX`) rather than only `N64`.
+- If RetroArch config evidence for sorted-core mode is missing but the save root already contains known core subdirectories (for example `mGBA`, `Gambatte`, or `Mupen64Plus-Next`), GAMEHUB infers that sorted-core layout and keeps those core-specific paths canonical.
 - When a RetroArch config file is discovered (`retroarch.cfg` candidates or explicit override), GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) and `all_users_control_menu = "true"` for controller quick-menu access.
 - On Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`.
 - On Linux, when RetroArch resolves to Flatpak, config discovery prefers Flatpak `retroarch.cfg` before native `~/.config/retroarch/retroarch.cfg`.

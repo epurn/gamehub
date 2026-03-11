@@ -138,34 +138,63 @@ def _retroarch_save_root(resolve_executable: Callable[[str], str]) -> Path | Non
     resolved = resolve_executable("retroarch").strip().strip('"')
     if resolved and _is_flatpak_command(resolved, _RETROARCH_FLATPAK_APP_ID):
         home = _normalized_local_path(Path.home())
-        return _existing_dir(home / ".var" / "app" / _RETROARCH_FLATPAK_APP_ID / "config" / "retroarch" / "saves")
+        return home / ".var" / "app" / _RETROARCH_FLATPAK_APP_ID / "config" / "retroarch" / "saves"
 
+    cfg_fallback: Path | None = None
     for cfg_path in _retroarch_cfg_candidates(resolve_executable=resolve_executable):
         cfg = _parse_simple_kv_config(cfg_path)
         save_dir = cfg.get("savefile_directory", "").strip()
-        if save_dir and save_dir.casefold() != "default":
-            resolved_path = _existing_dir(_resolve_retroarch_cfg_path_value(save_dir, cfg_path=cfg_path))
-            if resolved_path is not None:
-                return resolved_path
-        portable = cfg_path.parent / "saves"
+        if save_dir:
+            resolved_path = (
+                _normalized_local_path(cfg_path.parent / "saves")
+                if save_dir.casefold() == "default"
+                else _resolve_retroarch_cfg_path_value(save_dir, cfg_path=cfg_path)
+            )
+            existing = _existing_dir(resolved_path)
+            if existing is not None:
+                return existing
+            if cfg_fallback is None and cfg_path.exists():
+                cfg_fallback = resolved_path
+            continue
+
+        portable = _normalized_local_path(cfg_path.parent / "saves")
         existing = _existing_dir(portable)
         if existing is not None:
             return existing
+        if cfg_fallback is None and cfg_path.exists():
+            cfg_fallback = portable
 
     if _OS_NAME == "nt":
         appdata = os.environ.get("APPDATA")
         if appdata:
-            return _existing_dir(_normalized_local_path(appdata) / "RetroArch" / "saves")
-        return None
+            default = _normalized_local_path(appdata) / "RetroArch" / "saves"
+            existing = _existing_dir(default)
+            if existing is not None:
+                return existing
+            if cfg_fallback is not None:
+                return cfg_fallback
+            return default
+        return cfg_fallback
     if _SYS_PLATFORM == "darwin":
         for root in macos_retroarch_root_candidates():
             existing = _existing_dir(root / "saves")
             if existing is not None:
                 return existing
+        if cfg_fallback is not None:
+            return cfg_fallback
+        candidates = macos_retroarch_root_candidates()
+        if candidates:
+            return candidates[0] / "saves"
         return None
 
     home = _normalized_local_path(Path.home())
-    return _existing_dir(home / ".config" / "retroarch" / "saves")
+    default = home / ".config" / "retroarch" / "saves"
+    existing = _existing_dir(default)
+    if existing is not None:
+        return existing
+    if cfg_fallback is not None:
+        return cfg_fallback
+    return default
 
 
 def _retroarch_system_roots(resolve_executable: Callable[[str], str]) -> tuple[Path, ...]:
@@ -449,6 +478,14 @@ def _resolve_exact_binding_destination(
     root = resolve_binding_local_root(binding, resolve_executable=resolve_executable)
     if root is None:
         return None
+    deterministic = _deterministic_exact_destination(
+        binding,
+        root=root,
+        filename=requested_filename,
+        resolve_executable=resolve_executable,
+    )
+    if deterministic is not None:
+        return deterministic
     exact_kind = cast(Literal["battery", "memory_card"], save.kind)
     requested = _existing_exact_path(
         binding,
@@ -545,6 +582,23 @@ def _retroarch_prefers_core_subdirs(
     return False
 
 
+def _retroarch_layout_has_known_core_dirs(root: Path) -> bool:
+    return any((root / core_dir).is_dir() for core_dir in set(_RETROARCH_SORTED_CORE_DIR_BY_SYSTEM.values()))
+
+
+def _prefer_sorted_retroarch_core_paths(
+    binding: SaveBindingSpec,
+    *,
+    root: Path,
+    resolve_executable: Callable[[str], str],
+) -> bool:
+    if binding.local_root != "retroarch_saves":
+        return False
+    if _retroarch_prefers_core_subdirs(system=binding.system, resolve_executable=resolve_executable):
+        return True
+    return _retroarch_layout_has_known_core_dirs(root)
+
+
 def _preferred_exact_path(
     binding: SaveBindingSpec,
     *,
@@ -552,7 +606,15 @@ def _preferred_exact_path(
     filename: str,
     resolve_executable: Callable[[str], str],
 ) -> Path:
-    if binding.local_root in {"retroarch_saves", "retroarch_saves_psx"} and _retroarch_prefers_core_subdirs(
+    if binding.local_root == "retroarch_saves" and _prefer_sorted_retroarch_core_paths(
+        binding,
+        root=root,
+        resolve_executable=resolve_executable,
+    ):
+        subdir = _RETROARCH_SORTED_CORE_DIR_BY_SYSTEM.get(binding.system.strip().upper())
+        if subdir:
+            return root / subdir / filename
+    if binding.local_root == "retroarch_saves_psx" and _retroarch_prefers_core_subdirs(
         system=binding.system,
         resolve_executable=resolve_executable,
     ):
@@ -560,6 +622,28 @@ def _preferred_exact_path(
         if subdir:
             return root / subdir / filename
     return root / filename
+
+
+def _deterministic_exact_destination(
+    binding: SaveBindingSpec,
+    *,
+    root: Path,
+    filename: str,
+    resolve_executable: Callable[[str], str],
+) -> Path | None:
+    if binding.local_root != "retroarch_saves":
+        return None
+    if not _prefer_sorted_retroarch_core_paths(binding, root=root, resolve_executable=resolve_executable):
+        return None
+    preferred = _preferred_exact_path(
+        binding,
+        root=root,
+        filename=filename,
+        resolve_executable=resolve_executable,
+    )
+    if preferred.exists() and preferred.is_file():
+        return preferred
+    return preferred
 
 
 def _exact_search_roots(
@@ -605,6 +689,8 @@ def _existing_exact_path(
         )
         if preferred.exists() and preferred.is_file():
             return preferred
+    if _prefer_sorted_retroarch_core_paths(binding, root=root, resolve_executable=resolve_executable):
+        return None
     return _unique_recursive_match_roots(roots, filename)
 
 
@@ -747,6 +833,14 @@ def resolve_exact_local_save_destination(
         learn_rule=None,
         portable=True,
     )
+    deterministic = _deterministic_exact_destination(
+        binding,
+        root=root,
+        filename=filename,
+        resolve_executable=resolve_executable,
+    )
+    if deterministic is not None:
+        return deterministic
     existing = _existing_exact_path(
         binding,
         root=root,

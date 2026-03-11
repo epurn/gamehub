@@ -1426,6 +1426,23 @@ def test_resolve_system_save_root_macos_retroarch(monkeypatch, workspace_tempdir
         assert resolved == saves
 
 
+def test_resolve_system_save_root_macos_retroarch_returns_default_path_when_missing(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        expected = home / "Documents" / "RetroArch" / "saves"
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        resolved = resolve_system_save_root("GBC", resolve_executable=lambda _name: "")
+
+        assert resolved == expected
+
+
 def test_resolve_system_save_root_macos_pcsx2(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
         home = temp_root / "home"
@@ -1563,6 +1580,253 @@ def test_resolve_emulator_save_root_macos_retroarch_prefers_configured_cfg_path(
         resolved = resolve_emulator_save_root("retroarch", resolve_executable=resolver)
 
         assert resolved == saves
+
+
+def test_resolve_local_save_destination_macos_retroarch_first_launch_uses_configured_save_root(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = temp_root / "custom-retroarch"
+        save_root = retroarch_root / "portable-saves"
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            'savefile_directory = "portable-saves"\nsort_savefiles_enable = "false"\n',
+            encoding="utf-8",
+        )
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            f"[macos]\nretroarch_cfg_path = {json.dumps(str(cfg_path))}\n",
+            encoding="utf-8",
+        )
+        save = SaveSpec(
+            save_id="save_gbc_pokemon",
+            title_id="title_gbc_pokemon",
+            system="GBC",
+            kind="battery",
+            rel_path="saves/GBC/Pokemon Red/battery/Pokemon Red.srm",
+            sha256="a" * 64,
+            size_bytes=32,
+            updated_at=datetime(2026, 3, 11, 12, 0, tzinfo=UTC),
+            portable=True,
+        )
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        def resolver(_name: str) -> str:
+            return "/Applications/RetroArch.app/Contents/MacOS/RetroArch"
+
+        setattr(resolver, "_gamehub_config", load_config(config_path))
+
+        resolved = resolve_local_save_destination(save, resolve_executable=resolver)
+
+        assert resolved == save_root / "Pokemon Red.srm"
+
+
+def test_resolve_local_save_destination_prefers_sorted_retroarch_core_subdir_over_legacy_root_match(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Documents" / "RetroArch"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.write_text(
+            'savefile_directory = "saves"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        legacy_save = retroarch_root / "saves" / "Super Mario 64.srm"
+        legacy_save.parent.mkdir(parents=True, exist_ok=True)
+        legacy_save.write_bytes(b"legacy")
+        save = SaveSpec(
+            save_id="save_n64_sm64",
+            title_id="title_n64_sm64",
+            system="N64",
+            kind="battery",
+            rel_path="saves/N64/Super Mario 64/battery/Super Mario 64.srm",
+            sha256="a" * 64,
+            size_bytes=6,
+            updated_at=datetime(2026, 3, 11, 12, 0, tzinfo=UTC),
+            portable=True,
+        )
+        binding = SaveBindingSpec(
+            binding_id="savebind_n64_sm64",
+            title_id="title_n64_sm64",
+            system="N64",
+            kind="battery",
+            server_rel_dir="saves/N64/Super Mario 64/battery",
+            local_root="retroarch_saves",
+            strategy="exact_files",
+            candidate_filenames=("Super Mario 64.srm",),
+            learn_rule=None,
+            portable=True,
+        )
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        resolved = resolve_local_save_destination(
+            save,
+            binding=binding,
+            resolve_executable=lambda _name: "/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+        )
+
+        assert resolved == retroarch_root / "saves" / "Mupen64Plus-Next" / "Super Mario 64.srm"
+
+
+def test_resolve_local_save_destination_gba_prefers_sorted_retroarch_core_subdir_over_legacy_root_match(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Documents" / "RetroArch"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.write_text(
+            'savefile_directory = "saves"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        legacy_save = retroarch_root / "saves" / "Yu-Gi-Oh! - The Sacred Cards.srm"
+        legacy_save.parent.mkdir(parents=True, exist_ok=True)
+        legacy_save.write_bytes(b"legacy")
+        save = SaveSpec(
+            save_id="save_gba_yugioh",
+            title_id="title_gba_yugioh",
+            system="GBA",
+            kind="battery",
+            rel_path="saves/GBA/Yu-Gi-Oh! - The Sacred Cards/battery/Yu-Gi-Oh! - The Sacred Cards.srm",
+            sha256="a" * 64,
+            size_bytes=6,
+            updated_at=datetime(2026, 3, 11, 12, 0, tzinfo=UTC),
+            portable=True,
+        )
+        binding = SaveBindingSpec(
+            binding_id="savebind_gba_yugioh",
+            title_id="title_gba_yugioh",
+            system="GBA",
+            kind="battery",
+            server_rel_dir="saves/GBA/Yu-Gi-Oh! - The Sacred Cards/battery",
+            local_root="retroarch_saves",
+            strategy="exact_files",
+            candidate_filenames=("Yu-Gi-Oh! - The Sacred Cards.srm",),
+            learn_rule=None,
+            portable=True,
+        )
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        resolved = resolve_local_save_destination(
+            save,
+            binding=binding,
+            resolve_executable=lambda _name: "/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+        )
+
+        assert resolved == retroarch_root / "saves" / "mGBA" / "Yu-Gi-Oh! - The Sacred Cards.srm"
+
+
+def test_discover_local_exact_save_candidates_ignores_legacy_root_match_when_sorted_retroarch_core_subdir_missing(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Documents" / "RetroArch"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.write_text(
+            'savefile_directory = "saves"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        legacy_save = retroarch_root / "saves" / "Yu-Gi-Oh! - The Sacred Cards.srm"
+        legacy_save.parent.mkdir(parents=True, exist_ok=True)
+        legacy_save.write_bytes(b"legacy")
+        binding = SaveBindingSpec(
+            binding_id="savebind_gba_yugioh",
+            title_id="title_gba_yugioh",
+            system="GBA",
+            kind="battery",
+            server_rel_dir="saves/GBA/Yu-Gi-Oh! - The Sacred Cards/battery",
+            local_root="retroarch_saves",
+            strategy="exact_files",
+            candidate_filenames=("Yu-Gi-Oh! - The Sacred Cards.srm",),
+            learn_rule=None,
+            portable=True,
+        )
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        candidates = discover_local_exact_save_candidates(
+            (binding,),
+            resolve_executable=lambda _name: "/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+        )
+
+        assert candidates == ()
+
+
+def test_resolve_local_save_destination_infers_sorted_retroarch_core_layout_when_cfg_missing(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-save-root-macos-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Documents" / "RetroArch"
+        legacy_save = retroarch_root / "saves" / "Yu-Gi-Oh! - The Sacred Cards.srm"
+        legacy_save.parent.mkdir(parents=True, exist_ok=True)
+        legacy_save.write_bytes(b"legacy")
+        existing_sorted_dir = retroarch_root / "saves" / "mGBA"
+        existing_sorted_dir.mkdir(parents=True, exist_ok=True)
+        save = SaveSpec(
+            save_id="save_gba_yugioh",
+            title_id="title_gba_yugioh",
+            system="GBA",
+            kind="battery",
+            rel_path="saves/GBA/Yu-Gi-Oh! - The Sacred Cards/battery/Yu-Gi-Oh! - The Sacred Cards.srm",
+            sha256="a" * 64,
+            size_bytes=6,
+            updated_at=datetime(2026, 3, 11, 12, 0, tzinfo=UTC),
+            portable=True,
+        )
+        binding = SaveBindingSpec(
+            binding_id="savebind_gba_yugioh",
+            title_id="title_gba_yugioh",
+            system="GBA",
+            kind="battery",
+            server_rel_dir="saves/GBA/Yu-Gi-Oh! - The Sacred Cards/battery",
+            local_root="retroarch_saves",
+            strategy="exact_files",
+            candidate_filenames=("Yu-Gi-Oh! - The Sacred Cards.srm",),
+            learn_rule=None,
+            portable=True,
+        )
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        resolved = resolve_local_save_destination(
+            save,
+            binding=binding,
+            resolve_executable=lambda _name: "/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+        )
+
+        assert resolved == retroarch_root / "saves" / "mGBA" / "Yu-Gi-Oh! - The Sacred Cards.srm"
 
 
 def test_resolve_system_save_root_macos_dolphin_prefers_configured_user_path(monkeypatch, workspace_tempdir) -> None:
