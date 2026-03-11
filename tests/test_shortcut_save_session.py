@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
 import gamehub_cli.emulators.save_resolution as save_resolution_module
@@ -148,6 +148,55 @@ def test_managed_memory_card_paths_preserve_existing_psx_srm(monkeypatch, worksp
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+            target_args=(),
+            title_id="title_psx_ctr",
+            system="PSX",
+            rom_rel_path="roms/PSX/CTR - Crash Team Racing.chd",
+        )
+
+        changed = launch_module._ensure_managed_memory_card_paths(payload, _config())
+
+        assert changed is True
+        text = (retroarch_root / "retroarch-core-options.cfg").read_text(encoding="utf-8")
+        assert 'swanstation_MemoryCard1Path = "CTR - Crash Team Racing.srm"' in text
+        assert 'swanstation_MemoryCard2Path = "GH_title_psx_ctr_2.mcd"' in text
+
+
+def test_managed_memory_card_paths_preserve_existing_psx_srm_normalizes_nonhost_root(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-psx-managed-card-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Documents" / "RetroArch"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.write_text(
+            'savefile_directory = "saves"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        existing_save = retroarch_root / "saves" / "SwanStation" / "CTR - Crash Team Racing.srm"
+        existing_save.parent.mkdir(parents=True, exist_ok=True)
+        existing_save.write_bytes(b"save")
+
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.save_session.resolve_binding_local_root",
+            lambda binding, resolve_executable: PurePosixPath((retroarch_root / "saves").as_posix()),
+        )
 
         payload = launch_module.ShortcutLaunchPayload(
             version=1,

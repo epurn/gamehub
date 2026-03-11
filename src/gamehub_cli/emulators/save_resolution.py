@@ -132,6 +132,10 @@ def _existing_dir(path: Path) -> Path | None:
     return normalized if normalized.exists() else None
 
 
+def _host_local_path(path: Path) -> Path:
+    return _normalized_local_path(path)
+
+
 def _resolver_config(resolve_executable: Callable[[str], str]) -> GamehubConfig | None:
     config = getattr(resolve_executable, "_gamehub_config", None)
     return config if isinstance(config, GamehubConfig) else None
@@ -586,7 +590,8 @@ def _retroarch_prefers_core_subdirs(
 
 
 def _retroarch_layout_has_known_core_dirs(root: Path) -> bool:
-    return any((root / core_dir).is_dir() for core_dir in set(_RETROARCH_SORTED_CORE_DIR_BY_SYSTEM.values()))
+    normalized_root = _host_local_path(root)
+    return any((normalized_root / core_dir).is_dir() for core_dir in set(_RETROARCH_SORTED_CORE_DIR_BY_SYSTEM.values()))
 
 
 def _prefer_sorted_retroarch_core_paths(
@@ -609,22 +614,23 @@ def _preferred_exact_path(
     filename: str,
     resolve_executable: Callable[[str], str],
 ) -> Path:
+    normalized_root = _host_local_path(root)
     if binding.local_root == "retroarch_saves" and _prefer_sorted_retroarch_core_paths(
         binding,
-        root=root,
+        root=normalized_root,
         resolve_executable=resolve_executable,
     ):
         subdir = _RETROARCH_SORTED_CORE_DIR_BY_SYSTEM.get(binding.system.strip().upper())
         if subdir:
-            return root / subdir / filename
+            return normalized_root / subdir / filename
     if binding.local_root == "retroarch_saves_psx" and _retroarch_prefers_core_subdirs(
         system=binding.system,
         resolve_executable=resolve_executable,
     ):
         subdir = _RETROARCH_SORTED_CORE_DIR_BY_SYSTEM.get(binding.system.strip().upper())
         if subdir:
-            return root / subdir / filename
-    return root / filename
+            return normalized_root / subdir / filename
+    return normalized_root / filename
 
 
 def _deterministic_exact_destination(
@@ -655,9 +661,9 @@ def _exact_search_roots(
     root: Path,
     resolve_executable: Callable[[str], str],
 ) -> tuple[Path, ...]:
-    roots = [root]
+    roots = [_host_local_path(root)]
     if binding.local_root == "retroarch_saves_psx":
-        roots.extend(_retroarch_system_roots(resolve_executable))
+        roots.extend(_host_local_path(candidate) for candidate in _retroarch_system_roots(resolve_executable))
     deduped: list[Path] = []
     seen: set[Path] = set()
     for candidate in roots:
