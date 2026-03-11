@@ -81,8 +81,8 @@ def test_managed_memory_card_paths_macos(monkeypatch, workspace_tempdir) -> None
         pcsx2_ini_path.parent.mkdir(parents=True, exist_ok=True)
         pcsx2_ini_path.write_text("", encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
@@ -140,8 +140,8 @@ def test_managed_memory_card_paths_preserve_existing_psx_srm(monkeypatch, worksp
         existing_save.parent.mkdir(parents=True, exist_ok=True)
         existing_save.write_bytes(b"save")
 
-        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
@@ -185,8 +185,8 @@ def test_managed_memory_card_paths_preserve_existing_psx_srm_normalizes_nonhost_
         existing_save.parent.mkdir(parents=True, exist_ok=True)
         existing_save.write_bytes(b"save")
 
-        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")

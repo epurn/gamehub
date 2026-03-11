@@ -33,7 +33,7 @@ def test_apply_controller_profile_pcsx2_kbm_preserves_unmanaged_sections(monkeyp
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         seed_default_profiles(config)
         ini_path.parent.mkdir(parents=True, exist_ok=True)
         ini_path.write_text("[Audio]\nLatency = 42\n", encoding="utf-8")
@@ -53,7 +53,7 @@ def test_apply_controller_profile_pcsx2_xbox_modes(monkeypatch, workspace_tempdi
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         seed_default_profiles(config)
 
         profile_1 = apply_controller_profile(config, emulator_name="pcsx2", controller_count=1)
@@ -78,7 +78,7 @@ def test_apply_controller_profile_pcsx2_writes_confirm_shutdown_false(monkeypatc
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         seed_default_profiles(config)
         ini_path.parent.mkdir(parents=True, exist_ok=True)
         ini_path.write_text("[UI]\nConfirmShutdown = true\n", encoding="utf-8")
@@ -94,7 +94,7 @@ def test_apply_controller_profile_accepts_emulator_family_alias(monkeypatch, wor
         base = _config(temp_root)
         ini_path = temp_root / "pcsx2" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=ini_path))
-        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         seed_default_profiles(config)
 
         profile = apply_controller_profile(config, emulator_name="PCSX2-nightly", controller_count=1)
