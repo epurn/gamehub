@@ -41,7 +41,8 @@ emulator_install_backend = "auto"
 # retroarch_cores_base_url = "https://example.invalid/apple-silicon/"
 # pcsx2_ini_path = "~/Library/Application Support/PCSX2/inis/PCSX2.ini"
 # pcsx2_bios_dir = "~/Library/Application Support/PCSX2/bios"
-# dolphin_user_path = "~/Library/Application Support/Dolphin"
+# Dolphin discovery prefers an existing ~/.local/share/dolphin-emu root first.
+# dolphin_user_path = "~/.local/share/dolphin-emu"
 
 [sgdb]
 # Fallback only; prefer GAMEHUB_SGDB_API_KEY in environment.

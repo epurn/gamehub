@@ -511,6 +511,74 @@ def _run_shortcut_postexit_exact_binding_sync(
     return state_changed
 
 
+def _psx_runtime_candidate_filenames(payload: ShortcutLaunchPayload) -> tuple[str, ...]:
+    if not payload.title_id:
+        return ()
+    values = [f"GH_{payload.title_id}_1.mcd", f"GH_{payload.title_id}_2.mcd"]
+    if payload.rom_rel_path:
+        rom_stem = PurePosixPath(payload.rom_rel_path).stem.strip()
+        if rom_stem:
+            values.extend((f"{rom_stem}.srm", f"{rom_stem}_1.mcd", f"{rom_stem}_2.mcd"))
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return tuple(deduped)
+
+
+def _preferred_psx_memory_card_filenames(
+    payload: ShortcutLaunchPayload,
+) -> tuple[str, str]:
+    if not payload.title_id:
+        return "", ""
+    default_slot1 = f"GH_{payload.title_id}_1.mcd"
+    default_slot2 = f"GH_{payload.title_id}_2.mcd"
+    candidate_filenames = _psx_runtime_candidate_filenames(payload)
+    if not candidate_filenames:
+        return default_slot1, default_slot2
+    binding = SaveBindingSpec(
+        binding_id="savebind_runtime_psx",
+        title_id=payload.title_id,
+        system="PSX",
+        kind="memory_card",
+        server_rel_dir="saves/PSX/runtime/memory_card",
+        local_root="retroarch_saves_psx",
+        strategy="exact_files",
+        candidate_filenames=candidate_filenames,
+        learn_rule=None,
+        portable=True,
+    )
+    resolve_executable = build_shortcut_save_resolver(payload)
+    root = resolve_binding_local_root(binding, resolve_executable=resolve_executable)
+    if root is None:
+        return default_slot1, default_slot2
+
+    rom_stem = PurePosixPath(payload.rom_rel_path).stem.strip() if payload.rom_rel_path else ""
+    slot1_candidates = [default_slot1]
+    slot2_candidates = [default_slot2]
+    if rom_stem:
+        slot1_candidates.extend((f"{rom_stem}.srm", f"{rom_stem}_1.mcd"))
+        slot2_candidates.append(f"{rom_stem}_2.mcd")
+
+    def _first_existing(candidates: list[str]) -> str | None:
+        for candidate in candidates:
+            path = resolve_exact_local_save_destination(
+                system="PSX",
+                kind="memory_card",
+                root=root,
+                filename=candidate,
+                resolve_executable=resolve_executable,
+            )
+            if path.exists() and path.name == candidate:
+                return candidate
+        return None
+
+    return _first_existing(slot1_candidates) or default_slot1, _first_existing(slot2_candidates) or default_slot2
+
+
 def ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: GamehubConfig) -> bool:
     if not payload.title_id or payload.system not in {"PSX", "PS2"}:
         return False
@@ -558,9 +626,10 @@ def ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: Gam
     core_options_path = cfg_path.with_name("retroarch-core-options.cfg")
     lines = read_ini_lines(core_options_path)
     changed = False
+    slot1_filename, slot2_filename = _preferred_psx_memory_card_filenames(payload)
     for key, value in {
-        "swanstation_MemoryCard1Path": f"GH_{payload.title_id}_1.mcd",
-        "swanstation_MemoryCard2Path": f"GH_{payload.title_id}_2.mcd",
+        "swanstation_MemoryCard1Path": slot1_filename,
+        "swanstation_MemoryCard2Path": slot2_filename,
     }.items():
         lines, key_changed = upsert_simple_cfg_key(lines, key, value)
         changed |= key_changed
@@ -620,6 +689,14 @@ def run_shortcut_prelaunch_save_sync(
     if config.save_sync.mode == "bidirectional":
         save_bindings = _load_shortcut_save_bindings_or_warn(config, verbose=verbose)
     title_saves = _iter_title_saves(index, payload.title_id)
+    needs_psx_exact_binding = any(save.system.upper() == "PSX" and save.kind == "memory_card" for save in title_saves)
+    if save_bindings is None and needs_psx_exact_binding:
+        save_bindings = _load_shortcut_save_bindings_or_warn(config, verbose=verbose)
+    binding_by_id = {
+        binding.binding_id: binding
+        for binding in (() if save_bindings is None else save_bindings.bindings)
+        if binding.title_id == payload.title_id
+    }
     remote_save_ids = {save.save_id for save in title_saves}
     if save_bindings is not None and config.save_sync.mode == "bidirectional":
         for binding in save_bindings.bindings:
@@ -648,6 +725,7 @@ def run_shortcut_prelaunch_save_sync(
         destination = resolve_local_save_destination(
             save,
             binding_roots=state.save_binding_roots,
+            binding=binding_by_id.get(save_binding_id_for_save(save)),
             resolve_executable=resolve_executable,
         )
         local_sha = local_file_sha256(destination) if destination is not None else None

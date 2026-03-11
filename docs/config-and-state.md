@@ -79,7 +79,7 @@ retroarch_info_dir = "~/Library/Application Support/RetroArch/info"
 retroarch_cores_base_url = "https://example.invalid/apple-silicon/"
 pcsx2_ini_path = "~/Library/Application Support/PCSX2/inis/PCSX2.ini"
 pcsx2_bios_dir = "~/Library/Application Support/PCSX2/bios"
-dolphin_user_path = "~/Library/Application Support/Dolphin"
+dolphin_user_path = "~/.local/share/dolphin-emu"
 
 [controllers]
 # Launch-time controller profile application for non-RetroArch emulators.
@@ -301,11 +301,17 @@ Linux Dolphin defaults:
 - Native runtime user dir: `~/.local/share/dolphin-emu`
 - Flatpak runtime user dir: `~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu`
 
+macOS Dolphin defaults:
+- Runtime/save discovery prefers an existing native-style `~/.local/share/dolphin-emu` root first.
+- If no existing XDG-style Dolphin root is present, GAMEHUB falls back to `~/Library/Application Support/Dolphin`.
+
 N3DS Azahar defaults:
 - No required firmware files are enforced for N3DS.
 - GAMEHUB bootstraps Azahar runtime config in:
   - Windows: `%APPDATA%/Azahar/config/qt-config.ini`
+  - macOS preferred native-style config: `~/.config/azahar-emu/qt-config.ini`
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
+- On macOS, GAMEHUB prefers an existing native-style Azahar save root `~/.local/share/azahar-emu/sdmc` before falling back to `~/Library/Application Support/Azahar/sdmc`.
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
 - Azahar controller bindings are applied at launch via controller profiles. GUID normalization is always detect-based.
 - GUID discovery order (Linux Flatpak config paths): probe Azahar Flatpak runtime first; if unavailable, preserve existing GUID and otherwise keep port-only mappings (host GUID is not injected into Flatpak configs).

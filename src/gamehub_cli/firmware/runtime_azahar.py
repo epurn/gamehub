@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path, PosixPath
@@ -7,15 +8,16 @@ from typing import Callable
 
 from ..common.config import GamehubConfig
 from ..common.config_edit import upsert_qsettings_key
+from ..common.fsops import backup_existing_file
 from ..common.platform_paths import (
     AZAHAR_FLATPAK_APP_ID,
     is_flatpak_command,
     linux_flatpak_azahar_config_root,
     linux_flatpak_azahar_root,
+    macos_azahar_qt_config_candidates,
 )
 from ..emulators import resolve_emulator_executable
 from .pcsx2_ini import read_ini_lines, write_ini_atomic
-from .targets import resolve_azahar_runtime_user_dir
 
 _AZAHAR_FULLSCREEN_KEY = "fullscreen"
 _AZAHAR_FULLSCREEN_DEFAULT_KEY = r"fullscreen\default"
@@ -25,6 +27,7 @@ _AZAHAR_CONFIRM_CLOSE_KEY = "confirmClose"
 _AZAHAR_CONFIRM_CLOSE_DEFAULT_KEY = r"confirmClose\default"
 _AZAHAR_CONFIRM_CLOSE_VALUE = "false"
 _AZAHAR_CONFIRM_CLOSE_DEFAULT_VALUE = "false"
+logger = logging.getLogger(__name__)
 
 
 def default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
@@ -35,7 +38,11 @@ def default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
             return Path(appdata) / "Azahar" / "config" / "qt-config.ini"
         return PosixPath(appdata) / "Azahar" / "config" / "qt-config.ini"
     if sys.platform == "darwin":
-        return resolve_azahar_runtime_user_dir(config=config) / "config" / "qt-config.ini"
+        candidates = macos_azahar_qt_config_candidates()
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0]
 
     home = Path.home()
     flatpak_qt_config = linux_flatpak_azahar_config_root() / "qt-config.ini"
@@ -84,7 +91,12 @@ def configure_azahar_runtime(
         or changed_confirm_close_default
         or not ini_path.exists()
     ):
+        if ini_path.exists():
+            backup = backup_existing_file(ini_path)
+            if backup is not None:
+                logger.info("azahar runtime backup created path=%s backup=%s", ini_path, backup)
         write_ini_atomic(ini_path, lines)
+        logger.info("azahar runtime config updated path=%s", ini_path)
 
     if verbose:
         writer(f"azahar\tconfigured\t{ini_path}\t{details}")

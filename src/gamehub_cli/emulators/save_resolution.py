@@ -28,8 +28,9 @@ from ..common.platform_paths import (
     is_flatpak_command as _is_flatpak_command,
 )
 from ..common.platform_paths import (
-    macos_azahar_root,
-    macos_dolphin_root,
+    macos_azahar_qt_config_candidates,
+    macos_azahar_root_candidates,
+    macos_dolphin_root_candidates,
     macos_pcsx2_root,
     macos_retroarch_root_candidates,
     retroarch_cfg_candidates,
@@ -334,7 +335,11 @@ def _dolphin_data_root(resolve_executable: Callable[[str], str]) -> Path | None:
             configured = _existing_dir(resolver_config.macos.dolphin_user_path)
             if configured is not None:
                 return configured
-        return _existing_dir(macos_dolphin_root())
+        for candidate in macos_dolphin_root_candidates():
+            existing = _existing_dir(candidate)
+            if existing is not None:
+                return existing
+        return None
 
     home = _normalized_local_path(Path.home())
     native = _existing_dir(home / ".local" / "share" / "dolphin-emu")
@@ -362,7 +367,16 @@ def _azahar_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
             return None
         return _existing_dir(_normalized_local_path(appdata) / "Azahar" / "sdmc")
     if _SYS_PLATFORM == "darwin":
-        return _existing_dir(macos_azahar_root() / "sdmc")
+        for root in macos_azahar_root_candidates():
+            existing = _existing_dir(root / "sdmc")
+            if existing is not None:
+                return existing
+        for candidate in macos_azahar_qt_config_candidates():
+            config_root = candidate.parent.parent
+            existing = _existing_dir(config_root / "sdmc")
+            if existing is not None:
+                return existing
+        return None
 
     home = _normalized_local_path(Path.home())
     return _existing_dir(home / ".local" / "share" / "azahar-emu" / "sdmc")
@@ -372,16 +386,27 @@ def resolve_local_save_destination(
     save: SaveSpec,
     *,
     binding_roots: Mapping[str, Mapping[str, object]] | None = None,
+    binding: SaveBindingSpec | None = None,
     resolve_executable: Callable[[str], str] = resolve_emulator_executable,
 ) -> Path | None:
-    root = resolve_system_save_root(save.system, resolve_executable=resolve_executable)
-    if root is None:
-        return None
     parts = tuple(part for part in PurePosixPath(save.rel_path).parts if part not in {"", "."})
     if len(parts) < 5:
         return None
     suffix_parts = parts[4:]
     if save.kind in {"battery", "memory_card"}:
+        exact_binding = _validated_exact_binding_for_save(binding=binding, save=save)
+        if exact_binding is not None:
+            destination = _resolve_exact_binding_destination(
+                save=save,
+                binding=exact_binding,
+                requested_filename=suffix_parts[-1],
+                resolve_executable=resolve_executable,
+            )
+            if destination is not None:
+                return destination
+        root = resolve_system_save_root(save.system, resolve_executable=resolve_executable)
+        if root is None:
+            return None
         return resolve_exact_local_save_destination(
             system=save.system,
             kind=cast(Literal["battery", "memory_card"], save.kind),
@@ -389,6 +414,9 @@ def resolve_local_save_destination(
             filename=suffix_parts[-1],
             resolve_executable=resolve_executable,
         )
+    root = resolve_system_save_root(save.system, resolve_executable=resolve_executable)
+    if root is None:
+        return None
     if save.system.strip().upper() == "N3DS":
         materialized_root = _resolve_n3ds_materialized_root(
             root=root,
@@ -401,6 +429,59 @@ def resolve_local_save_destination(
             return None
         return root.joinpath(*materialized_root, *suffix_parts[4:])
     return root.joinpath(*suffix_parts)
+
+
+def _validated_exact_binding_for_save(binding: SaveBindingSpec | None, save: SaveSpec) -> SaveBindingSpec | None:
+    if binding is None or binding.strategy != "exact_files":
+        return None
+    if binding.title_id != save.title_id or binding.system != save.system or binding.kind != save.kind:
+        return None
+    return binding
+
+
+def _resolve_exact_binding_destination(
+    *,
+    save: SaveSpec,
+    binding: SaveBindingSpec,
+    requested_filename: str,
+    resolve_executable: Callable[[str], str],
+) -> Path | None:
+    root = resolve_binding_local_root(binding, resolve_executable=resolve_executable)
+    if root is None:
+        return None
+    exact_kind = cast(Literal["battery", "memory_card"], save.kind)
+    requested = _existing_exact_path(
+        binding,
+        root=root,
+        filename=requested_filename,
+        resolve_executable=resolve_executable,
+    )
+    if requested is not None:
+        return requested
+
+    existing_candidates: list[Path] = []
+    seen_paths: set[Path] = set()
+    for candidate_filename in binding.candidate_filenames:
+        existing = _existing_exact_path(
+            binding,
+            root=root,
+            filename=candidate_filename,
+            resolve_executable=resolve_executable,
+        )
+        if existing is None or existing in seen_paths:
+            continue
+        seen_paths.add(existing)
+        existing_candidates.append(existing)
+    if len(existing_candidates) == 1:
+        return existing_candidates[0]
+
+    return resolve_exact_local_save_destination(
+        system=save.system,
+        kind=exact_kind,
+        root=root,
+        filename=requested_filename,
+        resolve_executable=resolve_executable,
+    )
 
 
 def resolve_emulator_save_root(

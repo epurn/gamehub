@@ -106,6 +106,47 @@ def macos_azahar_root() -> Path:
     return macos_application_support_root() / "Azahar"
 
 
+def macos_xdg_data_root() -> Path:
+    return _safe_home_path() / ".local" / "share"
+
+
+def macos_xdg_config_root() -> Path:
+    return _safe_home_path() / ".config"
+
+
+def macos_dolphin_root_candidates() -> list[Path]:
+    app_support_root = macos_dolphin_root()
+    xdg_root = macos_xdg_data_root() / "dolphin-emu"
+    values = [app_support_root, xdg_root]
+    existing = [candidate for candidate in (xdg_root, app_support_root) if candidate.exists()]
+    if existing:
+        return unique_paths([*existing, *values])
+    return unique_paths(values)
+
+
+def macos_azahar_root_candidates() -> list[Path]:
+    app_support_root = macos_azahar_root()
+    xdg_root = macos_xdg_data_root() / "azahar-emu"
+    values = [app_support_root, xdg_root]
+    existing = [candidate for candidate in (xdg_root, app_support_root) if candidate.exists()]
+    if existing:
+        return unique_paths([*existing, *values])
+    return unique_paths(values)
+
+
+def macos_azahar_qt_config_candidates() -> list[Path]:
+    app_support_cfg = macos_azahar_root() / "config" / "qt-config.ini"
+    xdg_cfg = macos_xdg_config_root() / "azahar-emu" / "qt-config.ini"
+    values = [app_support_cfg, xdg_cfg]
+    existing = [candidate for candidate in (xdg_cfg, app_support_cfg) if candidate.exists()]
+    if existing:
+        return unique_paths([*existing, *values])
+    xdg_data_root = macos_xdg_data_root() / "azahar-emu"
+    if xdg_cfg.parent.exists() or xdg_data_root.exists():
+        return unique_paths([xdg_cfg, *values])
+    return unique_paths(values)
+
+
 def macos_application_bundle_candidates(bundle_names: Iterable[str]) -> list[Path]:
     normalized_names: list[str] = []
     for bundle_name in bundle_names:

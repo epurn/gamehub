@@ -12,8 +12,8 @@ from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSync
 from gamehub_cli.common.shortcut_payload import ShortcutLaunchPayload
 from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON
 from gamehub_cli.sync.transfer import SaveUploadConflictError
-from gamehub_common.ids import make_save_id
-from gamehub_common.models import LibraryIndex, SaveBindingSpec, SaveSpec
+from gamehub_common.ids import make_save_binding_id, make_save_id
+from gamehub_common.models import LibraryIndex, SaveBindingCatalog, SaveBindingSpec, SaveSpec
 from tests.shortcut_test_helpers import default_shortcut_config as _config
 from tests.shortcut_test_helpers import sha256_bytes as _sha256_bytes
 
@@ -70,13 +70,16 @@ def test_ensure_managed_memory_card_paths_prefers_payload_retroarch_cfg_on_windo
         assert "swanstation_MemoryCard1Path" not in appdata_text
 
 
-def test_ensure_managed_memory_card_paths_macos_uses_application_support_cfg(monkeypatch, workspace_tempdir) -> None:
+def test_managed_memory_card_paths_macos(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-psx-managed-card-") as temp_root:
         home = temp_root / "home"
         retroarch_root = home / "Library" / "Application Support" / "RetroArch"
         retroarch_root.mkdir(parents=True, exist_ok=True)
         cfg_path = retroarch_root / "retroarch.cfg"
         cfg_path.write_text("", encoding="utf-8")
+        pcsx2_ini_path = home / "Library" / "Application Support" / "PCSX2" / "inis" / "PCSX2.ini"
+        pcsx2_ini_path.parent.mkdir(parents=True, exist_ok=True)
+        pcsx2_ini_path.write_text("", encoding="utf-8")
 
         monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
@@ -100,6 +103,68 @@ def test_ensure_managed_memory_card_paths_macos_uses_application_support_cfg(mon
         text = (retroarch_root / "retroarch-core-options.cfg").read_text(encoding="utf-8")
         assert 'swanstation_MemoryCard1Path = "GH_title_psx_macos_1.mcd"' in text
         assert 'swanstation_MemoryCard2Path = "GH_title_psx_macos_2.mcd"' in text
+
+        pcsx2_payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="pcsx2",
+            target_exe="/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt",
+            target_args=(),
+            title_id="title_ps2_macos",
+            system="PS2",
+            rom_rel_path="roms/PS2/Gran Turismo 4.chd",
+        )
+
+        pcsx2_changed = launch_module._ensure_managed_memory_card_paths(pcsx2_payload, _config())
+
+        assert pcsx2_changed is True
+        pcsx2_text = pcsx2_ini_path.read_text(encoding="utf-8")
+        assert "Slot1_Filename = GH_title_ps2_macos_1.ps2" in pcsx2_text
+        assert "Slot2_Filename = GH_title_ps2_macos_2.ps2" in pcsx2_text
+        assert "Slot1_Enable = true" in pcsx2_text
+        assert "Slot2_Enable = true" in pcsx2_text
+
+
+def test_managed_memory_card_paths_preserve_existing_psx_srm(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-psx-managed-card-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Documents" / "RetroArch"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.write_text(
+            'savefile_directory = "saves"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        existing_save = retroarch_root / "saves" / "SwanStation" / "CTR - Crash Team Racing.srm"
+        existing_save.parent.mkdir(parents=True, exist_ok=True)
+        existing_save.write_bytes(b"save")
+
+        monkeypatch.setattr("gamehub_cli.firmware.targets.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+            target_args=(),
+            title_id="title_psx_ctr",
+            system="PSX",
+            rom_rel_path="roms/PSX/CTR - Crash Team Racing.chd",
+        )
+
+        changed = launch_module._ensure_managed_memory_card_paths(payload, _config())
+
+        assert changed is True
+        text = (retroarch_root / "retroarch-core-options.cfg").read_text(encoding="utf-8")
+        assert 'swanstation_MemoryCard1Path = "CTR - Crash Team Racing.srm"' in text
+        assert 'swanstation_MemoryCard2Path = "GH_title_psx_ctr_2.mcd"' in text
 
 
 def test_build_shortcut_save_resolver_uses_payload_macos_config_overrides(monkeypatch, workspace_tempdir) -> None:
@@ -1660,6 +1725,87 @@ def test_shortcut_prelaunch_download_mode_skips_save_bindings_fetch(monkeypatch)
     assert context.save_snapshots == {}
     assert context.exact_binding_snapshots == {}
     assert context.tree_snapshots == {}
+
+
+def test_shortcut_prelaunch_download_mode_fetches_save_bindings_for_psx(monkeypatch) -> None:
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="download"),
+    )
+    payload = launch_module.ShortcutLaunchPayload(
+        version=1,
+        emulator="retroarch",
+        target_exe="retroarch",
+        target_args=("-f", "game.chd"),
+        title_id="title_psx_ctr",
+        system="PSX",
+        rom_rel_path="roms/PSX/CTR - Crash Team Racing.chd",
+    )
+    remote_save = SaveSpec(
+        save_id="save_psx_ctr_1",
+        title_id="title_psx_ctr",
+        system="PSX",
+        kind="memory_card",
+        rel_path="saves/PSX/CTR - Crash Team Racing/memory_card/GH_title_psx_ctr_1.mcd",
+        sha256="a" * 64,
+        size_bytes=4,
+        updated_at=datetime(2026, 3, 11, 12, 0, tzinfo=UTC),
+        portable=True,
+    )
+    binding = SaveBindingSpec(
+        binding_id=make_save_binding_id("title_psx_ctr", "memory_card"),
+        title_id="title_psx_ctr",
+        system="PSX",
+        kind="memory_card",
+        server_rel_dir="saves/PSX/CTR - Crash Team Racing/memory_card",
+        local_root="retroarch_saves_psx",
+        strategy="exact_files",
+        candidate_filenames=("GH_title_psx_ctr_1.mcd", "CTR - Crash Team Racing.srm"),
+        learn_rule=None,
+        portable=True,
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+    seen_bindings: list[SaveBindingSpec | None] = []
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.save_session._shortcut_server_reachable", lambda _config: True)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session._load_shortcut_index",
+        lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=(remote_save,)),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session._load_shortcut_save_bindings",
+        lambda *args, **kwargs: SaveBindingCatalog(bindings=(binding,)),
+    )
+
+    def _fake_resolve_local_destination(save, **kwargs):
+        del save
+        seen_bindings.append(kwargs.get("binding"))
+        return None
+
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session.resolve_local_save_destination", _fake_resolve_local_destination
+    )
+
+    launch_module._run_shortcut_prelaunch_save_sync(
+        payload=payload,
+        config=config,
+        state=state,
+        resolve_executable=lambda _name: "retroarch",
+        verbose=False,
+        audit=False,
+    )
+
+    assert seen_bindings == [binding]
 
 
 def test_shortcut_prelaunch_download_mode_preserves_existing_local_drift(

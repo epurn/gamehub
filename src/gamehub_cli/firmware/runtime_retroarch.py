@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Callable
 
 from ..common.config import GamehubConfig
 from ..common.config_edit import read_simple_cfg_key, upsert_simple_cfg_key
+from ..common.fsops import backup_existing_file
 from .pcsx2_ini import read_ini_lines, write_ini_atomic
 from .targets import retroarch_cfg_candidates_for_config
 
@@ -42,6 +44,7 @@ _RETROARCH_PSX_CORE_OPTIONS = {
 }
 _STEAMOS_RELEASE_PATH = Path("/etc/os-release")
 _DMI_BOARD_VENDOR_PATH = Path("/sys/devices/virtual/dmi/id/board_vendor")
+logger = logging.getLogger(__name__)
 
 
 def _is_steam_deck_linux() -> bool:
@@ -111,7 +114,12 @@ def _write_retroarch_remap_file(remap_dir: Path, *, core_name: str) -> tuple[Pat
         remap_lines, updated = upsert_simple_cfg_key(remap_lines, key, desired)
         changed |= updated
     if changed or not remap_path.exists():
+        if remap_path.exists():
+            backup = backup_existing_file(remap_path)
+            if backup is not None:
+                logger.info("retroarch runtime backup created path=%s backup=%s kind=remap", remap_path, backup)
         write_ini_atomic(remap_path, remap_lines)
+        logger.info("retroarch runtime config updated path=%s kind=remap", remap_path)
     return remap_path, changed
 
 
@@ -245,7 +253,12 @@ def configure_retroarch_runtime(
         or (not is_windows and (changed_analog or changed_libretro or changed_remap or changed_turbo))
         or not cfg_path.exists()
     ):
+        if cfg_path.exists():
+            backup = backup_existing_file(cfg_path)
+            if backup is not None:
+                logger.info("retroarch runtime backup created path=%s backup=%s kind=config", cfg_path, backup)
         write_ini_atomic(cfg_path, lines)
+        logger.info("retroarch runtime config updated path=%s kind=config", cfg_path)
     core_lines = read_ini_lines(core_options_path)
     core_changed = False
     for key, value in _RETROARCH_PSX_CORE_OPTIONS.items():
@@ -254,7 +267,16 @@ def configure_retroarch_runtime(
             core_lines, changed = upsert_simple_cfg_key(core_lines, key, value)
             core_changed |= changed
     if core_changed or not core_options_path.exists():
+        if core_options_path.exists():
+            backup = backup_existing_file(core_options_path)
+            if backup is not None:
+                logger.info(
+                    "retroarch runtime backup created path=%s backup=%s kind=core-options",
+                    core_options_path,
+                    backup,
+                )
         write_ini_atomic(core_options_path, core_lines)
+        logger.info("retroarch runtime config updated path=%s kind=core-options", core_options_path)
     remap_dir = _resolve_retroarch_remap_dir(cfg_path, lines)
     remap_path, _ = _write_retroarch_remap_file(remap_dir, core_name=_RETROARCH_SWANSTATION_CORE_NAME)
     if verbose:

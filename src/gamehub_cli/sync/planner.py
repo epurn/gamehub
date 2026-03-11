@@ -265,6 +265,7 @@ def create_sync_plan(
             )
 
     active_bindings = _active_save_bindings(save_bindings, config=config)
+    active_bindings_by_id = {binding.binding_id: binding for binding in active_bindings}
     remote_save_ids = {save.save_id for save in index.saves}
     for candidate, decision, reason in _plan_local_only_exact_saves(
         config=config,
@@ -291,7 +292,11 @@ def create_sync_plan(
         )
 
     for save in sorted(index.saves, key=lambda item: (item.system, item.title_id, item.rel_path, item.save_id)):
-        save_destination = resolve_local_save_destination(save, binding_roots=state.save_binding_roots)
+        save_destination = resolve_local_save_destination(
+            save,
+            binding_roots=state.save_binding_roots,
+            binding=active_bindings_by_id.get(save_binding_id_for_save(save)),
+        )
         if not config.save_sync.enabled:
             decision, reason = "skip", "save-sync-disabled"
             local_sha = None

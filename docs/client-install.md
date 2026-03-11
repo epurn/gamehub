@@ -38,10 +38,12 @@ gamehub init
    - info: `~/Library/Application Support/RetroArch/info`
    - Apple Silicon buildbot base: `https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/`
 9. RetroArch config/save discovery checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`. If your RetroArch config uses different locations, set `[macos].retroarch_cfg_path`, `[macos].retroarch_cores_dir`, `[macos].retroarch_info_dir`, or `[macos].retroarch_cores_base_url` explicitly and re-run sync.
-10. Managed macOS Azahar launches pin to `~/Applications/Azahar.app` when that bundle exists, and GAMEHUB opens the ROM as a document with that bundle before falling back to CLI-style launch. This matches the app's declared macOS document handling more closely than relying on app-name lookup or ROM `--args` alone.
-11. After upgrading from older macOS preview builds, run one non-dry `gamehub sync` so Steam shortcut commands are rewritten away from the legacy `steam-shortcut-launch.sh` shim and the old launcher file is pruned.
-12. Combined end-to-end manual validation for `MACOS-CLI-03 + MACOS-CLI-04 + MACOS-CLI-07 + MACOS-CLI-09` remains deferred; this page only documents the current install/bootstrap contract.
-13. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code still resolve to Apple Silicon or universal builds.
+10. Dolphin macOS runtime/save discovery prefers an existing `~/.local/share/dolphin-emu` root first and otherwise falls back to `~/Library/Application Support/Dolphin`. If your Dolphin user dir is elsewhere, set `[macos].dolphin_user_path` explicitly.
+11. Azahar macOS save/runtime discovery prefers existing native-style paths first: `~/.local/share/azahar-emu/sdmc` for saves and `~/.config/azahar-emu/qt-config.ini` for runtime config. If those do not exist, GAMEHUB falls back to `~/Library/Application Support/Azahar`.
+12. Managed macOS Azahar launches pin to `~/Applications/Azahar.app` when that bundle exists, and GAMEHUB opens the ROM as a document with that bundle before falling back to CLI-style launch. This matches the app's declared macOS document handling more closely than relying on app-name lookup or ROM `--args` alone.
+13. After upgrading from older macOS preview builds, run one non-dry `gamehub sync` so Steam shortcut commands are rewritten away from the legacy `steam-shortcut-launch.sh` shim and the old launcher file is pruned.
+14. Combined end-to-end manual validation for `MACOS-CLI-03 + MACOS-CLI-04 + MACOS-CLI-07 + MACOS-CLI-09` remains deferred; this page only documents the current install/bootstrap contract.
+15. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code still resolve to Apple Silicon or universal builds.
 
 ## Linux (distro-agnostic) via pip
 

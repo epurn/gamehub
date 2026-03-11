@@ -16,8 +16,11 @@ from ..common.platform_paths import (
     linux_flatpak_dolphin_root,
     linux_flatpak_pcsx2_root,
     linux_flatpak_retroarch_root,
+    macos_azahar_qt_config_candidates,
     macos_azahar_root,
+    macos_azahar_root_candidates,
     macos_dolphin_root,
+    macos_dolphin_root_candidates,
     macos_pcsx2_root,
     macos_retroarch_root_candidates,
     parse_simple_kv_config,
@@ -290,8 +293,10 @@ def resolve_dolphin_user_dirs(config: GamehubConfig | None = None) -> list[Path]
         return candidates[:1]
 
     if sys.platform == "darwin":
-        values.append(macos_dolphin_root())
-        return unique_paths(values)
+        for candidate in macos_dolphin_root_candidates():
+            if candidate.exists():
+                return [candidate]
+        return [macos_dolphin_root()]
 
     appdata = os.environ.get("APPDATA")
     if os.name == "nt" and appdata:
@@ -336,6 +341,9 @@ def resolve_dolphin_runtime_user_dir(config: GamehubConfig | None = None) -> Pat
             return _host_path(appdata) / "Dolphin Emulator"
 
     if sys.platform == "darwin":
+        for candidate in macos_dolphin_root_candidates():
+            if candidate.exists():
+                return candidate
         return macos_dolphin_root()
 
     home = _safe_home_path()
@@ -398,6 +406,9 @@ def resolve_azahar_user_dirs(config: GamehubConfig | None = None) -> list[Path]:
         values.append(_host_path(appdata) / "Azahar")
         return unique_paths(values)
     if sys.platform == "darwin":
+        for candidate in macos_azahar_root_candidates():
+            if candidate.exists():
+                return [candidate]
         values.append(macos_azahar_root())
         return unique_paths(values)
 
@@ -426,6 +437,13 @@ def resolve_azahar_runtime_user_dir(config: GamehubConfig | None = None) -> Path
     if os.name == "nt" and appdata:
         return _host_path(appdata) / "Azahar"
     if sys.platform == "darwin":
+        for candidate in macos_azahar_root_candidates():
+            if candidate.exists():
+                return candidate
+        for candidate in macos_azahar_qt_config_candidates():
+            if candidate.exists():
+                config_root = candidate.parent.parent
+                return config_root
         return macos_azahar_root()
 
     home = _safe_home_path()
