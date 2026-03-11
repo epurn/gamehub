@@ -197,7 +197,7 @@ def _is_supported_macos_controller_name(name: str) -> bool:
 
 def _detect_macos_xbox_controllers(*, max_devices: int) -> list[XboxController]:
     try:
-        devices = _discover_host_sdl_joysticks(max_devices=max_devices)
+        devices = _discover_host_sdl_joysticks()
     except Exception:
         return []
     controllers: list[XboxController] = []

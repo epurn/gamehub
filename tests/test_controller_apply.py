@@ -622,6 +622,35 @@ def test_apply_dolphin_profile_macos_uses_sdl_device_names(monkeypatch, workspac
         assert "Device = All Devices" in hotkeys_text
 
 
+def test_apply_dolphin_profile_macos_preserves_specific_sdl_device_when_probe_falls_back(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "GCPadNew.ini").write_text(
+            "[GCPad1]\nDevice = SDL/3/Xbox Wireless Controller\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "darwin")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers", lambda max_devices=2: [])
+
+        apply_named_controller_profile(config, emulator_name="dolphin", profile_name="xbox_1p")
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+
+        assert "Device = SDL/3/Xbox Wireless Controller" in gcpad_text
+
+
 def test_apply_azahar_profile_macos_injects_sdl_identity(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)

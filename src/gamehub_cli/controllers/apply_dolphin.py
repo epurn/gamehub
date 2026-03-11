@@ -109,6 +109,33 @@ def _dolphin_macos_device_pair(profile_name: str) -> tuple[str, str]:
     return "SDL/0/Gamepad", "None"
 
 
+def _is_specific_macos_sdl_device(value: str) -> bool:
+    normalized = value.strip()
+    if not normalized.startswith("SDL/"):
+        return False
+    parts = normalized.split("/", 2)
+    if len(parts) != 3:
+        return False
+    device_name = parts[2].strip().casefold()
+    if not device_name:
+        return False
+    if device_name in _DOLPHIN_GENERIC_SDL_DEVICE_NAMES:
+        return False
+    if any(marker in device_name for marker in _DOLPHIN_NON_GAMEPAD_DEVICE_MARKERS):
+        return False
+    return True
+
+
+def _is_generic_macos_sdl_device(value: str) -> bool:
+    normalized = value.strip()
+    if not normalized.startswith("SDL/"):
+        return False
+    parts = normalized.split("/", 2)
+    if len(parts) != 3:
+        return False
+    return parts[2].strip().casefold() in _DOLPHIN_GENERIC_SDL_DEVICE_NAMES
+
+
 def _override_dolphin_device_sections(
     sections: dict[str, dict[str, str]],
     *,
@@ -185,6 +212,13 @@ def _override_dolphin_device_sections(
             )
             if preserve_existing:
                 updated[section_name]["Device"] = existing_device
+                continue
+        if sys.platform == "darwin" and profile_name != PROFILE_KBM and existing_device is not None:
+            preserve_existing = _is_specific_macos_sdl_device(existing_device) and _is_generic_macos_sdl_device(device)
+            if preserve_existing:
+                updated[section_name]["Device"] = existing_device
+                if not selected_device and section_name in {"GCPad1", "Wiimote1"}:
+                    selected_device = existing_device
                 continue
         updated[section_name]["Device"] = device
         device_identity_mode = "rebind"

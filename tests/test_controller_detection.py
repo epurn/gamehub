@@ -154,22 +154,26 @@ def test_detect_xbox_controllers_windows_uses_xinput_slots_and_subtypes(monkeypa
 
 
 def test_detect_xbox_controllers_macos_uses_sdl_probe(monkeypatch) -> None:
-    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
-    monkeypatch.setattr(
-        controller_detection,
-        "_discover_host_sdl_joysticks",
-        lambda max_devices=2: [
-            SimpleNamespace(slot=0, name="Xbox Wireless Controller", guid="a" * 32),
+    observed: dict[str, int | None] = {}
+
+    def _fake_probe(*, max_devices: int | None = None):
+        observed["max_devices"] = max_devices
+        return [
+            SimpleNamespace(slot=0, name="Generic USB Joystick", guid="a" * 32),
             SimpleNamespace(slot=1, name="Motion Sensors", guid="b" * 32),
-            SimpleNamespace(slot=2, name="XInput Controller", guid="c" * 32),
-        ],
-    )
+            SimpleNamespace(slot=2, name="Xbox Wireless Controller", guid="c" * 32),
+            SimpleNamespace(slot=3, name="XInput Controller", guid="d" * 32),
+        ]
+
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(controller_detection, "_discover_host_sdl_joysticks", _fake_probe)
 
     devices = detect_xbox_controllers(max_devices=2)
 
+    assert observed["max_devices"] is None
     assert devices == [
-        XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
-        XboxController(slot=2, name="XInput Controller", subtype=None),
+        XboxController(slot=2, name="Xbox Wireless Controller", subtype=None),
+        XboxController(slot=3, name="XInput Controller", subtype=None),
     ]
 
 

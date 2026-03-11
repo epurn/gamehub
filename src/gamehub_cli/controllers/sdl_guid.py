@@ -81,27 +81,46 @@ def _candidate_dirs_from_emulators() -> list[Path]:
     return dirs
 
 
+def _append_library_candidate(candidates: list[str], value: str | Path) -> None:
+    rendered = str(value)
+    if rendered and rendered not in candidates:
+        candidates.append(rendered)
+
+
+def _append_library_candidates_from_dirs(
+    candidates: list[str],
+    directories: list[Path],
+    filenames: tuple[str, ...],
+) -> None:
+    for candidate_dir in directories:
+        for filename in filenames:
+            candidate = candidate_dir / filename
+            if candidate.exists():
+                _append_library_candidate(candidates, candidate)
+
+
 def _windows_sdl_library_candidates() -> list[str]:
     library_candidates: list[str] = []
     env_dir = os.environ.get(_AZAHAR_WINDOWS_SDL_DIR_ENV)
     if env_dir:
         env_path = Path(env_dir.strip().strip('"'))
         if env_path.is_file():
-            library_candidates.append(str(env_path))
+            _append_library_candidate(library_candidates, env_path)
         else:
             for dll_name in ("SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"):
                 candidate = env_path / dll_name
                 if candidate.exists():
-                    library_candidates.append(str(candidate))
-    for candidate_dir in _candidate_dirs_from_emulators():
-        for dll_name in ("SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"):
-            candidate = candidate_dir / dll_name
-            if candidate.exists():
-                library_candidates.append(str(candidate))
+                    _append_library_candidate(library_candidates, candidate)
+    _append_library_candidates_from_dirs(
+        library_candidates,
+        _candidate_dirs_from_emulators(),
+        ("SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"),
+    )
     detected = ctypes.util.find_library("SDL2")
     if detected:
-        library_candidates.append(detected)
-    library_candidates.extend(["SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"])
+        _append_library_candidate(library_candidates, detected)
+    for dll_name in ("SDL2.dll", "libSDL2-2.0.dll", "libSDL2.dll"):
+        _append_library_candidate(library_candidates, dll_name)
     return library_candidates
 
 
@@ -116,19 +135,34 @@ def _linux_sdl_library_candidates() -> list[str]:
 
 def _macos_sdl_library_candidates() -> list[str]:
     library_candidates: list[str] = []
-    detected = ctypes.util.find_library("SDL2")
-    if detected:
-        library_candidates.append(detected)
-    library_candidates.extend(
-        [
-            "/Library/Frameworks/SDL2.framework/Versions/A/SDL2",
-            "/opt/homebrew/lib/libSDL2-2.0.0.dylib",
-            "/usr/local/lib/libSDL2-2.0.0.dylib",
+    emulator_dirs = _candidate_dirs_from_emulators()
+    bundle_framework_dirs = [candidate_dir.parent / "Frameworks" for candidate_dir in emulator_dirs]
+    _append_library_candidates_from_dirs(
+        library_candidates,
+        bundle_framework_dirs,
+        (
+            "SDL2.framework/Versions/A/SDL2",
             "libSDL2-2.0.0.dylib",
             "libSDL2.dylib",
-            "SDL2",
-        ]
+        ),
     )
+    _append_library_candidates_from_dirs(
+        library_candidates,
+        emulator_dirs,
+        ("libSDL2-2.0.0.dylib", "libSDL2.dylib"),
+    )
+    detected = ctypes.util.find_library("SDL2")
+    if detected:
+        _append_library_candidate(library_candidates, detected)
+    for candidate in (
+        "/Library/Frameworks/SDL2.framework/Versions/A/SDL2",
+        "/opt/homebrew/lib/libSDL2-2.0.0.dylib",
+        "/usr/local/lib/libSDL2-2.0.0.dylib",
+        "libSDL2-2.0.0.dylib",
+        "libSDL2.dylib",
+        "SDL2",
+    ):
+        _append_library_candidate(library_candidates, candidate)
     return library_candidates
 
 
