@@ -102,7 +102,10 @@ def _config_truthy(value: str | None) -> bool:
 def _resolve_retroarch_cfg_path_value(raw: str, *, cfg_path: Path) -> Path:
     value = raw.strip()
     if _OS_NAME == "nt" and value.startswith((":\\", ":/")):
-        return _normalized_local_path(cfg_path.parent / value[2:])
+        # RetroArch's Windows ":\foo" form is portable-relative to the cfg dir,
+        # not a drive-rooted path like "D:\foo".
+        portable_relative = value[2:].lstrip("/\\")
+        return _normalized_local_path(cfg_path.parent / portable_relative)
     candidate = _normalized_local_path(value)
     if not candidate.is_absolute():
         candidate = _normalized_local_path(cfg_path.parent / candidate)
