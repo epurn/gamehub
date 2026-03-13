@@ -280,12 +280,20 @@ _DOLPHIN_KBM_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
     ("Nunchuk/Shake/Z", "`Click 2`"),
 )
 
+_DOLPHIN_MACOS_KBM_DEVICE = "Quartz/0/Keyboard & Mouse"
+
 
 def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
     if profile_name == PROFILE_KBM:
         if sys.platform.startswith("linux"):
             return "XInput2/0/Virtual core pointer", "None"
+        if sys.platform == "darwin":
+            return _DOLPHIN_MACOS_KBM_DEVICE, "None"
         return "DInput/0/Keyboard Mouse", "None"
+    if sys.platform == "darwin":
+        if profile_name == PROFILE_XBOX_1P:
+            return "SDL/0/Gamepad", _DOLPHIN_MACOS_KBM_DEVICE
+        return "SDL/0/Gamepad", "SDL/1/Gamepad"
     if sys.platform.startswith("linux"):
         if profile_name == PROFILE_XBOX_1P:
             return "SDL/0/Gamepad", "DInput/0/Keyboard Mouse"
@@ -293,6 +301,20 @@ def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
     if profile_name == PROFILE_XBOX_1P:
         return "XInput/0/Gamepad", "DInput/0/Keyboard Mouse"
     return "XInput/0/Gamepad", "XInput/1/Gamepad"
+
+
+def _dolphin_macos_wiimote_bindings(
+    bindings: tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...]:
+    updated: list[tuple[str, str]] = []
+    for key, value in bindings:
+        if key == "IR/Up":
+            updated.append((key, "`Right Y+`"))
+        elif key == "IR/Down":
+            updated.append((key, "`Right Y-`"))
+        else:
+            updated.append((key, value))
+    return tuple(updated)
 
 
 def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
@@ -314,6 +336,8 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
         }
         if sys.platform.startswith("linux"):
             hotkey_device0, hotkey_device1 = "XInput2/0/Virtual core pointer", "XInput2/0/Virtual core pointer"
+        elif sys.platform == "darwin":
+            hotkey_device0, hotkey_device1 = _DOLPHIN_MACOS_KBM_DEVICE, _DOLPHIN_MACOS_KBM_DEVICE
         else:
             hotkey_device0, hotkey_device1 = device0, device1
     elif profile_name == PROFILE_XBOX_1P:
@@ -324,7 +348,12 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
         hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         general_stop = "@(SELECT+START)"
         general_exit = "@(SELECT+START)"
-        hotkey_device0, hotkey_device1 = device0, device1
+        if sys.platform == "darwin":
+            hotkey_device0, hotkey_device1 = device0, device1
+            wiimote_bindings_1 = _dolphin_macos_wiimote_bindings(wiimote_bindings_1)
+            wiimote_bindings_2 = _dolphin_macos_wiimote_bindings(wiimote_bindings_2)
+        else:
+            hotkey_device0, hotkey_device1 = device0, device1
     else:
         gcpad_bindings_1 = _DOLPHIN_XBOX_GCPAD_BINDINGS
         gcpad_bindings_2 = _DOLPHIN_XBOX_GCPAD_BINDINGS
@@ -333,7 +362,12 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
         hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         general_stop = "@(SELECT+START)"
         general_exit = "@(SELECT+START)"
-        hotkey_device0, hotkey_device1 = device0, device1
+        if sys.platform == "darwin":
+            hotkey_device0, hotkey_device1 = device0, device1
+            wiimote_bindings_1 = _dolphin_macos_wiimote_bindings(wiimote_bindings_1)
+            wiimote_bindings_2 = _dolphin_macos_wiimote_bindings(wiimote_bindings_2)
+        else:
+            hotkey_device0, hotkey_device1 = device0, device1
 
     gcpad_sections: dict[str, dict[str, str]] = {}
     for pad_number, device, bindings in (

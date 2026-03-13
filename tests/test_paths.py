@@ -189,10 +189,34 @@ def test_retroarch_cfg_candidates_macos_prefers_documents_root(monkeypatch) -> N
         sys_platform="darwin",
     )
 
-    assert candidates[:2] == [
+    assert candidates[:4] == [
+        home / "Documents" / "RetroArch" / "config" / "retroarch.cfg",
+        home / "Library" / "Application Support" / "RetroArch" / "config" / "retroarch.cfg",
         home / "Documents" / "RetroArch" / "retroarch.cfg",
         home / "Library" / "Application Support" / "RetroArch" / "retroarch.cfg",
     ]
+
+
+def test_retroarch_cfg_candidates_macos_prefers_existing_nested_cfg(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-paths-") as temp_root:
+        home = temp_root / "home"
+        documents_cfg = home / "Documents" / "RetroArch" / "retroarch.cfg"
+        app_support_cfg = home / "Library" / "Application Support" / "RetroArch" / "config" / "retroarch.cfg"
+        documents_cfg.parent.mkdir(parents=True, exist_ok=True)
+        app_support_cfg.parent.mkdir(parents=True, exist_ok=True)
+        documents_cfg.write_text("", encoding="utf-8")
+        app_support_cfg.write_text("", encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths._OS_NAME", "posix")
+
+        candidates = retroarch_cfg_candidates(
+            explicit_cfg_path=None,
+            resolve_emulator_executable=lambda _name: "",
+            sys_platform="darwin",
+        )
+
+        assert candidates[0] == app_support_cfg
 
 
 def test_normalized_local_path_handles_windows_style_segments() -> None:

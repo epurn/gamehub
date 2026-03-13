@@ -34,6 +34,9 @@ class XboxController:
     slot: int
     name: str
     subtype: int | None = None
+    guid: str | None = None
+    vendor_id: int | None = None
+    product_id: int | None = None
 
 
 def _is_steam_deck_linux() -> bool:
@@ -195,6 +198,17 @@ def _is_supported_macos_controller_name(name: str) -> bool:
     return any(marker in normalized for marker in ("xbox", "x-box", "xinput"))
 
 
+def _is_supported_macos_controller(device: object) -> bool:
+    name = str(getattr(device, "name", "")).strip()
+    normalized = name.casefold()
+    if any(marker in normalized for marker in _LINUX_NON_GAMEPAD_NAME_MARKERS):
+        return False
+    is_game_controller = getattr(device, "is_game_controller", None)
+    if is_game_controller is True:
+        return True
+    return _is_supported_macos_controller_name(name)
+
+
 def _detect_macos_xbox_controllers(*, max_devices: int) -> list[XboxController]:
     try:
         devices = _discover_host_sdl_joysticks()
@@ -202,9 +216,18 @@ def _detect_macos_xbox_controllers(*, max_devices: int) -> list[XboxController]:
         return []
     controllers: list[XboxController] = []
     for device in devices:
-        if not _is_supported_macos_controller_name(device.name):
+        if not _is_supported_macos_controller(device):
             continue
-        controllers.append(XboxController(slot=device.slot, name=device.name, subtype=None))
+        controllers.append(
+            XboxController(
+                slot=device.slot,
+                name=device.name,
+                subtype=None,
+                guid=getattr(device, "guid", None),
+                vendor_id=getattr(device, "vendor_id", None),
+                product_id=getattr(device, "product_id", None),
+            )
+        )
         if len(controllers) >= max_devices:
             break
     return controllers

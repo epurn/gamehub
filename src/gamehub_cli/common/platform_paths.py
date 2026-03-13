@@ -94,6 +94,17 @@ def macos_retroarch_root_candidates() -> list[Path]:
     return unique_paths(values)
 
 
+def macos_retroarch_cfg_candidates() -> list[Path]:
+    roots = macos_retroarch_root_candidates()
+    nested_candidates = [root / "config" / "retroarch.cfg" for root in roots]
+    root_level_candidates = [root / "retroarch.cfg" for root in roots]
+    existing_nested = [candidate for candidate in nested_candidates if candidate.exists()]
+    existing_root_level = [candidate for candidate in root_level_candidates if candidate.exists()]
+    if existing_nested or existing_root_level:
+        return unique_paths([*existing_nested, *existing_root_level, *nested_candidates, *root_level_candidates])
+    return unique_paths([*nested_candidates, *root_level_candidates])
+
+
 def macos_pcsx2_root() -> Path:
     return macos_application_support_root() / "PCSX2"
 
@@ -253,8 +264,7 @@ def retroarch_cfg_candidates(
 
     if current_os_name != "nt":
         if current_sys_platform == "darwin":
-            for root in macos_retroarch_root_candidates():
-                values.append(root / "retroarch.cfg")
+            values.extend(macos_retroarch_cfg_candidates())
             return unique_paths(values)
 
         home = _safe_home_path()

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import gamehub_cli.controllers.profiles as controller_profiles
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig
+from gamehub_cli.controllers import sdl_guid as controller_sdl_guid
 from gamehub_cli.controllers.apply import apply_controller_profile, apply_named_controller_profile
 from gamehub_cli.controllers.detection import XboxController
 from gamehub_cli.controllers.profiles import seed_default_profiles
@@ -142,16 +143,20 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
         elif sys.platform == "darwin":
             assert "Device = SDL/0/Gamepad" in gcpad_text
             assert "Device = SDL/1/Gamepad" in gcpad_text
-            assert "Device = All Devices" in hotkeys_text
+            assert "Device = SDL/0/Gamepad" in hotkeys_text
+            assert "Device = SDL/1/Gamepad" in hotkeys_text
         else:
             assert "Device = XInput/0/Gamepad" in gcpad_text
             assert "Device = XInput/1/Gamepad" in gcpad_text
         assert (
             "General/Stop = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
         ) in hotkeys_text
-        assert (
-            "General/Exit = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
-        ) in hotkeys_text
+        if sys.platform == "darwin":
+            assert "General/Exit = Back&Start" in hotkeys_text
+        else:
+            assert (
+                "General/Exit = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
+            ) in hotkeys_text
 
 
 def test_apply_controller_profile_dolphin_xbox_1p_uses_kbm_bindings_for_p2_gc(monkeypatch, workspace_tempdir) -> None:
@@ -162,6 +167,7 @@ def test_apply_controller_profile_dolphin_xbox_1p_uses_kbm_bindings_for_p2_gc(mo
         config_dir = dolphin_root / "Config"
         config_dir.mkdir(parents=True, exist_ok=True)
 
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers", lambda max_devices=2: [])
         monkeypatch.setattr(
             "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
@@ -187,6 +193,7 @@ def test_apply_controller_profile_dolphin_xbox_1p_uses_kbm_bindings_for_p2_wii(m
         config_dir = dolphin_root / "Config"
         config_dir.mkdir(parents=True, exist_ok=True)
 
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "linux")
         monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers", lambda max_devices=2: [])
         monkeypatch.setattr(
             "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
@@ -600,6 +607,9 @@ def test_apply_dolphin_profile_macos_uses_sdl_device_names(monkeypatch, workspac
 
         monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "darwin")
         monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.macos_dolphin_root_candidates", lambda: [dolphin_root]
+        )
+        monkeypatch.setattr(
             "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
         )
         monkeypatch.setattr(
@@ -608,18 +618,88 @@ def test_apply_dolphin_profile_macos_uses_sdl_device_names(monkeypatch, workspac
         monkeypatch.setattr(
             "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
             lambda max_devices=2: [
-                XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
-                XboxController(slot=1, name="Xbox Elite Wireless Controller", subtype=None),
+                XboxController(
+                    slot=0,
+                    name="Xbox Wireless Controller",
+                    subtype=None,
+                    guid="030000005e040000200b000011050000",
+                    vendor_id=0x045E,
+                    product_id=0x0B13,
+                ),
+                XboxController(
+                    slot=1,
+                    name="Xbox Elite Wireless Controller",
+                    subtype=None,
+                    guid="030000005e040000050b000003090000",
+                    vendor_id=0x045E,
+                    product_id=0x0B05,
+                ),
             ],
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin._lookup_macos_embedded_sdl_select_start_buttons",
+            lambda *, name, vendor_id=None, product_id=None: (10, 11),
         )
 
         apply_named_controller_profile(config, emulator_name="dolphin", profile_name="xbox_2p")
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+        wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
         hotkeys_text = (config_dir / "Hotkeys.ini").read_text(encoding="utf-8")
 
         assert "Device = SDL/0/Xbox Wireless Controller" in gcpad_text
         assert "Device = SDL/1/Xbox Elite Wireless Controller" in gcpad_text
-        assert "Device = All Devices" in hotkeys_text
+        assert "Buttons/A = `Button S`" in gcpad_text
+        assert "Buttons/B = `Button E`" in gcpad_text
+        assert "Buttons/X = `Button W`" in gcpad_text
+        assert "Buttons/Y = `Button N`" in gcpad_text
+        assert "Triggers/L-Analog = `Trigger L`" in gcpad_text
+        assert "Triggers/R-Analog = `Trigger R`" in gcpad_text
+        assert "IR/Up = `Right Y+`" in wiimote_text
+        assert "IR/Down = `Right Y-`" in wiimote_text
+        assert "Device = SDL/0/Xbox Wireless Controller" in hotkeys_text
+        assert "Device = SDL/1/Xbox Elite Wireless Controller" in hotkeys_text
+        assert "`Button 6`" in hotkeys_text
+        assert "`Button 7`" in hotkeys_text
+        assert "General/Exit = Back&Start" in hotkeys_text
+        assert "Keys/Exit = Back&Start" in hotkeys_text
+
+
+def test_apply_dolphin_profile_macos_kbm_uses_quartz_device(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "darwin")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.macos_dolphin_root_candidates", lambda: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+
+        apply_named_controller_profile(config, emulator_name="dolphin", profile_name="kbm")
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+        wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
+        hotkeys_text = (config_dir / "Hotkeys.ini").read_text(encoding="utf-8")
+
+        assert "Device = Quartz/0/Keyboard & Mouse" in gcpad_text
+        assert "Device = Quartz/0/Keyboard & Mouse" in wiimote_text
+        assert "Device = Quartz/0/Keyboard & Mouse" in hotkeys_text
+        assert "Buttons/Start = `Return`" in gcpad_text
+        assert "Main Stick/Up = `Up Arrow`" in gcpad_text
+        assert "C-Stick/Modifier = `Left Control`" in gcpad_text
+        assert "Buttons/Home = Return" in wiimote_text
+        assert "Nunchuk/Buttons/C = `Left Control`" in wiimote_text
+        assert "General/Stop = Escape" in hotkeys_text
+        assert "General/Exit = Escape" in hotkeys_text
+        assert "Keys/Stop = Escape" in hotkeys_text
+        assert "General/Toggle Fullscreen = @(Alt+Return)" in hotkeys_text
 
 
 def test_apply_dolphin_profile_macos_preserves_specific_sdl_device_when_probe_falls_back(
@@ -638,6 +718,9 @@ def test_apply_dolphin_profile_macos_preserves_specific_sdl_device_when_probe_fa
 
         monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "darwin")
         monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.macos_dolphin_root_candidates", lambda: [dolphin_root]
+        )
+        monkeypatch.setattr(
             "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
         )
         monkeypatch.setattr(
@@ -649,6 +732,203 @@ def test_apply_dolphin_profile_macos_preserves_specific_sdl_device_when_probe_fa
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
 
         assert "Device = SDL/3/Xbox Wireless Controller" in gcpad_text
+
+
+def test_apply_dolphin_profile_macos_guidless_detection_rebinds_stale_specific_device(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "GCPadNew.ini").write_text(
+            "[GCPad1]\nDevice = SDL/3/Xbox Wireless Controller\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "darwin")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.macos_dolphin_root_candidates", lambda: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [
+                XboxController(
+                    slot=0,
+                    name="Xbox Wireless Controller",
+                    subtype=None,
+                    guid=None,
+                    vendor_id=0x045E,
+                    product_id=0x0B13,
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin._lookup_macos_embedded_sdl_mapping_for_identity",
+            lambda *, name, vendor_id=None, product_id=None: None,
+        )
+
+        apply_named_controller_profile(config, emulator_name="dolphin", profile_name="xbox_1p")
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+
+        assert "Device = SDL/3/Xbox Wireless Controller" not in gcpad_text
+        assert "Device = SDL/0/Xbox Wireless Controller" in gcpad_text
+
+
+def test_apply_dolphin_profile_macos_guidless_detection_uses_detected_sdl_name_and_mapping_hotkeys(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "darwin")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.macos_dolphin_root_candidates", lambda: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [
+                XboxController(
+                    slot=0,
+                    name="Xbox Wireless Controller",
+                    subtype=None,
+                    guid=None,
+                    vendor_id=0x045E,
+                    product_id=0x0B13,
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin._lookup_macos_embedded_sdl_mapping_for_identity",
+            lambda *, name, vendor_id=None, product_id=None: None,
+        )
+        apply_named_controller_profile(config, emulator_name="dolphin", profile_name="xbox_1p")
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+        wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
+        hotkeys_text = (config_dir / "Hotkeys.ini").read_text(encoding="utf-8")
+
+        assert "Device = SDL/0/Xbox Wireless Controller" in gcpad_text
+        assert "Device = SDL/0/Xbox Wireless Controller" in wiimote_text
+        assert "`Button 6`" in hotkeys_text
+        assert "`Button 7`" in hotkeys_text
+        assert "General/Exit = Back&Start" in hotkeys_text
+        assert "Keys/Exit = Back&Start" in hotkeys_text
+
+
+def test_apply_dolphin_profile_macos_guidless_detection_prefers_embedded_mapping_name(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        dolphin_root = temp_root / "dolphin-user"
+        config_dir = dolphin_root / "Config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "darwin")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.macos_dolphin_root_candidates", lambda: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: dolphin_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [dolphin_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [
+                XboxController(
+                    slot=0,
+                    name="Xbox Wireless Controller",
+                    subtype=None,
+                    guid=None,
+                    vendor_id=0x045E,
+                    product_id=0x0B13,
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin._lookup_macos_embedded_sdl_mapping_for_identity",
+            lambda *, name, vendor_id=None, product_id=None: controller_sdl_guid._SDLControllerMapping(
+                guid="030000005e040000130b0000ff870000",
+                name="Xbox Series X Controller",
+                vendor_id=0x045E,
+                product_id=0x0B13,
+                version=0x87FF,
+                fields={"back": "b10", "start": "b11"},
+            ),
+        )
+
+        apply_named_controller_profile(config, emulator_name="dolphin", profile_name="xbox_1p")
+        gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
+
+        assert "Device = SDL/0/Xbox Series X Controller" in gcpad_text
+
+
+def test_apply_dolphin_profile_macos_updates_all_existing_config_roots(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        xdg_root = temp_root / "dolphin-xdg"
+        app_support_root = temp_root / "dolphin-app-support"
+        (xdg_root / "Config").mkdir(parents=True, exist_ok=True)
+        (app_support_root / "Config").mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_dolphin.sys.platform", "darwin")
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.macos_dolphin_root_candidates",
+            lambda: [app_support_root, xdg_root],
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_runtime_user_dir", lambda config=None: xdg_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.resolve_dolphin_config_dirs", lambda config=None: [xdg_root]
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin.detect_xbox_controllers",
+            lambda max_devices=2: [
+                XboxController(
+                    slot=0,
+                    name="Xbox Series X Controller",
+                    subtype=None,
+                    guid="030000005e040000220b000011050000",
+                    vendor_id=0x045E,
+                    product_id=0x0B22,
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_dolphin._lookup_macos_embedded_sdl_select_start_buttons",
+            lambda *, name, vendor_id=None, product_id=None: (10, 11),
+        )
+
+        apply_named_controller_profile(config, emulator_name="dolphin", profile_name="xbox_1p")
+
+        for root in (xdg_root, app_support_root):
+            gcpad_text = (root / "Config" / "GCPadNew.ini").read_text(encoding="utf-8")
+            assert "Device = SDL/0/Xbox Series X Controller" in gcpad_text
+            assert "Buttons/A = `Button S`" in gcpad_text
+            assert "Triggers/L-Analog = `Trigger L`" in gcpad_text
 
 
 def test_apply_azahar_profile_macos_injects_sdl_identity(monkeypatch, workspace_tempdir) -> None:
@@ -663,6 +943,10 @@ def test_apply_azahar_profile_macos_injects_sdl_identity(monkeypatch, workspace_
         monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
         monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
         monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_azahar._lookup_macos_embedded_sdl_mapping_for_port",
+            lambda *, port: None,
+        )
+        monkeypatch.setattr(
             "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
             lambda port=0: "040018dc5e040000130b000000006800",
         )
@@ -671,6 +955,98 @@ def test_apply_azahar_profile_macos_injects_sdl_identity(monkeypatch, workspace_
         text = qt_config.read_text(encoding="utf-8")
 
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
+
+
+def test_apply_azahar_profile_macos_uses_embedded_sdl_mapping(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text("profile=0\n", encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
+            lambda port=0: "030000005e040000200b000011050000",
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_azahar._lookup_macos_embedded_sdl_mapping_for_port",
+            lambda *, port: controller_sdl_guid._SDLControllerMapping(
+                guid="030000005e040000200b000011050000",
+                name="Xbox Wireless Controller",
+                vendor_id=0x045E,
+                product_id=0x0B20,
+                version=0x0511,
+                fields={
+                    "a": "b0",
+                    "b": "b1",
+                    "back": "b10",
+                    "dpdown": "h0.4",
+                    "dpleft": "h0.8",
+                    "dpright": "h0.2",
+                    "dpup": "h0.1",
+                    "guide": "b12",
+                    "leftshoulder": "b6",
+                    "lefttrigger": "a5",
+                    "leftx": "a0",
+                    "lefty": "a1",
+                    "rightshoulder": "b7",
+                    "righttrigger": "a4",
+                    "rightx": "a2",
+                    "righty": "a3",
+                    "start": "b11",
+                    "x": "b3",
+                    "y": "b4",
+                },
+            ),
+        )
+
+        apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
+        text = qt_config.read_text(encoding="utf-8")
+
+        assert r'profiles\1\button_a="button:1,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert r'profiles\1\button_b="button:0,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert r'profiles\1\button_x="button:4,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert r'profiles\1\button_y="button:3,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert r'profiles\1\button_select="button:10,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert r'profiles\1\button_start="button:11,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert r'profiles\1\button_l="button:6,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert r'profiles\1\button_r="button:7,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert (
+            r'profiles\1\button_zl="axis:5,direction:+,engine:sdl,guid:030000005e040000200b000011050000,port:0,threshold:0.5"'
+            in text
+        )
+        assert (
+            r'profiles\1\button_zr="axis:4,direction:+,engine:sdl,guid:030000005e040000200b000011050000,port:0,threshold:0.5"'
+            in text
+        )
+        assert r'profiles\1\button_home="button:12,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert (
+            r'profiles\1\button_up="hat:0,direction:up,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        )
+        assert (
+            r'profiles\1\button_down="hat:0,direction:down,engine:sdl,guid:030000005e040000200b000011050000,port:0"'
+            in text
+        )
+        assert (
+            r'profiles\1\button_left="hat:0,direction:left,engine:sdl,guid:030000005e040000200b000011050000,port:0"'
+            in text
+        )
+        assert (
+            r'profiles\1\button_right="hat:0,direction:right,engine:sdl,guid:030000005e040000200b000011050000,port:0"'
+            in text
+        )
+        assert (
+            r'profiles\1\circle_pad="down:axis$01$1direction$0+$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00.5,engine:analog_from_button,left:axis$00$1direction$0-$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$00$1direction$0+$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00.5,up:axis$01$1direction$0-$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00-0.5"'
+            in text
+        )
+        assert (
+            r'profiles\1\c_stick="down:axis$03$1direction$0+$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00.5,engine:analog_from_button,left:axis$02$1direction$0-$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$02$1direction$0+$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00.5,up:axis$03$1direction$0-$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00-0.5"'
+            in text
+        )
 
 
 def test_apply_controller_profile_azahar_linux_upgrades_existing_sdl_without_guid(

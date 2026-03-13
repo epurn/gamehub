@@ -190,6 +190,7 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - Windows portable executable directory (`<retroarch-dir>/system`) when applicable
 - when a RetroArch config file is found, GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) for controller quick-menu access
   - on Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`
+  - on macOS, config discovery prefers an existing native config file under `~/Library/Application Support/RetroArch/config/retroarch.cfg` before legacy root-level/document variants
   - on Linux, when RetroArch resolves to Flatpak, config discovery prefers the Flatpak config path before native `~/.config/retroarch/retroarch.cfg`
   - RetroArch `system_directory = ":/system"` (portable-relative) is normalized to `<retroarch.cfg dir>/system` on Windows
   - RetroArch `libretro_directory = ":/cores"` and `libretro_info_path = ":/info"` (portable-relative) are normalized to `<retroarch.cfg dir>/cores` / `<retroarch.cfg dir>/info` on Windows
@@ -261,7 +262,14 @@ Controller launch profile defaults:
   - `kbm`: P1 keyboard/mouse, P2 disabled
   - `xbox_1p`: P1 controller, P2 keyboard/mouse
   - `xbox_2p`: P1 + P2 controllers
+- On macOS, controller-count detection accepts SDL game controllers even when the device name is not Xbox-branded.
+- On macOS, controller detection still prefers host SDL probing first, then falls back to `system_profiler` game-controller inventory, then `hidutil list` gamepad-class HID devices when no loadable SDL2 dylib is available; failure remains fail-open to `kbm`.
+- On macOS, Dolphin keyboard/mouse device identifiers use `Quartz/0/Keyboard & Mouse`.
+- On macOS, Dolphin keyboard profile apply also normalizes native Quartz key tokens such as `Escape`, `Return`, and arrow/control/shift names at launch time so existing managed configs do not need manual reseeding.
+- On macOS, Dolphin controller-mode apply rebinds to the current detected SDL device name when one is available; on guidless fallback inventory it prefers the emulator's embedded SDL mapping name for the exact detected vendor/product identity, and only falls back to generic `SDL/<slot>/Gamepad` when no meaningful SDL device name can be resolved.
+- On macOS, Dolphin controller-mode apply also normalizes managed controller token names to the native SDL labels Dolphin expects there (for example `Button S/E/W/N` and trigger analog bindings), binds controller hotkeys to the resolved SDL pad device instead of `All Devices`, flips Wii IR vertical stick direction to the native mapping expected there, and writes every existing native/XDG Dolphin config root it finds so native `~/Library/Application Support/Dolphin` installs are not missed.
 - Azahar GUID normalization is always detect-based.
+- On macOS, Azahar controller-mode apply also rewrites managed SDL button, trigger, D-pad, and analog bindings from the emulator's embedded SDL controller mapping database when a matching controller identity is found; otherwise it keeps the seeded profile layout and only normalizes GUID/port identity.
 - GUID discovery order (Linux Flatpak config paths): probe Azahar Flatpak runtime first; if unavailable, preserve existing GUID and otherwise keep port-only mappings (host GUID is not injected into Flatpak configs).
 - GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available, otherwise keep existing GUIDs and fall back to port-only mappings.

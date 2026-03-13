@@ -235,7 +235,8 @@ Linux PS2 note:
 - PCSX2 controller bindings and hotkeys are managed at launch via controller profiles when `launch_autoconfig` is enabled.
 
 RetroArch note:
-- On macOS, config/save discovery checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`.
+- On macOS, save discovery checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`.
+- On macOS, config discovery prefers an existing native config file under `~/Library/Application Support/RetroArch/config/retroarch.cfg` before legacy root-level/document variants.
 - Deterministic RetroArch save downloads can materialize that root on first sync even before RetroArch has created the `saves/` directory tree itself.
 - When RetroArch save sorting-by-core is enabled, GAMEHUB treats the core-specific subdirectory as the canonical destination instead of a legacy root-level filename match.
 - That canonical sorted-core rule applies across RetroArch exact-file save systems that GAMEHUB manages (`GB`, `GBC`, `GBA`, `GEN_MD`, `NES`, `SNES`, `N64`, `NDS`, `PSX`) rather than only `N64`.
@@ -262,8 +263,15 @@ Managed shortcut launch autoconfig:
 - Linux Steam Deck `shortcut-launch` uses a single detect pass and applies `xbox_1p` when detection returns zero.
 - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later update.
 - Non-Deck platforms keep standard behavior (`0 -> kbm`).
+- On macOS, controller-count detection accepts SDL game controllers even when the device name is not Xbox-branded.
+- On macOS, controller detection still prefers host SDL probing first, then falls back to `system_profiler` game-controller inventory, then `hidutil list` gamepad-class HID devices when no loadable SDL2 dylib is available; failure still falls through to `kbm`.
 - Azahar controller-mode apply keeps pointer/touch keys preservation-first, while managed button keys are always normalized from profile mappings.
 - Dolphin Linux controller-mode preserves existing controller-class device identities on non-Deck, while Deck controller-mode uses deterministic `evdev` rebinding.
+- On macOS, Dolphin keyboard/mouse device identifiers use `Quartz/0/Keyboard & Mouse`.
+- On macOS, Dolphin keyboard profile apply also normalizes native Quartz key tokens such as `Escape`, `Return`, and arrow/control/shift names at launch time so existing managed configs do not need manual reseeding.
+- On macOS, Dolphin controller-mode apply rebinds to the current detected SDL device name when one is available; on guidless fallback inventory it prefers the emulator's embedded SDL mapping name for the exact detected vendor/product identity, and only falls back to generic `SDL/<slot>/Gamepad` when no meaningful SDL device name can be resolved.
+- On macOS, Dolphin controller-mode apply also normalizes managed controller token names to the native SDL labels Dolphin expects there (for example `Button S/E/W/N` and trigger analog bindings), binds controller hotkeys to the resolved SDL pad device instead of `All Devices`, flips Wii IR vertical stick direction to the native mapping expected there, and writes every existing native/XDG Dolphin config root it finds so native `~/Library/Application Support/Dolphin` installs are not missed.
+- On macOS, Azahar controller-mode apply also rewrites managed SDL button, trigger, D-pad, and analog bindings from the emulator's embedded SDL controller mapping database when a matching controller identity is found; otherwise it keeps the seeded profile layout and only normalizes GUID/port identity.
 - Default profile root is `<gamehub_dir>/controller_profiles` and includes seeded defaults:
   - `<root>/pcsx2/<profile>/PCSX2.ini`
   - `<root>/dolphin/<profile>/GCPadNew.ini`
@@ -318,6 +326,7 @@ N3DS Azahar defaults:
 - On macOS, GAMEHUB prefers an existing native-style Azahar save root `~/.local/share/azahar-emu/sdmc` before falling back to `~/Library/Application Support/Azahar/sdmc`.
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
 - Azahar controller bindings are applied at launch via controller profiles. GUID normalization is always detect-based.
+- On macOS, controller-mode apply derives Azahar's managed SDL button map from the bundled SDL controller database when a matching controller identity is available, including hat-based D-pad bindings and trigger axis correction for Bluetooth Xbox pads.
 - GUID discovery order (Linux Flatpak config paths): probe Azahar Flatpak runtime first; if unavailable, preserve existing GUID and otherwise keep port-only mappings (host GUID is not injected into Flatpak configs).
 - GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available; otherwise keep existing GUIDs and fall back to port-only mappings.
