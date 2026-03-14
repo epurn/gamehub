@@ -264,7 +264,7 @@ Managed shortcut launch autoconfig:
 - Linux Steam Deck `shortcut-launch` uses a single detect pass and applies `xbox_1p` when detection returns zero.
 - Steam Deck validation scope is built-in controller mode; external Xbox controller support on Deck is planned for a later update.
 - Non-Deck platforms keep standard behavior (`0 -> kbm`).
-- On macOS, controller-count detection accepts SDL game controllers even when the device name is not Xbox-branded.
+- On macOS, controller-count detection promotes only Xbox-like controllers into `xbox_*` profiles, using Xbox-branded names first and falling back to Microsoft vendor/GUID evidence when names are generic.
 - On macOS, controller detection still prefers host SDL probing first, then falls back to `system_profiler` game-controller inventory, then `hidutil list` gamepad-class HID devices when no loadable SDL2 dylib is available; failure still falls through to `kbm`.
 - Azahar controller-mode apply keeps pointer/touch keys preservation-first, while managed button keys are always normalized from profile mappings.
 - Dolphin Linux controller-mode preserves existing controller-class device identities on non-Deck, while Deck controller-mode uses deterministic `evdev` rebinding.

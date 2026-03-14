@@ -101,6 +101,34 @@ def test_apply_shortcut_controller_configuration_detection_failure_falls_back_to
     assert applied_counts == [0]
 
 
+def test_apply_shortcut_controller_configuration_macos_non_xbox_controller_uses_kbm_profile_selection(
+    monkeypatch,
+) -> None:
+    config = default_shortcut_config()
+    applied_counts: list[int] = []
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setattr(runtime_module, "is_steam_deck_linux", lambda: False)
+    monkeypatch.setattr(runtime_module, "detect_xbox_controllers", lambda max_devices=2: [])
+    monkeypatch.setattr(
+        runtime_module,
+        "apply_controller_profile",
+        lambda cfg, emulator_name, controller_count: applied_counts.append(controller_count) or "kbm",
+    )
+
+    runtime_module.apply_shortcut_controller_configuration(
+        payload=_payload(
+            emulator="azahar",
+            target_exe="/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
+            target_args=("-f", "rom.3ds"),
+        ),
+        config=config,
+        audit=False,
+    )
+
+    assert applied_counts == [0]
+
+
 def test_run_target_with_optional_exit_hook_uses_azahar_windows_exit_hook(monkeypatch) -> None:
     hook_calls: list[str] = []
 

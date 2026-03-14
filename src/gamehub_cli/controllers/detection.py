@@ -27,6 +27,7 @@ _LINUX_NON_GAMEPAD_NAME_MARKERS = (
 _ERROR_SUCCESS = 0
 _XINPUT_FLAG_GAMEPAD = 0x00000001
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
+_MICROSOFT_VENDOR_ID = 0x045E
 
 
 @dataclass(frozen=True)
@@ -198,15 +199,34 @@ def _is_supported_macos_controller_name(name: str) -> bool:
     return any(marker in normalized for marker in ("xbox", "x-box", "xinput"))
 
 
+def _macos_guid_vendor_id(guid: str | None) -> int | None:
+    if guid is None:
+        return None
+    normalized = guid.strip()
+    if len(normalized) != 32:
+        return None
+    try:
+        raw_guid = bytes.fromhex(normalized)
+    except ValueError:
+        return None
+    if len(raw_guid) < 6:
+        return None
+    return int.from_bytes(raw_guid[4:6], "little")
+
+
 def _is_supported_macos_controller(device: object) -> bool:
     name = str(getattr(device, "name", "")).strip()
     normalized = name.casefold()
     if any(marker in normalized for marker in _LINUX_NON_GAMEPAD_NAME_MARKERS):
         return False
-    is_game_controller = getattr(device, "is_game_controller", None)
-    if is_game_controller is True:
+    if _is_supported_macos_controller_name(name):
         return True
-    return _is_supported_macos_controller_name(name)
+    vendor_id = getattr(device, "vendor_id", None)
+    if vendor_id == _MICROSOFT_VENDOR_ID:
+        return True
+    if vendor_id is None and _macos_guid_vendor_id(getattr(device, "guid", None)) == _MICROSOFT_VENDOR_ID:
+        return True
+    return False
 
 
 def _detect_macos_xbox_controllers(*, max_devices: int) -> list[XboxController]:

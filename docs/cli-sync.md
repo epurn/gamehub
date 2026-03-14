@@ -268,7 +268,7 @@ Controller launch profile defaults:
   - `kbm`: P1 keyboard/mouse, P2 disabled
   - `xbox_1p`: P1 controller, P2 keyboard/mouse
   - `xbox_2p`: P1 + P2 controllers
-- On macOS, controller-count detection accepts SDL game controllers even when the device name is not Xbox-branded.
+- On macOS, controller-count detection promotes only Xbox-like controllers into `xbox_*` profiles, using Xbox-branded names first and falling back to Microsoft vendor/GUID evidence when names are generic.
 - On macOS, controller detection still prefers host SDL probing first, then falls back to `system_profiler` game-controller inventory, then `hidutil list` gamepad-class HID devices when no loadable SDL2 dylib is available; failure remains fail-open to `kbm`.
 - On macOS, Dolphin keyboard/mouse device identifiers use `Quartz/0/Keyboard & Mouse`.
 - On macOS, Dolphin keyboard profile apply also normalizes native Quartz key tokens such as `Escape`, `Return`, and arrow/control/shift names at launch time so existing managed configs do not need manual reseeding.

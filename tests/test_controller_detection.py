@@ -162,7 +162,7 @@ def test_detect_xbox_controllers_macos_uses_sdl_probe(monkeypatch) -> None:
         observed["max_devices"] = max_devices
         return [
             SimpleNamespace(slot=0, name="Generic USB Joystick", guid="a" * 32, is_game_controller=False),
-            SimpleNamespace(slot=1, name="Motion Sensors", guid="b" * 32, is_game_controller=True),
+            SimpleNamespace(slot=1, name="Motion Sensors", guid="b" * 32, is_game_controller=True, vendor_id=0x045E),
             SimpleNamespace(slot=2, name="Wireless Controller", guid="c" * 32, is_game_controller=True),
             SimpleNamespace(slot=3, name="XInput Controller", guid="d" * 32, is_game_controller=True),
         ]
@@ -174,9 +174,92 @@ def test_detect_xbox_controllers_macos_uses_sdl_probe(monkeypatch) -> None:
 
     assert observed["max_devices"] is None
     assert devices == [
-        XboxController(slot=2, name="Wireless Controller", subtype=None, guid="c" * 32),
         XboxController(slot=3, name="XInput Controller", subtype=None, guid="d" * 32),
     ]
+
+
+def test_detect_xbox_controllers_macos_accepts_generic_name_with_microsoft_vendor(monkeypatch) -> None:
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_detection,
+        "_discover_host_sdl_joysticks",
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=0,
+                name="Wireless Controller",
+                guid=None,
+                is_game_controller=True,
+                vendor_id=0x045E,
+                product_id=0x0B13,
+            )
+        ],
+    )
+
+    devices = detect_xbox_controllers(max_devices=2)
+
+    assert devices == [
+        XboxController(
+            slot=0,
+            name="Wireless Controller",
+            subtype=None,
+            guid=None,
+            vendor_id=0x045E,
+            product_id=0x0B13,
+        )
+    ]
+
+
+def test_detect_xbox_controllers_macos_accepts_generic_name_with_microsoft_guid(monkeypatch) -> None:
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_detection,
+        "_discover_host_sdl_joysticks",
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=0,
+                name="Wireless Controller",
+                guid="030000005e040000130b0000ff870000",
+                is_game_controller=True,
+                vendor_id=None,
+                product_id=0x0B13,
+            )
+        ],
+    )
+
+    devices = detect_xbox_controllers(max_devices=2)
+
+    assert devices == [
+        XboxController(
+            slot=0,
+            name="Wireless Controller",
+            subtype=None,
+            guid="030000005e040000130b0000ff870000",
+            vendor_id=None,
+            product_id=0x0B13,
+        )
+    ]
+
+
+def test_detect_xbox_controllers_macos_rejects_non_xbox_game_controller(monkeypatch) -> None:
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_detection,
+        "_discover_host_sdl_joysticks",
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=0,
+                name="Wireless Controller",
+                guid="030000004c050000e60c000000010000",
+                is_game_controller=True,
+                vendor_id=0x054C,
+                product_id=0x0CE6,
+            )
+        ],
+    )
+
+    devices = detect_xbox_controllers(max_devices=2)
+
+    assert devices == []
 
 
 def test_detect_xbox_controllers_macos_failure_returns_empty(monkeypatch) -> None:
