@@ -43,6 +43,7 @@ Fresh installs must run `gamehub init` before the first `gamehub sync`.
 
 Steam close behavior:
 - non-dry sync attempts to close Steam first
+- on macOS, sync sends a graceful Steam app quit request and waits for confirmed exit; it does not auto-run `pkill` / `pkill -9` when Steam stays open
 - if Steam cannot be closed:
   - with `--require-steam-closed`: sync fails
   - without it: Steam update stage is skipped for safety

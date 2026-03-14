@@ -256,35 +256,37 @@ def test_close_steam_best_effort_linux_uses_exact_process_names(monkeypatch) -> 
     commands: list[list[str]] = []
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "linux")
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.is_steam_running", lambda: True)
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.wait_for_steam_exit", lambda timeout_seconds=20: True)
     monkeypatch.setattr(
         "gamehub_cli.steam.lifecycle._run_process_best_effort",
         lambda cmd, timeout_seconds=10: commands.append(cmd),
     )
 
-    close_steam_best_effort()
+    result = close_steam_best_effort()
 
     graceful = commands[: len(LINUX_STEAM_PROCESS_NAMES)]
     forced = commands[len(LINUX_STEAM_PROCESS_NAMES) :]
     assert graceful == [["pkill", "-x", name] for name in LINUX_STEAM_PROCESS_NAMES]
     assert forced == [["pkill", "-9", "-x", name] for name in LINUX_STEAM_PROCESS_NAMES]
+    assert result.closed is True
 
 
-def test_close_steam_best_effort_macos_prefers_graceful_quit_then_kill(monkeypatch) -> None:
+def test_close_steam_best_effort_macos_requests_quit_without_immediate_force_kill(monkeypatch) -> None:
     commands: list[list[str]] = []
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.os.name", "posix")
     monkeypatch.setattr("gamehub_cli.steam.lifecycle.sys.platform", "darwin")
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.is_steam_running", lambda: True)
+    monkeypatch.setattr("gamehub_cli.steam.lifecycle.wait_for_steam_exit", lambda timeout_seconds=20: False)
     monkeypatch.setattr(
         "gamehub_cli.steam.lifecycle._run_process_best_effort",
-        lambda cmd, timeout_seconds=10: commands.append(cmd),
+        lambda cmd, timeout_seconds=10: commands.append(cmd) or 0,
     )
 
-    close_steam_best_effort()
+    result = close_steam_best_effort()
 
-    assert commands[0] == ["osascript", "-e", 'tell application id "com.valvesoftware.steam" to quit']
-    graceful = commands[1 : 1 + len(MACOS_STEAM_PROCESS_NAMES)]
-    forced = commands[1 + len(MACOS_STEAM_PROCESS_NAMES) :]
-    assert graceful == [["pkill", "-x", name] for name in MACOS_STEAM_PROCESS_NAMES]
-    assert forced == [["pkill", "-9", "-x", name] for name in MACOS_STEAM_PROCESS_NAMES]
+    assert commands == [["osascript", "-e", 'tell application id "com.valvesoftware.steam" to quit']]
+    assert result.status == "still_running"
 
 
 def test_build_context_normalizes_macos_inner_steam_executable_to_bundle(monkeypatch) -> None:

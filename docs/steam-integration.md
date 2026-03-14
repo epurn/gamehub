@@ -8,7 +8,7 @@
   - optional explicit profile via `steam.steam_id`
 - Steam running detection + close/wait lifecycle
   - macOS checks native Steam process names first (`Steam`, `steam_osx`, `steamwebhelper`)
-  - macOS close uses a best-effort app quit before falling back to exact-name `pkill`
+  - macOS close sends a graceful app quit request and waits for confirmed exit; automatic sync does not escalate to `pkill` / `pkill -9`
   - macOS reopen uses `open -a <Steam.app>` against either configured or auto-discovered app bundles
 - On macOS, `steam.steam_exe` may point to either `Steam.app` or its inner `Contents/MacOS/...` executable; GAMEHUB normalizes it to the app bundle for lifecycle actions
 - Backup before mutation:
@@ -94,6 +94,7 @@
 
 ## Safety behavior
 - If Steam is running, sync attempts close + wait.
+- On macOS, the automatic sync path only requests a graceful Steam app quit; it does not force-kill the desktop client when Steam stays open.
 - If Steam remains running:
   - with `--require-steam-closed`: sync fails
   - without it: Steam update stage is skipped for safety
