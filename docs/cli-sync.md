@@ -169,6 +169,7 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry sync from the server-published save-binding catalog and become `upload_new` actions in `bidirectional`.
 - Managed shortcut launches also auto-create those deterministic `exact_files` saves at post-exit, so wrapped RetroArch and managed `PSX`/`PS2` sessions do not need to wait for the next full `gamehub sync`.
   - For `PSX` Swanstation, GAMEHUB accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.
+  - On macOS, native `~/Library/Application Support/RetroArch/config/retroarch.cfg` layouts materialize those deterministic `PSX` saves under sibling `~/Library/Application Support/RetroArch/saves`, while an already-materialized `~/Documents/RetroArch/saves` tree still wins for existing local saves.
 - Managed shortcut launches also auto-create first-time deterministic `learned_tree` saves at post-exit when one root can be proven, even if that local save already existed before the connected bidirectional session began (for example after an offline launch or after switching from `disabled`/`download` to `bidirectional`).
 - `download` mode stays read-only: missing local saves may still download, existing local drift becomes `skip(download-mode-local-drift)`, local-only first-time saves become `skip(download-mode-local-new)`, and the server is never mutated.
 - If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
@@ -191,6 +192,7 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
 - when a RetroArch config file is found, GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) for controller quick-menu access
   - on Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`
   - on macOS, config discovery prefers an existing native config file under `~/Library/Application Support/RetroArch/config/retroarch.cfg` before legacy root-level/document variants
+  - on macOS, that native nested config layout uses sibling `~/Library/Application Support/RetroArch/saves` for deterministic save-sync materialization instead of `.../config/saves`
   - on Linux, when RetroArch resolves to Flatpak, config discovery prefers the Flatpak config path before native `~/.config/retroarch/retroarch.cfg`
   - RetroArch `system_directory = ":/system"` (portable-relative) is normalized to `<retroarch.cfg dir>/system` on Windows
   - RetroArch `libretro_directory = ":/cores"` and `libretro_info_path = ":/info"` (portable-relative) are normalized to `<retroarch.cfg dir>/cores` / `<retroarch.cfg dir>/info` on Windows
