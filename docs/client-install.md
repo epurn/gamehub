@@ -21,7 +21,10 @@ Start from template [docs/templates/config.macos.template.toml](templates/config
    - `Dolphin`
    - `Azahar`
    - `PCSX2`
-4. GAMEHUB does not fall back to Rosetta when a native Apple Silicon or universal asset is unavailable.
+4. GAMEHUB still prefers native Apple Silicon or universal macOS assets first.
+   - For `PCSX2` only, GAMEHUB accepts an Intel-only bundle by default when Rosetta is already installed.
+   - Set `[macos].disable_pcsx2_rosetta = true` or `GAMEHUB_MACOS_DISABLE_PCSX2_ROSETTA=true` to force strict native-only `PCSX2` behavior.
+   - `RetroArch`, `Dolphin`, `Azahar`, and `Steam` remain native-only.
 5. Optional command backend placeholders:
    - `{package}`: canonical install token (`retroarch`, `dolphin`, `azahar`, `pcsx2`)
    - `{emulator}`: emulator name from the index/config
@@ -44,7 +47,7 @@ gamehub init
 13. Managed macOS Azahar launches pin to `~/Applications/Azahar.app` when that bundle exists, and GAMEHUB opens the ROM as a document with that bundle before falling back to CLI-style launch. This matches the app's declared macOS document handling more closely than relying on app-name lookup or ROM `--args` alone.
 14. After upgrading from older macOS preview builds, run one non-dry `gamehub sync` so Steam shortcut commands are rewritten away from the legacy `steam-shortcut-launch.sh` shim and the old launcher file is pruned.
 15. Combined end-to-end manual validation for `MACOS-CLI-03 + MACOS-CLI-04 + MACOS-CLI-07 + MACOS-CLI-09` remains deferred; this page only documents the current install/bootstrap contract.
-16. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code still resolve to Apple Silicon or universal builds.
+16. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code still resolve to native Apple Silicon, universal, or the currently intended `PCSX2` Intel-only fallback shape.
 
 ## Linux (distro-agnostic) via pip
 

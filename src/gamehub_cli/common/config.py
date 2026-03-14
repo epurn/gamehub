@@ -27,6 +27,7 @@ class LinuxConfig:
 class MacOSConfig:
     emulator_install_backend: str | None = None
     emulator_install_command: str | None = None
+    disable_pcsx2_rosetta: bool = False
     retroarch_cfg_path: Path | None = None
     retroarch_system_dir: Path | None = None
     retroarch_cores_dir: Path | None = None
@@ -345,6 +346,8 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     env_macos_emulator_install_command = _normalize_optional_text(
         _first_env_value("GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND")
     )
+    config_macos_disable_pcsx2_rosetta = _normalize_optional_bool(macos.get("disable_pcsx2_rosetta"))
+    env_macos_disable_pcsx2_rosetta = _normalize_optional_bool(_first_env_value("GAMEHUB_MACOS_DISABLE_PCSX2_ROSETTA"))
 
     config_roms_dir = _normalize_optional_path(paths.get("roms_dir"))
     env_roms_dir = _normalize_optional_path(_first_env_value("GAMEHUB_ROMS_DIR"))
@@ -458,6 +461,11 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
                 env_macos_emulator_install_command
                 if env_macos_emulator_install_command is not None
                 else config_macos_emulator_install_command
+            ),
+            disable_pcsx2_rosetta=(
+                env_macos_disable_pcsx2_rosetta
+                if env_macos_disable_pcsx2_rosetta is not None
+                else (config_macos_disable_pcsx2_rosetta if config_macos_disable_pcsx2_rosetta is not None else False)
             ),
             retroarch_cfg_path=env_retroarch_cfg_path
             if env_retroarch_cfg_path is not None

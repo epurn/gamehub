@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import os
+import platform
+import re
 import shutil
+import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any, Iterable
@@ -43,10 +47,22 @@ _MACOS_APP_BUNDLE_NAMES = {
     "dolphin": ("Dolphin.app", "Dolphin Emulator.app"),
     "azahar": ("Azahar.app",),
 }
+_MACH_O_ARCH_RE = re.compile(r"\b(arm64e|arm64|x86_64|i386)\b")
+_MACOS_ARCH_EXECUTABLE = "/usr/bin/arch"
+_MACOS_TRUE_EXECUTABLE = "/usr/bin/true"
 
 _HOST_PATH_TYPE = type(Path.cwd())
 _OS_NAME = os.name
 _SYS_PLATFORM = sys.platform
+_MACOS_DISABLE_PCSX2_ROSETTA = False
+
+
+@dataclass(frozen=True)
+class _MacOSExecutablePolicy:
+    allowed: bool
+    preference: int
+    reason: str | None = None
+    architectures: tuple[str, ...] = ()
 
 
 def _safe_path(value: str) -> Path:
@@ -96,21 +112,197 @@ def _canonical_emulator_name(emulator_value: str) -> str:
     return raw
 
 
+def _set_macos_pcsx2_rosetta_disabled(disabled: bool) -> None:
+    global _MACOS_DISABLE_PCSX2_ROSETTA
+    _MACOS_DISABLE_PCSX2_ROSETTA = disabled
+
+
+def _is_macos_host() -> bool:
+    return _OS_NAME != "nt" and _SYS_PLATFORM == "darwin"
+
+
+def _is_apple_silicon_macos() -> bool:
+    return _is_macos_host() and platform.machine().strip().casefold() in {"arm64", "arm64e", "aarch64"}
+
+
+def _should_apply_macos_policy(emulator_value: str, path_value: Path) -> bool:
+    if not _is_macos_host():
+        return False
+    if _canonical_emulator_name(emulator_value) not in _MACOS_APP_BUNDLE_NAMES:
+        return False
+    candidate = path_value.expanduser()
+    if candidate.suffix.casefold() == ".app":
+        return True
+    if any(parent.suffix.casefold() == ".app" for parent in candidate.parents):
+        return True
+    return not candidate.suffix
+
+
+def _normalize_macos_architectures(tokens: Iterable[str]) -> tuple[str, ...]:
+    return tuple(sorted({"arm64" if token == "arm64e" else token for token in tokens}))
+
+
+def _normalize_macos_executable_candidate(path_value: Path) -> Path | None:
+    candidate = path_value.expanduser()
+    if not candidate.exists():
+        return None
+    if candidate.suffix.casefold() == ".app":
+        executable = resolve_macos_app_bundle_executable(candidate)
+        if executable is None:
+            return None
+        candidate = executable
+    if candidate.is_dir():
+        return None
+    try:
+        return candidate.resolve()
+    except OSError:
+        return candidate
+
+
+def _macos_binary_architectures(path_value: Path) -> tuple[str, ...]:
+    executable = _normalize_macos_executable_candidate(path_value)
+    if executable is None:
+        return ()
+    outputs: list[str] = []
+    for command in (["lipo", "-archs", str(executable)], ["file", str(executable)]):
+        try:
+            completed = subprocess.run(  # noqa: S603
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            continue
+        if completed.returncode != 0:
+            continue
+        outputs.append(f"{completed.stdout}\n{completed.stderr}")
+    tokens: list[str] = []
+    for output in outputs:
+        tokens.extend(_MACH_O_ARCH_RE.findall(output))
+    return _normalize_macos_architectures(tokens)
+
+
+def _macos_rosetta_available() -> bool:
+    if not _is_apple_silicon_macos():
+        return False
+    try:
+        completed = subprocess.run(  # noqa: S603
+            [_MACOS_ARCH_EXECUTABLE, "-x86_64", _MACOS_TRUE_EXECUTABLE],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return False
+    return completed.returncode == 0
+
+
+def _macos_executable_policy(emulator_value: str, path_value: Path) -> _MacOSExecutablePolicy:
+    architectures = _macos_binary_architectures(path_value)
+    if not _is_apple_silicon_macos():
+        return _MacOSExecutablePolicy(allowed=True, preference=0, architectures=architectures)
+    if not architectures:
+        return _MacOSExecutablePolicy(
+            allowed=False,
+            preference=99,
+            reason="could not verify macOS executable architecture",
+        )
+    if "arm64" in architectures:
+        return _MacOSExecutablePolicy(allowed=True, preference=0, architectures=architectures)
+
+    joined = ", ".join(architectures)
+    canonical = _canonical_emulator_name(emulator_value)
+    if canonical == "pcsx2":
+        if _MACOS_DISABLE_PCSX2_ROSETTA:
+            return _MacOSExecutablePolicy(
+                allowed=False,
+                preference=99,
+                reason=(
+                    "Intel-only PCSX2 is installed, but PCSX2 Rosetta fallback is disabled by "
+                    "[macos].disable_pcsx2_rosetta."
+                ),
+                architectures=architectures,
+            )
+        if not _macos_rosetta_available():
+            return _MacOSExecutablePolicy(
+                allowed=False,
+                preference=99,
+                reason=(
+                    "Intel-only PCSX2 requires Rosetta, but Rosetta is not available on this Mac. "
+                    "Install Rosetta separately and re-run sync."
+                ),
+                architectures=architectures,
+            )
+        return _MacOSExecutablePolicy(allowed=True, preference=1, architectures=architectures)
+
+    return _MacOSExecutablePolicy(
+        allowed=False,
+        preference=99,
+        reason=f"macOS executable is not native Apple Silicon or universal (architectures: {joined})",
+        architectures=architectures,
+    )
+
+
+def _select_macos_preferred_executable(emulator_value: str, candidates: Iterable[Path]) -> str | None:
+    best_path: str | None = None
+    best_preference: int | None = None
+    for candidate in candidates:
+        executable = _normalize_macos_executable_candidate(candidate)
+        if executable is None:
+            continue
+        policy = _macos_executable_policy(emulator_value, candidate)
+        if not policy.allowed:
+            continue
+        if best_preference is None or policy.preference < best_preference:
+            best_path = str(executable)
+            best_preference = policy.preference
+    return best_path
+
+
+def _macos_emulator_unavailable_reason(emulator_value: str) -> str | None:
+    if _OS_NAME == "nt" or _SYS_PLATFORM != "darwin":
+        return None
+    raw = emulator_value.strip().strip('"')
+    if not raw:
+        return None
+    candidates: list[Path] = []
+    path = _safe_path(raw)
+    if path.exists():
+        candidates.append(path)
+    bundle_names = _MACOS_APP_BUNDLE_NAMES.get(_canonical_emulator_name(raw), ())
+    if bundle_names:
+        candidates.extend(macos_application_bundle_candidates(bundle_names))
+    for command in _command_candidates(raw):
+        resolved_command = shutil.which(command)
+        if resolved_command:
+            candidates.append(_safe_path(resolved_command))
+    for candidate in _dedupe_paths(candidates):
+        executable = _normalize_macos_executable_candidate(candidate)
+        if executable is None:
+            continue
+        policy = _macos_executable_policy(emulator_value, candidate)
+        if policy.allowed:
+            continue
+        if policy.reason:
+            return policy.reason
+    return None
+
+
 def resolve_macos_preferred_bundle_executable(emulator_value: str, *, user_only: bool = False) -> str | None:
     canonical = _canonical_emulator_name(emulator_value)
-    if _OS_NAME == "nt" or _SYS_PLATFORM != "darwin":
+    if not _is_macos_host():
         return None
     bundle_names = _MACOS_APP_BUNDLE_NAMES.get(canonical, ())
     if not bundle_names:
         return None
     user_applications_dir = macos_user_applications_dir()
+    candidates: list[Path] = []
     for bundle_path in macos_application_bundle_candidates(bundle_names):
         if user_only and bundle_path.parent != user_applications_dir:
             continue
-        executable_path = resolve_macos_app_bundle_executable(bundle_path)
-        if executable_path is not None:
-            return str(executable_path.resolve())
-    return None
+        candidates.append(bundle_path)
+    return _select_macos_preferred_executable(canonical, candidates)
 
 
 def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
@@ -212,7 +404,7 @@ def _known_install_candidates(emulator_value: str) -> tuple[Path, ...]:
             values.append(home / ".local" / "share" / "flatpak" / "exports" / "bin" / flatpak_app_id)
         return tuple(values)
 
-    if _SYS_PLATFORM == "darwin":
+    if _is_macos_host():
         preferred_executable = resolve_macos_preferred_bundle_executable(emulator_value)
         if preferred_executable is not None:
             values.append(_safe_path(preferred_executable))
@@ -332,6 +524,10 @@ def _is_windows_apps_alias(path_value: str) -> bool:
 
 def _known_install_exists(emulator_value: str) -> bool:
     for candidate in _dedupe_paths(_known_install_candidates(emulator_value)):
+        if _should_apply_macos_policy(emulator_value, candidate):
+            if _select_macos_preferred_executable(emulator_value, [candidate]) is not None:
+                return True
+            continue
         if candidate.exists():
             return True
     return False
@@ -343,8 +539,19 @@ def _is_emulator_available(emulator_value: str) -> bool:
         return False
     path = _safe_path(raw)
     if path.is_absolute() or path.suffix:
-        return path.exists()
-    if any(shutil.which(command) is not None for command in _command_candidates(raw)):
+        if not path.exists():
+            return False
+        if _should_apply_macos_policy(emulator_value, path):
+            return _select_macos_preferred_executable(emulator_value, [path]) is not None
+        return True
+    for command in _command_candidates(raw):
+        resolved_command = shutil.which(command)
+        if not resolved_command:
+            continue
+        if _should_apply_macos_policy(emulator_value, _safe_path(resolved_command)):
+            if _select_macos_preferred_executable(emulator_value, [_safe_path(resolved_command)]) is not None:
+                return True
+            continue
         return True
     if _known_install_exists(raw):
         return True
@@ -376,26 +583,39 @@ def resolve_emulator_executable(emulator_value: str) -> str:
     raw = emulator_value.strip().strip('"')
     if not raw:
         return emulator_value
-    if _SYS_PLATFORM == "darwin" and _canonical_emulator_name(raw) == "azahar":
+    if _is_macos_host() and _canonical_emulator_name(raw) == "azahar":
         preferred_user_executable = resolve_macos_preferred_bundle_executable(raw, user_only=True)
         if preferred_user_executable is not None:
             return preferred_user_executable
     path = _safe_path(raw)
-    if _SYS_PLATFORM == "darwin" and path.suffix.casefold() == ".app" and path.exists():
-        bundle_executable = resolve_macos_app_bundle_executable(path)
-        if bundle_executable is not None:
-            return str(bundle_executable.resolve())
     if path.exists():
-        return str(path.resolve())
+        if _should_apply_macos_policy(raw, path):
+            compatible_path = _select_macos_preferred_executable(raw, [path])
+            if compatible_path is not None:
+                return compatible_path
+        try:
+            return str(path.resolve())
+        except OSError:
+            return str(path)
     if path.is_absolute() and path.exists():
         return str(path)
     for candidate in _dedupe_paths(_known_install_candidates(raw)):
+        if _should_apply_macos_policy(raw, candidate):
+            compatible_path = _select_macos_preferred_executable(raw, [candidate])
+            if compatible_path is not None:
+                return compatible_path
+            continue
         if candidate.exists():
             return str(candidate)
     alias_candidate: str | None = None
     for command in _command_candidates(raw):
         resolved = shutil.which(command)
         if not resolved:
+            continue
+        if _should_apply_macos_policy(raw, _safe_path(resolved)):
+            compatible_path = _select_macos_preferred_executable(raw, [_safe_path(resolved)])
+            if compatible_path is not None:
+                return compatible_path
             continue
         if _is_windows_apps_alias(resolved):
             alias_candidate = resolved

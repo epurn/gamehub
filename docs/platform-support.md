@@ -52,7 +52,9 @@ Legacy/general templates are still available:
   - [docs/templates/config.macos.template.toml](templates/config.macos.template.toml)
 - Current frozen host contract targets the latest stable Apple Silicon macOS release with native Steam.
 - Prefer `~/Applications` for admin-free Steam/emulator app installs; `/Applications` remains an expected native install location.
-- Rosetta and Intel Mac fallback are not part of the supported path.
+- GAMEHUB still prefers native Apple Silicon or universal emulator builds.
+- `PCSX2` may fall back to Intel-only macOS builds when Rosetta is already installed; set `[macos].disable_pcsx2_rosetta = true` to force strict native-only `PCSX2` behavior.
+- `RetroArch`, `Dolphin`, `Azahar`, `Steam`, and Intel Mac hosts remain outside the Rosetta fallback path.
 - Landed on this branch: config contract, native Steam lifecycle, managed shortcut bundle launching, runtime-root discovery, and native installer/core provisioning.
 - Still open: save-sync/runtime mutation parity, controller autoconfig parity, and final release-validation docs.
 

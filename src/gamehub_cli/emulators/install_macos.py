@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import shlex
 import shutil
 import subprocess
@@ -14,7 +13,13 @@ from urllib.parse import urlparse
 from ..common.http import open_url
 from ..common.platform_paths import macos_user_applications_dir, resolve_macos_app_bundle_executable
 from . import install_common
-from .resolution import _canonical_emulator_name, _is_emulator_available
+from .resolution import (
+    _canonical_emulator_name,
+    _is_emulator_available,
+    _macos_binary_architectures,
+    _macos_emulator_unavailable_reason,
+    _macos_executable_policy,
+)
 
 
 @dataclass(frozen=True)
@@ -58,7 +63,6 @@ _MANUAL_SOURCE_BY_EMULATOR = {
     "dolphin": _DOLPHIN_DOWNLOAD_PAGE_URL,
     "azahar": _AZAHAR_RELEASES_TAG_URL,
 }
-_MACH_O_ARCH_RE = re.compile(r"\b(arm64e|arm64|x86_64|i386)\b")
 _UNKNOWN_ARCHITECTURE_REASON = "could not verify app bundle architecture from upstream asset"
 _PINNED_MACOS_OFFICIAL_ASSETS = {
     "retroarch": MacOSOfficialAsset(
@@ -240,28 +244,7 @@ def _extract_app_bundle_from_dmg(
 
 
 def _bundle_architectures(bundle_path: Path) -> set[str]:
-    executable = resolve_macos_app_bundle_executable(bundle_path)
-    if executable is None:
-        return set()
-    outputs: list[str] = []
-    for command in (["lipo", "-archs", str(executable)], ["file", str(executable)]):
-        try:
-            completed = subprocess.run(  # noqa: S603
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-        except OSError:
-            continue
-        if completed.returncode != 0:
-            continue
-        outputs.append(f"{completed.stdout}\n{completed.stderr}")
-    architectures = set()
-    for output in outputs:
-        for token in _MACH_O_ARCH_RE.findall(output):
-            architectures.add("arm64" if token == "arm64e" else token)
-    return architectures
+    return set(_macos_binary_architectures(bundle_path))
 
 
 def _bundle_supports_apple_silicon(bundle_path: Path) -> tuple[bool, str | None]:
@@ -274,18 +257,14 @@ def _bundle_supports_apple_silicon(bundle_path: Path) -> tuple[bool, str | None]
     return False, f"upstream asset is not native Apple Silicon or universal (architectures: {joined})"
 
 
-def _asset_label_supports_apple_silicon(asset_label: str) -> bool:
-    normalized = asset_label.strip().casefold()
-    return normalized in {"universal", "apple-silicon", "apple silicon", "arm64", "aarch64"}
-
-
 def _asset_supports_apple_silicon(asset: MacOSOfficialAsset, bundle_path: Path) -> tuple[bool, str | None]:
     supported, unsupported_reason = _bundle_supports_apple_silicon(bundle_path)
     if supported:
         return True, None
-    if unsupported_reason == _UNKNOWN_ARCHITECTURE_REASON and _asset_label_supports_apple_silicon(asset.asset_label):
+    policy = _macos_executable_policy(asset.emulator, bundle_path)
+    if policy.allowed:
         return True, None
-    return False, unsupported_reason
+    return False, policy.reason or unsupported_reason
 
 
 def _install_bundle_into_applications(source_bundle: Path, *, bundle_name: str, verbose: bool) -> Path | None:
@@ -426,4 +405,8 @@ def _install_macos_command(missing: list[str], command_template: str, *, verbose
         if _is_emulator_available(emulator):
             print(f"Installed emulator: {emulator}")
         else:
-            print(f"Warning: {emulator} install command completed but executable not found yet")
+            detail = _macos_emulator_unavailable_reason(emulator)
+            if detail:
+                print(f"Warning: {emulator} install command completed but {detail}")
+            else:
+                print(f"Warning: {emulator} install command completed but executable not found yet")

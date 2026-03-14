@@ -32,7 +32,7 @@
 ## Goals
 - Deliver full macOS CLI parity on Apple Silicon for `init`, `sync`, native Steam shortcut lifecycle, save sync, firmware/runtime writes, artwork sync, and launch-time controller autoconfig.
 - Keep all work inside `gamehub_cli`, docs, and tests; no server or `gamehub_common` contract changes are planned.
-- Keep the supported path native-first: no Rosetta dependency by default, no silent Rosetta fallback, and no Intel Mac support. If Rosetta support is added later, it must be explicit, opt-in, and scoped narrowly.
+- Keep the supported path native-first: prefer native/universal Apple Silicon builds, keep Rosetta scoped narrowly, and do not support Intel Mac hosts.
 - Produce story scopes that are strict enough to hand to Codex web as one-line jobs.
 
 ## Non-Goals
@@ -61,8 +61,8 @@
 - Support target: full GAMEHUB CLI parity on macOS, with native Apple Silicon binaries as the default and recommended path.
 - Steam target: native macOS Steam only; GAMEHUB integrates with an existing Steam install and does not install Steam itself.
 - Config shape: add `[macos]`; do not overload `[linux]`.
-- Unsupported-native policy: if a system/emulator lacks a reliable native Apple Silicon path at implementation time, fail clearly instead of falling back to Rosetta, except where a later story explicitly introduces PCSX2-only opt-in Rosetta support.
-- Rosetta scope, if enabled later: PCSX2 only, explicit opt-in, never automatic fallback, and no expansion to other emulators without a separate plan update.
+- Unsupported-native policy: if a system/emulator lacks a reliable native Apple Silicon path at implementation time, fail clearly instead of falling back to Rosetta, except where a later story explicitly introduces PCSX2-only fallback behavior.
+- Rosetta scope, if enabled later: PCSX2 only, native/universal still preferred, and no expansion to other emulators without a separate plan update.
 - Generic emulator path override env vars remain cross-platform:
   - `GAMEHUB_RETROARCH_*`
   - `GAMEHUB_PCSX2_*`
@@ -525,20 +525,24 @@
   - `src/gamehub_cli/emulators/installer.py`
   - `src/gamehub_cli/emulators/install_macos.py`
   - `src/gamehub_cli/emulators/resolution.py`
+  - `src/gamehub_cli/sync/orchestrator.py`
   - `tests/test_cli_config_state.py`
   - `tests/test_emulators.py`
   - `docs/client-install.md`
+  - `docs/config-and-state.md`
   - `docs/platform-support.md`
+  - `docs/templates/config.macos.template.toml`
+  - `PLANS/mac-support.md`
 - Read This First:
   - `src/gamehub_cli/emulators/install_macos.py`
   - `src/gamehub_cli/emulators/installer.py`
   - `tests/test_emulators.py`
-- Goal: add explicit, opt-in Rosetta support for Intel-only PCSX2 on Apple Silicon macOS while keeping every other macOS emulator path native-only.
+- Goal: add default-on Rosetta fallback support for Intel-only PCSX2 on Apple Silicon macOS while keeping every other macOS emulator path native-only.
 - Acceptance Criteria (deterministic):
-  - [ ] Default macOS behavior remains native-only for all emulators.
-  - [ ] A dedicated `[macos]` opt-in switch and matching env override control PCSX2-only Rosetta allowance, defaulting to disabled.
-  - [ ] When the opt-in is disabled, Intel-only PCSX2 assets remain unsupported on Apple Silicon macOS.
-  - [ ] When the opt-in is enabled, Intel-only PCSX2 is accepted only if Rosetta is already available on the host; otherwise GAMEHUB fails clearly with an actionable message.
+  - [ ] Default macOS behavior still prefers native/universal builds for all emulators.
+  - [ ] A dedicated `[macos]` opt-out switch and matching env override control strict native-only PCSX2 behavior, defaulting to disabled.
+  - [ ] When the opt-out is disabled, Intel-only PCSX2 is accepted only if Rosetta is already available on the host; otherwise GAMEHUB fails clearly with an actionable message.
+  - [ ] When the opt-out is enabled, Intel-only PCSX2 assets remain unsupported on Apple Silicon macOS.
   - [ ] RetroArch, Dolphin, Azahar, and Steam remain native-only and continue to reject Intel-only/non-native assets.
   - [ ] Managed PCSX2 launch/runtime behavior remains unchanged after install/discovery; this story does not widen save/controller/runtime policy.
 - Non-Goals:
@@ -550,16 +554,16 @@
   - Preserve the existing native `.dylib` RetroArch core policy even when PCSX2 Rosetta support is enabled.
   - Prefer an explicit host capability probe for Rosetta presence over best-effort launch assumptions.
 - Tests Required (exact locations / names):
-  - `tests/test_cli_config_state.py::test_load_config_supports_macos_pcsx2_rosetta_opt_in`
+  - `tests/test_cli_config_state.py::test_load_config_defaults_disable_pcsx2_rosetta_to_false`
   - `tests/test_emulators.py::test_ensure_emulators_macos_pcsx2_rejects_x86_64_when_rosetta_disabled`
-  - `tests/test_emulators.py::test_ensure_emulators_macos_pcsx2_accepts_x86_64_when_rosetta_enabled_and_available`
-  - `tests/test_emulators.py::test_ensure_emulators_macos_pcsx2_rosetta_enabled_requires_rosetta_runtime`
-  - `tests/test_emulators.py::test_ensure_emulators_macos_other_emulators_still_reject_non_native_assets`
+  - `tests/test_emulators.py::test_ensure_emulators_macos_pcsx2_accepts_x86_64_when_rosetta_available_by_default`
+  - `tests/test_emulators.py::test_ensure_emulators_macos_pcsx2_rosetta_requires_runtime`
+  - `tests/test_emulators.py::test_macos_non_pcsx2_emulators_still_reject_x86_64_assets`
 - Validation Command:
   - `./venv/bin/python -m pytest tests/test_cli_config_state.py tests/test_emulators.py -p no:cacheprovider`
 - Prompt Seed:
-  - `Implement STORY MACOS-CLI-08 from PLANS/mac-support. Stay within the explicit scope and add explicit PCSX2-only Rosetta opt-in support on Apple Silicon macOS without widening Rosetta support to any other emulator.`
-- PR Title Template: `CLI: add opt-in macOS Rosetta support for PCSX2`
+  - `Implement STORY MACOS-CLI-08 from PLANS/mac-support. Stay within the explicit scope and add default-on PCSX2-only Rosetta fallback support on Apple Silicon macOS without widening Rosetta support to any other emulator.`
+- PR Title Template: `CLI: add default-on macOS Rosetta fallback for PCSX2`
 - Rollback Risk: High
 
 ### STORY MACOS-CLI-09
@@ -858,7 +862,7 @@
   - `command` backend honors the configured template
   - unsupported/non-native upstream asset path fails clearly
 - Optional deferred compatibility lane:
-  - with explicit PCSX2 Rosetta opt-in enabled and Rosetta already installed
+  - with PCSX2 Rosetta fallback left enabled and Rosetta already installed
   - sync accepts or installs Intel-only `PCSX2.app`
   - managed PCSX2 launch still waits for exit and preserves runtime/save behavior
   - other emulators continue to reject Intel-only/non-native assets

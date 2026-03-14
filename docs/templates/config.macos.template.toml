@@ -2,7 +2,7 @@
 # Supported contract for the current macOS work:
 # - latest stable macOS on Apple Silicon
 # - native Steam install
-# - no Rosetta fallback
+# - native/universal preferred; PCSX2 may use Rosetta when already installed
 [server]
 url = "http://<SERVER_IP>:8000"
 
@@ -30,6 +30,8 @@ emulator_install_backend = "auto"
 # Default supported install target is ~/Applications for admin-free native app bundles.
 # Only used when emulator_install_backend = "command".
 # emulator_install_command = "brew install --cask {package}"
+# Set true to force strict native-only PCSX2 behavior on Apple Silicon macOS.
+# disable_pcsx2_rosetta = false
 
 # Optional macOS path hints (uncomment as needed):
 # RetroArch config/save discovery checks ~/Documents/RetroArch first, then

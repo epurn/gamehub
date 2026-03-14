@@ -70,6 +70,8 @@ dolphin_user_path = "~/.local/share/dolphin-emu"
 emulator_install_backend = "auto"
 # Used when emulator_install_backend = "command"
 emulator_install_command = "brew install --cask {package}"
+# Force strict native-only PCSX2 behavior on Apple Silicon macOS.
+disable_pcsx2_rosetta = false
 
 # Optional macOS path hints (all optional)
 retroarch_cfg_path = "~/Documents/RetroArch/retroarch.cfg"
@@ -160,6 +162,7 @@ Host install policy env overrides:
 - `GAMEHUB_LINUX_FLATPAK_REMOTE`: overrides `[linux].flatpak_remote`.
 - `GAMEHUB_MACOS_EMULATOR_INSTALL_BACKEND`: overrides `[macos].emulator_install_backend`.
 - `GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND`: overrides `[macos].emulator_install_command`.
+- `GAMEHUB_MACOS_DISABLE_PCSX2_ROSETTA`: overrides `[macos].disable_pcsx2_rosetta`.
 
 Shared emulator path/runtime env overrides (Linux and macOS):
 - `RETROARCH_SYSTEM_DIR` or `GAMEHUB_RETROARCH_SYSTEM_DIR`: explicit RetroArch `system` directory target.
