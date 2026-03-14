@@ -120,8 +120,9 @@
 
 ### Progress Snapshot
 - `M1`: Complete.
-- `M2`: In progress; `MACOS-CLI-03` launch hardening is complete and the milestone is blocked only by `MACOS-CLI-05` and `MACOS-CLI-06`.
-- `M3`: Behavior work complete through `MACOS-CLI-10`; docs/final validation remain, and `MACOS-CLI-11` tracks a targeted macOS RetroArch N64 black-screen remediation pass discovered during manual validation.
+- `M2`: Complete; `MACOS-CLI-05` and `MACOS-CLI-06` landed the remaining macOS save/runtime and controller parity work.
+- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-09`, and `MACOS-CLI-10` are complete. `MACOS-CLI-11` and `MACOS-CLI-12` remain open behavior stories, and `MACOS-DOCS-01` stays last for docs/final validation.
+- Next recommended story: `MACOS-CLI-11`.
 
 ## Story Contracts
 ### Completed Stories
@@ -129,6 +130,8 @@
 - `MACOS-CLI-02`: Complete
 - `MACOS-CLI-03`: Complete
 - `MACOS-CLI-04`: Complete
+- `MACOS-CLI-05`: Complete
+- `MACOS-CLI-06`: Complete
 - `MACOS-CLI-07`: Complete
 - `MACOS-CLI-09`: Complete
 - `MACOS-CLI-10`: Complete
@@ -143,8 +146,6 @@
   - legacy macOS shell-launcher/debug artifacts are pruned on sync rewrite so backups stay minimal and useful.
 
 ### Pending Stories
-- `MACOS-CLI-05`
-- `MACOS-CLI-06`
 - `MACOS-CLI-11`
 - `MACOS-CLI-12`
 - `MACOS-DOCS-01`
@@ -333,7 +334,7 @@
 
 ### STORY MACOS-CLI-05
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-01`, `MACOS-CLI-04`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/emulators/save_resolution.py`
@@ -351,11 +352,11 @@
   - `tests/test_shortcut_save_session.py`
 - Goal: make save sync and runtime file mutation work against macOS-native emulator roots while preserving atomic/backup/logged mutation rules.
 - Acceptance Criteria (deterministic):
-  - [ ] Save roots for RetroArch, Dolphin, PCSX2, and Azahar resolve correctly from macOS-native defaults or explicit config overrides.
-  - [ ] Managed memory-card and battery-save handling continues to work for macOS launches.
-  - [ ] Runtime mutation helpers for RetroArch, PCSX2, and Azahar use macOS roots without in-place overwrite regressions.
-  - [ ] Existing save-session behavior stays deterministic and idempotent for repeated launches.
-  - [ ] Windows and Linux save-resolution behavior remains unchanged.
+  - [x] Save roots for RetroArch, Dolphin, PCSX2, and Azahar resolve correctly from macOS-native defaults or explicit config overrides.
+  - [x] Managed memory-card and battery-save handling continues to work for macOS launches.
+  - [x] Runtime mutation helpers for RetroArch, PCSX2, and Azahar use macOS roots without in-place overwrite regressions.
+  - [x] Existing save-session behavior stays deterministic and idempotent for repeated launches.
+  - [x] Windows and Linux save-resolution behavior remains unchanged.
 - Non-Goals:
   - Controller discovery/binding.
   - Emulator installation.
@@ -380,7 +381,7 @@
 
 ### STORY MACOS-CLI-06
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-01`, `MACOS-CLI-04`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/controllers/detection.py`
@@ -396,11 +397,11 @@
   - `tests/test_controller_detection.py`
 - Goal: add macOS controller discovery and deterministic profile application without adding new profile names or breaking fail-open launch behavior.
 - Acceptance Criteria (deterministic):
-  - [ ] macOS controller detection uses SDL-based host probing rather than Linux `/proc` parsing or Windows XInput.
-  - [ ] Profile selection remains `kbm`, `xbox_1p`, `xbox_2p`.
-  - [ ] Controller detection failure still falls back to `kbm` with warning instead of aborting launch.
-  - [ ] Dolphin macOS device bindings use mac-compatible identifiers and preserve existing deterministic rebind/preserve rules where applicable.
-  - [ ] Azahar macOS profile application injects/normalizes SDL identity tokens suitable for native macOS runtime use.
+  - [x] macOS controller detection uses SDL-based host probing rather than Linux `/proc` parsing or Windows XInput.
+  - [x] Profile selection remains `kbm`, `xbox_1p`, `xbox_2p`.
+  - [x] Controller detection failure still falls back to `kbm` with warning instead of aborting launch.
+  - [x] Dolphin macOS device bindings use mac-compatible identifiers and preserve existing deterministic rebind/preserve rules where applicable.
+  - [x] Azahar macOS profile application injects/normalizes SDL identity tokens suitable for native macOS runtime use.
 - Non-Goals:
   - New dependencies for controller discovery.
   - Steam Input template changes.
@@ -691,7 +692,7 @@
 ### STORY MACOS-DOCS-01
 - Type: DOCS
 - Status: Pending
-- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, `MACOS-CLI-12`
 - Scope (explicit files/modules allowed):
   - `docs/client-install.md`
   - `docs/platform-support.md`
@@ -739,6 +740,7 @@
     - `MACOS-CLI-04`
     - `MACOS-CLI-05`
     - `MACOS-CLI-11`
+    - `MACOS-CLI-12`
   - Controller lane:
     - `MACOS-CLI-06`
   - Installer lane:
@@ -755,11 +757,13 @@
   - `MACOS-CLI-08` is intentionally deferred; if it is pulled in later, keep its scope limited to PCSX2-only Rosetta policy and do not widen native checks for other emulators.
   - `MACOS-CLI-10` should land after `MACOS-CLI-09`; it is a launch-chain cleanup and should not reopen broader runtime-policy questions.
   - `MACOS-CLI-11` is a targeted follow-up from manual validation; keep it narrowly focused on the macOS RetroArch N64 black-screen failure and do not widen it into a general RetroArch graphics policy rewrite.
+  - `MACOS-CLI-12` is a save-session follow-up layered on top of `MACOS-CLI-05`; keep it narrowly scoped to managed macOS PSX memory-card sync and avoid reopening broader save-resolution policy.
   - `MACOS-DOCS-01` lands last unless a prior story changes a public contract that cannot wait. If `MACOS-CLI-08` remains deferred, docs should continue to describe the native-only path.
 - Merge order constraints:
   - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-05`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-06`
+  - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-05` -> `MACOS-CLI-12`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-07`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-07` -> `MACOS-CLI-08`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-05` -> `MACOS-CLI-07` -> `MACOS-CLI-10` -> `MACOS-CLI-11`
