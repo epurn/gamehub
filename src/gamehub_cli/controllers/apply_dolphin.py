@@ -10,10 +10,7 @@ from ..firmware.targets import resolve_dolphin_config_dirs, resolve_dolphin_runt
 from .apply_ini import apply_managed_ini_sections, parse_ini_sections
 from .detection import XboxController, detect_xbox_controllers, is_steam_deck_linux
 from .profiles import PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P, load_profile_file
-from .sdl_guid import (
-    _lookup_macos_embedded_sdl_mapping_for_identity,
-    _lookup_macos_embedded_sdl_select_start_buttons,
-)
+from .sdl_guid import _lookup_macos_embedded_sdl_mapping_for_identity
 
 _DOLPHIN_KBM_FALLBACK_DEVICE_MARKERS = ("virtual core pointer", "keyboard mouse")
 _DOLPHIN_NON_GAMEPAD_DEVICE_MARKERS = ("motion sensor", "accelerometer", "gyroscope", "gyro", "imu")
@@ -21,6 +18,7 @@ _DOLPHIN_GENERIC_SDL_DEVICE_NAMES = {"gamepad", "controller", "joystick"}
 _DOLPHIN_STEAM_DECK_POINTER_DEVICE = "XInput2/0/Virtual core pointer"
 _DOLPHIN_DEFAULT_EVDEV_FALLBACK = "evdev/0/Microsoft X-Box 360 pad 0"
 _DOLPHIN_MACOS_KBM_DEVICE = "Quartz/0/Keyboard & Mouse"
+_DOLPHIN_MACOS_HOTKEY_COMBO = "`Back` & `Start`"
 _DOLPHIN_MACOS_KEY_TOKEN_MAP = {
     "CTRL": "Left Control",
     "ESCAPE": "Escape",
@@ -363,75 +361,48 @@ def _override_dolphin_device_sections(
     return updated, device_identity_mode, selected_device
 
 
-def _resolve_macos_select_start_buttons(controllers: list[XboxController]) -> tuple[int, int] | None:
-    for controller in controllers:
-        selected = _lookup_macos_embedded_sdl_select_start_buttons(
-            name=controller.name,
-            vendor_id=controller.vendor_id,
-            product_id=controller.product_id,
-        )
-        if selected is not None:
-            return selected
-    return None
-
-
 def _dolphin_hotkey_expression_for_profile(
     profile_name: str,
-    *,
-    select_start_buttons: tuple[int, int] | None = None,
-) -> str:
-    if profile_name == PROFILE_KBM:
-        return "ESCAPE"
-    select_button = 6
-    start_button = 7
-    if select_start_buttons is not None:
-        select_button, start_button = select_start_buttons
-    return (
-        "((`BACK` | `Back` | `SELECT` | `Select` | "
-        f"`Button {select_button}`) & (`START` | `Start` | `Button {start_button}`))"
-    )
-
-
-def _dolphin_hotkey_exit_expression_for_profile(
-    profile_name: str,
-    *,
-    select_start_buttons: tuple[int, int] | None = None,
 ) -> str:
     if profile_name == PROFILE_KBM:
         return "ESCAPE"
     if sys.platform == "darwin":
-        return "Back&Start"
-    return _dolphin_hotkey_expression_for_profile(
-        profile_name,
-        select_start_buttons=select_start_buttons,
-    )
+        return _DOLPHIN_MACOS_HOTKEY_COMBO
+    return "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
+
+
+def _dolphin_hotkey_exit_expression_for_profile(
+    profile_name: str,
+) -> str:
+    if profile_name == PROFILE_KBM:
+        return "ESCAPE"
+    return _dolphin_hotkey_expression_for_profile(profile_name)
+
+
+def _dolphin_general_hotkey_expression_for_profile(profile_name: str) -> str:
+    if profile_name == PROFILE_KBM:
+        return "ESCAPE"
+    if sys.platform == "darwin":
+        return _DOLPHIN_MACOS_HOTKEY_COMBO
+    return _dolphin_hotkey_expression_for_profile(profile_name)
 
 
 def _override_dolphin_hotkey_sections(
     sections: dict[str, dict[str, str]],
     *,
     profile_name: str,
-    select_start_buttons: tuple[int, int] | None = None,
 ) -> dict[str, dict[str, str]]:
-    if sys.platform == "darwin" and profile_name != PROFILE_KBM:
-        select_start_buttons = None
     updated: dict[str, dict[str, str]] = {section: dict(values) for section, values in sections.items()}
-    hotkey_expr = _dolphin_hotkey_expression_for_profile(
-        profile_name,
-        select_start_buttons=select_start_buttons,
-    )
-    hotkey_exit_expr = _dolphin_hotkey_exit_expression_for_profile(
-        profile_name,
-        select_start_buttons=select_start_buttons,
-    )
+    hotkey_expr = _dolphin_hotkey_expression_for_profile(profile_name)
+    hotkey_exit_expr = _dolphin_hotkey_exit_expression_for_profile(profile_name)
     for section_name in ("Hotkeys1", "Hotkeys2"):
         if section_name not in updated:
             continue
         updated[section_name]["Keys/Stop"] = hotkey_expr
         updated[section_name]["Keys/Exit"] = hotkey_exit_expr
     if "Hotkeys" in updated:
-        updated["Hotkeys"]["General/Stop"] = hotkey_expr
-        updated["Hotkeys"]["General/Exit"] = hotkey_exit_expr
+        updated["Hotkeys"]["General/Stop"] = _dolphin_general_hotkey_expression_for_profile(profile_name)
+        updated["Hotkeys"]["General/Exit"] = _dolphin_general_hotkey_expression_for_profile(profile_name)
     return updated
 
 
@@ -526,7 +497,6 @@ def apply_dolphin_profile(
     device_identity_modes: list[str] = []
     selected_devices: list[str] = []
     macos_controllers = detect_xbox_controllers(max_devices=2) if sys.platform == "darwin" else []
-    macos_select_start_buttons = _resolve_macos_select_start_buttons(macos_controllers)
     for target_dir in _dolphin_target_config_dirs(config):
         dolphin_ini = target_dir / "Dolphin.ini"
         dolphin_sections = {
@@ -560,7 +530,6 @@ def apply_dolphin_profile(
             sections = _override_dolphin_hotkey_sections(
                 sections,
                 profile_name=profile_name,
-                select_start_buttons=macos_select_start_buttons,
             )
             if sys.platform == "darwin":
                 if profile_name == PROFILE_KBM:

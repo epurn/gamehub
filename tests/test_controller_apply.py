@@ -148,12 +148,13 @@ def test_apply_controller_profile_dolphin_xbox_writes_managed_sections(monkeypat
         else:
             assert "Device = XInput/0/Gamepad" in gcpad_text
             assert "Device = XInput/1/Gamepad" in gcpad_text
-        assert (
-            "General/Stop = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
-        ) in hotkeys_text
         if sys.platform == "darwin":
-            assert "General/Exit = Back&Start" in hotkeys_text
+            assert "General/Stop = `Back` & `Start`" in hotkeys_text
+            assert "General/Exit = `Back` & `Start`" in hotkeys_text
         else:
+            assert (
+                "General/Stop = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
+            ) in hotkeys_text
             assert (
                 "General/Exit = ((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
             ) in hotkeys_text
@@ -636,11 +637,6 @@ def test_apply_dolphin_profile_macos_uses_sdl_device_names(monkeypatch, workspac
                 ),
             ],
         )
-        monkeypatch.setattr(
-            "gamehub_cli.controllers.apply_dolphin._lookup_macos_embedded_sdl_select_start_buttons",
-            lambda *, name, vendor_id=None, product_id=None: (10, 11),
-        )
-
         apply_named_controller_profile(config, emulator_name="dolphin", profile_name="xbox_2p")
         gcpad_text = (config_dir / "GCPadNew.ini").read_text(encoding="utf-8")
         wiimote_text = (config_dir / "WiimoteNew.ini").read_text(encoding="utf-8")
@@ -658,10 +654,8 @@ def test_apply_dolphin_profile_macos_uses_sdl_device_names(monkeypatch, workspac
         assert "IR/Down = `Right Y-`" in wiimote_text
         assert "Device = SDL/0/Xbox Wireless Controller" in hotkeys_text
         assert "Device = SDL/1/Xbox Elite Wireless Controller" in hotkeys_text
-        assert "`Button 6`" in hotkeys_text
-        assert "`Button 7`" in hotkeys_text
-        assert "General/Exit = Back&Start" in hotkeys_text
-        assert "Keys/Exit = Back&Start" in hotkeys_text
+        assert "General/Exit = `Back` & `Start`" in hotkeys_text
+        assert "Keys/Exit = `Back` & `Start`" in hotkeys_text
 
 
 def test_apply_dolphin_profile_macos_kbm_uses_quartz_device(monkeypatch, workspace_tempdir) -> None:
@@ -827,10 +821,8 @@ def test_apply_dolphin_profile_macos_guidless_detection_uses_detected_sdl_name_a
 
         assert "Device = SDL/0/Xbox Wireless Controller" in gcpad_text
         assert "Device = SDL/0/Xbox Wireless Controller" in wiimote_text
-        assert "`Button 6`" in hotkeys_text
-        assert "`Button 7`" in hotkeys_text
-        assert "General/Exit = Back&Start" in hotkeys_text
-        assert "Keys/Exit = Back&Start" in hotkeys_text
+        assert "General/Exit = `Back` & `Start`" in hotkeys_text
+        assert "Keys/Exit = `Back` & `Start`" in hotkeys_text
 
 
 def test_apply_dolphin_profile_macos_guidless_detection_prefers_embedded_mapping_name(
@@ -917,11 +909,6 @@ def test_apply_dolphin_profile_macos_updates_all_existing_config_roots(monkeypat
                 )
             ],
         )
-        monkeypatch.setattr(
-            "gamehub_cli.controllers.apply_dolphin._lookup_macos_embedded_sdl_select_start_buttons",
-            lambda *, name, vendor_id=None, product_id=None: (10, 11),
-        )
-
         apply_named_controller_profile(config, emulator_name="dolphin", profile_name="xbox_1p")
 
         for root in (xdg_root, app_support_root):

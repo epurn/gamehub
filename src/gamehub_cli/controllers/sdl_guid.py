@@ -30,7 +30,6 @@ _MACOS_HIDUTIL_GAMEPAD_USAGES = {4, 5}
 _MACOS_STRINGS_EXECUTABLE = "/usr/bin/strings"
 _MACOS_STRINGS_TIMEOUT_SEC = 4.0
 _SDL_MAPPING_LINE_RE = re.compile(r"^(?P<guid>[0-9a-fA-F]{32}),(?P<name>[^,]+),(?P<body>.+)$")
-_SDL_MAPPING_BUTTON_RE = re.compile(r"^b(?P<button>\d+)$")
 _MACOS_EMBEDDED_SDL_MAPPING_CACHE: dict[tuple[str, int, int], list["_SDLControllerMapping"]] = {}
 
 
@@ -594,34 +593,6 @@ def _lookup_macos_embedded_sdl_mapping_for_port(*, port: int) -> _SDLControllerM
             product_id=device.product_id,
         )
     return None
-
-
-def _lookup_macos_embedded_sdl_select_start_buttons(
-    *,
-    name: str,
-    vendor_id: int | None = None,
-    product_id: int | None = None,
-) -> tuple[int, int] | None:
-    mapping = _lookup_macos_embedded_sdl_mapping_for_identity(
-        name=name,
-        vendor_id=vendor_id,
-        product_id=product_id,
-    )
-    if mapping is None:
-        return None
-    select_value = mapping.fields.get("back")
-    start_value = mapping.fields.get("start")
-    if select_value is None or start_value is None:
-        return None
-    select_match = _SDL_MAPPING_BUTTON_RE.match(select_value)
-    start_match = _SDL_MAPPING_BUTTON_RE.match(start_value)
-    if select_match is None or start_match is None:
-        return None
-    select_button = int(select_match.group("button"))
-    start_button = int(start_match.group("button"))
-    if select_button == start_button:
-        return None
-    return select_button, start_button
 
 
 def _discover_macos_hidutil_joysticks(

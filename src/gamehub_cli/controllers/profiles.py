@@ -281,6 +281,7 @@ _DOLPHIN_KBM_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
 )
 
 _DOLPHIN_MACOS_KBM_DEVICE = "Quartz/0/Keyboard & Mouse"
+_DOLPHIN_MACOS_HOTKEY_COMBO = "`Back` & `Start`"
 
 
 def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
@@ -345,28 +346,34 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
         gcpad_bindings_2 = _DOLPHIN_KBM_GCPAD_BINDINGS
         wiimote_bindings_1 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
         wiimote_bindings_2 = _DOLPHIN_KBM_WIIMOTE_BINDINGS
-        hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
-        general_stop = "@(SELECT+START)"
-        general_exit = "@(SELECT+START)"
         if sys.platform == "darwin":
+            hotkey_value = _DOLPHIN_MACOS_HOTKEY_COMBO
+            general_stop = _DOLPHIN_MACOS_HOTKEY_COMBO
+            general_exit = _DOLPHIN_MACOS_HOTKEY_COMBO
             hotkey_device0, hotkey_device1 = device0, device1
             wiimote_bindings_1 = _dolphin_macos_wiimote_bindings(wiimote_bindings_1)
             wiimote_bindings_2 = _dolphin_macos_wiimote_bindings(wiimote_bindings_2)
         else:
+            hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
+            general_stop = "@(SELECT+START)"
+            general_exit = "@(SELECT+START)"
             hotkey_device0, hotkey_device1 = device0, device1
     else:
         gcpad_bindings_1 = _DOLPHIN_XBOX_GCPAD_BINDINGS
         gcpad_bindings_2 = _DOLPHIN_XBOX_GCPAD_BINDINGS
         wiimote_bindings_1 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
         wiimote_bindings_2 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
-        hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
-        general_stop = "@(SELECT+START)"
-        general_exit = "@(SELECT+START)"
         if sys.platform == "darwin":
+            hotkey_value = _DOLPHIN_MACOS_HOTKEY_COMBO
+            general_stop = _DOLPHIN_MACOS_HOTKEY_COMBO
+            general_exit = _DOLPHIN_MACOS_HOTKEY_COMBO
             hotkey_device0, hotkey_device1 = device0, device1
             wiimote_bindings_1 = _dolphin_macos_wiimote_bindings(wiimote_bindings_1)
             wiimote_bindings_2 = _dolphin_macos_wiimote_bindings(wiimote_bindings_2)
         else:
+            hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
+            general_stop = "@(SELECT+START)"
+            general_exit = "@(SELECT+START)"
             hotkey_device0, hotkey_device1 = device0, device1
 
     gcpad_sections: dict[str, dict[str, str]] = {}
