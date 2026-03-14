@@ -270,13 +270,13 @@ def _macos_emulator_unavailable_reason(emulator_value: str) -> str | None:
     path = _safe_path(raw)
     if path.exists():
         candidates.append(path)
-    bundle_names = _MACOS_APP_BUNDLE_NAMES.get(_canonical_emulator_name(raw), ())
-    if bundle_names:
-        candidates.extend(macos_application_bundle_candidates(bundle_names))
     for command in _command_candidates(raw):
         resolved_command = shutil.which(command)
         if resolved_command:
             candidates.append(_safe_path(resolved_command))
+    bundle_names = _MACOS_APP_BUNDLE_NAMES.get(_canonical_emulator_name(raw), ())
+    if bundle_names:
+        candidates.extend(macos_application_bundle_candidates(bundle_names))
     for candidate in _dedupe_paths(candidates):
         executable = _normalize_macos_executable_candidate(candidate)
         if executable is None:
