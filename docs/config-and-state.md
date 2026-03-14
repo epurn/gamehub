@@ -227,6 +227,7 @@ Mode behavior reference:
 - First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry `gamehub sync` through `GET /v1/save-bindings`.
 - Managed `shortcut-launch` sessions also auto-create those deterministic `exact_files` saves at post-exit for wrapped titles, so first-time RetroArch battery saves and managed `PSX`/`PS2` memory cards do not need to wait for the next full sync.
   - `PSX` Swanstation exact-file detection accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.
+  - On macOS, native `~/Library/Application Support/RetroArch/config/retroarch.cfg` layouts materialize those deterministic `PSX` saves under sibling `~/Library/Application Support/RetroArch/saves`, while an already-materialized `~/Documents/RetroArch/saves` tree still wins for existing local saves.
 - First-time `per_game` saves are learned and uploaded by managed `shortcut-launch` post-exit when one deterministic tree root can be proven (`GC` GCI folders, `Wii` title trees, and `N3DS` title data trees), including local-only saves that already existed before the connected bidirectional launch began.
 - There is no background save watcher service in this release; unmanaged emulator launches reconcile on the next `gamehub sync` or next managed launch.
 
@@ -241,6 +242,7 @@ Linux PS2 note:
 RetroArch note:
 - On macOS, save discovery checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`.
 - On macOS, config discovery prefers an existing native config file under `~/Library/Application Support/RetroArch/config/retroarch.cfg` before legacy root-level/document variants.
+- On macOS, that native nested config layout uses sibling `~/Library/Application Support/RetroArch/saves` for deterministic save-sync materialization instead of `.../config/saves`.
 - Deterministic RetroArch save downloads can materialize that root on first sync even before RetroArch has created the `saves/` directory tree itself.
 - When RetroArch save sorting-by-core is enabled, GAMEHUB treats the core-specific subdirectory as the canonical destination instead of a legacy root-level filename match.
 - That canonical sorted-core rule applies across RetroArch exact-file save systems that GAMEHUB manages (`GB`, `GBC`, `GBA`, `GEN_MD`, `NES`, `SNES`, `N64`, `NDS`, `PSX`) rather than only `N64`.

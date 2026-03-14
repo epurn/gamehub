@@ -144,6 +144,17 @@ def _resolver_config(resolve_executable: Callable[[str], str]) -> GamehubConfig 
     return config if isinstance(config, GamehubConfig) else None
 
 
+def _retroarch_default_save_root_for_cfg(cfg_path: Path) -> Path:
+    normalized_cfg = _normalized_local_path(cfg_path)
+    if _SYS_PLATFORM == "darwin":
+        cfg_dir = normalized_cfg.parent
+        if normalized_cfg.name.casefold() == "retroarch.cfg" and cfg_dir.name.casefold() == "config":
+            retroarch_root = cfg_dir.parent
+            if retroarch_root.name.casefold() == "retroarch":
+                return _normalized_local_path(retroarch_root / "saves")
+    return _normalized_local_path(normalized_cfg.parent / "saves")
+
+
 def _retroarch_save_root(resolve_executable: Callable[[str], str]) -> Path | None:
     resolved = resolve_executable("retroarch").strip().strip('"')
     if resolved and _is_flatpak_command(resolved, _RETROARCH_FLATPAK_APP_ID):
@@ -156,7 +167,7 @@ def _retroarch_save_root(resolve_executable: Callable[[str], str]) -> Path | Non
         save_dir = cfg.get("savefile_directory", "").strip()
         if save_dir:
             resolved_path = (
-                _normalized_local_path(cfg_path.parent / "saves")
+                _retroarch_default_save_root_for_cfg(cfg_path)
                 if save_dir.casefold() == "default"
                 else _resolve_retroarch_cfg_path_value(save_dir, cfg_path=cfg_path)
             )
@@ -167,7 +178,7 @@ def _retroarch_save_root(resolve_executable: Callable[[str], str]) -> Path | Non
                 cfg_fallback = resolved_path
             continue
 
-        portable = _normalized_local_path(cfg_path.parent / "saves")
+        portable = _retroarch_default_save_root_for_cfg(cfg_path)
         existing = _existing_dir(portable)
         if existing is not None:
             return existing
