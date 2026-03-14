@@ -4,19 +4,37 @@
 - Python: 3.12+
 - Required local virtual environment: `venv/`
 
+## First-time setup (macOS/Linux)
+```bash
+python3 -m venv venv
+./venv/bin/python -m pip install -e .[dev]
+```
+
 ## First-time setup (Windows PowerShell)
 ```powershell
 python -m venv venv
-.\venv\Scripts\Activate.ps1
-.\venv\Scripts\pip.exe install -e .[dev]
+.\venv\Scripts\python.exe -m pip install -e .[dev]
 ```
 
 ## Run server
+macOS/Linux:
+```bash
+./venv/bin/python -m uvicorn gamehub_server.main:app --host 0.0.0.0 --port 8000
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m uvicorn gamehub_server.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## Run CLI
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main init --dry-run
+./venv/bin/python -m gamehub_cli.main sync --dry-run
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main init --dry-run
 .\venv\Scripts\python.exe -m gamehub_cli.main sync --dry-run
@@ -42,6 +60,7 @@ python -m venv venv
 - `src/gamehub_cli/emulators/install_windows.py`: Windows installer backends (winget + bundled installer flows).
 - `src/gamehub_cli/emulators/install_linux.py`: Linux package/backend install flows.
 - `src/gamehub_cli/emulators/install_flatpak.py`: Flatpak backend helpers + install flow.
+- `src/gamehub_cli/emulators/install_macos.py`: macOS official-asset and configured-command install flows.
 - `src/gamehub_cli/firmware/deploy.py`: firmware deployment orchestration.
 - `src/gamehub_cli/firmware/runtime_retroarch.py`: RetroArch runtime config/bootstrap.
 - `src/gamehub_cli/firmware/runtime_pcsx2.py`: PCSX2 runtime config/bootstrap.
@@ -51,7 +70,7 @@ python -m venv venv
 - `src/gamehub_cli/firmware/targets.py`: emulator-specific firmware target discovery.
 - `src/gamehub_cli/firmware/pcsx2_ini.py`: PCSX2 INI read/update/controller bootstrap logic.
 - `src/gamehub_cli/controllers/profiles.py`: bundled/user-overridden controller profile defaults and seeding.
-- `src/gamehub_cli/controllers/detection.py`: Xbox controller detection (Linux `/proc` + Windows XInput).
+- `src/gamehub_cli/controllers/detection.py`: launch-time controller detection and profile selection across Windows, Linux, and macOS.
 - `src/gamehub_cli/controllers/apply.py`: controller profile orchestration entrypoints only.
 - `src/gamehub_cli/controllers/apply_pcsx2.py`: PCSX2 profile application logic.
 - `src/gamehub_cli/controllers/apply_dolphin.py`: Dolphin profile and device/hotkey application logic.
@@ -71,11 +90,25 @@ Canonical internal patch/import targets:
 - Controller runtime hooks: `gamehub_cli.controllers.apply_*` and `gamehub_cli.controllers.sdl_guid`.
 
 ## Run tests
+macOS/Linux:
+```bash
+./venv/bin/python -m pytest . -p no:cacheprovider
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m pytest . -p no:cacheprovider
 ```
 
 ## Static checks
+macOS/Linux:
+```bash
+./venv/bin/python -m ruff format --check .
+./venv/bin/python -m ruff check .
+./venv/bin/python -m mypy src
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m ruff format --check .
 .\venv\Scripts\python.exe -m ruff check .
@@ -92,6 +125,8 @@ CI is split into:
 - `Audit Regression Gates` (quality/static + architecture + config/server slices, Linux).
 - `Targeted Regression Matrix` (emulator/firmware + controllers + steam + sync slices, Linux/Windows).
 To mirror CI exactly, run the emulator/controller/steam/sync slices on both Windows and Linux hosts.
+
+macOS/Linux shell: replace each `.\venv\Scripts\python.exe` below with `./venv/bin/python`.
 
 ```powershell
 .\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py
@@ -120,13 +155,25 @@ Dependency checks:
 ## EPIC-001 smoke test (server index + file serving)
 Use the fixture library to validate end-to-end API behavior quickly.
 
+macOS/Linux:
+```bash
+GAMEHUB_DATA_DIR="$(pwd)/tests/fixtures/indexer_case" ./venv/bin/python -m uvicorn gamehub_server.main:app --host 127.0.0.1 --port 8011
+```
+
+Windows PowerShell:
 ```powershell
 $env:GAMEHUB_DATA_DIR = (Resolve-Path 'tests/fixtures/indexer_case').Path
 .\venv\Scripts\python.exe -m uvicorn gamehub_server.main:app --host 127.0.0.1 --port 8011
 ```
 
-In another PowerShell:
+In another shell:
 
+macOS/Linux:
+```bash
+./venv/bin/python -c "import httpx; r=httpx.get('http://127.0.0.1:8011/v1/index', timeout=5.0); print(r.status_code); print(r.json()['index_version']); print(len(r.json()['titles']))"
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -c "import httpx; r=httpx.get('http://127.0.0.1:8011/v1/index', timeout=5.0); print(r.status_code); print(r.json()['index_version']); print(len(r.json()['titles']))"
 ```
@@ -140,4 +187,3 @@ Fixture layout reminder:
 - `roms/<system>/<title.ext>`
 - `firmware/<system>/<filename>`
 - `saves/<system>/<title_stem>/<kind>/<file...>`
-

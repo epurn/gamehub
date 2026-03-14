@@ -9,7 +9,7 @@ This page is the short validation matrix only.
 
 ## Validation Status
 - Windows: verified
-- macOS: partial parity (`MACOS-CLI-01` through `MACOS-CLI-04`, `MACOS-CLI-07` complete; save/controller/docs lanes pending)
+- macOS: release target (Apple Silicon full parity implemented)
 - Bazzite: tested
 - SteamOS (Deck): verified
 - Fedora: untested
@@ -46,17 +46,19 @@ Legacy/general templates are still available:
   - `[linux].flatpak_remote = "flathub"`
 - Keep Bazzite sync runs in an active desktop session so Steam relaunch works.
 
-### macOS (partial parity, validation in progress)
+### macOS (Apple Silicon release target)
 - macOS support is in scope for v1.
 - Start from:
   - [docs/templates/config.macos.template.toml](templates/config.macos.template.toml)
-- Current frozen host contract targets the latest stable Apple Silicon macOS release with native Steam.
-- Prefer `~/Applications` for admin-free Steam/emulator app installs; `/Applications` remains an expected native install location.
+- Validated host contract targets the latest stable Apple Silicon macOS release with native Steam.
+- Steam auto-discovery covers `~/Applications/Steam.app`, `/Applications/Steam.app`, and `~/Library/Application Support/Steam/userdata`.
+- `steam.steam_exe` may point to either `Steam.app` or `Steam.app/Contents/MacOS/steam_osx`; GAMEHUB normalizes lifecycle actions to the app bundle.
+- Prefer `~/Applications` for admin-free Steam/emulator app installs; `/Applications` remains a supported native install location.
 - GAMEHUB still prefers native Apple Silicon or universal emulator builds.
 - `PCSX2` may fall back to Intel-only macOS builds when Rosetta is already installed; set `[macos].disable_pcsx2_rosetta = true` to force strict native-only `PCSX2` behavior.
 - `RetroArch`, `Dolphin`, `Azahar`, `Steam`, and Intel Mac hosts remain outside the Rosetta fallback path.
-- Landed on this branch: config contract, native Steam lifecycle, managed shortcut bundle launching, runtime-root discovery, and native installer/core provisioning.
-- Still open: save-sync/runtime mutation parity, controller autoconfig parity, and final release-validation docs.
+- Operator bootstrap and smoke commands live in [client-install.md](client-install.md).
+- Final macOS release-validation lane lives in [release-final-validation-playbook.md](release-final-validation-playbook.md).
 
 ### SteamOS (Deck) (verified)
 - Start from:

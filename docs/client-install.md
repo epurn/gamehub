@@ -10,6 +10,7 @@ Start from template [docs/templates/config.macos.template.toml](templates/config
 
 ### macOS first-run install checklist
 1. Install native Steam manually first. GAMEHUB integrates with an existing `Steam.app` and never auto-installs Steam.
+   - `steam.steam_exe` may point to `~/Applications/Steam.app`, `/Applications/Steam.app`, or the inner `Contents/MacOS/steam_osx` path; lifecycle handling is normalized back to the app bundle.
 2. Choose the macOS emulator install backend in `[macos]`:
    - `emulator_install_backend = "auto"` (default) maps to `official`
    - `emulator_install_backend = "official"` installs only official Apple Silicon or universal assets into `~/Applications`
@@ -46,8 +47,13 @@ gamehub init
 12. Azahar macOS save/runtime discovery prefers existing native-style paths first: `~/.local/share/azahar-emu/sdmc` for saves and `~/.config/azahar-emu/qt-config.ini` for runtime config. If those do not exist, GAMEHUB falls back to `~/Library/Application Support/Azahar`.
 13. Managed macOS Azahar launches pin to `~/Applications/Azahar.app` when that bundle exists, and GAMEHUB opens the ROM as a document with that bundle before falling back to CLI-style launch. This matches the app's declared macOS document handling more closely than relying on app-name lookup or ROM `--args` alone.
 14. After upgrading from older macOS preview builds, run one non-dry `gamehub sync` so Steam shortcut commands are rewritten away from the legacy `steam-shortcut-launch.sh` shim and the old launcher file is pruned.
-15. Combined end-to-end manual validation for `MACOS-CLI-03 + MACOS-CLI-04 + MACOS-CLI-07 + MACOS-CLI-09` remains deferred; this page only documents the current install/bootstrap contract.
-16. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code still resolve to native Apple Silicon, universal, or the currently intended `PCSX2` Intel-only fallback shape.
+15. Minimal macOS smoke after the template is filled:
+```bash
+gamehub init --config ./config.macos.toml --dry-run --verbose
+gamehub sync --config ./config.macos.toml --dry-run --verbose --require-steam-closed
+gamehub sync --config ./config.macos.toml --verbose --require-steam-closed
+```
+16. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code and run the macOS lane in [release-final-validation-playbook.md](release-final-validation-playbook.md).
 
 ## Linux (distro-agnostic) via pip
 

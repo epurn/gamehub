@@ -121,8 +121,14 @@
 ### Progress Snapshot
 - `M1`: Complete.
 - `M2`: Complete; `MACOS-CLI-05` and `MACOS-CLI-06` landed the remaining macOS save/runtime and controller parity work.
-- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-08`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, `MACOS-CLI-12`, and `MACOS-CLI-13` are complete. `MACOS-DOCS-01` remains the last docs/final-validation story.
-- Next recommended story: `MACOS-DOCS-01`.
+- `M3`: Complete; `MACOS-CLI-07`, `MACOS-CLI-08`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, `MACOS-CLI-12`, `MACOS-CLI-13`, and `MACOS-DOCS-01` are complete.
+- Next recommended story: none.
+
+## Implementation Status
+- All scoped implementation stories in this plan are complete.
+- Final ship/no-ship sign-off is now the documented manual validation run in:
+  - `docs/release-final-validation-playbook.md`
+  - `docs/release-manual-checklist-v1.4.0.md`
 
 ## Story Contracts
 ### Completed Stories
@@ -139,6 +145,7 @@
 - `MACOS-CLI-11`: Complete
 - `MACOS-CLI-12`: Complete
 - `MACOS-CLI-13`: Complete
+- `MACOS-DOCS-01`: Complete
 
 ### Completed Hardening Notes
 - `MACOS-CLI-03` shipped additional launch hardening after the initial story landed:
@@ -159,7 +166,7 @@
   - manual validation confirmed Steam reopens with a working desktop window after a GAMEHUB sync that had to close and reopen it
 
 ### Pending Stories
-- `MACOS-DOCS-01`
+- none currently
 
 ### Deferred Stories
 - none currently
@@ -752,7 +759,7 @@
 
 ### STORY MACOS-DOCS-01
 - Type: DOCS
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, `MACOS-CLI-12`, `MACOS-CLI-13`
 - Scope (explicit files/modules allowed):
   - `docs/client-install.md`
@@ -763,17 +770,17 @@
   - `docs/development.md`
   - `docs/release-final-validation-playbook.md`
   - `docs/release-manual-checklist-v1.4.0.md`
-  - `PLANS/mac-support`
+  - `PLANS/mac-support.md`
 - Read This First:
   - all finalized behavior in merged macOS stories
   - current contents of the docs listed above
 - Goal: make macOS operator, development, and release-validation docs complete, runnable, and aligned with the implemented behavior.
 - Acceptance Criteria (deterministic):
-  - [ ] Docs describe latest-macOS Apple Silicon as a validated host target and state the current Rosetta policy accurately.
-  - [ ] Docs show native Steam roots, `Steam.app` handling, `~/Applications` install defaults, and macOS validation commands.
-  - [ ] Docs describe the `[macos]` config section and its supported overrides.
-  - [ ] Release validation adds a dedicated macOS lane covering first sync, second-pass idempotency, managed Steam launch, save sync, and controller autoconfig.
-  - [ ] This plan file is updated with completed-story status and any implementation-driven contract refinements.
+  - [x] Docs describe latest-macOS Apple Silicon as a validated host target and state the current Rosetta policy accurately.
+  - [x] Docs show native Steam roots, `Steam.app` handling, `~/Applications` install defaults, and macOS validation commands.
+  - [x] Docs describe the `[macos]` config section and its supported overrides.
+  - [x] Release validation adds a dedicated macOS lane covering first sync, second-pass idempotency, managed Steam launch, save sync, and controller autoconfig.
+  - [x] This plan file is updated with completed-story status and any implementation-driven contract refinements.
 - Non-Goals:
   - New runtime behavior.
   - Broad docs cleanup unrelated to macOS support.

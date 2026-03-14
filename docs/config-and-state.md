@@ -78,7 +78,7 @@ retroarch_cfg_path = "~/Documents/RetroArch/retroarch.cfg"
 retroarch_system_dir = "~/Documents/RetroArch/system"
 retroarch_cores_dir = "~/Library/Application Support/RetroArch/cores"
 retroarch_info_dir = "~/Library/Application Support/RetroArch/info"
-retroarch_cores_base_url = "https://example.invalid/apple-silicon/"
+retroarch_cores_base_url = "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/"
 pcsx2_ini_path = "~/Library/Application Support/PCSX2/inis/PCSX2.ini"
 pcsx2_bios_dir = "~/Library/Application Support/PCSX2/bios"
 dolphin_user_path = "~/.local/share/dolphin-emu"
@@ -118,6 +118,8 @@ When omitted, sync auto-detects a profile under `steam.userdata_dir` and prefers
 `steam.userdata_dir` is strict when set: if the configured path is missing, GAMEHUB does not fall back to auto-detection.
 
 `GAMEHUB_STEAM_USERDATA_DIR` can override `steam.userdata_dir` from config.
+
+On macOS, `steam.steam_exe` may point to either `Steam.app` or its inner `Contents/MacOS/steam_osx` path. GAMEHUB normalizes lifecycle actions back to the app bundle.
 
 Steam mutation behavior notes:
 - GAMEHUB writes managed shortcuts with stable `appid` values so artwork and category membership can be bound on first sync pass.

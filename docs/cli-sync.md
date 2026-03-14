@@ -1,21 +1,47 @@
 # CLI Flow
 
 Init command:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main init [flags]
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main init [flags]
 ```
 
 Sync command:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main sync [flags]
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main sync [flags]
 ```
 
 Controller doctor command:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main doctor controllers [--apply] [--force]
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor controllers [--apply] [--force]
 ```
 
 Managed content doctor commands:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main doctor roms [--verify] [--verbose]
+./venv/bin/python -m gamehub_cli.main doctor firmware [--verify] [--verbose]
+./venv/bin/python -m gamehub_cli.main doctor all [--verify] [--verbose]
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor roms [--verify] [--verbose]
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor firmware [--verify] [--verbose]

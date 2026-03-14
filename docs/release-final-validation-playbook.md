@@ -2,13 +2,14 @@
 
 This is the single reference for the final pre-release test flow and publish flow.
 
-For a shorter 2 to 3 hour manual sanity pass after automation is green, use [release-manual-checklist-v1.4.0.md](./release-manual-checklist-v1.4.0.md).
+For a shorter 3 to 4 hour manual sanity pass after automation is green, use [release-manual-checklist-v1.4.0.md](./release-manual-checklist-v1.4.0.md).
 
 Use this in order:
 1. Windows validation
-2. Linux validation
-3. Real sync validation on Bazzite
-4. GitHub release execution
+2. macOS validation
+3. Linux validation
+4. Real sync validation on Bazzite
+5. GitHub release execution
 
 ## 0. Prerequisites
 
@@ -16,6 +17,7 @@ Use this in order:
 2. Server endpoint is reachable at `http://<SERVER_IP>:8000`.
 3. Local venv exists at `venv/`.
 4. Steam is installed on test hosts and you can launch it interactively.
+5. macOS validation host is the latest stable Apple Silicon macOS release with native Steam in `~/Applications/Steam.app` or `/Applications/Steam.app`.
 
 ## 1. Windows Final Validation
 
@@ -150,7 +152,87 @@ Run this after the first non-dry sync rewrites managed shortcuts to `shortcut-la
 - `.\venv\Scripts\python.exe scripts\validate_steam_shortcuts.py --config .\config.windows.toml` returns exit code `0`.
 - If `N3DS` titles are in index, verify `%APPDATA%\\Azahar\\config\\qt-config.ini` contains `fullscreen=true` and `confirmClose=false`.
 
-## 2. Linux Final Validation (Ubuntu/Fedora host)
+## 2. macOS Final Validation (Apple Silicon)
+
+Run from repo root in a macOS shell.
+
+1. Install/update dependencies:
+```bash
+./venv/bin/python -m pip install -e .[dev]
+```
+2. Required quality gates:
+```bash
+./venv/bin/python -m ruff format --check .
+./venv/bin/python -m ruff check .
+./venv/bin/python -m mypy src
+./venv/bin/python -m pytest . -p no:cacheprovider
+```
+3. Prepare `config.macos.toml` from [docs/templates/config.macos.template.toml](templates/config.macos.template.toml):
+```toml
+[server]
+url = "http://<SERVER_IP>:8000"
+
+[paths]
+gamehub_dir = "/Users/<user>/GameHub"
+
+[steam]
+userdata_dir = "/Users/<user>/Library/Application Support/Steam/userdata"
+steam_exe = "/Users/<user>/Applications/Steam.app"
+# steam_id = "7656119..."  # optional but recommended
+```
+4. Optional SGDB key:
+```bash
+export GAMEHUB_SGDB_API_KEY="<YOUR_KEY>"
+```
+5. Confirm server index reachable:
+```bash
+./venv/bin/python -c "import httpx;print(httpx.get('http://<SERVER_IP>:8000/v1/index',timeout=15).status_code)"
+```
+6. Dry-run init:
+```bash
+./venv/bin/python -m gamehub_cli.main init --config ./config.macos.toml --dry-run --verbose
+```
+7. Real init:
+```bash
+./venv/bin/python -m gamehub_cli.main init --config ./config.macos.toml
+```
+8. Dry-run sync:
+```bash
+./venv/bin/python -m gamehub_cli.main sync --config ./config.macos.toml --dry-run --verbose --require-steam-closed
+```
+9. First real sync:
+```bash
+./venv/bin/python -m gamehub_cli.main sync --config ./config.macos.toml --verbose --require-steam-closed
+```
+10. Second real sync (idempotency):
+```bash
+./venv/bin/python -m gamehub_cli.main sync --config ./config.macos.toml --verbose --require-steam-closed
+```
+11. Shortcut structure validation:
+```bash
+./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.macos.toml
+```
+12. Manual Steam + runtime verification:
+- Shortcuts exist.
+- Collections exist by exact system name.
+- Artwork appears.
+- Launch one managed `RetroArch` title from Steam.
+- Launch one managed macOS `N64` RetroArch title and confirm video output is present.
+- Launch one managed `Dolphin` title from Steam.
+- Launch one managed `Azahar` title from Steam.
+- Confirm each managed launch waits for emulator exit before post-exit save work.
+- If the macOS Azahar exit hook is enabled, confirm `Start+Select` quits the newly launched Azahar session without killing pre-existing Azahar processes.
+13. Save sync + controller autoconfig sweep:
+- Run the same `save_sync.enabled = false`, `mode = "download"`, and `mode = "bidirectional"` matrix used on Windows.
+- Confirm one download-first convergence, one managed post-exit upload, one first-time exact-file save creation, and one offline-recovery reconnect.
+- Confirm macOS RetroArch exact-file saves land under an existing `~/Documents/RetroArch/saves` tree or sibling `~/Library/Application Support/RetroArch/saves` when the native nested config layout is in use.
+- Confirm controller profile selection remains `0 -> kbm`, `1 -> xbox_1p`, `2+ -> xbox_2p` for the controllers available to test.
+- For `Dolphin` and `Azahar`, confirm the written device/binding tokens are macOS-native rather than legacy Windows/Linux names.
+14. Optional compatibility lane:
+- With Rosetta already installed and `[macos].disable_pcsx2_rosetta = false`, confirm Intel-only `PCSX2.app` is accepted.
+- With `[macos].disable_pcsx2_rosetta = true`, confirm the same Intel-only bundle is rejected clearly.
+
+## 3. Linux Final Validation (Ubuntu/Fedora host)
 
 1. Create/refresh venv and deps:
 ```bash
@@ -189,7 +271,7 @@ docker compose -f docker/compose.yaml --env-file docker/.env config
 docker build -f docker/Dockerfile .
 ```
 
-## 3. Bazzite Real Sync Validation
+## 4. Bazzite Real Sync Validation
 
 Run on Bazzite in an interactive desktop session.
 
@@ -258,7 +340,7 @@ Run the same save-sync matrix used on Windows after the first non-dry sync rewri
 - `./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.bazzite.toml` returns exit code `0`.
 - If `N3DS` titles are in index, verify `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini` contains `fullscreen=true` and `confirmClose=false`.
 
-## 4. GitHub Release Execution
+## 5. GitHub Release Execution
 
 1. Commit release-ready changes:
 ```powershell
@@ -292,12 +374,12 @@ git push origin vX.Y.Z
 - `ghcr.io/<org>/gamehub-server:latest`
 10. Publish release notes and record final gate decision.
 
-## 5. Release Gate PASS Criteria
+## 6. Release Gate PASS Criteria
 
 Release is `PASS` only when all of the following are true:
 1. Windows and Linux full suites pass.
 2. Audit slices pass.
-3. Real sync succeeded on Windows and Bazzite (including second idempotency pass).
-4. Manual Steam verification passed on both platforms.
-5. GitHub release workflows and artifacts are complete.
-
+3. Real sync succeeded on Windows, macOS, and Bazzite (including second idempotency pass).
+4. Manual Steam verification passed on Windows, macOS, and Bazzite.
+5. macOS managed launch, save-sync, and controller-autoconfig checks passed.
+6. GitHub release workflows and artifacts are complete.

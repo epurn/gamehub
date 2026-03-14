@@ -103,3 +103,11 @@
   - atomic write of mutated files
   - copy artwork
   - reopen Steam if it was running at start
+
+## Quick Validation
+```bash
+./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.macos.toml
+```
+
+- Run this after the first non-dry sync on macOS.
+- Exit code `0` means every managed shortcut still points at `shortcut-launch`, and every `--payload-ref` shortcut also includes `--payload-registry`.
