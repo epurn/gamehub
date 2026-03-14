@@ -19,6 +19,8 @@ from ..common.platform_paths import (
 from ..emulators import resolve_emulator_executable
 from .pcsx2_ini import read_ini_lines, write_ini_atomic
 
+_OS_NAME = os.name
+_SYS_PLATFORM = sys.platform
 _AZAHAR_FULLSCREEN_KEY = "fullscreen"
 _AZAHAR_FULLSCREEN_DEFAULT_KEY = r"fullscreen\default"
 _AZAHAR_FULLSCREEN_VALUE = "true"
@@ -32,12 +34,12 @@ logger = logging.getLogger(__name__)
 
 def default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
     appdata = os.environ.get("APPDATA")
-    if os.name == "nt" and appdata:
+    if _OS_NAME == "nt" and appdata:
         # Keep mocked Windows branches host-safe when tests run on non-Windows hosts.
-        if sys.platform.startswith("win"):
+        if _SYS_PLATFORM.startswith("win"):
             return Path(appdata) / "Azahar" / "config" / "qt-config.ini"
         return PosixPath(appdata) / "Azahar" / "config" / "qt-config.ini"
-    if sys.platform == "darwin":
+    if _SYS_PLATFORM == "darwin":
         candidates = macos_azahar_qt_config_candidates()
         for candidate in candidates:
             if candidate.exists():
@@ -50,7 +52,7 @@ def default_azahar_qt_config_path(config: GamehubConfig | None = None) -> Path:
     flatpak_export_user = home / ".local" / "share" / "flatpak" / "exports" / "bin" / AZAHAR_FLATPAK_APP_ID
     azahar_raw = resolve_emulator_executable("azahar").strip('"')
     azahar_exe = Path(azahar_raw)
-    if sys.platform.startswith("linux") and (
+    if _SYS_PLATFORM.startswith("linux") and (
         is_flatpak_command(azahar_exe, AZAHAR_FLATPAK_APP_ID)
         or AZAHAR_FLATPAK_APP_ID.casefold() in azahar_raw.casefold()
         or flatpak_qt_config.parent.exists()

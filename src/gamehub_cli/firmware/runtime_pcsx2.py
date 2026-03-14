@@ -12,6 +12,7 @@ from ..emulators import resolve_emulator_executable
 from .pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
 from .targets import default_pcsx2_ini_path, resolve_pcsx2_bios_dirs
 
+_SYS_PLATFORM = sys.platform
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +22,7 @@ def configure_pcsx2_runtime(
     verbose: bool,
     writer: Callable[[str], None],
 ) -> Path:
-    if sys.platform == "darwin":
+    if _SYS_PLATFORM == "darwin":
         bios_candidates = resolve_pcsx2_bios_dirs(config=config)
         bios_dir = bios_candidates[0] if bios_candidates else config.firmware_dir / "PS2"
     else:

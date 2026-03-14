@@ -13,6 +13,8 @@ from .pcsx2_ini import read_ini_lines, write_ini_atomic
 from .retroarch_cores import resolve_retroarch_paths
 from .targets import retroarch_cfg_candidates_for_config
 
+_OS_NAME = os.name
+_SYS_PLATFORM = sys.platform
 _RETROARCH_MENU_COMBO_KEY = "input_menu_toggle_gamepad_combo"
 _RETROARCH_MENU_COMBO_VALUE = "4"
 _RETROARCH_MENU_COMBO_LABEL = "Start+Select"
@@ -64,7 +66,7 @@ class RetroArchMacOSN64RemediationError(RuntimeError):
 
 
 def _is_steam_deck_linux() -> bool:
-    if not sys.platform.startswith("linux"):
+    if not _SYS_PLATFORM.startswith("linux"):
         return False
     try:
         os_release = _STEAMOS_RELEASE_PATH.read_text(encoding="utf-8", errors="ignore").casefold()
@@ -94,7 +96,7 @@ def _path_with_tilde_expanded(raw: str) -> Path:
 
 def _resolve_retroarch_cfg_path(raw: str, *, cfg_path: Path) -> Path:
     value = raw.strip()
-    if os.name == "nt" and value.startswith((":\\", ":/")):
+    if _OS_NAME == "nt" and value.startswith((":\\", ":/")):
         return cfg_path.parent / value[2:]
     candidate = _path_with_tilde_expanded(value)
     if not candidate.is_absolute():
@@ -212,12 +214,12 @@ def _retroarch_all_users_menu_requires_migration(binding: str | None) -> bool:
 
 def _resolve_retroarch_cfg_target(config: GamehubConfig) -> Path | None:
     candidates = list(retroarch_cfg_candidates_for_config(config=config))
-    if sys.platform == "darwin" and config.macos.retroarch_cfg_path is not None:
+    if _SYS_PLATFORM == "darwin" and config.macos.retroarch_cfg_path is not None:
         return config.macos.retroarch_cfg_path.expanduser()
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    if sys.platform == "darwin":
+    if _SYS_PLATFORM == "darwin":
         if candidates:
             return candidates[0]
         return None
@@ -233,7 +235,7 @@ def _normalized_cfg_value(value: str | None) -> str:
 
 
 def _resolve_macos_n64_core_path(config: GamehubConfig, *, cfg_path: Path) -> Path | None:
-    if sys.platform != "darwin":
+    if _SYS_PLATFORM != "darwin":
         return None
     resolved_paths = resolve_retroarch_paths(
         explicit_cores_dir=config.macos.retroarch_cores_dir,
@@ -260,7 +262,7 @@ def _apply_macos_n64_remediation(
     verbose: bool,
     writer: Callable[[str], None],
 ) -> tuple[list[str], list[str], bool, bool, Path | None]:
-    if sys.platform != "darwin":
+    if _SYS_PLATFORM != "darwin":
         return lines, core_lines, False, False, None
 
     core_path = _resolve_macos_n64_core_path(config, cfg_path=cfg_path)
@@ -312,7 +314,7 @@ def configure_managed_macos_n64_content_runtime(
     config: GamehubConfig,
     rom_rel_path: str,
 ) -> bool:
-    if sys.platform != "darwin":
+    if _SYS_PLATFORM != "darwin":
         return False
 
     cfg_path = _resolve_retroarch_cfg_target(config=config)
@@ -379,7 +381,7 @@ def configure_retroarch_runtime(
 ) -> Path | None:
     cfg_path = _resolve_retroarch_cfg_target(config=config)
     if cfg_path is None:
-        if strict_macos_n64 and sys.platform == "darwin":
+        if strict_macos_n64 and _SYS_PLATFORM == "darwin":
             raise _macos_n64_remediation_error(
                 message=(
                     "RetroArch config path could not be resolved; set [macos].retroarch_cfg_path "
@@ -393,7 +395,7 @@ def configure_retroarch_runtime(
 
     if dry_run:
         if verbose:
-            if os.name == "nt":
+            if _OS_NAME == "nt":
                 details = f"menu_combo={_RETROARCH_MENU_COMBO_LABEL}\tall_users_menu=true"
             else:
                 details = (
@@ -409,7 +411,7 @@ def configure_retroarch_runtime(
                     f"{cfg_path}\tvideo_driver={_RETROARCH_VIDEO_DRIVER_GLCORE}\t"
                     "mupen64plus-rdp-plugin=angrylion\tmupen64plus-rsp-plugin=hle"
                 )
-            elif sys.platform == "darwin":
+            elif _SYS_PLATFORM == "darwin":
                 writer(f"retroarch\tdry-run\tn64_macos_remediation\t{cfg_path}\treason=core_missing_or_unresolved")
             remap_dir = _resolve_retroarch_remap_dir(cfg_path, read_ini_lines(cfg_path))
             writer(
@@ -421,7 +423,7 @@ def configure_retroarch_runtime(
     lines = read_ini_lines(cfg_path)
     existing_combo = read_simple_cfg_key(lines, _RETROARCH_MENU_COMBO_KEY)
     existing_all_users = read_simple_cfg_key(lines, _RETROARCH_ALL_USERS_MENU_KEY)
-    is_windows = os.name == "nt"
+    is_windows = _OS_NAME == "nt"
     is_deck_linux = (not is_windows) and is_steam_deck_linux()
     existing_joypad_driver = read_simple_cfg_key(lines, _RETROARCH_JOYPAD_DRIVER_KEY) if is_deck_linux else None
     existing_analog = (

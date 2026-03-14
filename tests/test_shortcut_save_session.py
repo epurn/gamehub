@@ -280,8 +280,8 @@ def test_run_shortcut_prelaunch_save_sync_macos_n64_preserves_retroarch_n64_runt
         )
         state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.shortcuts.save_session._shortcut_server_reachable", lambda _config: True)
         monkeypatch.setattr(
             "gamehub_cli.shortcuts.save_session._load_shortcut_index",

@@ -173,7 +173,7 @@ def test_deploy_firmware_n3ds_configures_azahar_fullscreen_without_firmware(monk
     with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         appdata = temp_root / "AppData" / "Roaming"
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._OS_NAME", "nt")
         monkeypatch.setenv("APPDATA", str(appdata))
         index = LibraryIndex(
             index_version=1,
@@ -205,7 +205,7 @@ def test_deploy_firmware_n3ds_dry_run_does_not_mutate_fullscreen_config(monkeypa
     with workspace_tempdir("gamehub-firmware-deploy-") as temp_root:
         config = _config(temp_root)
         appdata = temp_root / "AppData" / "Roaming"
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._OS_NAME", "nt")
         monkeypatch.setenv("APPDATA", str(appdata))
         index = LibraryIndex(
             index_version=1,
@@ -247,8 +247,8 @@ def test_deploy_firmware_n3ds_macos_configures_application_support_qt_config(mon
             titles=(),
         )
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.Path.home", classmethod(lambda cls: home))
@@ -276,8 +276,8 @@ def test_configure_azahar_runtime_macos_backs_up_existing_qt_config(monkeypatch,
         qt_config.parent.mkdir(parents=True, exist_ok=True)
         qt_config.write_text("fullscreen=false\nconfirmClose=true\n", encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
@@ -296,8 +296,8 @@ def test_default_azahar_qt_config_path_prefers_flatpak_config_root(monkeypatch, 
         export.parent.mkdir(parents=True, exist_ok=True)
         export.write_bytes(b"#!/bin/sh")
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._SYS_PLATFORM", "linux")
         monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr(
@@ -355,8 +355,8 @@ def test_deploy_firmware_n3ds_linux_keeps_controller_bindings(monkeypatch, works
             titles=(),
         )
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._SYS_PLATFORM", "linux")
         monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr(
@@ -385,7 +385,7 @@ def test_deploy_firmware_configures_pcsx2_ini_to_gamehub_firmware(monkeypatch, w
             encoding="utf-8",
         )
         monkeypatch.setattr("gamehub_cli.firmware.targets.pcsx2_ini_candidates", lambda config=None: [ini_path])
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2._SYS_PLATFORM", "linux")
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -426,7 +426,7 @@ def test_deploy_firmware_configures_retroarch_menu_combo(monkeypatch, workspace_
         monkeypatch.setattr(
             "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
         )
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -473,7 +473,7 @@ def test_deploy_firmware_configures_retroarch_steam_deck_joypad_driver(monkeypat
         monkeypatch.setattr(
             "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
         )
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.is_steam_deck_linux", lambda: True)
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
@@ -499,7 +499,7 @@ def test_deploy_firmware_retroarch_non_deck_keeps_existing_joypad_driver(monkeyp
         monkeypatch.setattr(
             "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
         )
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.is_steam_deck_linux", lambda: False)
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
@@ -520,7 +520,7 @@ def test_deploy_firmware_dry_run_reports_retroarch_menu_combo(monkeypatch, works
         monkeypatch.setattr(
             "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
         )
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
         monkeypatch.setattr(
             "gamehub_cli.firmware.deploy.target_dirs_for_system",
             lambda _name, config=None: [temp_root / "retroarch" / "system"],
@@ -555,7 +555,7 @@ def test_deploy_firmware_windows_avoids_psx_cfg_overrides(monkeypatch, workspace
         monkeypatch.setattr(
             "gamehub_cli.firmware.runtime_retroarch.retroarch_cfg_candidates_for_config", lambda config=None: [cfg_path]
         )
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "nt")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "nt")
 
         deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=False)
 
@@ -821,8 +821,8 @@ def test_resolve_runtime_targets_macos_prefer_existing_xdg_dolphin_and_azahar_ro
 
         monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.firmware.runtime_azahar.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
@@ -843,8 +843,8 @@ def test_configure_retroarch_runtime_macos_uses_explicit_cfg_target(monkeypatch,
         cfg_path = temp_root / "custom-retroarch" / "retroarch.cfg"
         config = replace(base, macos=replace(base.macos, retroarch_cfg_path=cfg_path))
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
 
@@ -868,8 +868,8 @@ def test_configure_retroarch_runtime_macos_prefers_existing_nested_cfg(monkeypat
         nested_cfg.write_text('input_menu_toggle_gamepad_combo = "0"\n', encoding="utf-8")
         legacy_cfg.write_text('input_menu_toggle_gamepad_combo = "1"\n', encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.common.platform_paths._OS_NAME", "posix")
@@ -900,8 +900,8 @@ def test_configure_retroarch_runtime_macos_backs_up_existing_files(monkeypatch, 
         remap_path.parent.mkdir(parents=True, exist_ok=True)
         remap_path.write_text('input_libretro_device_p1 = "1"\n', encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
 
@@ -941,8 +941,8 @@ def test_configure_retroarch_runtime_macos_applies_n64_video_remediation(monkeyp
         cores_dir.mkdir(parents=True, exist_ok=True)
         (cores_dir / "mupen64plus_next_libretro.dylib").write_bytes(b"core")
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._SYS_PLATFORM", "darwin")
 
         configure_retroarch_runtime(config=config, dry_run=False, verbose=False, writer=lambda _line: None)
 
@@ -963,7 +963,7 @@ def test_configure_pcsx2_runtime_macos_uses_application_support_bios(monkeypatch
         config = _config(temp_root)
         ini_path = home / "Library" / "Application Support" / "PCSX2" / "inis" / "PCSX2.ini"
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
@@ -989,7 +989,7 @@ def test_configure_pcsx2_runtime_macos_backs_up_existing_ini(monkeypatch, worksp
         ini_path.parent.mkdir(parents=True, exist_ok=True)
         ini_path.write_text("[UI]\nSetupWizardIncomplete = true\n", encoding="utf-8")
 
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
         monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
@@ -1062,7 +1062,7 @@ def test_deploy_firmware_dry_run_reports_flatpak_pcsx2_bios_target(monkeypatch, 
 
         monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
         monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
-        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_pcsx2._SYS_PLATFORM", "linux")
         monkeypatch.setattr(
             "gamehub_cli.firmware.runtime_pcsx2.resolve_emulator_executable",
             lambda _name: "/home/deck/.local/share/flatpak/exports/bin/net.pcsx2.PCSX2",
