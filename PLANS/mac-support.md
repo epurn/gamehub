@@ -146,6 +146,7 @@
 - `MACOS-CLI-05`
 - `MACOS-CLI-06`
 - `MACOS-CLI-11`
+- `MACOS-CLI-12`
 - `MACOS-DOCS-01`
 
 ### Deferred Stories
@@ -418,6 +419,46 @@
 - Prompt Seed:
   - `Implement STORY MACOS-CLI-06 from PLANS/mac-support. Stay within the explicit scope and add macOS SDL-based controller detection plus deterministic Dolphin/Azahar profile application.`
 - PR Title Template: `CLI: add macOS controller detection and profile application`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-12
+- Type: CLI
+- Status: Pending
+- Depends On: `MACOS-CLI-05`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `src/gamehub_cli/emulators/save_resolution.py`
+  - `tests/test_shortcut_save_session.py`
+  - `docs/cli-sync.md`
+  - `docs/config-and-state.md`
+- Read This First:
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `src/gamehub_cli/emulators/save_resolution.py`
+  - `tests/test_shortcut_save_session.py`
+- Goal: close the macOS PSX save-sync gap discovered in manual validation so managed Swanstation memory-card saves sync deterministically at launch and post-exit.
+- Acceptance Criteria (deterministic):
+  - [ ] A managed macOS `PSX` shortcut with save sync enabled downloads the indexed memory-card save into the resolved RetroArch save root before launch.
+  - [ ] The same session uploads newly created or changed `GH_<title_id>_1.mcd` / `GH_<title_id>_2.mcd` artifacts after exit without waiting for a later full sync.
+  - [ ] Existing per-title `.srm` preservation behavior remains intact when an operator already has a canonical local Swanstation save.
+  - [ ] Save destination resolution stays deterministic across `~/Documents/RetroArch` and `~/Library/Application Support/RetroArch` layouts on macOS.
+  - [ ] Windows and Linux `PSX` save-session behavior remains unchanged.
+- Non-Goals:
+  - PSX controller mapping changes.
+  - Non-PSX save-sync regressions.
+  - RetroArch core provisioning or launch-template changes.
+- Implementation Notes:
+  - Treat this as a validation remediation story layered on top of `MACOS-CLI-05`; do not widen it into generic save-sync refactoring.
+  - Reuse existing exact-file binding and runtime memory-card helpers instead of introducing macOS-only save heuristics.
+  - If the bug is caused by root selection drift between prelaunch download and post-exit upload, fix the shared resolver once and cover both phases in tests.
+- Tests Required (exact locations / names):
+  - `tests/test_shortcut_save_session.py::test_shortcut_prelaunch_download_mode_fetches_save_bindings_for_psx`
+  - `tests/test_shortcut_save_session.py::test_managed_memory_card_paths_macos`
+  - new focused macOS regression coverage in `tests/test_shortcut_save_session.py` for prelaunch download plus post-exit upload of managed PSX memory cards
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_shortcut_save_session.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-12 from PLANS/mac-support. Stay within the explicit scope and fix the macOS PSX managed save-sync regression discovered during manual validation.`
+- PR Title Template: `CLI: fix macOS PSX managed save sync`
 - Rollback Risk: Medium
 
 ### STORY MACOS-CLI-07

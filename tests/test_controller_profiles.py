@@ -77,10 +77,19 @@ def test_seed_default_profiles_creates_profile_tree(workspace_tempdir) -> None:
         assert "Buttons/A = SOUTH | `Button A`" in dolphin_wii_xbox_1p
         assert "Buttons/A = SOUTH | `Button A` | `Shoulder R` | `Button 5`" in dolphin_wii_xbox_1p
         assert "Buttons/B = EAST | `Button B` | `Trigger R` | `Axis 5+`" in dolphin_wii_xbox_1p
+        if sys.platform == "darwin":
+            assert "IR/Up = `Right Y+`" in dolphin_wii_xbox_1p
+            assert "IR/Down = `Right Y-`" in dolphin_wii_xbox_1p
+
+        dolphin_xbox_1p_hotkeys = (root / "dolphin" / "xbox_1p" / "Hotkeys.ini").read_text(encoding="utf-8")
+        if sys.platform == "darwin":
+            assert "Device = SDL/0/Gamepad" in dolphin_xbox_1p_hotkeys
 
         dolphin_kbm_hotkeys = (root / "dolphin" / "kbm" / "Hotkeys.ini").read_text(encoding="utf-8")
         if sys.platform.startswith("linux"):
             assert "Device = XInput2/0/Virtual core pointer" in dolphin_kbm_hotkeys
+        elif sys.platform == "darwin":
+            assert "Device = Quartz/0/Keyboard & Mouse" in dolphin_kbm_hotkeys
 
 
 def test_seed_default_profiles_linux_uses_platform_neutral_dolphin_defaults(monkeypatch, workspace_tempdir) -> None:

@@ -27,6 +27,7 @@ _LINUX_NON_GAMEPAD_NAME_MARKERS = (
 _ERROR_SUCCESS = 0
 _XINPUT_FLAG_GAMEPAD = 0x00000001
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
+_MICROSOFT_VENDOR_ID = 0x045E
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,9 @@ class XboxController:
     slot: int
     name: str
     subtype: int | None = None
+    guid: str | None = None
+    vendor_id: int | None = None
+    product_id: int | None = None
 
 
 def _is_steam_deck_linux() -> bool:
@@ -195,16 +199,55 @@ def _is_supported_macos_controller_name(name: str) -> bool:
     return any(marker in normalized for marker in ("xbox", "x-box", "xinput"))
 
 
+def _macos_guid_vendor_id(guid: str | None) -> int | None:
+    if guid is None:
+        return None
+    normalized = guid.strip()
+    if len(normalized) != 32:
+        return None
+    try:
+        raw_guid = bytes.fromhex(normalized)
+    except ValueError:
+        return None
+    if len(raw_guid) < 6:
+        return None
+    return int.from_bytes(raw_guid[4:6], "little")
+
+
+def _is_supported_macos_controller(device: object) -> bool:
+    name = str(getattr(device, "name", "")).strip()
+    normalized = name.casefold()
+    if any(marker in normalized for marker in _LINUX_NON_GAMEPAD_NAME_MARKERS):
+        return False
+    if _is_supported_macos_controller_name(name):
+        return True
+    vendor_id = getattr(device, "vendor_id", None)
+    if vendor_id == _MICROSOFT_VENDOR_ID:
+        return True
+    if vendor_id is None and _macos_guid_vendor_id(getattr(device, "guid", None)) == _MICROSOFT_VENDOR_ID:
+        return True
+    return False
+
+
 def _detect_macos_xbox_controllers(*, max_devices: int) -> list[XboxController]:
     try:
-        devices = _discover_host_sdl_joysticks(max_devices=max_devices)
+        devices = _discover_host_sdl_joysticks()
     except Exception:
         return []
     controllers: list[XboxController] = []
     for device in devices:
-        if not _is_supported_macos_controller_name(device.name):
+        if not _is_supported_macos_controller(device):
             continue
-        controllers.append(XboxController(slot=device.slot, name=device.name, subtype=None))
+        controllers.append(
+            XboxController(
+                slot=device.slot,
+                name=device.name,
+                subtype=None,
+                guid=getattr(device, "guid", None),
+                vendor_id=getattr(device, "vendor_id", None),
+                product_id=getattr(device, "product_id", None),
+            )
+        )
         if len(controllers) >= max_devices:
             break
     return controllers

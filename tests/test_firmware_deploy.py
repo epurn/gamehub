@@ -857,6 +857,32 @@ def test_configure_retroarch_runtime_macos_uses_explicit_cfg_target(monkeypatch,
         assert 'all_users_control_menu = "true"' in text
 
 
+def test_configure_retroarch_runtime_macos_prefers_existing_nested_cfg(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-macos-") as temp_root:
+        home = temp_root / "home"
+        config = _config(temp_root)
+        nested_cfg = home / "Library" / "Application Support" / "RetroArch" / "config" / "retroarch.cfg"
+        legacy_cfg = home / "Library" / "Application Support" / "RetroArch" / "retroarch.cfg"
+        nested_cfg.parent.mkdir(parents=True, exist_ok=True)
+        legacy_cfg.parent.mkdir(parents=True, exist_ok=True)
+        nested_cfg.write_text('input_menu_toggle_gamepad_combo = "0"\n', encoding="utf-8")
+        legacy_cfg.write_text('input_menu_toggle_gamepad_combo = "1"\n', encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.common.platform_paths._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.Path.home", classmethod(lambda cls: home))
+
+        resolved = configure_retroarch_runtime(config=config, dry_run=False, verbose=False, writer=lambda _line: None)
+
+        assert resolved == nested_cfg
+        assert 'input_menu_toggle_gamepad_combo = "4"' in nested_cfg.read_text(encoding="utf-8")
+        assert 'input_menu_toggle_gamepad_combo = "1"' in legacy_cfg.read_text(encoding="utf-8")
+
+
 def test_configure_retroarch_runtime_macos_backs_up_existing_files(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-firmware-macos-") as temp_root:
         base = _config(temp_root)

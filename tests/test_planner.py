@@ -743,6 +743,9 @@ def test_save_planner_emits_upload_new_for_local_only_exact_file(monkeypatch, wo
         monkeypatch.setattr(
             "gamehub_cli.emulators.save_resolution.resolve_emulator_save_root", lambda *args, **kwargs: save_root
         )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution._retroarch_prefers_core_subdirs", lambda **kwargs: False
+        )
 
         index = LibraryIndex(index_version=1, systems=(), titles=(), saves=())
         bindings = SaveBindingCatalog(
@@ -794,6 +797,9 @@ def test_save_planner_emits_upload_new_for_nested_retroarch_exact_file(monkeypat
         monkeypatch.setattr(
             "gamehub_cli.emulators.save_resolution._retroarch_prefers_core_subdirs", lambda **kwargs: False
         )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution._retroarch_prefers_core_subdirs", lambda **kwargs: False
+        )
 
         index = LibraryIndex(index_version=1, systems=(), titles=(), saves=())
         bindings = SaveBindingCatalog(
@@ -840,6 +846,9 @@ def test_save_planner_keeps_download_mode_strict_for_local_only_exact_file(monke
         (save_root / "SuperMarioBros.srm").write_bytes(b"local-new")
         monkeypatch.setattr(
             "gamehub_cli.emulators.save_resolution.resolve_emulator_save_root", lambda *args, **kwargs: save_root
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution._retroarch_prefers_core_subdirs", lambda **kwargs: False
         )
 
         index = LibraryIndex(index_version=1, systems=(), titles=(), saves=())

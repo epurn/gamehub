@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from gamehub_cli.controllers import detection as controller_detection
+from gamehub_cli.controllers import sdl_guid as controller_sdl_guid
 from gamehub_cli.controllers.detection import XboxController, detect_xbox_controllers
 
 
@@ -154,23 +156,110 @@ def test_detect_xbox_controllers_windows_uses_xinput_slots_and_subtypes(monkeypa
 
 
 def test_detect_xbox_controllers_macos_uses_sdl_probe(monkeypatch) -> None:
+    observed: dict[str, int | None] = {}
+
+    def _fake_probe(*, max_devices: int | None = None):
+        observed["max_devices"] = max_devices
+        return [
+            SimpleNamespace(slot=0, name="Generic USB Joystick", guid="a" * 32, is_game_controller=False),
+            SimpleNamespace(slot=1, name="Motion Sensors", guid="b" * 32, is_game_controller=True, vendor_id=0x045E),
+            SimpleNamespace(slot=2, name="Wireless Controller", guid="c" * 32, is_game_controller=True),
+            SimpleNamespace(slot=3, name="XInput Controller", guid="d" * 32, is_game_controller=True),
+        ]
+
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(controller_detection, "_discover_host_sdl_joysticks", _fake_probe)
+
+    devices = detect_xbox_controllers(max_devices=2)
+
+    assert observed["max_devices"] is None
+    assert devices == [
+        XboxController(slot=3, name="XInput Controller", subtype=None, guid="d" * 32),
+    ]
+
+
+def test_detect_xbox_controllers_macos_accepts_generic_name_with_microsoft_vendor(monkeypatch) -> None:
     monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
     monkeypatch.setattr(
         controller_detection,
         "_discover_host_sdl_joysticks",
-        lambda max_devices=2: [
-            SimpleNamespace(slot=0, name="Xbox Wireless Controller", guid="a" * 32),
-            SimpleNamespace(slot=1, name="Motion Sensors", guid="b" * 32),
-            SimpleNamespace(slot=2, name="XInput Controller", guid="c" * 32),
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=0,
+                name="Wireless Controller",
+                guid=None,
+                is_game_controller=True,
+                vendor_id=0x045E,
+                product_id=0x0B13,
+            )
         ],
     )
 
     devices = detect_xbox_controllers(max_devices=2)
 
     assert devices == [
-        XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
-        XboxController(slot=2, name="XInput Controller", subtype=None),
+        XboxController(
+            slot=0,
+            name="Wireless Controller",
+            subtype=None,
+            guid=None,
+            vendor_id=0x045E,
+            product_id=0x0B13,
+        )
     ]
+
+
+def test_detect_xbox_controllers_macos_accepts_generic_name_with_microsoft_guid(monkeypatch) -> None:
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_detection,
+        "_discover_host_sdl_joysticks",
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=0,
+                name="Wireless Controller",
+                guid="030000005e040000130b0000ff870000",
+                is_game_controller=True,
+                vendor_id=None,
+                product_id=0x0B13,
+            )
+        ],
+    )
+
+    devices = detect_xbox_controllers(max_devices=2)
+
+    assert devices == [
+        XboxController(
+            slot=0,
+            name="Wireless Controller",
+            subtype=None,
+            guid="030000005e040000130b0000ff870000",
+            vendor_id=None,
+            product_id=0x0B13,
+        )
+    ]
+
+
+def test_detect_xbox_controllers_macos_rejects_non_xbox_game_controller(monkeypatch) -> None:
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_detection,
+        "_discover_host_sdl_joysticks",
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=0,
+                name="Wireless Controller",
+                guid="030000004c050000e60c000000010000",
+                is_game_controller=True,
+                vendor_id=0x054C,
+                product_id=0x0CE6,
+            )
+        ],
+    )
+
+    devices = detect_xbox_controllers(max_devices=2)
+
+    assert devices == []
 
 
 def test_detect_xbox_controllers_macos_failure_returns_empty(monkeypatch) -> None:
@@ -182,3 +271,270 @@ def test_detect_xbox_controllers_macos_failure_returns_empty(monkeypatch) -> Non
     monkeypatch.setattr(controller_detection, "_discover_host_sdl_joysticks", _raise)
 
     assert detect_xbox_controllers(max_devices=2) == []
+
+
+def test_parse_macos_system_profiler_game_controllers_collects_leaf_devices() -> None:
+    payload = json.dumps(
+        {
+            "SPGameControllerDataType": [
+                {
+                    "_name": "Game Controllers",
+                    "_items": [
+                        {"_name": "Wireless Controller", "spgamecontroller_connected": "yes"},
+                        {"_name": "Xbox Wireless Controller", "spgamecontroller_connected": "yes"},
+                    ],
+                }
+            ]
+        }
+    )
+
+    devices = controller_sdl_guid._parse_macos_system_profiler_game_controllers(payload, max_devices=2)
+
+    assert [(device.slot, device.name, device.guid, device.is_game_controller) for device in devices] == [
+        (0, "Wireless Controller", None, True),
+        (1, "Xbox Wireless Controller", None, True),
+    ]
+
+
+def test_discover_host_sdl_joysticks_macos_falls_back_to_system_profiler(monkeypatch) -> None:
+    observed: dict[str, int | None] = {}
+
+    monkeypatch.setattr(controller_sdl_guid.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_sdl_guid,
+        "_enumerate_sdl_joysticks",
+        lambda candidates, *, max_devices=None: [],
+    )
+
+    def _fake_fallback(*, max_devices: int | None = None):
+        observed["max_devices"] = max_devices
+        return [SimpleNamespace(slot=0, name="Wireless Controller", guid=None, is_game_controller=True)]
+
+    monkeypatch.setattr(controller_sdl_guid, "_discover_macos_system_profiler_joysticks", _fake_fallback)
+
+    devices = controller_sdl_guid._discover_host_sdl_joysticks(max_devices=2)
+
+    assert observed["max_devices"] == 2
+    assert [(device.slot, device.name, device.guid, device.is_game_controller) for device in devices] == [
+        (0, "Wireless Controller", None, True)
+    ]
+
+
+def test_parse_macos_hidutil_joysticks_filters_gamepads() -> None:
+    payload = "\n".join(
+        [
+            "Devices:",
+            "VendorID ProductID LocationID UsagePage Usage RegistryID  Transport            Class                      Product                            UserClass Built-In ",
+            "0x45e    0xb13     0xfd98c044 1         5     0x100012061 Bluetooth Low Energy IOHIDUserDevice            Xbox Wireless Controller           (null)    0        ",
+            "0x28de   0x1146    0x0        1         2     0x1000120f9 USB                  IOHIDUserDevice            Mouse-1                            (null)    0        ",
+            "0x0      0x0       0x11d      1         6     0x100000c52 FIFO                 AppleHIDTransportHIDDevice Apple Internal Keyboard / Trackpad (null)    1        ",
+        ]
+    )
+
+    devices = controller_sdl_guid._parse_macos_hidutil_joysticks(payload, max_devices=2)
+
+    assert [
+        (
+            device.slot,
+            device.name,
+            device.guid,
+            device.is_game_controller,
+            device.vendor_id,
+            device.product_id,
+            device.transport,
+        )
+        for device in devices
+    ] == [(0, "Xbox Wireless Controller", None, True, 0x045E, 0x0B13, "Bluetooth Low Energy")]
+
+
+def test_discover_host_sdl_joysticks_macos_falls_back_to_hidutil(monkeypatch) -> None:
+    observed: dict[str, int | None] = {}
+
+    monkeypatch.setattr(controller_sdl_guid.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_sdl_guid,
+        "_enumerate_sdl_joysticks",
+        lambda candidates, *, max_devices=None: [],
+    )
+    monkeypatch.setattr(
+        controller_sdl_guid,
+        "_discover_macos_system_profiler_joysticks",
+        lambda *, max_devices=None: [],
+    )
+
+    def _fake_hidutil(*, max_devices: int | None = None):
+        observed["max_devices"] = max_devices
+        return [SimpleNamespace(slot=0, name="Xbox Wireless Controller", guid=None, is_game_controller=True)]
+
+    monkeypatch.setattr(controller_sdl_guid, "_discover_macos_hidutil_joysticks", _fake_hidutil)
+
+    devices = controller_sdl_guid._discover_host_sdl_joysticks(max_devices=2)
+
+    assert observed["max_devices"] == 2
+    assert [(device.slot, device.name, device.guid, device.is_game_controller) for device in devices] == [
+        (0, "Xbox Wireless Controller", None, True)
+    ]
+
+
+def test_select_macos_embedded_sdl_mapping_prefers_nearest_named_vendor_match() -> None:
+    mappings = [
+        controller_sdl_guid._SDLControllerMapping(
+            guid="030000005e040000e002000003090000",
+            name="Xbox Wireless Controller",
+            vendor_id=0x045E,
+            product_id=0x02E0,
+            version=0x0903,
+            fields={"back": "b6", "start": "b7"},
+        ),
+        controller_sdl_guid._SDLControllerMapping(
+            guid="030000005e040000200b000011050000",
+            name="Xbox Wireless Controller",
+            vendor_id=0x045E,
+            product_id=0x0B20,
+            version=0x0511,
+            fields={"back": "b10", "start": "b11"},
+        ),
+        controller_sdl_guid._SDLControllerMapping(
+            guid="030000005e040000fd02000003090000",
+            name="Xbox Wireless Controller",
+            vendor_id=0x045E,
+            product_id=0x02FD,
+            version=0x0903,
+            fields={"back": "b16", "start": "b11"},
+        ),
+    ]
+
+    selected = controller_sdl_guid._select_macos_embedded_sdl_mapping(
+        mappings,
+        name="Xbox Wireless Controller",
+        vendor_id=0x045E,
+        product_id=0x0B13,
+    )
+
+    assert selected is not None
+    assert selected.guid == "030000005e040000200b000011050000"
+
+
+def test_select_macos_embedded_sdl_mapping_prefers_exact_vendor_product_over_host_name() -> None:
+    mappings = [
+        controller_sdl_guid._SDLControllerMapping(
+            guid="030000005e040000200b000011050000",
+            name="Xbox Wireless Controller",
+            vendor_id=0x045E,
+            product_id=0x0B20,
+            version=0x0511,
+            fields={"back": "b10", "start": "b11"},
+        ),
+        controller_sdl_guid._SDLControllerMapping(
+            guid="030000005e040000130b0000ff870000",
+            name="Xbox Series X Controller",
+            vendor_id=0x045E,
+            product_id=0x0B13,
+            version=0x87FF,
+            fields={"back": "b10", "start": "b11"},
+        ),
+    ]
+
+    selected = controller_sdl_guid._select_macos_embedded_sdl_mapping(
+        mappings,
+        name="Xbox Wireless Controller",
+        vendor_id=0x045E,
+        product_id=0x0B13,
+    )
+
+    assert selected is not None
+    assert selected.guid == "030000005e040000130b0000ff870000"
+    assert selected.name == "Xbox Series X Controller"
+
+
+def test_select_macos_embedded_sdl_mapping_returns_none_without_identity_match() -> None:
+    mappings = [
+        controller_sdl_guid._SDLControllerMapping(
+            guid="030000005e040000130b0000ff870000",
+            name="Xbox Series X Controller",
+            vendor_id=0x045E,
+            product_id=0x0B13,
+            version=0x87FF,
+            fields={"back": "b10", "start": "b11"},
+        ),
+        controller_sdl_guid._SDLControllerMapping(
+            guid="030000005e040000200b000011050000",
+            name="Xbox Wireless Controller",
+            vendor_id=0x045E,
+            product_id=0x0B20,
+            version=0x0511,
+            fields={"back": "b10", "start": "b11"},
+        ),
+    ]
+
+    selected = controller_sdl_guid._select_macos_embedded_sdl_mapping(
+        mappings,
+        name="Mystery Controller",
+        vendor_id=0x054C,
+        product_id=0x0CE6,
+    )
+
+    assert selected is None
+
+
+def test_discover_host_sdl_guid_macos_uses_embedded_mapping_when_probe_is_guidless(monkeypatch) -> None:
+    monkeypatch.setattr(controller_sdl_guid.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_sdl_guid,
+        "_discover_host_sdl_joysticks",
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=0,
+                name="Xbox Wireless Controller",
+                guid=None,
+                is_game_controller=True,
+                vendor_id=0x045E,
+                product_id=0x0B13,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        controller_sdl_guid,
+        "_lookup_macos_embedded_sdl_guid_for_identity",
+        lambda *, name, vendor_id=None, product_id=None: "030000005e040000200b000011050000",
+    )
+
+    guid = controller_sdl_guid._discover_host_sdl_guid(port=0)
+
+    assert guid == "030000005e040000200b000011050000"
+
+
+def test_lookup_macos_embedded_sdl_mapping_for_port_uses_discovered_identity(monkeypatch) -> None:
+    selected_mapping = controller_sdl_guid._SDLControllerMapping(
+        guid="030000005e040000200b000011050000",
+        name="Xbox Wireless Controller",
+        vendor_id=0x045E,
+        product_id=0x0B20,
+        version=0x0511,
+        fields={"back": "b10", "start": "b11"},
+    )
+
+    monkeypatch.setattr(controller_sdl_guid.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_sdl_guid,
+        "_discover_host_sdl_joysticks",
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=0,
+                name="Xbox Wireless Controller",
+                guid=None,
+                is_game_controller=True,
+                vendor_id=0x045E,
+                product_id=0x0B13,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        controller_sdl_guid,
+        "_lookup_macos_embedded_sdl_mapping_for_identity",
+        lambda *, name, vendor_id=None, product_id=None: selected_mapping,
+    )
+
+    mapping = controller_sdl_guid._lookup_macos_embedded_sdl_mapping_for_port(port=0)
+
+    assert mapping == selected_mapping
