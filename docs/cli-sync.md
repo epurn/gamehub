@@ -239,8 +239,9 @@ Linux path notes:
 - Windows Azahar launches wrapped by `shortcut-launch` include a fail-open `Start+Select` XInput exit hook by default (disable with `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false`).
 - macOS Azahar launches wrapped by `shortcut-launch` include a fail-open `Start+Select` native controller exit hook by default:
   - keeps the normal macOS bundle/document launch path so native shortcuts such as `Cmd+Q` still work
-  - polls the native Xbox HID service event log via `hidutil dump services -f xml` and tracks the macOS consumer usages emitted by `Select` / `Start`
+  - prefers mapping-aware native `GameController` polling for the configured controller port / `Select+Start` pair when that mapping can be resolved, and otherwise falls back to Xbox HID consumer-usage tracking via `hidutil dump services -f xml`
   - on combo press, requests the Azahar app to quit and only falls back to process termination if the app does not exit
+  - process-termination fallback only targets newly launched Azahar processes when one can be identified
   - can be disabled by setting `GAMEHUB_AZAHAR_MACOS_EXIT_HOOK=false` (falls back to the standard managed macOS launch path)
 
 Windows path notes:

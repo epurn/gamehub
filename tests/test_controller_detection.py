@@ -364,6 +364,36 @@ def test_select_macos_embedded_sdl_mapping_prefers_exact_vendor_product_over_hos
     assert selected.name == "Xbox Series X Controller"
 
 
+def test_select_macos_embedded_sdl_mapping_returns_none_without_identity_match() -> None:
+    mappings = [
+        controller_sdl_guid._SDLControllerMapping(
+            guid="030000005e040000130b0000ff870000",
+            name="Xbox Series X Controller",
+            vendor_id=0x045E,
+            product_id=0x0B13,
+            version=0x87FF,
+            fields={"back": "b10", "start": "b11"},
+        ),
+        controller_sdl_guid._SDLControllerMapping(
+            guid="030000005e040000200b000011050000",
+            name="Xbox Wireless Controller",
+            vendor_id=0x045E,
+            product_id=0x0B20,
+            version=0x0511,
+            fields={"back": "b10", "start": "b11"},
+        ),
+    ]
+
+    selected = controller_sdl_guid._select_macos_embedded_sdl_mapping(
+        mappings,
+        name="Mystery Controller",
+        vendor_id=0x054C,
+        product_id=0x0CE6,
+    )
+
+    assert selected is None
+
+
 def test_discover_host_sdl_guid_macos_uses_embedded_mapping_when_probe_is_guidless(monkeypatch) -> None:
     monkeypatch.setattr(controller_sdl_guid.sys, "platform", "darwin")
     monkeypatch.setattr(

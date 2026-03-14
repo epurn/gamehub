@@ -284,16 +284,16 @@ def _macos_controller_combo_pressed(
     controller_port: int,
     select_selector: str,
     start_selector: str,
-) -> bool:
+) -> bool | None:
     objc = _load_macos_gamecontroller_runtime()
     if objc is None:
-        return False
+        return None
     pool_class = _objc_class(objc, "NSAutoreleasePool")
     pool = _objc_msg_send(objc, pool_class, "new") if pool_class else None
     try:
         controller_class = _objc_class(objc, "GCController")
         if not controller_class:
-            return False
+            return None
         _objc_msg_send(
             objc,
             controller_class,
@@ -304,10 +304,10 @@ def _macos_controller_combo_pressed(
         )
         controllers = _objc_msg_send(objc, controller_class, "controllers")
         if not controllers:
-            return False
+            return None
         count = int(_objc_msg_send(objc, controllers, "count", restype=ctypes.c_ulong))
         if controller_port < 0 or controller_port >= count:
-            return False
+            return None
         controller = _objc_msg_send(
             objc,
             controllers,
@@ -316,10 +316,10 @@ def _macos_controller_combo_pressed(
             args=(controller_port,),
         )
         if not controller:
-            return False
+            return None
         gamepad = _objc_msg_send(objc, controller, "extendedGamepad")
         if not gamepad:
-            return False
+            return None
         return _macos_gc_button_pressed(objc, gamepad, select_selector) and _macos_gc_button_pressed(
             objc,
             gamepad,
@@ -412,29 +412,48 @@ def _monitor_macos_combo_and_terminate(
     process_name: str,
     prelaunch_pids: set[int],
 ) -> None:
-    del select_button, start_button, controller_port
+    button_selectors = _resolve_macos_button_selectors(
+        port=controller_port,
+        select_button=select_button,
+        start_button=start_button,
+    )
+    allow_hidutil_fallback = button_selectors is None
     active_registry_id: int | None = None
     seen_event_keys: set[tuple[str | None, int, int, int, int]] = set()
     pressed_usages: set[int] = set()
     while process.poll() is None:
-        snapshot = _capture_macos_xbox_event_log()
-        if snapshot is not None:
-            registry_id, event_log = snapshot
-            if registry_id != active_registry_id:
-                active_registry_id = registry_id
-                seen_event_keys.clear()
-                pressed_usages = _macos_pressed_consumer_usages_from_event_log(event_log)
-            for event in event_log:
-                key = _macos_consumer_usage_event_key(event)
-                if key is None or key in seen_event_keys:
-                    continue
-                seen_event_keys.add(key)
-                _event_time, _event_type, _usage_page, usage, down = key
-                if down:
-                    pressed_usages.add(usage)
-                else:
-                    pressed_usages.discard(usage)
-        if {_MACOS_XBOX_SELECT_USAGE, _MACOS_XBOX_START_USAGE}.issubset(pressed_usages):
+        combo_pressed = False
+        if button_selectors is not None:
+            select_selector, start_selector = button_selectors
+            combo_state = _macos_controller_combo_pressed(
+                controller_port=controller_port,
+                select_selector=select_selector,
+                start_selector=start_selector,
+            )
+            if combo_state is None:
+                allow_hidutil_fallback = True
+            else:
+                combo_pressed = combo_state
+        if not combo_pressed and allow_hidutil_fallback:
+            snapshot = _capture_macos_xbox_event_log()
+            if snapshot is not None:
+                registry_id, event_log = snapshot
+                if registry_id != active_registry_id:
+                    active_registry_id = registry_id
+                    seen_event_keys.clear()
+                    pressed_usages = _macos_pressed_consumer_usages_from_event_log(event_log)
+                for event in event_log:
+                    key = _macos_consumer_usage_event_key(event)
+                    if key is None or key in seen_event_keys:
+                        continue
+                    seen_event_keys.add(key)
+                    _event_time, _event_type, _usage_page, usage, down = key
+                    if down:
+                        pressed_usages.add(usage)
+                    else:
+                        pressed_usages.discard(usage)
+            combo_pressed = {_MACOS_XBOX_SELECT_USAGE, _MACOS_XBOX_START_USAGE}.issubset(pressed_usages)
+        if combo_pressed:
             _request_macos_application_quit(bundle_id=bundle_id)
             deadline = time.monotonic() + 2.0
             while process.poll() is None and time.monotonic() < deadline:
@@ -494,7 +513,7 @@ def _terminate_named_processes(*, process_name: str, prelaunch_pids: set[int], s
     current_pids = _discover_process_ids_by_name(process_name)
     target_pids = current_pids - prelaunch_pids
     if not target_pids:
-        target_pids = current_pids
+        return
     for pid in target_pids:
         try:
             os.kill(pid, sig)

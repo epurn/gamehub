@@ -179,6 +179,7 @@ def test_monitor_macos_combo_and_terminate_quits_on_hidutil_consumer_combo(monke
     )
     quit_calls: list[str | None] = []
 
+    monkeypatch.setattr(azahar_exit_hook, "_resolve_macos_button_selectors", lambda **kwargs: None)
     monkeypatch.setattr(azahar_exit_hook, "_capture_macos_xbox_event_log", lambda: next(snapshots))
     monkeypatch.setattr(azahar_exit_hook.time, "sleep", lambda *_args, **_kwargs: None)
 
@@ -204,6 +205,73 @@ def test_monitor_macos_combo_and_terminate_quits_on_hidutil_consumer_combo(monke
     )
 
     assert quit_calls == ["org.azahar-emu.azahar"]
+
+
+def test_monitor_macos_combo_and_terminate_prefers_selector_polling_when_available(monkeypatch) -> None:
+    class _Proc:
+        exited = False
+
+        def poll(self):
+            return 0 if self.exited else None
+
+    process = _Proc()
+    quit_calls: list[str | None] = []
+    selector_calls: list[tuple[int, str, str]] = []
+
+    monkeypatch.setattr(
+        azahar_exit_hook, "_resolve_macos_button_selectors", lambda **kwargs: ("buttonOptions", "buttonMenu")
+    )
+
+    def _combo_pressed(*, controller_port: int, select_selector: str, start_selector: str) -> bool | None:
+        selector_calls.append((controller_port, select_selector, start_selector))
+        return True
+
+    monkeypatch.setattr(azahar_exit_hook, "_macos_controller_combo_pressed", _combo_pressed)
+    monkeypatch.setattr(
+        azahar_exit_hook,
+        "_capture_macos_xbox_event_log",
+        lambda: (_ for _ in ()).throw(AssertionError("hidutil fallback should not run")),
+    )
+    monkeypatch.setattr(azahar_exit_hook.time, "sleep", lambda *_args, **_kwargs: None)
+
+    def _quit(*, bundle_id: str | None) -> None:
+        quit_calls.append(bundle_id)
+        process.exited = True
+
+    monkeypatch.setattr(azahar_exit_hook, "_request_macos_application_quit", _quit)
+
+    def _fail_terminate_named_processes(**kwargs) -> None:
+        raise AssertionError("process termination fallback should not run")
+
+    monkeypatch.setattr(azahar_exit_hook, "_terminate_named_processes", _fail_terminate_named_processes)
+
+    azahar_exit_hook._monitor_macos_combo_and_terminate(
+        process,
+        select_button=8,
+        start_button=10,
+        controller_port=1,
+        bundle_id="org.azahar-emu.azahar",
+        process_name="azahar",
+        prelaunch_pids={101},
+    )
+
+    assert selector_calls == [(1, "buttonOptions", "buttonMenu")]
+    assert quit_calls == ["org.azahar-emu.azahar"]
+
+
+def test_terminate_named_processes_skips_prelaunch_only_matches(monkeypatch) -> None:
+    kill_calls: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(azahar_exit_hook, "_discover_process_ids_by_name", lambda process_name: {101, 102})
+    monkeypatch.setattr(azahar_exit_hook.os, "kill", lambda pid, sig: kill_calls.append((pid, sig)))
+
+    azahar_exit_hook._terminate_named_processes(
+        process_name="azahar",
+        prelaunch_pids={101, 102},
+        sig=15,
+    )
+
+    assert kill_calls == []
 
 
 def test_resolve_macos_bundle_identifier_reads_info_plist(monkeypatch, workspace_tempdir) -> None:

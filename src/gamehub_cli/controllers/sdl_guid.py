@@ -542,12 +542,9 @@ def _select_macos_embedded_sdl_mapping(
                 vendor_matched = exact_vendor
         return _select_best(vendor_matched)
 
-    vendor_matched = mappings
-    if vendor_id is not None:
-        exact_vendor = [mapping for mapping in mappings if mapping.vendor_id == vendor_id]
-        if exact_vendor:
-            vendor_matched = exact_vendor
-    return _select_best(vendor_matched)
+    # Fail open when we cannot prove identity; guessing another controller DB
+    # entry here silently rewrites the wrong GUID/button layout downstream.
+    return None
 
 
 def _lookup_macos_embedded_sdl_mapping_for_identity(
