@@ -121,8 +121,8 @@
 ### Progress Snapshot
 - `M1`: Complete.
 - `M2`: Complete; `MACOS-CLI-05` and `MACOS-CLI-06` landed the remaining macOS save/runtime and controller parity work.
-- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-08`, `MACOS-CLI-09`, `MACOS-CLI-10`, and `MACOS-CLI-11` are complete. `MACOS-CLI-12` and `MACOS-CLI-13` remain open behavior/hardening stories, and `MACOS-DOCS-01` stays last for docs/final validation.
-- Next recommended story: `MACOS-CLI-12`.
+- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-08`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, and `MACOS-CLI-12` are complete. `MACOS-CLI-13` remains the open behavior/hardening story, and `MACOS-DOCS-01` stays last for docs/final validation.
+- Next recommended story: `MACOS-CLI-13`.
 
 ## Story Contracts
 ### Completed Stories
@@ -430,7 +430,7 @@
 
 ### STORY MACOS-CLI-12
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-05`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/shortcuts/save_session.py`
@@ -444,11 +444,11 @@
   - `tests/test_shortcut_save_session.py`
 - Goal: close the macOS PSX save-sync gap discovered in manual validation so managed Swanstation memory-card saves sync deterministically at launch and post-exit.
 - Acceptance Criteria (deterministic):
-  - [ ] A managed macOS `PSX` shortcut with save sync enabled downloads the indexed memory-card save into the resolved RetroArch save root before launch.
-  - [ ] The same session uploads newly created or changed `GH_<title_id>_1.mcd` / `GH_<title_id>_2.mcd` artifacts after exit without waiting for a later full sync.
-  - [ ] Existing per-title `.srm` preservation behavior remains intact when an operator already has a canonical local Swanstation save.
-  - [ ] Save destination resolution stays deterministic across `~/Documents/RetroArch` and `~/Library/Application Support/RetroArch` layouts on macOS.
-  - [ ] Windows and Linux `PSX` save-session behavior remains unchanged.
+  - [x] A managed macOS `PSX` shortcut with save sync enabled downloads the indexed memory-card save into the resolved RetroArch save root before launch.
+  - [x] The same session uploads newly created or changed `GH_<title_id>_1.mcd` / `GH_<title_id>_2.mcd` artifacts after exit without waiting for a later full sync.
+  - [x] Existing per-title `.srm` preservation behavior remains intact when an operator already has a canonical local Swanstation save.
+  - [x] Save destination resolution stays deterministic across `~/Documents/RetroArch` and `~/Library/Application Support/RetroArch` layouts on macOS.
+  - [x] Windows and Linux `PSX` save-session behavior remains unchanged.
 - Non-Goals:
   - PSX controller mapping changes.
   - Non-PSX save-sync regressions.
