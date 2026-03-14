@@ -125,6 +125,105 @@ def test_run_target_with_optional_exit_hook_uses_azahar_windows_exit_hook(monkey
     assert hook_calls == ["azahar"]
 
 
+def test_run_target_with_optional_exit_hook_uses_azahar_macos_exit_hook(monkeypatch) -> None:
+    hook_calls: list[str] = []
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "true")
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_macos_azahar_target_with_exit_hook",
+        lambda payload: hook_calls.append(payload.emulator) or 12,
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_target",
+        lambda payload: (_ for _ in ()).throw(AssertionError("managed launch should not be used")),
+    )
+
+    exit_code = runtime_module._run_target_with_optional_exit_hook(
+        _payload(
+            emulator="azahar",
+            target_exe="/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
+            target_args=("-f", "rom.3ds"),
+            macos_open_app="/Users/tester/Applications/Azahar.app",
+            macos_open_args=("-f", "rom.3ds"),
+        )
+    )
+
+    assert exit_code == 12
+    assert hook_calls == ["azahar"]
+
+
+def test_run_macos_azahar_target_with_exit_hook_uses_bundle_document_launch(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _Process:
+        def wait(self) -> int:
+            captured["wait_called"] = True
+            return 0
+
+    class _Thread:
+        def __init__(self, *, target=None, args=(), kwargs=None, daemon=None):
+            captured["thread_target"] = target
+            captured["thread_args"] = args
+            captured["thread_kwargs"] = kwargs or {}
+            captured["thread_daemon"] = daemon
+
+        def start(self) -> None:
+            captured["thread_started"] = True
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        runtime_module,
+        "_spawn_shortcut_process",
+        lambda command, *, cwd: captured.update({"command": command, "cwd": cwd}) or _Process(),
+    )
+    monkeypatch.setattr(runtime_module.azahar_exit_hook, "_resolve_select_and_start_buttons", lambda: (8, 10))
+    monkeypatch.setattr(runtime_module.azahar_exit_hook, "_resolve_port_from_config", lambda: 0)
+    monkeypatch.setattr(
+        runtime_module.azahar_exit_hook,
+        "_resolve_macos_bundle_identifier",
+        lambda app_bundle: "org.azahar-emu.azahar",
+    )
+    monkeypatch.setattr(
+        runtime_module.azahar_exit_hook,
+        "_discover_process_ids_by_name",
+        lambda process_name: {101},
+    )
+    monkeypatch.setattr(runtime_module.threading, "Thread", _Thread)
+
+    exit_code = runtime_module._run_macos_azahar_target_with_exit_hook(
+        _payload(
+            emulator="azahar",
+            target_exe="/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
+            target_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+            macos_open_app="/Users/tester/Applications/Azahar.app",
+            macos_open_args=("-f", "/Users/tester/Games/Pilotwings Resort.3ds"),
+        )
+    )
+
+    assert exit_code == 0
+    assert captured["command"] == [
+        "/usr/bin/open",
+        "-W",
+        "-a",
+        "/Users/tester/Applications/Azahar.app",
+        "/Users/tester/Games/Pilotwings Resort.3ds",
+    ]
+    assert captured["cwd"] is None
+    assert captured["wait_called"] is True
+    assert captured["thread_started"] is True
+    assert captured["thread_kwargs"] == {
+        "select_button": 8,
+        "start_button": 10,
+        "controller_port": 0,
+        "bundle_id": "org.azahar-emu.azahar",
+        "process_name": "azahar",
+        "prelaunch_pids": {101},
+    }
+
+
 def test_run_target_with_optional_exit_hook_uses_dolphin_linux_exit_hook_for_flatpak(monkeypatch) -> None:
     hook_calls: list[str] = []
 
@@ -192,6 +291,29 @@ def test_run_target_with_optional_exit_hook_can_disable_dolphin_linux_exit_hook(
     )
 
     assert exit_code == 4
+
+
+def test_run_target_with_optional_exit_hook_can_disable_azahar_macos_exit_hook(monkeypatch) -> None:
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "false")
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_macos_azahar_target_with_exit_hook",
+        lambda payload: (_ for _ in ()).throw(AssertionError("hook should be disabled")),
+    )
+    monkeypatch.setattr(runtime_module, "_run_target", lambda payload: 13)
+
+    exit_code = runtime_module._run_target_with_optional_exit_hook(
+        _payload(
+            emulator="azahar",
+            target_exe="/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
+            target_args=("-f", "rom.3ds"),
+            macos_open_app="/Users/tester/Applications/Azahar.app",
+            macos_open_args=("-f", "rom.3ds"),
+        )
+    )
+
+    assert exit_code == 13
 
 
 def test_run_target_macos_uses_bundle_safe_open_command(monkeypatch) -> None:

@@ -179,6 +179,7 @@ Shared emulator path/runtime env overrides (Linux and macOS):
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`: overrides the default pinned Windows Azahar installer URL used by emulator auto-install.
 - `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`: enables/disables the Windows Azahar `shortcut-launch` `Start+Select` exit hook (`true` by default).
 - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`: enables/disables the Linux Azahar Steam-launch wrapper emitted during sync (`true` by default).
+- `GAMEHUB_AZAHAR_MACOS_EXIT_HOOK`: enables/disables the macOS Azahar `shortcut-launch` `Start+Select` exit hook (`true` by default).
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`: joystick button index used as `Select` for the Linux Azahar wrapper (default `4`).
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`: joystick button index used as `Start` for the Linux Azahar wrapper (default `6`).
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`: optional explicit joystick device path for the Linux Azahar wrapper (for example `/dev/input/js0`).
@@ -272,6 +273,7 @@ Managed shortcut launch autoconfig:
 - On macOS, Dolphin controller-mode apply rebinds to the current detected SDL device name when one is available; on guidless fallback inventory it prefers the emulator's embedded SDL mapping name for the exact detected vendor/product identity, and only falls back to generic `SDL/<slot>/Gamepad` when no meaningful SDL device name can be resolved.
 - On macOS, Dolphin controller-mode apply also normalizes managed controller token names to the native SDL labels Dolphin expects there (for example `Button S/E/W/N` and trigger analog bindings), binds controller hotkeys to the resolved SDL pad device instead of `All Devices`, flips Wii IR vertical stick direction to the native mapping expected there, and writes every existing native/XDG Dolphin config root it finds so native `~/Library/Application Support/Dolphin` installs are not missed.
 - On macOS, Azahar controller-mode apply also rewrites managed SDL button, trigger, D-pad, and analog bindings from the emulator's embedded SDL controller mapping database when a matching controller identity is found; otherwise it keeps the seeded profile layout and only normalizes GUID/port identity.
+- On macOS, when repairing older Azahar configs that already contain saved SDL bindings or multiple profiles, GAMEHUB preserves the existing Azahar-written runtime GUID for the managed profile when one is present, uses the emulator's embedded SDL mapping only for button-layout normalization, and restores managed `profiles\\1\\*\\default` keys to boolean defaults instead of leaving old binding payloads there.
 - Default profile root is `<gamehub_dir>/controller_profiles` and includes seeded defaults:
   - `<root>/pcsx2/<profile>/PCSX2.ini`
   - `<root>/dolphin/<profile>/GCPadNew.ini`
@@ -333,6 +335,7 @@ N3DS Azahar defaults:
 - If a stored GUID matches host SDL but the Flatpak runtime probe returns a different GUID, GAMEHUB prefers the runtime GUID to keep Steam/Flatpak launches consistent.
 - On Linux Flatpak Azahar, GAMEHUB emits `python -m gamehub_cli.controllers.azahar_exit_hook` in the Steam shortcut by default so `Select+Start` can close Azahar before any optional `shortcut-launch` wrapping runs.
 - On Windows, GAMEHUB uses a `shortcut-launch` XInput `Start+Select` exit hook for Azahar by default; set `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false` to disable it.
+- On macOS, GAMEHUB uses a `shortcut-launch` native Xbox HID `Start+Select` exit hook for Azahar by default; it preserves the normal bundle/document launch path so native shortcuts such as `Cmd+Q` still work, polls `hidutil dump services -f xml` for the Xbox HID service event log, tracks the native consumer usages emitted by `Select` / `Start`, requests the Azahar app to quit on combo press, and only falls back to process termination if the app does not exit. Set `GAMEHUB_AZAHAR_MACOS_EXIT_HOOK=false` to disable it.
 - On Linux Flatpak Dolphin launches wrapped by `shortcut-launch`, GAMEHUB also applies a fail-open `Select+Start` exit hook by default; set `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false` to disable it.
 
 ## State file

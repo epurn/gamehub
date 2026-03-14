@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import os
+import plistlib
 import re
+import signal
 import struct
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
+
+from ..common.platform_paths import macos_azahar_qt_config_candidates
+from .sdl_guid import _lookup_macos_embedded_sdl_mapping_for_port, _SDLControllerMapping
 
 _JS_EVENT_FORMAT = "IhBB"
 _JS_EVENT_SIZE = struct.calcsize(_JS_EVENT_FORMAT)
@@ -20,13 +27,41 @@ _EV_KEY = 0x01
 _BTN_SELECT = 0x13A
 _BTN_START = 0x13B
 _BUTTON_PATTERN_TEMPLATE = r'^profiles\\\d+\\button_{name}="button:(\d+),'
+_PORT_PATTERN_TEMPLATE = r'^profiles\\\d+\\button_{name}="[^"]*port:(\d+)'
 _SELECT_BUTTON_ENV = "GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT"
 _START_BUTTON_ENV = "GAMEHUB_AZAHAR_EXIT_BUTTON_START"
 _JS_DEVICE_ENV = "GAMEHUB_AZAHAR_EXIT_JS_DEVICE"
+_MACOS_HIDUTIL_EXECUTABLE = "/usr/bin/hidutil"
+_MACOS_OSASCRIPT_EXECUTABLE = "/usr/bin/osascript"
+_MACOS_OBJC_LIBRARY = "/usr/lib/libobjc.A.dylib"
+_MACOS_FOUNDATION_FRAMEWORK = "/System/Library/Frameworks/Foundation.framework/Foundation"
+_MACOS_GAMECONTROLLER_FRAMEWORK = "/System/Library/Frameworks/GameController.framework/GameController"
+_MACOS_HIDUTIL_POLL_SECONDS = 0.1
+_MACOS_XBOX_PLUGIN_NAME = "XboxOneHIDServicePlugin"
+_MACOS_EVENT_TYPE_KEYBOARD = 3
+_MACOS_CONSUMER_USAGE_PAGE = 12
+_MACOS_XBOX_START_USAGE = 516
+_MACOS_XBOX_SELECT_USAGE = 521
+_MACOS_GC_FIELD_TO_SELECTOR = {
+    "a": "buttonA",
+    "b": "buttonB",
+    "x": "buttonX",
+    "y": "buttonY",
+    "back": "buttonOptions",
+    "start": "buttonMenu",
+    "guide": "buttonHome",
+    "leftshoulder": "leftShoulder",
+    "rightshoulder": "rightShoulder",
+    "leftstick": "leftThumbstickButton",
+    "rightstick": "rightThumbstickButton",
+}
+_MACOS_SDL_BUTTON_FIELD_RE = re.compile(r"^b(?P<button>\d+)$")
 
 
 def _azahar_qt_config_candidates() -> list[Path]:
     home = Path.home()
+    if sys.platform == "darwin":
+        return macos_azahar_qt_config_candidates()
     return [
         home / ".var" / "app" / "org.azahar_emu.Azahar" / "config" / "azahar-emu" / "qt-config.ini",
         home / ".var" / "app" / "org.azahar_emu.Azahar" / "config" / "azahar" / "qt-config.ini",
@@ -105,6 +140,16 @@ def _extract_button_from_qt_config(text: str, *, name: str) -> int | None:
         return None
 
 
+def _extract_port_from_qt_config(text: str, *, name: str) -> int | None:
+    match = re.search(_PORT_PATTERN_TEMPLATE.format(name=name), text, flags=re.MULTILINE)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
 def _resolve_button_pair_from_config() -> tuple[int | None, int | None]:
     for candidate in _azahar_qt_config_candidates():
         if not candidate.exists():
@@ -119,6 +164,23 @@ def _resolve_button_pair_from_config() -> tuple[int | None, int | None]:
     return None, None
 
 
+def _resolve_port_from_config() -> int:
+    for candidate in _azahar_qt_config_candidates():
+        if not candidate.exists():
+            continue
+        try:
+            contents = candidate.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        select_port = _extract_port_from_qt_config(contents, name="select")
+        if select_port is not None:
+            return select_port
+        start_port = _extract_port_from_qt_config(contents, name="start")
+        if start_port is not None:
+            return start_port
+    return 0
+
+
 def _resolve_select_and_start_buttons() -> tuple[int, int]:
     env_select = _int_env_optional(_SELECT_BUTTON_ENV)
     env_start = _int_env_optional(_START_BUTTON_ENV)
@@ -128,6 +190,337 @@ def _resolve_select_and_start_buttons() -> tuple[int, int]:
     select_button = env_select if env_select is not None else (cfg_select if cfg_select is not None else 4)
     start_button = env_start if env_start is not None else (cfg_start if cfg_start is not None else 6)
     return select_button, start_button
+
+
+def _resolve_macos_button_selectors(
+    *,
+    port: int,
+    select_button: int,
+    start_button: int,
+) -> tuple[str, str] | None:
+    mapping: _SDLControllerMapping | None = _lookup_macos_embedded_sdl_mapping_for_port(port=port)
+    if mapping is None:
+        return None
+    reverse_fields: dict[int, str] = {}
+    for field_name, token in mapping.fields.items():
+        match = _MACOS_SDL_BUTTON_FIELD_RE.match(token.strip().casefold())
+        if match is None:
+            continue
+        reverse_fields[int(match.group("button"))] = field_name
+    select_field = reverse_fields.get(select_button)
+    start_field = reverse_fields.get(start_button)
+    if select_field is None or start_field is None:
+        return None
+    select_selector = _MACOS_GC_FIELD_TO_SELECTOR.get(select_field)
+    start_selector = _MACOS_GC_FIELD_TO_SELECTOR.get(start_field)
+    if select_selector is None or start_selector is None:
+        return None
+    return select_selector, start_selector
+
+
+def _load_macos_gamecontroller_runtime() -> ctypes.CDLL | None:
+    if sys.platform != "darwin":
+        return None
+    try:
+        ctypes.cdll.LoadLibrary(_MACOS_FOUNDATION_FRAMEWORK)
+        ctypes.cdll.LoadLibrary(_MACOS_GAMECONTROLLER_FRAMEWORK)
+        objc = ctypes.cdll.LoadLibrary(_MACOS_OBJC_LIBRARY)
+    except OSError:
+        return None
+    objc.objc_getClass.argtypes = [ctypes.c_char_p]
+    objc.objc_getClass.restype = ctypes.c_void_p
+    objc.sel_registerName.argtypes = [ctypes.c_char_p]
+    objc.sel_registerName.restype = ctypes.c_void_p
+    return objc
+
+
+def _objc_selector(objc: ctypes.CDLL, name: str) -> ctypes.c_void_p:
+    return ctypes.c_void_p(objc.sel_registerName(name.encode("utf-8")))
+
+
+def _objc_class(objc: ctypes.CDLL, name: str) -> ctypes.c_void_p:
+    return ctypes.c_void_p(objc.objc_getClass(name.encode("utf-8")))
+
+
+def _objc_msg_send(
+    objc: ctypes.CDLL,
+    receiver: ctypes.c_void_p,
+    selector: str,
+    *,
+    restype: Any = ctypes.c_void_p,
+    argtypes: tuple[Any, ...] = (),
+    args: tuple[Any, ...] = (),
+) -> Any:
+    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, *argtypes]
+    objc.objc_msgSend.restype = restype
+    return objc.objc_msgSend(receiver, _objc_selector(objc, selector), *args)
+
+
+def _macos_gc_button_pressed(
+    objc: ctypes.CDLL,
+    gamepad: ctypes.c_void_p,
+    selector: str,
+) -> bool:
+    if not gamepad:
+        return False
+    responds = _objc_msg_send(
+        objc,
+        gamepad,
+        "respondsToSelector:",
+        restype=ctypes.c_bool,
+        argtypes=(ctypes.c_void_p,),
+        args=(_objc_selector(objc, selector),),
+    )
+    if not responds:
+        return False
+    button = _objc_msg_send(objc, gamepad, selector)
+    if not button:
+        return False
+    return bool(_objc_msg_send(objc, button, "isPressed", restype=ctypes.c_bool))
+
+
+def _macos_controller_combo_pressed(
+    *,
+    controller_port: int,
+    select_selector: str,
+    start_selector: str,
+) -> bool:
+    objc = _load_macos_gamecontroller_runtime()
+    if objc is None:
+        return False
+    pool_class = _objc_class(objc, "NSAutoreleasePool")
+    pool = _objc_msg_send(objc, pool_class, "new") if pool_class else None
+    try:
+        controller_class = _objc_class(objc, "GCController")
+        if not controller_class:
+            return False
+        _objc_msg_send(
+            objc,
+            controller_class,
+            "setShouldMonitorBackgroundEvents:",
+            restype=None,
+            argtypes=(ctypes.c_bool,),
+            args=(True,),
+        )
+        controllers = _objc_msg_send(objc, controller_class, "controllers")
+        if not controllers:
+            return False
+        count = int(_objc_msg_send(objc, controllers, "count", restype=ctypes.c_ulong))
+        if controller_port < 0 or controller_port >= count:
+            return False
+        controller = _objc_msg_send(
+            objc,
+            controllers,
+            "objectAtIndex:",
+            argtypes=(ctypes.c_ulong,),
+            args=(controller_port,),
+        )
+        if not controller:
+            return False
+        gamepad = _objc_msg_send(objc, controller, "extendedGamepad")
+        if not gamepad:
+            return False
+        return _macos_gc_button_pressed(objc, gamepad, select_selector) and _macos_gc_button_pressed(
+            objc,
+            gamepad,
+            start_selector,
+        )
+    finally:
+        if pool:
+            _objc_msg_send(objc, pool, "drain", restype=None)
+
+
+def _capture_macos_xbox_event_log() -> tuple[int | None, list[dict[str, object]]] | None:
+    if sys.platform != "darwin":
+        return None
+    try:
+        completed = subprocess.run(
+            [_MACOS_HIDUTIL_EXECUTABLE, "dump", "services", "-f", "xml"],
+            check=False,
+            capture_output=True,
+        )
+    except OSError:
+        return None
+    if completed.returncode != 0 or not completed.stdout:
+        return None
+    try:
+        payload = plistlib.loads(completed.stdout)
+    except (plistlib.InvalidFileException, TypeError, ValueError):
+        return None
+    records = payload.get("ServiceRecords")
+    if not isinstance(records, list):
+        return None
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        plugin_debug = record.get("ServicePluginDebug")
+        if not isinstance(plugin_debug, dict):
+            continue
+        if plugin_debug.get("PluginName") != _MACOS_XBOX_PLUGIN_NAME:
+            continue
+        if record.get("PrimaryUsagePage") != 1 or record.get("PrimaryUsage") != 5:
+            continue
+        registry_id = record.get("IORegistryEntryID")
+        event_log = record.get("EventLog")
+        normalized_log = (
+            [entry for entry in event_log if isinstance(entry, dict)] if isinstance(event_log, list) else []
+        )
+        return (int(registry_id) if isinstance(registry_id, int) else None, normalized_log)
+    return None
+
+
+def _macos_consumer_usage_event_key(event: dict[str, object]) -> tuple[str | None, int, int, int, int] | None:
+    event_type = event.get("EventType")
+    usage_page = event.get("UsagePage")
+    usage = event.get("Usage")
+    down = event.get("Down")
+    event_time = event.get("EventTime")
+    if not isinstance(event_type, int) or not isinstance(usage_page, int) or not isinstance(usage, int):
+        return None
+    if event_type != _MACOS_EVENT_TYPE_KEYBOARD or usage_page != _MACOS_CONSUMER_USAGE_PAGE:
+        return None
+    if usage not in {_MACOS_XBOX_SELECT_USAGE, _MACOS_XBOX_START_USAGE}:
+        return None
+    if not isinstance(down, (int, bool)):
+        return None
+    if event_time is not None and not isinstance(event_time, str):
+        event_time = str(event_time)
+    return (event_time, event_type, usage_page, usage, int(bool(down)))
+
+
+def _macos_pressed_consumer_usages_from_event_log(event_log: list[dict[str, object]]) -> set[int]:
+    pressed: set[int] = set()
+    for event in event_log:
+        key = _macos_consumer_usage_event_key(event)
+        if key is None:
+            continue
+        _event_time, _event_type, _usage_page, usage, down = key
+        if down:
+            pressed.add(usage)
+        else:
+            pressed.discard(usage)
+    return pressed
+
+
+def _monitor_macos_combo_and_terminate(
+    process: subprocess.Popen[bytes],
+    *,
+    select_button: int,
+    start_button: int,
+    controller_port: int,
+    bundle_id: str | None,
+    process_name: str,
+    prelaunch_pids: set[int],
+) -> None:
+    del select_button, start_button, controller_port
+    active_registry_id: int | None = None
+    seen_event_keys: set[tuple[str | None, int, int, int, int]] = set()
+    pressed_usages: set[int] = set()
+    while process.poll() is None:
+        snapshot = _capture_macos_xbox_event_log()
+        if snapshot is not None:
+            registry_id, event_log = snapshot
+            if registry_id != active_registry_id:
+                active_registry_id = registry_id
+                seen_event_keys.clear()
+                pressed_usages = _macos_pressed_consumer_usages_from_event_log(event_log)
+            for event in event_log:
+                key = _macos_consumer_usage_event_key(event)
+                if key is None or key in seen_event_keys:
+                    continue
+                seen_event_keys.add(key)
+                _event_time, _event_type, _usage_page, usage, down = key
+                if down:
+                    pressed_usages.add(usage)
+                else:
+                    pressed_usages.discard(usage)
+        if {_MACOS_XBOX_SELECT_USAGE, _MACOS_XBOX_START_USAGE}.issubset(pressed_usages):
+            _request_macos_application_quit(bundle_id=bundle_id)
+            deadline = time.monotonic() + 2.0
+            while process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if process.poll() is None:
+                _terminate_named_processes(process_name=process_name, prelaunch_pids=prelaunch_pids, sig=signal.SIGTERM)
+                deadline = time.monotonic() + 2.0
+                while process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.05)
+            if process.poll() is None:
+                _terminate_named_processes(process_name=process_name, prelaunch_pids=prelaunch_pids, sig=signal.SIGKILL)
+            return
+        time.sleep(_MACOS_HIDUTIL_POLL_SECONDS)
+
+
+def _request_macos_application_quit(*, bundle_id: str | None) -> None:
+    if sys.platform != "darwin" or not bundle_id:
+        return
+    try:
+        subprocess.run(
+            [_MACOS_OSASCRIPT_EXECUTABLE, "-e", f'tell application id "{bundle_id}" to quit'],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return
+
+
+def _discover_process_ids_by_name(process_name: str) -> set[int]:
+    if not process_name:
+        return set()
+    try:
+        completed = subprocess.run(
+            ["pgrep", "-x", process_name],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return set()
+    if completed.returncode not in {0, 1}:
+        return set()
+    pids: set[int] = set()
+    for line in completed.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            pids.add(int(stripped))
+        except ValueError:
+            continue
+    return pids
+
+
+def _terminate_named_processes(*, process_name: str, prelaunch_pids: set[int], sig: int) -> None:
+    current_pids = _discover_process_ids_by_name(process_name)
+    target_pids = current_pids - prelaunch_pids
+    if not target_pids:
+        target_pids = current_pids
+    for pid in target_pids:
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            continue
+
+
+def _resolve_macos_bundle_identifier(app_bundle: str) -> str | None:
+    if sys.platform != "darwin":
+        return None
+    bundle_path = Path(app_bundle.strip().strip('"'))
+    if bundle_path.suffix.casefold() != ".app":
+        return None
+    info_plist = bundle_path / "Contents" / "Info.plist"
+    if not info_plist.is_file():
+        return None
+    try:
+        with info_plist.open("rb") as handle:
+            info = plistlib.load(handle)
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return None
+    value = info.get("CFBundleIdentifier")
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 def _handle_js_event(

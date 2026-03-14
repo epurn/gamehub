@@ -970,36 +970,37 @@ def test_apply_azahar_profile_macos_uses_embedded_sdl_mapping(monkeypatch, works
         monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
         monkeypatch.setattr(
             "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
-            lambda port=0: "030000005e040000200b000011050000",
+            lambda port=0: "050000005e040000130b0000ff870001",
         )
         monkeypatch.setattr(
             "gamehub_cli.controllers.apply_azahar._lookup_macos_embedded_sdl_mapping_for_port",
             lambda *, port: controller_sdl_guid._SDLControllerMapping(
-                guid="030000005e040000200b000011050000",
-                name="Xbox Wireless Controller",
+                guid="050000005e040000130b0000ff870001",
+                name="Xbox Series X Controller",
                 vendor_id=0x045E,
-                product_id=0x0B20,
-                version=0x0511,
+                product_id=0x0B13,
+                version=0x87FF,
                 fields={
                     "a": "b0",
                     "b": "b1",
-                    "back": "b10",
+                    "back": "b8",
                     "dpdown": "h0.4",
                     "dpleft": "h0.8",
                     "dpright": "h0.2",
                     "dpup": "h0.1",
-                    "guide": "b12",
-                    "leftshoulder": "b6",
-                    "lefttrigger": "a5",
+                    "guide": "b9",
+                    "leftshoulder": "b4",
+                    "lefttrigger": "a2",
                     "leftx": "a0",
                     "lefty": "a1",
-                    "rightshoulder": "b7",
-                    "righttrigger": "a4",
-                    "rightx": "a2",
-                    "righty": "a3",
-                    "start": "b11",
-                    "x": "b3",
-                    "y": "b4",
+                    "misc1": "b11",
+                    "rightshoulder": "b5",
+                    "righttrigger": "a5",
+                    "rightx": "a3",
+                    "righty": "a4",
+                    "start": "b10",
+                    "x": "b2",
+                    "y": "b3",
                 },
             ),
         )
@@ -1007,46 +1008,129 @@ def test_apply_azahar_profile_macos_uses_embedded_sdl_mapping(monkeypatch, works
         apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
         text = qt_config.read_text(encoding="utf-8")
 
-        assert r'profiles\1\button_a="button:1,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
-        assert r'profiles\1\button_b="button:0,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
-        assert r'profiles\1\button_x="button:4,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
-        assert r'profiles\1\button_y="button:3,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
-        assert r'profiles\1\button_select="button:10,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
-        assert r'profiles\1\button_start="button:11,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
-        assert r'profiles\1\button_l="button:6,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
-        assert r'profiles\1\button_r="button:7,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert r'profiles\1\button_a="button:1,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
+        assert r'profiles\1\button_b="button:0,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
+        assert r'profiles\1\button_x="button:3,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
+        assert r'profiles\1\button_y="button:2,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
+        assert r'profiles\1\button_select="button:8,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
+        assert r'profiles\1\button_start="button:10,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
+        assert r'profiles\1\button_l="button:4,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
+        assert r'profiles\1\button_r="button:5,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
         assert (
-            r'profiles\1\button_zl="axis:5,direction:+,engine:sdl,guid:030000005e040000200b000011050000,port:0,threshold:0.5"'
+            r'profiles\1\button_zl="axis:2,direction:+,engine:sdl,guid:050000005e040000130b0000ff870001,port:0,threshold:0.5"'
             in text
         )
         assert (
-            r'profiles\1\button_zr="axis:4,direction:+,engine:sdl,guid:030000005e040000200b000011050000,port:0,threshold:0.5"'
+            r'profiles\1\button_zr="axis:5,direction:+,engine:sdl,guid:050000005e040000130b0000ff870001,port:0,threshold:0.5"'
             in text
         )
-        assert r'profiles\1\button_home="button:12,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+        assert r'profiles\1\button_home="button:9,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
         assert (
-            r'profiles\1\button_up="hat:0,direction:up,engine:sdl,guid:030000005e040000200b000011050000,port:0"' in text
+            r'profiles\1\button_up="hat:0,direction:up,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"' in text
         )
         assert (
-            r'profiles\1\button_down="hat:0,direction:down,engine:sdl,guid:030000005e040000200b000011050000,port:0"'
-            in text
-        )
-        assert (
-            r'profiles\1\button_left="hat:0,direction:left,engine:sdl,guid:030000005e040000200b000011050000,port:0"'
+            r'profiles\1\button_down="hat:0,direction:down,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"'
             in text
         )
         assert (
-            r'profiles\1\button_right="hat:0,direction:right,engine:sdl,guid:030000005e040000200b000011050000,port:0"'
+            r'profiles\1\button_left="hat:0,direction:left,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"'
             in text
         )
         assert (
-            r'profiles\1\circle_pad="down:axis$01$1direction$0+$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00.5,engine:analog_from_button,left:axis$00$1direction$0-$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$00$1direction$0+$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00.5,up:axis$01$1direction$0-$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00-0.5"'
+            r'profiles\1\button_right="hat:0,direction:right,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"'
             in text
         )
         assert (
-            r'profiles\1\c_stick="down:axis$03$1direction$0+$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00.5,engine:analog_from_button,left:axis$02$1direction$0-$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$02$1direction$0+$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00.5,up:axis$03$1direction$0-$1engine$0sdl$1guid$0030000005e040000200b000011050000$1port$00$1threshold$00-0.5"'
+            r'profiles\1\circle_pad="down:axis$01$1direction$0+$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00.5,engine:analog_from_button,left:axis$00$1direction$0-$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$00$1direction$0+$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00.5,up:axis$01$1direction$0-$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00-0.5"'
             in text
         )
+        assert (
+            r'profiles\1\c_stick="down:axis$04$1direction$0+$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00.5,engine:analog_from_button,left:axis$03$1direction$0-$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$03$1direction$0+$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00.5,up:axis$04$1direction$0-$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00-0.5"'
+            in text
+        )
+
+
+def test_apply_azahar_profile_macos_preserves_existing_runtime_guid_and_default_flags(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text(
+            "\n".join(
+                [
+                    "[General]",
+                    "profile=0",
+                    "",
+                    "[Controls]",
+                    "profile=0",
+                    r"profile\default=true",
+                    r'profiles\1\button_a="code:65,engine:keyboard"',
+                    r"profiles\1\button_a\default=true",
+                    r'profiles\1\button_select="code:78,engine:keyboard"',
+                    r"profiles\1\button_select\default=true",
+                    r'profiles\1\button_start="code:77,engine:keyboard"',
+                    r"profiles\1\button_start\default=true",
+                    r'profiles\2\button_a="button:0,engine:sdl,guid:0300c6515e040000130b000023056800,port:0"',
+                    r"profiles\2\button_a\default=false",
+                    r'profiles\2\button_select="button:4,engine:sdl,guid:0300c6515e040000130b000023056800,port:0"',
+                    r"profiles\2\button_select\default=false",
+                    r'profiles\2\button_start="button:6,engine:sdl,guid:0300c6515e040000130b000023056800,port:0"',
+                    r"profiles\2\button_start\default=false",
+                    r"profiles\size=2",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "darwin")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._probe_azahar_flatpak_guid", lambda port=0: None)
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid", lambda port=0: None)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_azahar._lookup_macos_embedded_sdl_mapping_for_port",
+            lambda *, port: controller_sdl_guid._SDLControllerMapping(
+                guid="050000005e040000130b0000ff870001",
+                name="Xbox Series X Controller",
+                vendor_id=0x045E,
+                product_id=0x0B13,
+                version=0x87FF,
+                fields={
+                    "a": "b0",
+                    "b": "b1",
+                    "back": "b8",
+                    "guide": "b9",
+                    "start": "b10",
+                    "leftshoulder": "b4",
+                    "rightshoulder": "b5",
+                    "lefttrigger": "a2",
+                    "righttrigger": "a5",
+                    "dpup": "h0.1",
+                    "dpdown": "h0.4",
+                    "dpleft": "h0.8",
+                    "dpright": "h0.2",
+                    "leftx": "a0",
+                    "lefty": "a1",
+                    "rightx": "a3",
+                    "righty": "a4",
+                    "x": "b2",
+                    "y": "b3",
+                },
+            ),
+        )
+
+        apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
+        text = qt_config.read_text(encoding="utf-8")
+
+        assert r'profiles\1\button_a="button:1,engine:sdl,guid:0300c6515e040000130b000023056800,port:0"' in text
+        assert r'profiles\1\button_select="button:8,engine:sdl,guid:0300c6515e040000130b000023056800,port:0"' in text
+        assert r'profiles\1\button_start="button:10,engine:sdl,guid:0300c6515e040000130b000023056800,port:0"' in text
+        assert r"profiles\1\button_a\default=false" in text
+        assert r"profiles\1\button_select\default=false" in text
+        assert r"profiles\1\button_start\default=false" in text
 
 
 def test_apply_controller_profile_azahar_linux_upgrades_existing_sdl_without_guid(

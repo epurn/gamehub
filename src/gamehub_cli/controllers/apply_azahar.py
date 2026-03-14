@@ -140,6 +140,10 @@ def _azahar_profile_key_name(key: str) -> str | None:
     return suffix
 
 
+def _is_azahar_profile_default_key(key: str) -> bool:
+    return key.startswith("profiles\\1\\") and key.endswith("\\default")
+
+
 def _is_managed_azahar_button_key(key: str) -> bool:
     profile_key = _azahar_profile_key_name(key)
     if profile_key is None:
@@ -252,7 +256,12 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
                 else:
                     host_guid = _discover_host_sdl_guid(port=normalized_port)
                     host_guid_cache[normalized_port] = host_guid
-                selected_guid = runtime_guid or host_guid or existing_guid
+                if sys.platform == "darwin":
+                    # Preserve Azahar-written runtime GUIDs when present. On macOS these can differ
+                    # from the host SDL / embedded mapping GUIDs even when the button layout matches.
+                    selected_guid = existing_guid or runtime_guid or host_guid
+                else:
+                    selected_guid = runtime_guid or host_guid or existing_guid
             else:
                 # Host SDL GUIDs are not reliably interchangeable with Flatpak runtime GUIDs.
                 selected_guid = runtime_guid or existing_guid
@@ -266,22 +275,24 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
             existing = read_qsettings_key(lines, key)
             desired = value
             managed_button_key = _is_managed_azahar_button_key(key)
+            is_default_key = _is_azahar_profile_default_key(key)
             if controller_mode and existing is not None and not managed_button_key:
                 continue
             if controller_mode and key.startswith("profiles\\1\\"):
                 profile_key = _azahar_profile_key_name(key)
-                if profile_key is not None:
+                if profile_key is not None and not is_default_key:
                     desired = macos_binding_overrides.get(profile_key, value)
-                desired = _inject_azahar_sdl_identity(
-                    desired,
-                    guid=selected_guid,
-                    port=detected_port,
-                    strip_guid=False,
-                )
+                    desired = _inject_azahar_sdl_identity(
+                        desired,
+                        guid=selected_guid,
+                        port=detected_port,
+                        strip_guid=False,
+                    )
                 if existing is not None and _is_pointer_related_azahar_key(key):
                     continue
                 if (
-                    existing is not None
+                    not is_default_key
+                    and existing is not None
                     and ("engine:sdl" in existing.casefold() or "engine$0sdl" in existing.casefold())
                     and (profile_key is None or profile_key not in macos_binding_overrides)
                 ):

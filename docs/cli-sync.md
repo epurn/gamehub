@@ -237,6 +237,11 @@ Linux path notes:
   - monitors `/dev/input/js*` (configurable button indices) and `/dev/input/event*` (`BTN_SELECT` + `BTN_START`)
   - on combo press, issues `flatpak kill org.DolphinEmu.dolphin-emu`
 - Windows Azahar launches wrapped by `shortcut-launch` include a fail-open `Start+Select` XInput exit hook by default (disable with `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false`).
+- macOS Azahar launches wrapped by `shortcut-launch` include a fail-open `Start+Select` native controller exit hook by default:
+  - keeps the normal macOS bundle/document launch path so native shortcuts such as `Cmd+Q` still work
+  - polls the native Xbox HID service event log via `hidutil dump services -f xml` and tracks the macOS consumer usages emitted by `Select` / `Start`
+  - on combo press, requests the Azahar app to quit and only falls back to process termination if the app does not exit
+  - can be disabled by setting `GAMEHUB_AZAHAR_MACOS_EXIT_HOOK=false` (falls back to the standard managed macOS launch path)
 
 Windows path notes:
 - If Dolphin is installed by GAMEHUB (default `LOCALAPPDATA/Programs/Dolphin`), the runtime user dir is pinned to `<dolphin-install>/User`.
@@ -270,6 +275,7 @@ Controller launch profile defaults:
 - On macOS, Dolphin controller-mode apply also normalizes managed controller token names to the native SDL labels Dolphin expects there (for example `Button S/E/W/N` and trigger analog bindings), binds controller hotkeys to the resolved SDL pad device instead of `All Devices`, flips Wii IR vertical stick direction to the native mapping expected there, and writes every existing native/XDG Dolphin config root it finds so native `~/Library/Application Support/Dolphin` installs are not missed.
 - Azahar GUID normalization is always detect-based.
 - On macOS, Azahar controller-mode apply also rewrites managed SDL button, trigger, D-pad, and analog bindings from the emulator's embedded SDL controller mapping database when a matching controller identity is found; otherwise it keeps the seeded profile layout and only normalizes GUID/port identity.
+- On macOS, when repairing older Azahar configs that already contain saved SDL bindings or multiple profiles, GAMEHUB preserves the existing Azahar-written runtime GUID for the managed profile when one is present, uses the emulator's embedded SDL mapping only for button-layout normalization, and restores managed `profiles\\1\\*\\default` keys to boolean defaults instead of leaving old binding payloads there.
 - GUID discovery order (Linux Flatpak config paths): probe Azahar Flatpak runtime first; if unavailable, preserve existing GUID and otherwise keep port-only mappings (host GUID is not injected into Flatpak configs).
 - GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available, otherwise keep existing GUIDs and fall back to port-only mappings.
@@ -283,6 +289,7 @@ Environment overrides:
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`
 - `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`
 - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`
+- `GAMEHUB_AZAHAR_MACOS_EXIT_HOOK`
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`
