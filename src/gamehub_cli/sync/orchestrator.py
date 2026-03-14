@@ -264,6 +264,7 @@ def _bootstrap_runtime(
         linux_flatpak_remote=config.linux.flatpak_remote,
         macos_install_backend=config.macos.emulator_install_backend,
         macos_install_command=config.macos.emulator_install_command,
+        macos_disable_pcsx2_rosetta=config.macos.disable_pcsx2_rosetta,
     )
     ensure_retroarch_cores(
         index=index,

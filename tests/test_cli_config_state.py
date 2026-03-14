@@ -320,6 +320,7 @@ def test_load_config_supports_macos_overrides_block(workspace_tempdir) -> None:
                     "[macos]",
                     'emulator_install_backend = "official"',
                     'emulator_install_command = "brew install --cask {package}"',
+                    "disable_pcsx2_rosetta = true",
                     'retroarch_cfg_path = "~/.config/retroarch/retroarch.cfg"',
                     'retroarch_system_dir = "~/Library/Application Support/RetroArch/system"',
                     'retroarch_cores_dir = "~/Library/Application Support/RetroArch/cores"',
@@ -337,6 +338,7 @@ def test_load_config_supports_macos_overrides_block(workspace_tempdir) -> None:
 
         assert loaded.macos.emulator_install_backend == "official"
         assert loaded.macos.emulator_install_command == "brew install --cask {package}"
+        assert loaded.macos.disable_pcsx2_rosetta is True
         assert loaded.macos.retroarch_cfg_path == Path("~/.config/retroarch/retroarch.cfg").expanduser()
         assert loaded.macos.retroarch_system_dir == Path("~/Library/Application Support/RetroArch/system").expanduser()
         assert loaded.macos.retroarch_cores_dir == Path("~/Library/Application Support/RetroArch/cores").expanduser()
@@ -418,6 +420,7 @@ def test_load_config_supports_macos_env_precedence(monkeypatch, workspace_tempdi
                     "[macos]",
                     'emulator_install_backend = "auto"',
                     'emulator_install_command = "echo config {package}"',
+                    "disable_pcsx2_rosetta = true",
                     'retroarch_cfg_path = "~/Library/Application Support/RetroArch/config/retroarch.cfg"',
                     'retroarch_system_dir = "~/Library/Application Support/RetroArch/system"',
                     'retroarch_cores_dir = "~/Library/Application Support/RetroArch/cores"',
@@ -432,6 +435,7 @@ def test_load_config_supports_macos_env_precedence(monkeypatch, workspace_tempdi
         )
         monkeypatch.setenv("GAMEHUB_MACOS_EMULATOR_INSTALL_BACKEND", "command")
         monkeypatch.setenv("GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND", "brew install --cask {package}")
+        monkeypatch.setenv("GAMEHUB_MACOS_DISABLE_PCSX2_ROSETTA", "false")
         monkeypatch.setenv("GAMEHUB_RETROARCH_CFG_PATH", "/Volumes/GameHub/RetroArch/retroarch.cfg")
         monkeypatch.setenv("RETROARCH_SYSTEM_DIR", "/Volumes/GameHub/RetroArch/system")
         monkeypatch.setenv("GAMEHUB_RETROARCH_CORES_DIR", "/Volumes/GameHub/RetroArch/cores")
@@ -447,6 +451,7 @@ def test_load_config_supports_macos_env_precedence(monkeypatch, workspace_tempdi
         assert loaded.linux.retroarch_cfg_path == Path("/Volumes/GameHub/RetroArch/retroarch.cfg")
         assert loaded.macos.emulator_install_backend == "command"
         assert loaded.macos.emulator_install_command == "brew install --cask {package}"
+        assert loaded.macos.disable_pcsx2_rosetta is False
         assert loaded.macos.retroarch_cfg_path == Path("/Volumes/GameHub/RetroArch/retroarch.cfg")
         assert loaded.macos.retroarch_system_dir == Path("/Volumes/GameHub/RetroArch/system")
         assert loaded.macos.retroarch_cores_dir == Path("/Volumes/GameHub/RetroArch/cores")
@@ -496,6 +501,13 @@ def test_load_config_defaults_keep_linux_unchanged_when_macos_missing(workspace_
             dolphin_user_path=Path("~/.local/share/dolphin-emu").expanduser(),
         )
         assert loaded.macos == MacOSConfig()
+
+
+def test_load_config_defaults_disable_pcsx2_rosetta_to_false(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        loaded = load_config(temp_root / "missing.toml")
+
+        assert loaded.macos.disable_pcsx2_rosetta is False
 
 
 def test_load_config_normalizes_quoted_sgdb_api_key(monkeypatch, workspace_tempdir) -> None:

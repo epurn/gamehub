@@ -50,6 +50,35 @@ def _write_macos_app_bundle(bundle_path: Path, executable_name: str) -> Path:
     return executable_path
 
 
+def _mock_macos_architectures(
+    monkeypatch,
+    mapping: dict[Path, tuple[str, ...]],
+    *,
+    rosetta_available: bool,
+) -> None:
+    def fake_architectures(path: Path) -> tuple[str, ...]:
+        try:
+            normalized = path.resolve()
+        except OSError:
+            normalized = path
+        for candidate, architectures in mapping.items():
+            try:
+                resolved_candidate = candidate.resolve()
+            except OSError:
+                resolved_candidate = candidate
+            if (
+                normalized == resolved_candidate
+                or resolved_candidate in normalized.parents
+                or normalized in resolved_candidate.parents
+            ):
+                return architectures
+        return ()
+
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._is_apple_silicon_macos", lambda: True)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._macos_binary_architectures", fake_architectures)
+    monkeypatch.setattr("gamehub_cli.emulators.resolution._macos_rosetta_available", lambda: rosetta_available)
+
+
 def test_ensure_emulators_dry_run_reports_missing(monkeypatch, capsys) -> None:
     index = _index_with_emulators("retroarch")
     monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", lambda name: None)
@@ -619,7 +648,7 @@ def test_ensure_emulators_macos_none_backend_reports_disabled(monkeypatch, capsy
     assert "macOS emulator auto-install disabled by configuration" in out
 
 
-def test_ensure_emulators_macos_command_backend_runs_template(monkeypatch, capsys) -> None:
+def test_ensure_emulators_macos_command_backend_runs_template(monkeypatch, capsys, workspace_tempdir) -> None:
     index = _index_with_emulators("dolphin")
     state = {"installed": False}
     commands: list[list[str]] = []
@@ -627,33 +656,216 @@ def test_ensure_emulators_macos_command_backend_runs_template(monkeypatch, capsy
     class FakeCompleted:
         returncode = 0
 
-    def fake_which(name: str) -> str | None:
-        if name in {"dolphin", "dolphin-emu"}:
-            return "/Users/tester/Applications/Dolphin.app/Contents/MacOS/DolphinQt" if state["installed"] else None
-        return None
+    with workspace_tempdir("gamehub-macos-dolphin-command-") as temp_root:
+        dolphin_executable = _write_macos_app_bundle(temp_root / "Dolphin.app", "DolphinQt")
 
-    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
-        del check, capture_output, text
-        commands.append(cmd)
-        state["installed"] = True
-        return FakeCompleted()
+        def fake_which(name: str) -> str | None:
+            if name in {"dolphin", "dolphin-emu"} and state["installed"]:
+                return str(dolphin_executable)
+            return None
 
-    monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
-    monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "darwin")
-    monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
-    monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
-    monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
+        def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+            del check, capture_output, text
+            commands.append(cmd)
+            state["installed"] = True
+            return FakeCompleted()
 
-    ensure_emulators(
-        index=index,
-        dry_run=False,
-        verbose=False,
-        macos_install_backend="command",
-        macos_install_command="brew install --cask {package}",
-    )
+        monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+        monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
+        _mock_macos_architectures(
+            monkeypatch,
+            {dolphin_executable: ("arm64", "x86_64")},
+            rosetta_available=True,
+        )
+
+        ensure_emulators(
+            index=index,
+            dry_run=False,
+            verbose=False,
+            macos_install_backend="command",
+            macos_install_command="brew install --cask {package}",
+        )
 
     assert commands == [["brew", "install", "--cask", "dolphin"]]
     assert "Installed emulator: dolphin" in capsys.readouterr().out
+
+
+def test_ensure_emulators_macos_pcsx2_accepts_x86_64_when_rosetta_available_by_default(
+    monkeypatch,
+    capsys,
+    workspace_tempdir,
+) -> None:
+    index = _index_with_emulators("pcsx2")
+    state = {"installed": False}
+    commands: list[list[str]] = []
+
+    class FakeCompleted:
+        returncode = 0
+
+    with workspace_tempdir("gamehub-macos-pcsx2-rosetta-") as temp_root:
+        pcsx2_executable = _write_macos_app_bundle(temp_root / "PCSX2.app", "pcsx2-qt")
+
+        def fake_which(name: str) -> str | None:
+            if name in {"pcsx2", "pcsx2-qt"} and state["installed"]:
+                return str(pcsx2_executable)
+            return None
+
+        def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+            del check, capture_output, text
+            commands.append(cmd)
+            state["installed"] = True
+            return FakeCompleted()
+
+        monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+        monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
+        _mock_macos_architectures(
+            monkeypatch,
+            {pcsx2_executable: ("x86_64",)},
+            rosetta_available=True,
+        )
+
+        ensure_emulators(
+            index=index,
+            dry_run=False,
+            verbose=False,
+            macos_install_backend="command",
+            macos_install_command="brew install --cask {package}",
+        )
+
+    assert commands == [["brew", "install", "--cask", "pcsx2"]]
+    assert "Installed emulator: pcsx2" in capsys.readouterr().out
+
+
+def test_ensure_emulators_macos_pcsx2_rejects_x86_64_when_rosetta_disabled(
+    monkeypatch,
+    capsys,
+    workspace_tempdir,
+) -> None:
+    index = _index_with_emulators("pcsx2")
+    state = {"installed": False}
+
+    class FakeCompleted:
+        returncode = 0
+
+    with workspace_tempdir("gamehub-macos-pcsx2-no-rosetta-") as temp_root:
+        pcsx2_executable = _write_macos_app_bundle(temp_root / "PCSX2.app", "pcsx2-qt")
+
+        def fake_which(name: str) -> str | None:
+            if name in {"pcsx2", "pcsx2-qt"} and state["installed"]:
+                return str(pcsx2_executable)
+            return None
+
+        def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+            del check, capture_output, text
+            state["installed"] = True
+            return FakeCompleted()
+
+        monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+        monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
+        _mock_macos_architectures(
+            monkeypatch,
+            {pcsx2_executable: ("x86_64",)},
+            rosetta_available=True,
+        )
+
+        ensure_emulators(
+            index=index,
+            dry_run=False,
+            verbose=False,
+            macos_install_backend="command",
+            macos_install_command="brew install --cask {package}",
+            macos_disable_pcsx2_rosetta=True,
+        )
+
+    out = capsys.readouterr().out
+    assert "PCSX2 Rosetta fallback is disabled" in out
+
+
+def test_ensure_emulators_macos_pcsx2_rosetta_requires_runtime(
+    monkeypatch,
+    capsys,
+    workspace_tempdir,
+) -> None:
+    index = _index_with_emulators("pcsx2")
+    state = {"installed": False}
+
+    class FakeCompleted:
+        returncode = 0
+
+    with workspace_tempdir("gamehub-macos-pcsx2-rosetta-missing-") as temp_root:
+        pcsx2_executable = _write_macos_app_bundle(temp_root / "PCSX2.app", "pcsx2-qt")
+
+        def fake_which(name: str) -> str | None:
+            if name in {"pcsx2", "pcsx2-qt"} and state["installed"]:
+                return str(pcsx2_executable)
+            return None
+
+        def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool):
+            del check, capture_output, text
+            state["installed"] = True
+            return FakeCompleted()
+
+        monkeypatch.setattr("gamehub_cli.emulators.installer._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.installer._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.installer.shutil.which", fake_which)
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._known_install_candidates", lambda value: ())
+        monkeypatch.setattr("gamehub_cli.emulators.installer.subprocess.run", fake_run)
+        _mock_macos_architectures(
+            monkeypatch,
+            {pcsx2_executable: ("x86_64",)},
+            rosetta_available=False,
+        )
+
+        ensure_emulators(
+            index=index,
+            dry_run=False,
+            verbose=False,
+            macos_install_backend="command",
+            macos_install_command="brew install --cask {package}",
+        )
+
+    out = capsys.readouterr().out
+    assert "Rosetta is not available on this Mac" in out
+
+
+def test_macos_non_pcsx2_emulators_still_reject_x86_64_assets(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-macos-native-only-") as temp_root:
+        assets = {
+            "retroarch": _write_macos_app_bundle(temp_root / "RetroArch.app", "RetroArch"),
+            "dolphin": _write_macos_app_bundle(temp_root / "Dolphin.app", "DolphinQt"),
+            "azahar": _write_macos_app_bundle(temp_root / "Azahar.app", "azahar"),
+        }
+
+        _mock_macos_architectures(
+            monkeypatch,
+            {path: ("x86_64",) for path in assets.values()},
+            rosetta_available=True,
+        )
+
+        for emulator, executable in assets.items():
+            assert install_macos_module._asset_supports_apple_silicon(
+                MacOSOfficialAsset(
+                    emulator=emulator,
+                    archive_kind="dmg",
+                    bundle_name=f"{emulator.title()}.app",
+                    download_url="https://example.invalid/download",
+                    source_url="https://example.invalid/source",
+                    asset_label="universal",
+                ),
+                executable.parent.parent.parent,
+            ) == (
+                False,
+                "macOS executable is not native Apple Silicon or universal (architectures: x86_64)",
+            )
 
 
 def test_ensure_emulators_macos_official_backend_rejects_non_native_asset(monkeypatch, capsys) -> None:
@@ -791,9 +1003,7 @@ def test_install_macos_official_asset_supports_tar_xz_archive(monkeypatch, works
         assert captured["archive_path"].name == "pcsx2-v2.6.3-macos-Qt.tar.xz"
 
 
-def test_install_macos_official_asset_accepts_universal_label_when_probe_is_inconclusive(
-    monkeypatch, workspace_tempdir
-) -> None:
+def test_install_macos_official_asset_rejects_inconclusive_architecture_probe(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-macos-dmg-asset-") as temp_root:
         source_bundle = temp_root / "Dolphin.app"
         installed_bundle = temp_root / "Applications" / "Dolphin.app"
@@ -818,8 +1028,16 @@ def test_install_macos_official_asset_accepts_universal_label_when_probe_is_inco
             lambda source_bundle, bundle_name, verbose: installed_bundle,
         )
         monkeypatch.setattr(
-            "gamehub_cli.emulators.install_macos.resolve_macos_app_bundle_executable",
-            lambda bundle_path: bundle_path / "Contents" / "MacOS" / "Dolphin",
+            "gamehub_cli.emulators.resolution._is_apple_silicon_macos",
+            lambda: True,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.resolution._macos_binary_architectures",
+            lambda path: (),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.resolution._macos_rosetta_available",
+            lambda: False,
         )
 
         status, detail = install_macos_module._install_macos_official_asset(
@@ -834,8 +1052,8 @@ def test_install_macos_official_asset_accepts_universal_label_when_probe_is_inco
             verbose=False,
         )
 
-        assert status == "installed"
-        assert detail is None
+        assert status == "unsupported"
+        assert detail == "could not verify macOS executable architecture"
 
 
 def test_extract_app_bundle_from_dmg_stages_bundle_before_detach(monkeypatch, workspace_tempdir) -> None:
@@ -1193,6 +1411,14 @@ def test_resolve_emulator_executable_macos_prefers_user_applications_bundle(monk
             "gamehub_cli.common.platform_paths.macos_system_applications_dir",
             lambda: temp_root / "Applications",
         )
+        _mock_macos_architectures(
+            monkeypatch,
+            {
+                user_executable: ("arm64", "x86_64"),
+                system_executable: ("arm64", "x86_64"),
+            },
+            rosetta_available=True,
+        )
 
         resolved = resolve_emulator_executable(str(system_executable))
 
@@ -1225,10 +1451,56 @@ def test_resolve_emulator_executable_macos_falls_back_to_system_applications_bun
             "gamehub_cli.common.platform_paths.macos_system_applications_dir",
             lambda: temp_root / "Applications",
         )
+        _mock_macos_architectures(
+            monkeypatch,
+            {system_executable: ("arm64", "x86_64")},
+            rosetta_available=True,
+        )
 
         resolved = resolve_emulator_executable("dolphin")
 
         assert resolved == str(system_executable)
+
+
+def test_resolve_emulator_executable_macos_pcsx2_prefers_native_bundle_over_rosetta_bundle(
+    monkeypatch,
+    workspace_tempdir,
+) -> None:
+    with workspace_tempdir("gamehub-emulator-resolve-macos-pcsx2-") as temp_root:
+        home = temp_root / "home"
+        rosetta_executable = _write_macos_app_bundle(
+            home / "Applications" / "PCSX2.app",
+            "pcsx2-rosetta",
+        )
+        native_executable = _write_macos_app_bundle(
+            temp_root / "Applications" / "PCSX2.app",
+            "pcsx2-native",
+        )
+
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.resolution.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr(
+            "gamehub_cli.common.platform_paths.macos_user_applications_dir", lambda: home / "Applications"
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.common.platform_paths.macos_system_applications_dir",
+            lambda: temp_root / "Applications",
+        )
+        monkeypatch.setattr("gamehub_cli.emulators.resolution.shutil.which", lambda cmd: None)
+        _mock_macos_architectures(
+            monkeypatch,
+            {
+                rosetta_executable: ("x86_64",),
+                native_executable: ("arm64", "x86_64"),
+            },
+            rosetta_available=True,
+        )
+
+        resolved = resolve_emulator_executable("pcsx2")
+
+        assert resolved == str(native_executable)
 
 
 def test_resolve_emulator_executable_prefers_known_path_over_windowsapps_alias(monkeypatch, workspace_tempdir) -> None:

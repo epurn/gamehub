@@ -12,6 +12,7 @@ from .resolution import _is_emulator_available, _linux_dist_id, _required_emulat
 
 _OS_NAME = install_common._OS_NAME
 _SYS_PLATFORM = install_common._SYS_PLATFORM
+_MACOS_DISABLE_PCSX2_ROSETTA = False
 
 # Compatibility patch points used by tests/extensions.
 _install_dolphin_from_official_release_archive = install_windows._install_dolphin_from_official_release_archive
@@ -27,6 +28,7 @@ def _sync_resolution_runtime_overrides() -> None:
     install_common._SYS_PLATFORM = _SYS_PLATFORM
     emulator_resolution._OS_NAME = _OS_NAME
     emulator_resolution._SYS_PLATFORM = _SYS_PLATFORM
+    emulator_resolution._set_macos_pcsx2_rosetta_disabled(_MACOS_DISABLE_PCSX2_ROSETTA)
 
     # Keep injected runtime modules aligned for monkeypatch-heavy tests.
     install_common.os = os
@@ -60,7 +62,10 @@ def ensure_emulators(
     linux_flatpak_remote: str | None = None,
     macos_install_backend: str | None = None,
     macos_install_command: str | None = None,
+    macos_disable_pcsx2_rosetta: bool = False,
 ) -> None:
+    global _MACOS_DISABLE_PCSX2_ROSETTA
+    _MACOS_DISABLE_PCSX2_ROSETTA = macos_disable_pcsx2_rosetta
     _sync_resolution_runtime_overrides()
 
     required = sorted(_required_emulators(index))
