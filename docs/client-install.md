@@ -2,9 +2,31 @@
 
 Platform status and recommended templates:
 - [Platform Support (v1)](platform-support.md)
-- macOS support is now in scope for v1.
+- macOS and Linux use the same universal release wheel; Windows ships a standalone EXE.
 
-## macOS (Apple Silicon)
+## macOS (Apple Silicon) via pip
+
+### Install from GitHub Release wheel
+```bash
+python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+```
+
+### Upgrade
+```bash
+python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+```
+
+### Uninstall
+```bash
+python3 -m pip uninstall gamehub
+```
+
+### Smoke check
+```bash
+gamehub --help
+gamehub init --help
+gamehub sync --help
+```
 
 Start from template [docs/templates/config.macos.template.toml](templates/config.macos.template.toml).
 

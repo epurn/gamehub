@@ -107,10 +107,16 @@ Steam close behavior:
      - `command`: run `[linux].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
      - `none`: disable Linux auto-install (sync prints actionable missing emulator output)
    - when Linux backend is flatpak-preferred (`flatpak`, or immutable-host `auto`), Dolphin and Azahar are treated as Flatpak-required; native installs are not used as substitutes for `org.DolphinEmu.dolphin-emu` / `org.azahar_emu.Azahar`, and sync fails fast if those Flatpak apps are unavailable
+   - on macOS non-dry-run, uses config-first install backend (`[macos].emulator_install_backend`):
+     - `auto` (default): `official`
+     - `official`: installs pinned official Apple Silicon or universal assets into `~/Applications`
+     - `command`: run `[macos].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
+     - `none`: disable macOS auto-install (sync prints actionable missing emulator output)
+     - `PCSX2` may accept an Intel-only bundle only when Rosetta is already installed and `[macos].disable_pcsx2_rosetta = false`
    - Steam shortcuts resolve emulator executable paths to concrete binaries when available
 5. Ensure required RetroArch cores are available:
    - detects required cores from index launch templates (`-L cores/<core>`)
-   - auto-downloads missing cores from Libretro buildbot on Windows/Linux x86_64
+   - auto-downloads missing cores from Libretro buildbot on Windows, Linux x86_64, and macOS Apple Silicon
    - auto-installs matching `.info` metadata from `assets/frontend/info.zip`
    - dry-run reports missing core/info files without writing
 6. Build plan:

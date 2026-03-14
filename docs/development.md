@@ -122,9 +122,9 @@ Typing note:
 ## Run audit regression slices (local)
 Use this before opening a PR that touches CLI portability, Steam integration, architecture boundaries, or config/env precedence logic.
 CI is split into:
-- `Audit Regression Gates` (quality/static + architecture + config/server slices, Linux).
-- `Targeted Regression Matrix` (emulator/firmware + controllers + steam + sync slices, Linux/Windows).
-To mirror CI exactly, run the emulator/controller/steam/sync slices on both Windows and Linux hosts.
+- `Audit Regression Gates` (quality/static + architecture + config/server slices + readiness audit, Linux).
+- `Targeted Regression Matrix` (emulator/firmware + controllers + steam + sync slices, Linux/Windows/macOS).
+To mirror CI exactly, run the emulator/controller/steam/sync slices on Windows, Linux, and macOS hosts.
 
 macOS/Linux shell: replace each `.\venv\Scripts\python.exe` below with `./venv/bin/python`.
 
