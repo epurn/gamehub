@@ -121,8 +121,8 @@
 ### Progress Snapshot
 - `M1`: Complete.
 - `M2`: Complete; `MACOS-CLI-05` and `MACOS-CLI-06` landed the remaining macOS save/runtime and controller parity work.
-- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-08`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, and `MACOS-CLI-12` are complete. `MACOS-CLI-13` remains the open behavior/hardening story, and `MACOS-DOCS-01` stays last for docs/final validation.
-- Next recommended story: `MACOS-CLI-13`.
+- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-08`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, `MACOS-CLI-12`, and `MACOS-CLI-13` are complete. `MACOS-DOCS-01` remains the last docs/final-validation story.
+- Next recommended story: `MACOS-DOCS-01`.
 
 ## Story Contracts
 ### Completed Stories
@@ -137,6 +137,8 @@
 - `MACOS-CLI-09`: Complete
 - `MACOS-CLI-10`: Complete
 - `MACOS-CLI-11`: Complete
+- `MACOS-CLI-12`: Complete
+- `MACOS-CLI-13`: Complete
 
 ### Completed Hardening Notes
 - `MACOS-CLI-03` shipped additional launch hardening after the initial story landed:
@@ -150,10 +152,13 @@
   - managed macOS `N64` now converges to `video_driver = "glcore"`, `mupen64plus-rdp-plugin = "angrylion"`, and `mupen64plus-rsp-plugin = "hle"`.
   - existing `Mupen64Plus-Next` core/folder/game `.opt` overrides are rewritten to the same managed baseline so launch-time overrides cannot silently reintroduce the black-screen path.
   - stale legacy `GLideN64`/`rspmode` keys are pruned during convergence, and the typed launcher blocker remains in place if the managed macOS `N64` remediation cannot converge safely.
+- `MACOS-CLI-13` shipped a validated macOS Steam lifecycle hardening pass after desktop-client reopen testing:
+  - automatic macOS sync now requests a graceful Steam app quit and waits for confirmed exit instead of immediately escalating to `pkill` / `pkill -9`
+  - Steam lifecycle helpers now surface `graceful_exit`, `still_running`, and `close_attempt_failed` so sync policy stays explicit
+  - Steam config writes are skipped or failed safely when Steam does not exit in time, without force-killing the desktop client
+  - manual validation confirmed Steam reopens with a working desktop window after a GAMEHUB sync that had to close and reopen it
 
 ### Pending Stories
-- `MACOS-CLI-12`
-- `MACOS-CLI-13`
 - `MACOS-DOCS-01`
 
 ### Deferred Stories
@@ -705,7 +710,7 @@
 
 ### STORY MACOS-CLI-13
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-02`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/steam/lifecycle.py`
@@ -721,11 +726,11 @@
   - `tests/test_sync.py`
 - Goal: investigate the macOS Steam shutdown path used during sync and harden it so GAMEHUB closes Steam non-forcefully by default, avoiding automatic force-kill escalation that can leave the desktop client in a broken UI state.
 - Acceptance Criteria (deterministic):
-  - [ ] The macOS Steam close path no longer unconditionally runs `pkill` / `pkill -9` immediately after the AppleScript quit request.
-  - [ ] On macOS, GAMEHUB requests a graceful Steam app quit, waits for confirmed exit, and reports a clear non-destructive failure if Steam stays running.
-  - [ ] `apply_steam_updates()` only writes Steam config after confirmed Steam exit; when Steam does not exit in time, it skips updates or fails according to `require_steam_closed` without force-killing the app.
-  - [ ] Existing Windows and Linux Steam lifecycle behavior remains unchanged.
-  - [ ] Manual macOS validation confirms Steam still reopens with a working desktop window after a GAMEHUB sync that had to close/reopen Steam.
+  - [x] The macOS Steam close path no longer unconditionally runs `pkill` / `pkill -9` immediately after the AppleScript quit request.
+  - [x] On macOS, GAMEHUB requests a graceful Steam app quit, waits for confirmed exit, and reports a clear non-destructive failure if Steam stays running.
+  - [x] `apply_steam_updates()` only writes Steam config after confirmed Steam exit; when Steam does not exit in time, it skips updates or fails according to `require_steam_closed` without force-killing the app.
+  - [x] Existing Windows and Linux Steam lifecycle behavior remains unchanged.
+  - [x] Manual macOS validation confirms Steam still reopens with a working desktop window after a GAMEHUB sync that had to close/reopen Steam.
 - Non-Goals:
   - Big Picture-specific runtime changes.
   - Adding a broad new force-kill CLI flag or policy toggle.
