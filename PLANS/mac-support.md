@@ -121,8 +121,8 @@
 ### Progress Snapshot
 - `M1`: Complete.
 - `M2`: Complete; `MACOS-CLI-05` and `MACOS-CLI-06` landed the remaining macOS save/runtime and controller parity work.
-- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-09`, and `MACOS-CLI-10` are complete. `MACOS-CLI-11`, `MACOS-CLI-12`, and `MACOS-CLI-13` remain open behavior/hardening stories, and `MACOS-DOCS-01` stays last for docs/final validation.
-- Next recommended story: `MACOS-CLI-13`.
+- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`, and `MACOS-CLI-11` are complete. `MACOS-CLI-08`, `MACOS-CLI-12`, and `MACOS-CLI-13` remain open behavior/hardening stories, and `MACOS-DOCS-01` stays last for docs/final validation.
+- Next recommended story: `MACOS-CLI-08`.
 
 ## Story Contracts
 ### Completed Stories
@@ -135,6 +135,7 @@
 - `MACOS-CLI-07`: Complete
 - `MACOS-CLI-09`: Complete
 - `MACOS-CLI-10`: Complete
+- `MACOS-CLI-11`: Complete
 
 ### Completed Hardening Notes
 - `MACOS-CLI-03` shipped additional launch hardening after the initial story landed:
@@ -144,15 +145,19 @@
   - Apple Silicon managed launches still force native Python execution under Steam via `/usr/bin/arch -arm64` before invoking `shortcut-launch`.
   - the runtime keeps bundle-safe launch via `/usr/bin/open -W -a <App> --args ...` and still waits for app exit before post-exit save work.
   - legacy macOS shell-launcher/debug artifacts are pruned on sync rewrite so backups stay minimal and useful.
+- `MACOS-CLI-11` shipped a validated macOS RetroArch `N64` fallback after direct Apple Silicon launch testing:
+  - managed macOS `N64` now converges to `video_driver = "glcore"`, `mupen64plus-rdp-plugin = "angrylion"`, and `mupen64plus-rsp-plugin = "hle"`.
+  - existing `Mupen64Plus-Next` core/folder/game `.opt` overrides are rewritten to the same managed baseline so launch-time overrides cannot silently reintroduce the black-screen path.
+  - stale legacy `GLideN64`/`rspmode` keys are pruned during convergence, and the typed launcher blocker remains in place if the managed macOS `N64` remediation cannot converge safely.
 
 ### Pending Stories
-- `MACOS-CLI-11`
+- `MACOS-CLI-08`
 - `MACOS-CLI-12`
 - `MACOS-CLI-13`
 - `MACOS-DOCS-01`
 
 ### Deferred Stories
-- `MACOS-CLI-08`
+- none currently
 
 ### STORY MACOS-CLI-01
 - Type: CLI
@@ -513,7 +518,7 @@
 
 ### STORY MACOS-CLI-08
 - Type: CLI
-- Status: Deferred
+- Status: Pending
 - Depends On: `MACOS-CLI-01`, `MACOS-CLI-04`, `MACOS-CLI-07`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/common/config.py`
@@ -648,7 +653,7 @@
 
 ### STORY MACOS-CLI-11
 - Type: CLI
-- Status: Pending
+- Status: Complete
 - Depends On: `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-07`, `MACOS-CLI-10`
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/firmware/runtime_retroarch.py`
@@ -666,11 +671,11 @@
   - `tests/test_shortcut_save_session.py`
 - Goal: diagnose and remediate the macOS RetroArch N64 black-screen launch issue on Apple Silicon, preferring a deterministic config/core-options fix that GAMEHUB can manage safely.
 - Acceptance Criteria (deterministic):
-  - [ ] Manual validation for a managed macOS RetroArch N64 launch no longer produces the current "audio works, video stays black" failure on the tested Apple Silicon baseline.
-  - [ ] Any required RetroArch or core-option mutation is scoped narrowly to the N64/macOS case and continues to follow backup + temp write + atomic replace + explicit log rules.
-  - [ ] Repeated sync/launch passes remain deterministic and idempotent; no unrelated RetroArch keys churn after the first converged write.
-  - [ ] Existing non-N64 RetroArch behavior and Windows/Linux RetroArch behavior remain unchanged.
-  - [ ] If a safe config-only remediation is not reliable enough, GAMEHUB fails clearly for managed macOS N64 launches instead of silently preserving the broken black-screen path.
+  - [x] Manual validation for a managed macOS RetroArch N64 launch no longer produces the current "audio works, video stays black" failure on the tested Apple Silicon baseline.
+  - [x] Any required RetroArch or core-option mutation is scoped narrowly to the N64/macOS case and continues to follow backup + temp write + atomic replace + explicit log rules.
+  - [x] Repeated sync/launch passes remain deterministic and idempotent; no unrelated RetroArch keys churn after the first converged write.
+  - [x] Existing non-N64 RetroArch behavior and Windows/Linux RetroArch behavior remain unchanged.
+  - [x] If a safe config-only remediation is not reliable enough, GAMEHUB fails clearly for managed macOS N64 launches instead of silently preserving the broken black-screen path.
 - Non-Goals:
   - Broad RetroArch video-driver redesign.
   - Non-N64 core tuning or per-game hacks beyond the tested macOS N64 path.
@@ -793,7 +798,7 @@
     - `MACOS-CLI-06`
   - Installer lane:
     - `MACOS-CLI-07`
-  - Deferred compatibility lane:
+  - Compatibility lane:
     - `MACOS-CLI-08`
   - Docs lane:
     - `MACOS-DOCS-01`
@@ -802,12 +807,12 @@
   - Keep `MACOS-CLI-02` and `MACOS-CLI-03` sequential; both touch Steam/shortcut launch behavior and `docs/steam-integration.md`.
   - `MACOS-CLI-04` should land before `MACOS-CLI-05` and `MACOS-CLI-06` so root resolution is shared rather than duplicated.
   - `MACOS-CLI-07` depends on the config contract and emulator resolution contract but should avoid reopening save/controller/runtime files.
-  - `MACOS-CLI-08` is intentionally deferred; if it is pulled in later, keep its scope limited to PCSX2-only Rosetta policy and do not widen native checks for other emulators.
+  - `MACOS-CLI-08` is the next selected compatibility follow-up; keep its scope limited to PCSX2-only Rosetta policy and do not widen native checks for other emulators.
   - `MACOS-CLI-10` should land after `MACOS-CLI-09`; it is a launch-chain cleanup and should not reopen broader runtime-policy questions.
   - `MACOS-CLI-11` is a targeted follow-up from manual validation; keep it narrowly focused on the macOS RetroArch N64 black-screen failure and do not widen it into a general RetroArch graphics policy rewrite.
   - `MACOS-CLI-12` is a save-session follow-up layered on top of `MACOS-CLI-05`; keep it narrowly scoped to managed macOS PSX memory-card sync and avoid reopening broader save-resolution policy.
   - `MACOS-CLI-13` is a Steam-lifecycle hardening follow-up from manual validation; keep it scoped to macOS close/wait/reopen behavior and avoid reopening shortcut emission or non-macOS lifecycle policy.
-  - `MACOS-DOCS-01` lands last unless a prior story changes a public contract that cannot wait. If `MACOS-CLI-08` remains deferred, docs should continue to describe the native-only path.
+  - `MACOS-DOCS-01` lands last unless a prior story changes a public contract that cannot wait. Until `MACOS-CLI-08` lands, docs should continue to describe the native-only path.
 - Merge order constraints:
   - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-05`
