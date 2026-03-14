@@ -142,8 +142,10 @@ def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: True)
-    monkeypatch.setattr("gamehub_cli.sync.steam_stage.close_steam_best_effort", lambda: order.append("close"))
-    monkeypatch.setattr("gamehub_cli.sync.steam_stage.wait_for_steam_exit", lambda: order.append("wait") or True)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.close_steam_best_effort",
+        lambda: order.append("close") or type("CloseResult", (), {"closed": True, "detail": None})(),
+    )
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: order.append("backup") or []
     )
@@ -180,7 +182,6 @@ def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:
 
     assert order == [
         "close",
-        "wait",
         "backup",
         "shortcuts",
         "collections",
@@ -639,7 +640,7 @@ def test_apply_steam_updates_deck_always_runs_template_sync(monkeypatch) -> None
     assert template_sync_called == ["called"]
 
 
-def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) -> None:
+def test_apply_steam_updates_macos_skips_when_steam_does_not_exit_gracefully(monkeypatch, capsys) -> None:
     order: list[str] = []
     index = LibraryIndex(index_version=1, systems=(), titles=())
     config = GamehubConfig(
@@ -663,8 +664,18 @@ def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) 
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object())
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: True)
-    monkeypatch.setattr("gamehub_cli.sync.steam_stage.close_steam_best_effort", lambda: order.append("close"))
-    monkeypatch.setattr("gamehub_cli.sync.steam_stage.wait_for_steam_exit", lambda: order.append("wait") or False)
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "darwin")
+    monkeypatch.setattr(
+        "gamehub_cli.sync.steam_stage.close_steam_best_effort",
+        lambda: (
+            order.append("close")
+            or type(
+                "CloseResult",
+                (),
+                {"closed": False, "detail": "Steam is still running after macOS quit request"},
+            )()
+        ),
+    )
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: order.append("backup") or []
     )
@@ -699,8 +710,11 @@ def test_apply_steam_updates_skips_when_steam_cannot_close(monkeypatch, capsys) 
         artwork_by_title={},
     )
 
-    assert order == ["close", "wait"]
-    assert "Steam is still running after close attempt; skipping Steam updates for safety" in capsys.readouterr().out
+    assert order == ["close"]
+    assert (
+        "Steam is still running after macOS quit request; not force-killing Steam; skipping Steam updates for safety"
+        in capsys.readouterr().out
+    )
 
 
 def test_apply_steam_updates_reopens_even_if_steam_was_not_running(monkeypatch) -> None:

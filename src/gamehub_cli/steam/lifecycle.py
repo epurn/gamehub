@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path, PosixPath, WindowsPath
 
 from .types import LINUX_STEAM_PROCESS_NAMES, MACOS_STEAM_PROCESS_NAMES, STEAM_ID64_BASE, SteamContext
@@ -13,6 +14,16 @@ try:
     _HOST_PATH_CLS = type(Path.cwd())
 except Exception:
     _HOST_PATH_CLS = WindowsPath if os.name == "nt" else PosixPath
+
+
+@dataclass(frozen=True)
+class SteamCloseResult:
+    status: str
+    detail: str | None = None
+
+    @property
+    def closed(self) -> bool:
+        return self.status == "graceful_exit"
 
 
 def _host_path(raw: str | os.PathLike[str]) -> Path:
@@ -33,16 +44,17 @@ def _safe_home_path() -> Path:
     return _host_path(os.getcwd())
 
 
-def _run_process_best_effort(command: list[str], timeout_seconds: int = 10) -> None:
+def _run_process_best_effort(command: list[str], timeout_seconds: int = 10) -> int | None:
     try:
-        subprocess.run(
+        completed = subprocess.run(
             command,
             check=False,
             capture_output=True,
             timeout=timeout_seconds,
         )
-    except subprocess.TimeoutExpired:
-        return
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return completed.returncode
 
 
 def _is_macos() -> bool:
@@ -217,20 +229,46 @@ def is_steam_running() -> bool:
     return False
 
 
-def close_steam_best_effort() -> None:
+def close_steam_best_effort(timeout_seconds: int = 20) -> SteamCloseResult:
+    if not is_steam_running():
+        return SteamCloseResult(status="graceful_exit")
     if os.name == "nt":
         # First attempt graceful close; then force kill as fallback.
-        _run_process_best_effort(["taskkill", "/IM", "steam.exe", "/T"])
-        _run_process_best_effort(["taskkill", "/F", "/IM", "steam.exe", "/T"])
-        return
-    process_names = LINUX_STEAM_PROCESS_NAMES
+        taskkill_results = [
+            _run_process_best_effort(["taskkill", "/IM", "steam.exe", "/T"]),
+            _run_process_best_effort(["taskkill", "/F", "/IM", "steam.exe", "/T"]),
+        ]
+        if wait_for_steam_exit(timeout_seconds):
+            return SteamCloseResult(status="graceful_exit")
+        if all(result is None for result in taskkill_results):
+            return SteamCloseResult(status="close_attempt_failed", detail="Steam close commands could not be started")
+        return SteamCloseResult(status="still_running", detail="Steam is still running after close attempt")
     if _is_macos():
-        _run_process_best_effort(["osascript", "-e", 'tell application id "com.valvesoftware.steam" to quit'])
-        process_names = MACOS_STEAM_PROCESS_NAMES
+        quit_result = _run_process_best_effort(
+            ["osascript", "-e", 'tell application id "com.valvesoftware.steam" to quit']
+        )
+        if wait_for_steam_exit(timeout_seconds):
+            return SteamCloseResult(status="graceful_exit")
+        if quit_result is None or quit_result != 0:
+            return SteamCloseResult(
+                status="close_attempt_failed",
+                detail="Steam quit request failed on macOS",
+            )
+        return SteamCloseResult(
+            status="still_running",
+            detail="Steam is still running after macOS quit request",
+        )
+    pkill_results: list[int | None] = []
+    process_names = LINUX_STEAM_PROCESS_NAMES
     for process_name in process_names:
-        _run_process_best_effort(["pkill", "-x", process_name])
+        pkill_results.append(_run_process_best_effort(["pkill", "-x", process_name]))
     for process_name in process_names:
-        _run_process_best_effort(["pkill", "-9", "-x", process_name])
+        pkill_results.append(_run_process_best_effort(["pkill", "-9", "-x", process_name]))
+    if wait_for_steam_exit(timeout_seconds):
+        return SteamCloseResult(status="graceful_exit")
+    if all(result is None for result in pkill_results):
+        return SteamCloseResult(status="close_attempt_failed", detail="Steam close commands could not be started")
+    return SteamCloseResult(status="still_running", detail="Steam is still running after close attempt")
 
 
 def wait_for_steam_exit(timeout_seconds: int = 20) -> bool:

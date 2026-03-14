@@ -50,7 +50,6 @@ from ..steam import (
     update_cloud_collections,
     update_collections,
     upsert_shortcuts,
-    wait_for_steam_exit,
 )
 
 _RETROARCH_CORE_TOKEN_RE = re.compile(r"(?P<prefix>-L\s+)(?P<token>[^\s]+)")
@@ -981,12 +980,14 @@ def apply_steam_updates(
         return
     was_running = is_steam_running()
     if was_running:
-        close_steam_best_effort()
-        closed = wait_for_steam_exit()
-        if not closed and require_steam_closed:
-            raise RuntimeError("Steam must be closed before writing config files")
-        if not closed:
-            print("Steam is still running after close attempt; skipping Steam updates for safety")
+        close_result = close_steam_best_effort()
+        if not close_result.closed:
+            reason = close_result.detail or "Steam is still running after close attempt"
+            if sys.platform == "darwin":
+                reason = f"{reason}; not force-killing Steam"
+            if require_steam_closed:
+                raise RuntimeError(f"{reason}; Steam must be closed before writing config files")
+            print(f"{reason}; skipping Steam updates for safety")
             return
 
     backups = backup_steam_configs(context)
