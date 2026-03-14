@@ -917,6 +917,46 @@ def test_configure_retroarch_runtime_macos_backs_up_existing_files(monkeypatch, 
         assert 'input_libretro_device_p1 = "1"' in _backup_paths(remap_path)[0].read_text(encoding="utf-8")
 
 
+def test_configure_retroarch_runtime_macos_applies_n64_video_remediation(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-firmware-macos-n64-") as temp_root:
+        base = _config(temp_root)
+        cfg_path = temp_root / "custom-retroarch" / "retroarch.cfg"
+        core_options_path = cfg_path.with_name("retroarch-core-options.cfg")
+        cores_dir = temp_root / "custom-retroarch" / "cores"
+        config = replace(
+            base,
+            macos=replace(
+                base.macos,
+                retroarch_cfg_path=cfg_path,
+                retroarch_cores_dir=cores_dir,
+            ),
+        )
+
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text('video_driver = "metal"\n', encoding="utf-8")
+        core_options_path.write_text(
+            'mupen64plus-rdp-plugin = "parallel"\nmupen64plus-rspmode = "cxd4"\n',
+            encoding="utf-8",
+        )
+        cores_dir.mkdir(parents=True, exist_ok=True)
+        (cores_dir / "mupen64plus_next_libretro.dylib").write_bytes(b"core")
+
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.os.name", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch.sys.platform", "darwin")
+
+        configure_retroarch_runtime(config=config, dry_run=False, verbose=False, writer=lambda _line: None)
+
+        cfg_text = cfg_path.read_text(encoding="utf-8")
+        core_text = core_options_path.read_text(encoding="utf-8")
+        assert 'video_driver = "glcore"' in cfg_text
+        assert "mupen64plus-gfxplugin" not in core_text
+        assert "mupen64plus-rspmode" not in core_text
+        assert 'mupen64plus-rdp-plugin = "angrylion"' in core_text
+        assert 'mupen64plus-rsp-plugin = "hle"' in core_text
+        assert len(_backup_paths(cfg_path)) == 1
+        assert len(_backup_paths(core_options_path)) == 1
+
+
 def test_configure_pcsx2_runtime_macos_uses_application_support_bios(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-firmware-macos-") as temp_root:
         home = temp_root / "home"

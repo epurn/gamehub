@@ -23,10 +23,16 @@ from .runtime import (
     warn_shortcut_runtime as _warn_shortcut_runtime,
 )
 from .save_session import (
+    ManagedMacOSN64RetroArchRuntimeError as _ManagedMacOSN64RetroArchRuntimeError,
+)
+from .save_session import (
     ShortcutSaveContext as _ShortcutSaveContext,
 )
 from .save_session import (
     build_shortcut_save_resolver as _shortcut_save_resolver,
+)
+from .save_session import (
+    ensure_managed_macos_n64_retroarch_runtime as _ensure_managed_macos_n64_retroarch_runtime,
 )
 from .save_session import (
     ensure_managed_memory_card_paths as _ensure_managed_memory_card_paths,
@@ -88,8 +94,9 @@ def run_shortcut_launch(
         save_resolver = _shortcut_save_resolver(payload)
         state: Any = None
         state_changed = False
+        save_sync_requested = _should_sync_shortcut_saves(payload, config)
 
-        if _should_sync_shortcut_saves(payload, config):
+        if save_sync_requested:
             try:
                 state = _load_shortcut_state(config.state_path)
             except Exception as exc:  # noqa: BLE001
@@ -97,9 +104,15 @@ def run_shortcut_launch(
                 state = None
 
         prepare_shortcut_runtime_environment(payload)
+        if state is None:
+            try:
+                _ensure_managed_macos_n64_retroarch_runtime(payload, config)
+            except _ManagedMacOSN64RetroArchRuntimeError as exc:
+                _warn_shortcut_runtime(str(exc))
+                return 1
         apply_shortcut_controller_configuration(payload=payload, config=config, audit=audit)
 
-        if _should_sync_shortcut_saves(payload, config):
+        if save_sync_requested:
             try:
                 _ensure_managed_memory_card_paths(payload, config)
             except Exception as exc:  # noqa: BLE001
@@ -117,6 +130,9 @@ def run_shortcut_launch(
                     audit=audit,
                 )
                 state_changed = state_changed or prelaunch_changed
+            except _ManagedMacOSN64RetroArchRuntimeError as exc:
+                _warn_shortcut_runtime(str(exc))
+                return 1
             except Exception as exc:  # noqa: BLE001
                 _warn_shortcut_runtime(f"pre-launch save sync failed; continuing launch ({exc})")
 

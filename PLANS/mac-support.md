@@ -121,8 +121,8 @@
 ### Progress Snapshot
 - `M1`: Complete.
 - `M2`: Complete; `MACOS-CLI-05` and `MACOS-CLI-06` landed the remaining macOS save/runtime and controller parity work.
-- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-09`, and `MACOS-CLI-10` are complete. `MACOS-CLI-11` and `MACOS-CLI-12` remain open behavior stories, and `MACOS-DOCS-01` stays last for docs/final validation.
-- Next recommended story: `MACOS-CLI-11`.
+- `M3`: In progress; `MACOS-CLI-07`, `MACOS-CLI-09`, and `MACOS-CLI-10` are complete. `MACOS-CLI-11`, `MACOS-CLI-12`, and `MACOS-CLI-13` remain open behavior/hardening stories, and `MACOS-DOCS-01` stays last for docs/final validation.
+- Next recommended story: `MACOS-CLI-13`.
 
 ## Story Contracts
 ### Completed Stories
@@ -148,6 +148,7 @@
 ### Pending Stories
 - `MACOS-CLI-11`
 - `MACOS-CLI-12`
+- `MACOS-CLI-13`
 - `MACOS-DOCS-01`
 
 ### Deferred Stories
@@ -652,8 +653,10 @@
 - Scope (explicit files/modules allowed):
   - `src/gamehub_cli/firmware/runtime_retroarch.py`
   - `src/gamehub_cli/shortcuts/save_session.py`
+  - `src/gamehub_cli/shortcuts/shortcut_launch.py`
   - `tests/test_firmware_deploy.py`
   - `tests/test_shortcut_save_session.py`
+  - `tests/test_shortcut_orchestrator.py`
   - `docs/config-and-state.md`
   - `docs/client-install.md`
 - Read This First:
@@ -678,21 +681,65 @@
   - Prefer a config/core-options solution over launch-argument surgery. If launch-time overrides outside the listed scope become necessary, stop and update this plan first.
   - Keep the fix explicit and testable; do not add heuristics that silently vary by title name or ROM content.
   - Preserve existing save-session and runtime mutation guarantees while adding any N64-specific overrides.
+  - A typed launcher blocker in `shortcut_launch.py` is allowed for this story only because the existing generic prelaunch save-sync path is intentionally fail-open and cannot satisfy the story's "fail clearly instead of preserving the broken path" acceptance on its own.
 - Tests Required (exact locations / names):
   - `tests/test_firmware_deploy.py::test_configure_retroarch_runtime_macos_applies_n64_video_remediation`
   - `tests/test_shortcut_save_session.py::test_run_shortcut_prelaunch_save_sync_macos_n64_preserves_retroarch_n64_runtime_override_idempotently`
+  - `tests/test_shortcut_orchestrator.py::test_run_shortcut_launch_blocks_managed_macos_n64_when_retroarch_remediation_cannot_converge`
   - existing affected coverage in `tests/test_firmware_deploy.py` and `tests/test_shortcut_save_session.py`
 - Validation Command:
-  - `./venv/bin/python -m pytest tests/test_firmware_deploy.py tests/test_shortcut_save_session.py -p no:cacheprovider`
+  - `./venv/bin/python -m pytest tests/test_firmware_deploy.py tests/test_shortcut_save_session.py tests/test_shortcut_orchestrator.py -p no:cacheprovider`
 - Prompt Seed:
   - `Implement STORY MACOS-CLI-11 from PLANS/mac-support. Stay within the explicit scope and remediate the managed macOS RetroArch N64 black-screen issue with a deterministic config/core-options fix if possible; otherwise fail clearly instead of preserving the broken path.`
 - PR Title Template: `CLI: remediate macOS RetroArch N64 black screen`
 - Rollback Risk: Medium
 
+### STORY MACOS-CLI-13
+- Type: CLI
+- Status: Pending
+- Depends On: `MACOS-CLI-02`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/steam/lifecycle.py`
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `tests/test_steam.py`
+  - `tests/test_sync.py`
+  - `docs/steam-integration.md`
+  - `docs/cli-sync.md`
+- Read This First:
+  - `src/gamehub_cli/steam/lifecycle.py`
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `tests/test_steam.py`
+  - `tests/test_sync.py`
+- Goal: investigate the macOS Steam shutdown path used during sync and harden it so GAMEHUB closes Steam non-forcefully by default, avoiding automatic force-kill escalation that can leave the desktop client in a broken UI state.
+- Acceptance Criteria (deterministic):
+  - [ ] The macOS Steam close path no longer unconditionally runs `pkill` / `pkill -9` immediately after the AppleScript quit request.
+  - [ ] On macOS, GAMEHUB requests a graceful Steam app quit, waits for confirmed exit, and reports a clear non-destructive failure if Steam stays running.
+  - [ ] `apply_steam_updates()` only writes Steam config after confirmed Steam exit; when Steam does not exit in time, it skips updates or fails according to `require_steam_closed` without force-killing the app.
+  - [ ] Existing Windows and Linux Steam lifecycle behavior remains unchanged.
+  - [ ] Manual macOS validation confirms Steam still reopens with a working desktop window after a GAMEHUB sync that had to close/reopen Steam.
+- Non-Goals:
+  - Big Picture-specific runtime changes.
+  - Adding a broad new force-kill CLI flag or policy toggle.
+  - General Steam desktop UI repair outside the GAMEHUB-managed shutdown/reopen path.
+- Implementation Notes:
+  - Treat the current macOS sequence in `close_steam_best_effort()` as the suspected regression trigger: it sends `osascript ... quit` and then immediately runs `pkill` plus `pkill -9` over the Steam process set without an intervening wait.
+  - Prefer tightening the lifecycle helper contract so the caller can distinguish `graceful_exit`, `still_running`, and `close_attempt_failed` instead of burying policy in a fire-and-forget helper.
+  - Keep the automatic macOS sync path safety-first: if investigation shows a forceful fallback is still needed for some operator workflow, stop and update this plan with an explicit opt-in policy instead of silently keeping it on by default.
+- Tests Required (exact locations / names):
+  - `tests/test_steam.py::test_close_steam_best_effort_macos_requests_quit_without_immediate_force_kill`
+  - `tests/test_sync.py::test_apply_steam_updates_macos_skips_when_steam_does_not_exit_gracefully`
+  - existing affected coverage in `tests/test_steam.py` and `tests/test_sync.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_steam.py tests/test_sync.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-13 from PLANS/mac-support. Stay within the explicit scope and harden macOS Steam shutdown so GAMEHUB closes Steam non-forcefully by default and never force-kills the desktop client during automatic sync.`
+- PR Title Template: `CLI: harden macOS Steam shutdown`
+- Rollback Risk: Medium
+
 ### STORY MACOS-DOCS-01
 - Type: DOCS
 - Status: Pending
-- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, `MACOS-CLI-12`
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, `MACOS-CLI-12`, `MACOS-CLI-13`
 - Scope (explicit files/modules allowed):
   - `docs/client-install.md`
   - `docs/platform-support.md`
@@ -736,6 +783,7 @@
   - Steam lane:
     - `MACOS-CLI-02`
     - `MACOS-CLI-03`
+    - `MACOS-CLI-13`
   - Runtime lane:
     - `MACOS-CLI-04`
     - `MACOS-CLI-05`
@@ -758,6 +806,7 @@
   - `MACOS-CLI-10` should land after `MACOS-CLI-09`; it is a launch-chain cleanup and should not reopen broader runtime-policy questions.
   - `MACOS-CLI-11` is a targeted follow-up from manual validation; keep it narrowly focused on the macOS RetroArch N64 black-screen failure and do not widen it into a general RetroArch graphics policy rewrite.
   - `MACOS-CLI-12` is a save-session follow-up layered on top of `MACOS-CLI-05`; keep it narrowly scoped to managed macOS PSX memory-card sync and avoid reopening broader save-resolution policy.
+  - `MACOS-CLI-13` is a Steam-lifecycle hardening follow-up from manual validation; keep it scoped to macOS close/wait/reopen behavior and avoid reopening shortcut emission or non-macOS lifecycle policy.
   - `MACOS-DOCS-01` lands last unless a prior story changes a public contract that cannot wait. If `MACOS-CLI-08` remains deferred, docs should continue to describe the native-only path.
 - Merge order constraints:
   - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03`
@@ -768,6 +817,7 @@
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-07` -> `MACOS-CLI-08`
   - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-05` -> `MACOS-CLI-07` -> `MACOS-CLI-10` -> `MACOS-CLI-11`
   - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03` -> `MACOS-CLI-09` -> `MACOS-CLI-10`
+  - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-13`
   - `MACOS-DOCS-01` after all behavior stories
 
 ## Manual Validation Matrix

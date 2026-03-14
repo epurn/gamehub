@@ -248,6 +248,135 @@ def test_run_shortcut_launch_prelaunch_save_sync_failure_does_not_block_launch(m
     assert "pre-launch save sync failed; continuing launch" in capsys.readouterr().err
 
 
+def test_run_shortcut_launch_avoids_duplicate_n64_runtime_remediation_when_prelaunch_sync_runs(monkeypatch) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "/Users/tester/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+            "target_args": [
+                "-f",
+                "-L",
+                "/Users/tester/Library/Application Support/RetroArch/cores/mupen64plus_next_libretro.dylib",
+                "/Users/tester/Games/Super Mario 64.z64",
+            ],
+            "macos_open_app": "/Users/tester/Applications/RetroArch.app",
+            "macos_open_args": [
+                "-f",
+                "-L",
+                "/Users/tester/Library/Application Support/RetroArch/cores/mupen64plus_next_libretro.dylib",
+                "/Users/tester/Games/Super Mario 64.z64",
+            ],
+            "title_id": "title_n64_mario",
+            "system": "N64",
+            "rom_rel_path": "roms/N64/Super Mario 64.z64",
+        }
+    )
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional"),
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+    ensure_calls: list[str] = []
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._load_shortcut_state", lambda path: state)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._ensure_managed_macos_n64_retroarch_runtime",
+        lambda payload, cfg: ensure_calls.append(payload.title_id or ""),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._ensure_managed_memory_card_paths",
+        lambda payload, cfg: False,
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._run_shortcut_prelaunch_save_sync",
+        lambda **kwargs: (
+            launch_module._ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={}),
+            False,
+        ),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._run_shortcut_postexit_save_sync",
+        lambda **kwargs: False,
+    )
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook", lambda payload: 0)
+
+    exit_code = run_shortcut_launch(payload_token=token)
+
+    assert exit_code == 0
+    assert ensure_calls == []
+
+
+def test_run_shortcut_launch_blocks_managed_macos_n64_when_retroarch_remediation_cannot_converge(
+    monkeypatch, capsys
+) -> None:
+    token = encode_shortcut_payload(
+        {
+            "v": 1,
+            "emulator": "retroarch",
+            "target_exe": "/Users/tester/Applications/RetroArch.app/Contents/MacOS/retroarch-metal",
+            "target_args": [
+                "-f",
+                "-L",
+                "/Users/tester/Library/Application Support/RetroArch/cores/mupen64plus_next_libretro.dylib",
+                "/Users/tester/Games/Super Mario 64.z64",
+            ],
+            "macos_open_app": "/Users/tester/Applications/RetroArch.app",
+            "macos_open_args": [
+                "-f",
+                "-L",
+                "/Users/tester/Library/Application Support/RetroArch/cores/mupen64plus_next_libretro.dylib",
+                "/Users/tester/Games/Super Mario 64.z64",
+            ],
+            "title_id": "title_n64_mario",
+            "system": "N64",
+            "rom_rel_path": "roms/N64/Super Mario 64.z64",
+        }
+    )
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=False),
+    )
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.shortcut_launch.load_config", lambda path=None: config)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._ensure_managed_macos_n64_retroarch_runtime",
+        lambda payload, cfg: (_ for _ in ()).throw(
+            launch_module._ManagedMacOSN64RetroArchRuntimeError("managed macOS N64 launch blocked: core missing")
+        ),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.shortcut_launch._run_target_with_optional_exit_hook",
+        lambda payload: (_ for _ in ()).throw(AssertionError("launch should be blocked")),
+    )
+
+    exit_code = run_shortcut_launch(payload_token=token)
+
+    assert exit_code == 1
+    assert "managed macOS N64 launch blocked: core missing" in capsys.readouterr().err
+
+
 def test_run_shortcut_launch_postexit_save_sync_failure_does_not_replace_exit_code(monkeypatch, capsys) -> None:
     token = encode_shortcut_payload(
         {

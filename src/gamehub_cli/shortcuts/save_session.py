@@ -32,6 +32,11 @@ from ..emulators.save_resolution import (
     snapshot_binding_tree,
 )
 from ..firmware.pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
+from ..firmware.runtime_retroarch import (
+    RetroArchMacOSN64RemediationError,
+    configure_managed_macos_n64_content_runtime,
+    configure_retroarch_runtime,
+)
 from ..firmware.targets import default_pcsx2_ini_path, retroarch_cfg_candidates_for_config
 from ..sync.index import fetch_index_with_retries, fetch_save_bindings_with_retries, probe_server_health
 from ..sync.planner import resolve_missed_upload_timestamp_decision, resolve_save_action
@@ -49,6 +54,10 @@ logger = logging.getLogger(__name__)
 
 class _ShortcutMetadataError(RuntimeError):
     """Raised when launch-session save metadata helpers cannot complete."""
+
+
+class ManagedMacOSN64RetroArchRuntimeError(RuntimeError):
+    """Raised when a managed macOS RetroArch N64 launch cannot converge safely."""
 
 
 @dataclass(frozen=True)
@@ -648,6 +657,39 @@ def ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: Gam
     return changed
 
 
+def _is_managed_macos_retroarch_n64_payload(payload: ShortcutLaunchPayload) -> bool:
+    if payload.system != "N64":
+        return False
+    if "retroarch" not in payload.emulator.casefold():
+        return False
+    return payload.macos_open_app is not None
+
+
+def ensure_managed_macos_n64_retroarch_runtime(payload: ShortcutLaunchPayload, config: GamehubConfig) -> bool:
+    if not _is_managed_macos_retroarch_n64_payload(payload):
+        return False
+    if not payload.rom_rel_path:
+        raise ManagedMacOSN64RetroArchRuntimeError(
+            "managed macOS N64 launch blocked: RetroArch remediation requires rom_rel_path"
+        )
+    try:
+        configure_retroarch_runtime(
+            config=config,
+            dry_run=False,
+            verbose=False,
+            writer=lambda _line: None,
+            strict_macos_n64=True,
+        )
+        configure_managed_macos_n64_content_runtime(config=config, rom_rel_path=payload.rom_rel_path)
+    except RetroArchMacOSN64RemediationError as exc:
+        raise ManagedMacOSN64RetroArchRuntimeError(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise ManagedMacOSN64RetroArchRuntimeError(
+            f"managed macOS N64 launch blocked: RetroArch remediation failed ({exc})"
+        ) from exc
+    return True
+
+
 def should_sync_shortcut_saves(payload: ShortcutLaunchPayload, config: GamehubConfig) -> bool:
     if not config.save_sync.enabled:
         return False
@@ -668,6 +710,7 @@ def run_shortcut_prelaunch_save_sync(
     audit: bool,
 ) -> tuple[ShortcutSaveContext, bool]:
     context = ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={})
+    ensure_managed_macos_n64_retroarch_runtime(payload, config)
     if not should_sync_shortcut_saves(payload, config):
         return context, False
     if not _shortcut_server_reachable_or_warn(config):
