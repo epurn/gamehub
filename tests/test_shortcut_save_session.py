@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
@@ -214,6 +215,128 @@ def test_managed_memory_card_paths_preserve_existing_psx_srm_normalizes_nonhost_
         text = (retroarch_root / "retroarch-core-options.cfg").read_text(encoding="utf-8")
         assert 'swanstation_MemoryCard1Path = "CTR - Crash Team Racing.srm"' in text
         assert 'swanstation_MemoryCard2Path = "GH_title_psx_ctr_2.mcd"' in text
+
+
+def test_run_shortcut_prelaunch_save_sync_macos_n64_preserves_retroarch_n64_runtime_override_idempotently(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-shortcut-macos-n64-runtime-") as temp_root:
+        base = _config()
+        cfg_path = temp_root / "retroarch" / "retroarch.cfg"
+        core_options_path = cfg_path.with_name("retroarch-core-options.cfg")
+        override_dir = cfg_path.parent / "config" / "Mupen64Plus-Next"
+        core_opt_override_path = override_dir / "Mupen64Plus-Next.opt"
+        game_opt_path = override_dir / "Super Mario 64.opt"
+        core_override_path = override_dir / "Mupen64Plus-Next.cfg"
+        cores_dir = temp_root / "retroarch" / "cores"
+        config = replace(
+            base,
+            macos=replace(
+                base.macos,
+                retroarch_cfg_path=cfg_path,
+                retroarch_cores_dir=cores_dir,
+            ),
+            save_sync=SaveSyncConfig(enabled=True, mode="download"),
+        )
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text('video_driver = "metal"\ngame_specific_options = "true"\n', encoding="utf-8")
+        core_options_path.write_text(
+            'mupen64plus-rdp-plugin = "parallel"\nmupen64plus-rspmode = "cxd4"\n',
+            encoding="utf-8",
+        )
+        override_dir.mkdir(parents=True, exist_ok=True)
+        core_opt_override_path.write_text(
+            'mupen64plus-rdp-plugin = "parallel"\nmupen64plus-rspmode = "cxd4"\n',
+            encoding="utf-8",
+        )
+        game_opt_path.write_text(
+            'mupen64plus-rdp-plugin = "parallel"\nmupen64plus-rspmode = "cxd4"\n',
+            encoding="utf-8",
+        )
+        core_override_path.write_text('video_driver = "metal"\n', encoding="utf-8")
+        cores_dir.mkdir(parents=True, exist_ok=True)
+        (cores_dir / "mupen64plus_next_libretro.dylib").write_bytes(b"core")
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Users/tester/Applications/RetroArch.app/Contents/MacOS/retroarch-metal",
+            target_args=(
+                "-f",
+                "-L",
+                str(cores_dir / "mupen64plus_next_libretro.dylib"),
+                "/Users/tester/Games/Super Mario 64.z64",
+            ),
+            macos_open_app="/Users/tester/Applications/RetroArch.app",
+            macos_open_args=(
+                "-f",
+                "-L",
+                str(cores_dir / "mupen64plus_next_libretro.dylib"),
+                "/Users/tester/Games/Super Mario 64.z64",
+            ),
+            title_id="title_n64_mario",
+            system="N64",
+            rom_rel_path="roms/N64/Super Mario 64.z64",
+        )
+        state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.shortcuts.save_session._shortcut_server_reachable", lambda _config: True)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.save_session._load_shortcut_index",
+            lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=()),
+        )
+
+        first_context, first_changed = launch_module._run_shortcut_prelaunch_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            resolve_executable=lambda _name: str(
+                temp_root / "Applications" / "RetroArch.app" / "Contents" / "MacOS" / "retroarch-metal"
+            ),
+            verbose=False,
+            audit=False,
+        )
+        second_context, second_changed = launch_module._run_shortcut_prelaunch_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            resolve_executable=lambda _name: str(
+                temp_root / "Applications" / "RetroArch.app" / "Contents" / "MacOS" / "retroarch-metal"
+            ),
+            verbose=False,
+            audit=False,
+        )
+
+        cfg_text = cfg_path.read_text(encoding="utf-8")
+        core_text = core_options_path.read_text(encoding="utf-8")
+        core_opt_text = core_opt_override_path.read_text(encoding="utf-8")
+        game_opt_text = game_opt_path.read_text(encoding="utf-8")
+        core_override_text = core_override_path.read_text(encoding="utf-8")
+        assert first_context.save_snapshots == {}
+        assert second_context.save_snapshots == {}
+        assert first_changed is False
+        assert second_changed is False
+        assert 'video_driver = "glcore"' in cfg_text
+        assert "mupen64plus-gfxplugin" not in core_text
+        assert "mupen64plus-rspmode" not in core_text
+        assert 'mupen64plus-rdp-plugin = "angrylion"' in core_text
+        assert 'mupen64plus-rsp-plugin = "hle"' in core_text
+        assert "mupen64plus-gfxplugin" not in core_opt_text
+        assert "mupen64plus-rspmode" not in core_opt_text
+        assert 'mupen64plus-rdp-plugin = "angrylion"' in core_opt_text
+        assert 'mupen64plus-rsp-plugin = "hle"' in core_opt_text
+        assert "mupen64plus-gfxplugin" not in game_opt_text
+        assert "mupen64plus-rspmode" not in game_opt_text
+        assert 'mupen64plus-rdp-plugin = "angrylion"' in game_opt_text
+        assert 'mupen64plus-rsp-plugin = "hle"' in game_opt_text
+        assert 'video_driver = "glcore"' in core_override_text
+        assert len(list(cfg_path.parent.glob("retroarch.cfg.*.bak"))) == 1
+        assert len(list(core_options_path.parent.glob("retroarch-core-options.cfg.*.bak"))) == 1
+        assert len(list(core_opt_override_path.parent.glob("Mupen64Plus-Next.opt.*.bak"))) == 1
+        assert len(list(game_opt_path.parent.glob("Super Mario 64.opt.*.bak"))) == 1
+        assert len(list(core_override_path.parent.glob("Mupen64Plus-Next.cfg.*.bak"))) == 1
 
 
 def test_build_shortcut_save_resolver_uses_payload_macos_config_overrides(monkeypatch, workspace_tempdir) -> None:
