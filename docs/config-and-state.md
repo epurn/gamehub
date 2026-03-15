@@ -8,7 +8,7 @@ Config resolution order:
 
 Sample templates:
 - Windows (verified): [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
-- macOS (Apple Silicon contract): [docs/templates/config.macos.template.toml](templates/config.macos.template.toml)
+- macOS (Apple Silicon supported): [docs/templates/config.macos.template.toml](templates/config.macos.template.toml)
 - Bazzite (tested): [docs/templates/config.bazzite.template.toml](templates/config.bazzite.template.toml)
 - Steam Deck (verified): [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 - General Linux: [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)

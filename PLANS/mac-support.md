@@ -128,7 +128,7 @@
 - All scoped implementation stories in this plan are complete.
 - Final ship/no-ship sign-off is now the documented manual validation run in:
   - `docs/release-final-validation-playbook.md`
-  - `docs/release-manual-checklist-v1.4.0.md`
+  - `docs/release-manual-checklist-v1.5.0.md`
 
 ## Story Contracts
 ### Completed Stories
@@ -769,7 +769,7 @@
   - `docs/steam-integration.md`
   - `docs/development.md`
   - `docs/release-final-validation-playbook.md`
-  - `docs/release-manual-checklist-v1.4.0.md`
+  - `docs/release-manual-checklist-v1.5.0.md`
   - `PLANS/mac-support.md`
 - Read This First:
   - all finalized behavior in merged macOS stories

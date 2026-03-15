@@ -2,7 +2,7 @@
 
 Platform status and recommended templates:
 - [Platform Support (v1)](platform-support.md)
-- macOS and Linux use the same universal release wheel; Windows ships a standalone EXE.
+- Apple Silicon macOS is a supported release platform and uses the same universal wheel as Linux; Windows ships a standalone EXE.
 
 ## macOS (Apple Silicon) via pip
 

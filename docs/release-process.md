@@ -36,24 +36,25 @@ Detailed end-to-end validation and publishing steps are in:
 .\venv\Scripts\python.exe scripts/audit_repo_readiness.py
 ```
 5. Bump version in `src/gamehub_common/version.py`.
-6. Update release notes/changelog.
-7. Create and push tag:
+6. Copy `docs/release-notes-template.md` to `docs/release-notes-vX.Y.Z.md` and fill in the release-specific notes.
+7. Copy the previous manual checklist to `docs/release-manual-checklist-vX.Y.Z.md` and update the version-specific artifact checks if this release will use a dedicated checklist file.
+8. Create and push tag:
 ```powershell
 git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
-8. Verify GitHub Actions:
+9. Verify GitHub Actions:
    - audit regression gates workflow
    - targeted regression matrix workflow
    - server image release workflow
    - client artifact release workflow
-9. Validate artifacts:
+10. Validate artifacts:
    - server image on GHCR
    - client wheel on GitHub Release (macOS/Linux)
    - Windows EXE on GitHub Release
    - server deploy bundle zip on GitHub Release
    - checksums file
-10. Run post-release smoke checks:
+11. Run post-release smoke checks:
    - deploy server and run `scripts/verify_server_deploy.ps1`
    - run client `--help` and `sync --dry-run`
 

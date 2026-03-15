@@ -1,5 +1,5 @@
 # macOS template.
-# Supported contract for the current macOS work:
+# Supported release contract for Apple Silicon macOS:
 # - latest stable macOS on Apple Silicon
 # - native Steam install
 # - native/universal preferred; PCSX2 may use Rosetta when already installed

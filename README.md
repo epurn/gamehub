@@ -17,7 +17,7 @@ Docker-first home server + client CLI that syncs emulator libraries into Steam n
 | Bazzite | ✅ |
 | SteamOS (Deck) | ✅ |
 | Other Linux distros (Fedora/Ubuntu/etc.) | ⚠️ |
-| macOS (Apple Silicon) | ✅ release target |
+| macOS (Apple Silicon) | ✅ |
 
 ### Controller support (external Xbox)
 | Platform | Xbox controllers |
@@ -29,6 +29,7 @@ Docker-first home server + client CLI that syncs emulator libraries into Steam n
 | macOS (Apple Silicon) | ✅ |
 
 SteamOS (Deck) is fully supported with the built-in controller. External Xbox controller support on Deck is planned for a later update.
+Apple Silicon macOS is now a supported client platform for `init`, `sync`, native Steam lifecycle, controller autoconfig, and indexed save sync.
 
 Details: [Platform Support (v1)](docs/platform-support.md)
 
@@ -45,6 +46,7 @@ Details: [Platform Support (v1)](docs/platform-support.md)
 - Controller state convergence for managed profile templates and assisted emulator controller keys, with metadata markers and `doctor controllers` repair flow.
 - Optional indexed save sync for managed titles, with rollout-safe defaults and explicit conflict handling.
 - On Steam Deck, managed `Wii`/`N3DS` shortcuts auto-sync Steam Input template seeds and repair app override flags for native-first controller behavior.
+- Apple Silicon macOS ships with the same managed client flows as the primary Windows and Bazzite release targets, including native Steam shortcut lifecycle support.
 
 Supported systems in current release:
 - `GB`, `GBA`, `GBC`, `GEN_MD`, `N64`, `NDS`, `N3DS`, `NES`, `PSX`, `SNES`, `GC`, `Wii`, `PS2`
@@ -176,3 +178,4 @@ More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbo
 - Server API: [docs/server-api.md](docs/server-api.md)
 - Operational runbook: [docs/runbook.md](docs/runbook.md)
 - Release + pre-public audit flow: [docs/release-process.md](docs/release-process.md)
+- Current release notes: [docs/release-notes-v1.5.0.md](docs/release-notes-v1.5.0.md)
