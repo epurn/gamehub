@@ -64,6 +64,20 @@ Reviewed areas:
 **Test/doc changes**
 - Sync tests patch `gamehub_cli.sync.index.httpx` directly.
 
+---
+
+### Removed now: CLI fallback and preview shortcut migration paths
+
+**Runtime changes**
+- `main.py` no longer carries a duplicate `argparse` command tree; the Typer CLI is the single supported entrypoint.
+- `sync/steam_stage.py` launcher resolution now supports only the current release/runtime matrix: frozen executable, resolved `gamehub` wrapper, or current interpreter module launch.
+- Sync no longer prunes preview-era macOS shortcut launch artifacts such as `steam-shortcut-launch.sh` or old shortcut debug logs.
+
+**Test/doc changes**
+- CLI tests now cover the Typer command surface directly, including hidden `shortcut-launch`, without an `argparse` fallback matrix.
+- Shortcut wrapper tests now cover the supported launcher paths and no longer exercise preview-era interpreter recovery branches.
+- Operator docs no longer tell users to run one-time preview/branch migration steps; `--reseed-profiles` remains documented as an explicit reset tool.
+
 ## Remaining optional cleanup candidates
 
-- None currently tracked.
+- Record future fallback-removal candidates here when they are identified.

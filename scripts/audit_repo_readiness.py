@@ -36,10 +36,12 @@ ALLOWED_RUNTIME_URL_HOSTS = {
     "127.0.0.1",
     "www.steamgriddb.com",
     "buildbot.libretro.com",
+    "docs.libretro.com",
     "dolphin-emu.org",
     "dl.dolphin-emu.org",
     "github.com",
     "flathub.org",
+    "pcsx2.net",
 }
 
 MONITORED_ABSOLUTE_PATH_PREFIXES = (
@@ -59,6 +61,9 @@ ALLOWED_ABSOLUTE_PATH_PREFIXES = (
     "/run/ostree-booted",
     "/sysroot/ostree",
     "/usr/bin/",
+    "/usr/lib/libobjc.A.dylib",
+    "/usr/local/lib/libSDL2-2.0.0.dylib",
+    "/usr/sbin/system_profiler",
     "/usr/local/bin/",
     "/var/lib/flatpak/exports/bin",
 )

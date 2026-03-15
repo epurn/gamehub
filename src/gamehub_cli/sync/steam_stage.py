@@ -65,12 +65,6 @@ _AZAHAR_LINUX_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_LINUX_EXIT_HOOK"
 _STEAM_ALLOW_DESKTOP_CONFIG_ENV = "GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG"
 _WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar", "retroarch"}
 _MACOS_ARCH_EXECUTABLE = "/usr/bin/arch"
-_LEGACY_MACOS_SHORTCUT_LAUNCHER_DIRNAME = "steam-shortcut-launchers"
-_LEGACY_MACOS_SHORTCUT_LAUNCHER_FILENAMES = ("steam-shortcut-launch.sh",)
-_LEGACY_MACOS_SHORTCUT_DEBUG_LOG_FILENAMES = (
-    "shortcut-launch.log",
-    "shortcut-launch-bootstrap.log",
-)
 
 
 def _env_enabled(name: str, *, default: bool = True) -> bool:
@@ -290,16 +284,6 @@ def _is_python_executable_name(value: str) -> bool:
     return normalized == "python" or normalized.startswith("python") or normalized.startswith("pypy")
 
 
-def _is_known_emulator_flatpak_export(value: str) -> bool:
-    app_ids = (
-        RETROARCH_FLATPAK_APP_ID,
-        PCSX2_FLATPAK_APP_ID,
-        DOLPHIN_FLATPAK_APP_ID,
-        AZAHAR_FLATPAK_APP_ID,
-    )
-    return any(is_flatpak_command(value, app_id) for app_id in app_ids)
-
-
 def _resolved_existing_path(path: Path) -> str | None:
     candidate = path.expanduser()
     if not candidate.exists():
@@ -318,8 +302,6 @@ def _normalize_wrapper_candidate(value: str) -> str | None:
     normalized = _strip_wrapping_quotes(value)
     if not normalized:
         return None
-    if _is_known_emulator_flatpak_export(normalized):
-        return None
     if _is_windows_style_runtime_path(normalized):
         return normalized
     path = Path(normalized).expanduser()
@@ -328,11 +310,6 @@ def _normalize_wrapper_candidate(value: str) -> str | None:
     if _is_absolute_runtime_path(normalized):
         return str(path)
     return None
-
-
-def _resolve_adjacent_gamehub_wrapper_executable() -> str | None:
-    sibling_name = "gamehub.exe" if sys.platform.startswith("win") else "gamehub"
-    return _resolved_existing_path(Path(sys.executable).with_name(sibling_name))
 
 
 def _resolve_invoked_gamehub_wrapper_executable() -> str | None:
@@ -358,17 +335,12 @@ def _resolve_invoked_gamehub_wrapper_executable() -> str | None:
     return None
 
 
-def _resolve_gamehub_wrapper_executable(*, include_adjacent: bool = True) -> str | None:
+def _resolve_gamehub_wrapper_executable() -> str | None:
     candidates: list[str] = []
 
     invoked_wrapper = _resolve_invoked_gamehub_wrapper_executable()
     if invoked_wrapper:
         candidates.append(invoked_wrapper)
-
-    if include_adjacent:
-        adjacent = _resolve_adjacent_gamehub_wrapper_executable()
-        if adjacent:
-            candidates.append(adjacent)
 
     for command in ("gamehub", "gamehub.exe"):
         resolved = shutil.which(command)
@@ -382,89 +354,6 @@ def _resolve_gamehub_wrapper_executable(*, include_adjacent: bool = True) -> str
     return None
 
 
-def _resolve_python_interpreter_for_prefix(prefix: str) -> str | None:
-    prefix_root = Path(prefix).expanduser()
-    if not prefix_root:
-        return None
-    venv_bin = prefix_root / ("Scripts" if sys.platform.startswith("win") else "bin")
-    candidates = [
-        venv_bin / Path(sys.executable).name,
-        venv_bin / f"python{sys.version_info.major}.{sys.version_info.minor}",
-        venv_bin / "python3.14",
-        venv_bin / "python3",
-        venv_bin / "python",
-    ]
-    for candidate in candidates:
-        resolved = _resolved_existing_path(candidate)
-        if resolved:
-            return resolved
-    return None
-
-
-def _resolve_python_interpreter_from_shebang(script_path: Path) -> str | None:
-    try:
-        with script_path.open("rb") as handle:
-            first_line = handle.readline().decode("utf-8", errors="ignore").strip()
-    except OSError:
-        return None
-    if not first_line.startswith("#!"):
-        return None
-
-    try:
-        tokens = shlex.split(first_line[2:].strip(), posix=not sys.platform.startswith("win"))
-    except ValueError:
-        return None
-    if not tokens:
-        return None
-
-    interpreter = tokens[0]
-    if Path(interpreter).name.casefold() == "env":
-        interpreter = next((token for token in tokens[1:] if not token.startswith("-")), "")
-    if not interpreter:
-        return None
-
-    interpreter_name = interpreter.replace("\\", "/").rsplit("/", 1)[-1]
-    if not _is_python_executable_name(interpreter_name):
-        return None
-
-    normalized = _normalize_wrapper_candidate(interpreter)
-    if normalized:
-        return normalized
-    resolved = shutil.which(interpreter)
-    if resolved:
-        return _normalize_wrapper_candidate(resolved) or resolved
-    return None
-
-
-def _resolve_active_python_interpreter() -> str | None:
-    invoked_wrapper = _resolve_invoked_gamehub_wrapper_executable()
-    if invoked_wrapper is not None:
-        wrapper_path = Path(invoked_wrapper)
-        shebang_python = _resolve_python_interpreter_from_shebang(wrapper_path)
-        if shebang_python:
-            return shebang_python
-
-    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
-        prefix_python = _resolve_python_interpreter_for_prefix(sys.prefix)
-        if prefix_python:
-            return prefix_python
-
-    for env_name in ("VIRTUAL_ENV", "CONDA_PREFIX"):
-        env_prefix = os.environ.get(env_name)
-        if not env_prefix:
-            continue
-        prefix_python = _resolve_python_interpreter_for_prefix(env_prefix)
-        if prefix_python:
-            return prefix_python
-
-    normalized_executable = _normalize_wrapper_candidate(str(sys.executable))
-    if normalized_executable:
-        executable_name = normalized_executable.replace("\\", "/").rsplit("/", 1)[-1]
-        if _is_python_executable_name(executable_name):
-            return normalized_executable
-    return None
-
-
 def _wrapper_executable_and_args() -> tuple[str, list[str]]:
     resolved_executable = _normalize_wrapper_candidate(str(sys.executable)) or str(sys.executable)
     executable_name = resolved_executable.replace("\\", "/").rsplit("/", 1)[-1].casefold()
@@ -472,13 +361,6 @@ def _wrapper_executable_and_args() -> tuple[str, list[str]]:
 
     if is_frozen:
         return resolved_executable, ["shortcut-launch"]
-
-    if sys.platform == "darwin" and not _is_windows_style_runtime_path(resolved_executable):
-        wrapper_executable = _resolve_gamehub_wrapper_executable()
-        if wrapper_executable:
-            return wrapper_executable, ["shortcut-launch"]
-        active_python = _resolve_active_python_interpreter()
-        return (active_python or resolved_executable), ["-m", "gamehub_cli.main", "shortcut-launch"]
 
     wrapper_executable = _resolve_gamehub_wrapper_executable()
     if wrapper_executable:
@@ -541,46 +423,10 @@ def _macos_managed_shortcut_executable_and_args() -> tuple[str, list[str], str]:
     start_dir = _start_dir_for_launch_executable(wrapper_exe)
 
     if _machine_name() in {"arm64", "aarch64"}:
-        active_python = _resolve_active_python_interpreter()
-        if active_python is not None:
-            launch_exe = active_python
-            launch_args = ["-m", "gamehub_cli.main", "shortcut-launch"]
-            start_dir = _start_dir_for_launch_executable(active_python)
         launch_args = ["-arm64", launch_exe, *launch_args]
         launch_exe = _MACOS_ARCH_EXECUTABLE
 
     return launch_exe, launch_args, start_dir
-
-
-def _prune_legacy_macos_shortcut_artifacts(state_path: Path) -> tuple[Path, ...]:
-    removed: list[Path] = []
-    for filename in _LEGACY_MACOS_SHORTCUT_LAUNCHER_FILENAMES:
-        candidate = state_path.with_name(filename)
-        if not candidate.exists():
-            continue
-        try:
-            candidate.unlink()
-        except OSError:
-            continue
-        removed.append(candidate)
-    legacy_launcher_dir = state_path.with_name(_LEGACY_MACOS_SHORTCUT_LAUNCHER_DIRNAME)
-    if legacy_launcher_dir.exists():
-        try:
-            shutil.rmtree(legacy_launcher_dir, ignore_errors=False)
-        except OSError:
-            pass
-        else:
-            removed.append(legacy_launcher_dir)
-    for filename in _LEGACY_MACOS_SHORTCUT_DEBUG_LOG_FILENAMES:
-        candidate = state_path.with_name(filename)
-        if not candidate.exists():
-            continue
-        try:
-            candidate.unlink()
-        except OSError:
-            continue
-        removed.append(candidate)
-    return tuple(removed)
 
 
 def _build_managed_shortcut_payload(
@@ -1001,11 +847,6 @@ def apply_steam_updates(
             payload_tokens_by_ref,
         )
     shortcut_result = upsert_shortcuts(context, shortcut_specs)
-    if sys.platform == "darwin":
-        removed_paths = _prune_legacy_macos_shortcut_artifacts(config.state_path)
-        if removed_paths:
-            removed_rendered = ", ".join(str(path) for path in removed_paths)
-            print(f"Removed legacy macOS shortcut launch artifacts: {removed_rendered}")
     print(
         "Steam shortcuts synced: "
         f"managed_titles={len(shortcut_result.app_ids_by_title)} total_shortcuts={shortcut_result.total_shortcuts}"

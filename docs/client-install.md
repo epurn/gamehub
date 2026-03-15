@@ -2,9 +2,31 @@
 
 Platform status and recommended templates:
 - [Platform Support (v1)](platform-support.md)
-- macOS support is now in scope for v1.
+- macOS and Linux use the same universal release wheel; Windows ships a standalone EXE.
 
-## macOS (Apple Silicon)
+## macOS (Apple Silicon) via pip
+
+### Install from GitHub Release wheel
+```bash
+python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+```
+
+### Upgrade
+```bash
+python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+```
+
+### Uninstall
+```bash
+python3 -m pip uninstall gamehub
+```
+
+### Smoke check
+```bash
+gamehub --help
+gamehub init --help
+gamehub sync --help
+```
 
 Start from template [docs/templates/config.macos.template.toml](templates/config.macos.template.toml).
 
@@ -46,14 +68,13 @@ gamehub init
 11. Dolphin macOS runtime/save discovery prefers an existing `~/.local/share/dolphin-emu` root first and otherwise falls back to `~/Library/Application Support/Dolphin`. If your Dolphin user dir is elsewhere, set `[macos].dolphin_user_path` explicitly.
 12. Azahar macOS save/runtime discovery prefers existing native-style paths first: `~/.local/share/azahar-emu/sdmc` for saves and `~/.config/azahar-emu/qt-config.ini` for runtime config. If those do not exist, GAMEHUB falls back to `~/Library/Application Support/Azahar`.
 13. Managed macOS Azahar launches pin to `~/Applications/Azahar.app` when that bundle exists, and GAMEHUB opens the ROM as a document with that bundle before falling back to CLI-style launch. This matches the app's declared macOS document handling more closely than relying on app-name lookup or ROM `--args` alone.
-14. After upgrading from older macOS preview builds, run one non-dry `gamehub sync` so Steam shortcut commands are rewritten away from the legacy `steam-shortcut-launch.sh` shim and the old launcher file is pruned.
-15. Minimal macOS smoke after the template is filled:
+14. Minimal macOS smoke after the template is filled:
 ```bash
 gamehub init --config ./config.macos.toml --dry-run --verbose
 gamehub sync --config ./config.macos.toml --dry-run --verbose --require-steam-closed
 gamehub sync --config ./config.macos.toml --verbose --require-steam-closed
 ```
-16. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code and run the macOS lane in [release-final-validation-playbook.md](release-final-validation-playbook.md).
+15. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code and run the macOS lane in [release-final-validation-playbook.md](release-final-validation-playbook.md).
 
 ## Linux (distro-agnostic) via pip
 
@@ -101,7 +122,7 @@ gamehub init --dry-run --verbose
 gamehub init
 ```
 6. Run first non-`--skip-steam` sync from a desktop session so Steam can relaunch after config mutation.
-7. If you used older preview/branch builds before recent controller profile fixes, run one reseed init to refresh defaults:
+7. If you need to reset managed controller or Deck template defaults, run one reseed init:
 ```bash
 gamehub init --reseed-profiles
 ```

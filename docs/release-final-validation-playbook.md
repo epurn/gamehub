@@ -167,7 +167,11 @@ Run from repo root in a macOS shell.
 ./venv/bin/python -m mypy src
 ./venv/bin/python -m pytest . -p no:cacheprovider
 ```
-3. Prepare `config.macos.toml` from [docs/templates/config.macos.template.toml](templates/config.macos.template.toml):
+3. Local readiness audit:
+```bash
+./venv/bin/python scripts/audit_repo_readiness.py
+```
+4. Prepare `config.macos.toml` from [docs/templates/config.macos.template.toml](templates/config.macos.template.toml):
 ```toml
 [server]
 url = "http://<SERVER_IP>:8000"
@@ -180,39 +184,39 @@ userdata_dir = "/Users/<user>/Library/Application Support/Steam/userdata"
 steam_exe = "/Users/<user>/Applications/Steam.app"
 # steam_id = "7656119..."  # optional but recommended
 ```
-4. Optional SGDB key:
+5. Optional SGDB key:
 ```bash
 export GAMEHUB_SGDB_API_KEY="<YOUR_KEY>"
 ```
-5. Confirm server index reachable:
+6. Confirm server index reachable:
 ```bash
 ./venv/bin/python -c "import httpx;print(httpx.get('http://<SERVER_IP>:8000/v1/index',timeout=15).status_code)"
 ```
-6. Dry-run init:
+7. Dry-run init:
 ```bash
 ./venv/bin/python -m gamehub_cli.main init --config ./config.macos.toml --dry-run --verbose
 ```
-7. Real init:
+8. Real init:
 ```bash
 ./venv/bin/python -m gamehub_cli.main init --config ./config.macos.toml
 ```
-8. Dry-run sync:
+9. Dry-run sync:
 ```bash
 ./venv/bin/python -m gamehub_cli.main sync --config ./config.macos.toml --dry-run --verbose --require-steam-closed
 ```
-9. First real sync:
+10. First real sync:
 ```bash
 ./venv/bin/python -m gamehub_cli.main sync --config ./config.macos.toml --verbose --require-steam-closed
 ```
-10. Second real sync (idempotency):
+11. Second real sync (idempotency):
 ```bash
 ./venv/bin/python -m gamehub_cli.main sync --config ./config.macos.toml --verbose --require-steam-closed
 ```
-11. Shortcut structure validation:
+12. Shortcut structure validation:
 ```bash
 ./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.macos.toml
 ```
-12. Manual Steam + runtime verification:
+13. Manual Steam + runtime verification:
 - Shortcuts exist.
 - Collections exist by exact system name.
 - Artwork appears.
@@ -222,13 +226,13 @@ export GAMEHUB_SGDB_API_KEY="<YOUR_KEY>"
 - Launch one managed `Azahar` title from Steam.
 - Confirm each managed launch waits for emulator exit before post-exit save work.
 - If the macOS Azahar exit hook is enabled, confirm `Start+Select` quits the newly launched Azahar session without killing pre-existing Azahar processes.
-13. Save sync + controller autoconfig sweep:
+14. Save sync + controller autoconfig sweep:
 - Run the same `save_sync.enabled = false`, `mode = "download"`, and `mode = "bidirectional"` matrix used on Windows.
 - Confirm one download-first convergence, one managed post-exit upload, one first-time exact-file save creation, and one offline-recovery reconnect.
 - Confirm macOS RetroArch exact-file saves land under an existing `~/Documents/RetroArch/saves` tree or sibling `~/Library/Application Support/RetroArch/saves` when the native nested config layout is in use.
 - Confirm controller profile selection remains `0 -> kbm`, `1 -> xbox_1p`, `2+ -> xbox_2p` for the controllers available to test.
 - For `Dolphin` and `Azahar`, confirm the written device/binding tokens are macOS-native rather than legacy Windows/Linux names.
-14. Optional compatibility lane:
+15. Optional compatibility lane:
 - With Rosetta already installed and `[macos].disable_pcsx2_rosetta = false`, confirm Intel-only `PCSX2.app` is accepted.
 - With `[macos].disable_pcsx2_rosetta = true`, confirm the same Intel-only bundle is rejected clearly.
 
@@ -256,7 +260,7 @@ python3 -m venv venv
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_steam.py tests/test_steam_integration.py
 ./venv/bin/python -m pytest -q -p no:cacheprovider tests/test_downloads.py tests/test_planner.py tests/test_sync.py
 ```
-4. Build Linux wheel and smoke with pip:
+4. Build universal client wheel and smoke with pip:
 ```bash
 ./venv/bin/python -m pip install build
 ./venv/bin/python -m build --wheel
@@ -365,7 +369,7 @@ git push origin vX.Y.Z
 - `Client Artifact Release`
 - `Server Image Release`
 8. In GitHub Releases, confirm artifacts:
-- Linux wheel
+- client wheel (`gamehub-<version>-py3-none-any.whl`) for macOS/Linux
 - Windows executable
 - `gamehub-server-deploy-vX.Y.Z.zip`
 - `checksums.txt`
@@ -377,9 +381,9 @@ git push origin vX.Y.Z
 ## 6. Release Gate PASS Criteria
 
 Release is `PASS` only when all of the following are true:
-1. Windows and Linux full suites pass.
-2. Audit slices pass.
+1. Windows, macOS, and Linux full suites pass.
+2. Audit slices and local readiness audit pass.
 3. Real sync succeeded on Windows, macOS, and Bazzite (including second idempotency pass).
 4. Manual Steam verification passed on Windows, macOS, and Bazzite.
 5. macOS managed launch, save-sync, and controller-autoconfig checks passed.
-6. GitHub release workflows and artifacts are complete.
+6. GitHub release workflows and artifacts are complete, including client wheel smoke on Linux and macOS plus the Windows executable build.

@@ -49,7 +49,7 @@ git push origin vX.Y.Z
    - client artifact release workflow
 9. Validate artifacts:
    - server image on GHCR
-   - Linux wheel on GitHub Release
+   - client wheel on GitHub Release (macOS/Linux)
    - Windows EXE on GitHub Release
    - server deploy bundle zip on GitHub Release
    - checksums file
@@ -63,7 +63,7 @@ git push origin vX.Y.Z
 
 ## Artifact Naming
 - Server image: `ghcr.io/<org>/gamehub-server:vX.Y.Z`
-- Linux wheel: `gamehub-<version>-py3-none-any.whl`
+- Client wheel (macOS/Linux): `gamehub-<version>-py3-none-any.whl`
 - Windows executable: `gamehub-windows-amd64.exe`
 - Server deploy bundle: `gamehub-server-deploy-vX.Y.Z.zip`
 - Checksums: `checksums.txt`
@@ -73,6 +73,5 @@ git push origin vX.Y.Z
 - GitHub Release assets include client artifacts, checksums, and an optional deploy bundle zip (compose/env template/docs/scripts).
 
 ## Known Scope Limits (Current Phase)
-- Architecture: `amd64` only
+- Server image architecture: `amd64` only
 - Deployment: LAN-only/no auth
-

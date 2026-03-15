@@ -11,7 +11,7 @@
   - Run with compose: set `GAMEHUB_SERVER_IMAGE=ghcr.io/<org>/gamehub-server` and `GAMEHUB_IMAGE_TAG=vX.Y.Z` in `docker/.env`, then run `docker compose -f docker/compose.yaml --env-file docker/.env up -d`
 
 ## Client
-- Linux wheel:
+- Client wheel (macOS/Linux):
   - `gamehub-<version>-py3-none-any.whl`
 - Windows EXE:
   - `gamehub-windows-amd64.exe`
@@ -31,4 +31,3 @@
 
 ## Checksums
 - See `checksums.txt` in release assets.
-

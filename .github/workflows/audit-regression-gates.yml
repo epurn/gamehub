@@ -3,26 +3,26 @@ name: Audit Regression Gates
 on:
   pull_request:
     paths:
+      - "README.md"
       - "src/**"
       - "tests/**"
+      - "docs/**"
       - "pyproject.toml"
+      - "scripts/audit_repo_readiness.py"
+      - "scripts/audit_secret_allowlist.toml"
       - ".github/workflows/audit-regression-gates.yml"
-      - "docs/architecture.md"
-      - "docs/development.md"
-      - "docs/release-final-validation-playbook.md"
-      - "docs/release-process.md"
   push:
     branches:
       - main
     paths:
+      - "README.md"
       - "src/**"
       - "tests/**"
+      - "docs/**"
       - "pyproject.toml"
+      - "scripts/audit_repo_readiness.py"
+      - "scripts/audit_secret_allowlist.toml"
       - ".github/workflows/audit-regression-gates.yml"
-      - "docs/architecture.md"
-      - "docs/development.md"
-      - "docs/release-final-validation-playbook.md"
-      - "docs/release-process.md"
   workflow_dispatch:
 
 concurrency:
@@ -35,6 +35,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -79,6 +81,9 @@ jobs:
 
       - name: Architecture guard slice
         run: python -m pytest -q -p no:cacheprovider tests/test_architecture.py
+
+      - name: Local readiness audit
+        run: python scripts/audit_repo_readiness.py
 
       - name: Ruff format check (src)
         run: |

@@ -20,10 +20,7 @@ from gamehub_cli.sync.orchestrator import (
 )
 from gamehub_cli.sync.planner import PlanAction, SavePlanAction, SyncPlan
 from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON, SyncState
-from gamehub_cli.sync.steam_stage import (
-    _build_shortcut_specs_and_payloads,
-    _prune_legacy_macos_shortcut_artifacts,
-)
+from gamehub_cli.sync.steam_stage import _build_shortcut_specs_and_payloads, _normalize_wrapper_candidate
 from gamehub_cli.sync.steam_stage import (
     build_shortcut_specs as _build_shortcut_specs,
 )
@@ -78,10 +75,31 @@ def test_apply_downloads_runs_firmware_before_content(monkeypatch) -> None:
     plan = SyncPlan(firmware_actions=[firmware_action], content_actions=[rom_action])
 
     _apply_downloads("http://localhost:8000", plan, state, timeout_seconds=20.0)
-
     assert calls == ["/v1/firmware/PSX/scph5501.bin", "/v1/files/file_mgs"]
     assert state.firmware_checksums["PSX/scph5501.bin"] == "a" * 64
     assert state.downloaded_checksums["file_mgs"] == "b" * 64
+
+
+def test_normalize_wrapper_candidate_keeps_posix_absolute_path_on_windows_host(monkeypatch) -> None:
+    class FakeWindowsPath:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def expanduser(self) -> "FakeWindowsPath":
+            return self
+
+        def exists(self) -> bool:
+            return False
+
+        def is_absolute(self) -> bool:
+            return False
+
+        def __str__(self) -> str:
+            return self.value
+
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.Path", FakeWindowsPath)
+
+    assert _normalize_wrapper_candidate("/usr/bin/gamehub") == "/usr/bin/gamehub"
 
 
 def test_bootstrap_runtime_forwards_macos_emulator_install_config(monkeypatch) -> None:
@@ -2139,158 +2157,6 @@ def test_build_shortcut_specs_macos_uses_absolute_python_module_launcher(monkeyp
         assert normalized_launch_parts[-2:] == ["--payload-ref", title.title_id]
 
 
-def test_build_shortcut_specs_macos_prefers_virtual_env_prefix_python(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-sync-shortcuts-macos-env-prefix-") as temp_root:
-        active_env_bin = temp_root / "active-env" / "bin"
-        active_env_bin.mkdir(parents=True, exist_ok=True)
-        interpreter_path = active_env_bin / "python3.14"
-        interpreter_path.write_text("", encoding="utf-8")
-        config = GamehubConfig(
-            server_url="http://localhost:8000",
-            library_dir=temp_root / "library",
-            firmware_dir=temp_root / "firmware",
-            state_path=temp_root / "state.json",
-            steam_userdata_dir=None,
-            steam_id=None,
-            steam_exe=None,
-            sgdb_api_key=None,
-            sgdb_cache_dir=temp_root / "cache",
-            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-            controllers=ControllersConfig(launch_autoconfig=True),
-        )
-        title = TitleEntry(
-            title_id="title_azahar_env",
-            system="N3DS",
-            title_name="Pilotwings Resort",
-            title_rel_dir="roms/N3DS/Pilotwings Resort.3ds",
-            emulator="azahar",
-            launch_template='"{emulator}" "{rom}"',
-            rom=RomSpec(
-                file_id="rom_n3ds_pilotwings",
-                rel_path="roms/N3DS/Pilotwings Resort.3ds",
-                sha256="a" * 64,
-                size_bytes=3,
-                extension=".3ds",
-            ),
-            assets=(),
-        )
-        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
-        monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.resolve_emulator_executable",
-            lambda value: "/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
-        )
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "darwin")
-        monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.sys.executable",
-            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14",
-        )
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.argv", ["gh", "sync"])
-        monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.sys.prefix", "/Library/Frameworks/Python.framework/Versions/3.14"
-        )
-        monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.sys.base_prefix", "/Library/Frameworks/Python.framework/Versions/3.14"
-        )
-        monkeypatch.setenv("VIRTUAL_ENV", str(temp_root / "active-env"))
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.shutil.which", lambda name: None)
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage._machine_name", lambda: "arm64")
-
-        specs, _ = _build_shortcut_specs_and_payloads(index=index, config=config)
-        launch_parts = _split_posix_launch_options(specs[0].launch_options)
-        normalized_launch_parts = _normalize_path_tokens(launch_parts)
-
-        assert len(specs) == 1
-        assert specs[0].exe == "/usr/bin/arch"
-        assert normalized_launch_parts[1] == _normalize_path_token(str(interpreter_path))
-        assert normalized_launch_parts[2:5] == ["-m", "gamehub_cli.main", "shortcut-launch"]
-        assert normalized_launch_parts[-2:] == ["--payload-ref", title.title_id]
-
-
-def test_build_shortcut_specs_macos_preserves_virtualenv_python_symlink(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-sync-shortcuts-macos-env-symlink-") as temp_root:
-        active_env_bin = temp_root / "active-env" / "bin"
-        framework_bin = temp_root / "framework" / "bin"
-        active_env_bin.mkdir(parents=True, exist_ok=True)
-        framework_bin.mkdir(parents=True, exist_ok=True)
-        framework_python = framework_bin / "python3.14"
-        framework_python.write_text("", encoding="utf-8")
-        symlink_python = active_env_bin / "python"
-        symlink_python.symlink_to(framework_python)
-        config = GamehubConfig(
-            server_url="http://localhost:8000",
-            library_dir=temp_root / "library",
-            firmware_dir=temp_root / "firmware",
-            state_path=temp_root / "state.json",
-            steam_userdata_dir=None,
-            steam_id=None,
-            steam_exe=None,
-            sgdb_api_key=None,
-            sgdb_cache_dir=temp_root / "cache",
-            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
-            controllers=ControllersConfig(launch_autoconfig=True),
-        )
-        title = TitleEntry(
-            title_id="title_retroarch_symlink_env",
-            system="GBC",
-            title_name="Pokemon Crystal",
-            title_rel_dir="roms/GBC/Pokemon Crystal.gbc",
-            emulator="retroarch",
-            launch_template='"{emulator}" -L "cores/gambatte_libretro.dylib" "{rom}"',
-            rom=RomSpec(
-                file_id="rom_gbc_symlink",
-                rel_path="roms/GBC/Pokemon Crystal.gbc",
-                sha256="a" * 64,
-                size_bytes=3,
-                extension=".gbc",
-            ),
-            assets=(),
-        )
-        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
-        monkeypatch.setattr(
-            "gamehub_cli.sync.steam_stage.resolve_emulator_executable",
-            lambda value: "/Users/tester/Applications/RetroArch.app/Contents/MacOS/RetroArch",
-        )
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "darwin")
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", str(symlink_python))
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.argv", ["gh", "sync"])
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.prefix", str(temp_root / "active-env"))
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.base_prefix", str(temp_root / "framework"))
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.shutil.which", lambda name: None)
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage._machine_name", lambda: "arm64")
-
-        specs, _ = _build_shortcut_specs_and_payloads(index=index, config=config)
-        launch_parts = _split_posix_launch_options(specs[0].launch_options)
-        normalized_launch_parts = _normalize_path_tokens(launch_parts)
-
-        assert len(specs) == 1
-        assert specs[0].exe == "/usr/bin/arch"
-        assert normalized_launch_parts[1] == _normalize_path_token(str(symlink_python))
-        assert _normalize_path_token(str(framework_python)) not in _normalize_path_token(specs[0].launch_options)
-
-
-def test_prune_legacy_macos_shortcut_artifacts_removes_debug_launcher_dir(workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-sync-shortcuts-macos-prune-") as temp_root:
-        state_path = temp_root / "Gamehub" / "state.json"
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-        legacy_launcher = state_path.with_name("steam-shortcut-launch.sh")
-        legacy_launcher.write_text("#!/bin/sh\n", encoding="utf-8")
-        legacy_dir = state_path.with_name("steam-shortcut-launchers")
-        legacy_dir.mkdir(parents=True, exist_ok=True)
-        (legacy_dir / "title_gc_zelda.sh").write_text("#!/bin/sh\n", encoding="utf-8")
-        runtime_log = state_path.with_name("shortcut-launch.log")
-        bootstrap_log = state_path.with_name("shortcut-launch-bootstrap.log")
-        runtime_log.write_text("runtime\n", encoding="utf-8")
-        bootstrap_log.write_text("bootstrap\n", encoding="utf-8")
-
-        removed = _prune_legacy_macos_shortcut_artifacts(state_path)
-
-        assert removed == (legacy_launcher, legacy_dir, runtime_log, bootstrap_log)
-        assert not legacy_launcher.exists()
-        assert not legacy_dir.exists()
-        assert not runtime_log.exists()
-        assert not bootstrap_log.exists()
-
-
 def test_build_shortcut_specs_macos_normalizes_retroarch_core_token(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-sync-shortcuts-macos-retroarch-core-") as temp_root:
         config = GamehubConfig(
@@ -2396,6 +2262,61 @@ def test_build_shortcut_specs_wrapper_uses_direct_command_for_frozen_exe(monkeyp
         payload = parse_shortcut_payload(payload_token)
         assert payload.emulator == "pcsx2"
         assert _normalize_path_token(payload.target_exe) == "C:/PCSX2/pcsx2-qt.exe"
+
+
+def test_build_shortcut_specs_wrapper_uses_pythonw_when_wrapper_missing(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-win-pythonw-wrap-") as temp_root:
+        runtime_dir = temp_root / "runtime"
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        python_exe = runtime_dir / "python.exe"
+        pythonw_exe = runtime_dir / "pythonw.exe"
+        python_exe.write_text("", encoding="utf-8")
+        pythonw_exe.write_text("", encoding="utf-8")
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=True),
+        )
+        title = TitleEntry(
+            title_id="title_ps2_gt4_pythonw",
+            system="PS2",
+            title_name="Gran Turismo 4",
+            title_rel_dir="PS2/Gran Turismo 4.iso",
+            emulator="pcsx2",
+            launch_template='"{emulator}" -fullscreen "{rom}"',
+            rom=RomSpec(
+                file_id="rom_ps2_pythonw",
+                rel_path="roms/PS2/Gran Turismo 4.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable",
+            lambda value: "C:\\PCSX2\\pcsx2-qt.exe",
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "win32")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", str(python_exe))
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.shutil.which", lambda name: None)
+
+        specs = _build_shortcut_specs(index=index, config=config)
+        launch_parts = _split_posix_launch_options(specs[0].launch_options)
+
+        assert len(specs) == 1
+        assert _normalize_path_token(specs[0].exe) == _normalize_path_token(str(pythonw_exe))
+        assert launch_parts[:3] == ["-m", "gamehub_cli.main", "shortcut-launch"]
+        assert launch_parts[-2] == "--payload"
 
 
 def test_build_shortcut_specs_wraps_retroarch_with_controller_autoconfig(monkeypatch, workspace_tempdir) -> None:

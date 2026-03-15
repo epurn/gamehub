@@ -294,7 +294,7 @@ Managed shortcut launch autoconfig:
 - Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
 - `shortcut-launch` does not seed controller profiles at launch time; run non-dry `gamehub init` or `gamehub sync` first when profile files may be missing.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
-- If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
+- If you want a clean managed baseline before retesting, run one `gamehub init --reseed-profiles`.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
   - non-dry `gamehub init` and non-dry `gamehub sync` seed any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used

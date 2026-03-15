@@ -1,5 +1,6 @@
 # Local planning files
 kanban/
+.manual/
 
 # Python cache/bytecode
 __pycache__/

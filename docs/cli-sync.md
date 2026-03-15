@@ -107,10 +107,16 @@ Steam close behavior:
      - `command`: run `[linux].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
      - `none`: disable Linux auto-install (sync prints actionable missing emulator output)
    - when Linux backend is flatpak-preferred (`flatpak`, or immutable-host `auto`), Dolphin and Azahar are treated as Flatpak-required; native installs are not used as substitutes for `org.DolphinEmu.dolphin-emu` / `org.azahar_emu.Azahar`, and sync fails fast if those Flatpak apps are unavailable
+   - on macOS non-dry-run, uses config-first install backend (`[macos].emulator_install_backend`):
+     - `auto` (default): `official`
+     - `official`: installs pinned official Apple Silicon or universal assets into `~/Applications`
+     - `command`: run `[macos].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
+     - `none`: disable macOS auto-install (sync prints actionable missing emulator output)
+     - `PCSX2` may accept an Intel-only bundle only when Rosetta is already installed and `[macos].disable_pcsx2_rosetta = false`
    - Steam shortcuts resolve emulator executable paths to concrete binaries when available
 5. Ensure required RetroArch cores are available:
    - detects required cores from index launch templates (`-L cores/<core>`)
-   - auto-downloads missing cores from Libretro buildbot on Windows/Linux x86_64
+   - auto-downloads missing cores from Libretro buildbot on Windows, Linux x86_64, and macOS Apple Silicon
    - auto-installs matching `.info` metadata from `assets/frontend/info.zip`
    - dry-run reports missing core/info files without writing
 6. Build plan:
@@ -201,8 +207,6 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - `download` mode stays read-only: missing local saves may still download, existing local drift becomes `skip(download-mode-local-drift)`, local-only first-time saves become `skip(download-mode-local-new)`, and the server is never mutated.
 - If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
 - If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
-- After upgrading to the build that introduces `shortcut-launch`, run one non-dry `gamehub sync` before starting managed shortcuts so Steam commands are rewritten.
-
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.
 
@@ -283,7 +287,7 @@ Controller launch profile defaults:
 - Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
 - `shortcut-launch` does not seed controller profiles at launch time; run non-dry `gamehub init` or `gamehub sync` first when managed profiles may not exist yet.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
-- If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
+- If you want a clean managed baseline before retesting, run one `gamehub init --reseed-profiles`.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used

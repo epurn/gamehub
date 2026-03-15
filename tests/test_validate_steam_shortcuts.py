@@ -71,7 +71,9 @@ def test_validate_steam_shortcuts_accepts_payload_ref_shortcuts(workspace_tempdi
         assert "BAD_PAYLOAD_REGISTRY: 0" in captured
 
 
-def test_validate_steam_shortcuts_accepts_macos_launcher_shortcuts(workspace_tempdir, monkeypatch, capsys) -> None:
+def test_validate_steam_shortcuts_rejects_legacy_macos_launcher_shortcuts(
+    workspace_tempdir, monkeypatch, capsys
+) -> None:
     with workspace_tempdir("gamehub-validate-shortcuts-macos-launcher-") as temp_root:
         shortcuts_path = temp_root / "shortcuts.vdf"
         state_path = temp_root / "Gamehub" / "state.json"
@@ -105,6 +107,6 @@ def test_validate_steam_shortcuts_accepts_macos_launcher_shortcuts(workspace_tem
 
         exit_code = module.main()
 
-        assert exit_code == 0
+        assert exit_code == 1
         captured = capsys.readouterr().out
-        assert "BAD_WRAPPERS: 0" in captured
+        assert "BAD_WRAPPERS: 1" in captured
