@@ -617,9 +617,10 @@ def seed_default_profiles(
         for profile_name, files in profiles.items():
             for filename, payload in files.items():
                 target = root / emulator_name / profile_name / filename
-                if target.exists() and not force:
+                target_exists = target.exists()
+                if target_exists and not force:
                     continue
-                write_profile_text_atomic(target, payload, backup_existing=target.exists())
+                write_profile_text_atomic(target, payload, backup_existing=target_exists)
                 metadata_updates.setdefault(target.parent, {})[target.name] = ManagedMetadataEntry(
                     source_profile=profile_name,
                     source_template=_managed_source_template(

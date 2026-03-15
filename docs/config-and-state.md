@@ -294,13 +294,12 @@ Managed shortcut launch autoconfig:
 - Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
 - `shortcut-launch` does not seed controller profiles at launch time; run non-dry `gamehub init` or `gamehub sync` first when profile files may be missing.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
-- If you want a clean managed baseline before retesting, run one `gamehub init --reseed-profiles`.
+- Forced controller profile reseeds create a timestamped `*.bak` file beside each overwritten managed profile.
+- If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
   - non-dry `gamehub init` and non-dry `gamehub sync` seed any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
-  - with `--reseed-profiles`, managed files are rewritten even when bytes already match
-  - when an existing managed controller profile file is replaced, GAMEHUB first writes a timestamped `.bak` backup beside that file and logs the rewrite
-- Launch-time assisted controller config repairs for `PCSX2.ini`, `Dolphin.ini`, and Azahar `qt-config.ini` also back up the previous file to a timestamped `.bak` before replacing it and log the save.
+  - with `--reseed-profiles`, managed controller profile files are rewritten even when bytes already match, after a timestamped `*.bak` backup is created beside the target file
 - Managed profile directories include `.gamehub-managed.json` markers for drift-safe ownership tracking:
   - schema version
   - source profile/template

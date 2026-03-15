@@ -287,12 +287,12 @@ Controller launch profile defaults:
 - Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
 - `shortcut-launch` does not seed controller profiles at launch time; run non-dry `gamehub init` or `gamehub sync` first when managed profiles may not exist yet.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.
-- If you want a clean managed baseline before retesting, run one `gamehub init --reseed-profiles`.
+- Forced controller profile reseeds create a timestamped `*.bak` file beside each overwritten managed profile.
+- If you used older branch builds before these controller profile changes, run one `gamehub init --reseed-profiles` before retesting.
 - To supply custom profiles, set `[controllers].profiles_dir` (or `GAMEHUB_CONTROLLER_PROFILES_DIR`):
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
-  - with `--reseed-profiles`, managed files are rewritten even when bytes already match
-  - when an existing managed controller profile file is replaced, GAMEHUB first writes a timestamped `.bak` backup beside that file and logs the rewrite
+  - with `--reseed-profiles`, managed controller profile files are rewritten even when bytes already match, after a timestamped `*.bak` backup is created beside the target file
 - Controller profiles apply input mappings for `PCSX2`, `Dolphin`, and `Azahar` at launch; firmware deploy does not write controller bindings.
 - Profile selection:
   - `0` Xbox controllers -> `kbm`
