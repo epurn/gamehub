@@ -9,6 +9,7 @@ from pathlib import Path
 import gamehub_cli.common.fsops as fsops
 import gamehub_cli.controllers.profiles as controller_profiles
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig
+from gamehub_cli.controllers.managed_metadata import ManagedMetadataEntry, write_managed_metadata_entry
 from gamehub_cli.controllers.profiles import (
     PROFILE_KBM,
     PROFILE_XBOX_1P,
@@ -81,10 +82,19 @@ def test_seed_default_profiles_creates_profile_tree(workspace_tempdir) -> None:
         assert "Buttons/A = SOUTH | `Button A`" in dolphin_wii_xbox_1p
         assert "Buttons/A = SOUTH | `Button A` | `Shoulder R` | `Button 5`" in dolphin_wii_xbox_1p
         assert "Buttons/B = EAST | `Button B` | `Trigger R` | `Axis 5+`" in dolphin_wii_xbox_1p
+        if sys.platform == "darwin":
+            assert "IR/Up = `Right Y+`" in dolphin_wii_xbox_1p
+            assert "IR/Down = `Right Y-`" in dolphin_wii_xbox_1p
+
+        dolphin_xbox_1p_hotkeys = (root / "dolphin" / "xbox_1p" / "Hotkeys.ini").read_text(encoding="utf-8")
+        if sys.platform == "darwin":
+            assert "Device = SDL/0/Gamepad" in dolphin_xbox_1p_hotkeys
 
         dolphin_kbm_hotkeys = (root / "dolphin" / "kbm" / "Hotkeys.ini").read_text(encoding="utf-8")
         if sys.platform.startswith("linux"):
             assert "Device = XInput2/0/Virtual core pointer" in dolphin_kbm_hotkeys
+        elif sys.platform == "darwin":
+            assert "Device = Quartz/0/Keyboard & Mouse" in dolphin_kbm_hotkeys
 
 
 def test_seed_default_profiles_linux_uses_platform_neutral_dolphin_defaults(monkeypatch, workspace_tempdir) -> None:
@@ -151,27 +161,26 @@ def test_load_profile_file_prefers_user_override(workspace_tempdir) -> None:
         assert "OpenPauseMenu = Keyboard/F1" in "\n".join(lines)
 
 
-def test_seed_default_profiles_force_creates_backup_for_existing_file(workspace_tempdir, caplog) -> None:
+def test_seed_default_profiles_force_overwrite_creates_backup_and_logs(caplog, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
-        root = resolve_profiles_root(config)
-        profile_file = root / "pcsx2" / "kbm" / "PCSX2.ini"
+        profile_file = resolve_profiles_root(config) / "pcsx2" / "kbm" / "PCSX2.ini"
         profile_file.write_text("[Custom]\nOpenPauseMenu = Keyboard/F1\n", encoding="utf-8")
 
-        caplog.set_level(logging.INFO)
-        created = seed_default_profiles(config, force=True)
+        with caplog.at_level(logging.INFO):
+            created = seed_default_profiles(config, force=True)
 
-        assert profile_file in created
         backups = sorted(profile_file.parent.glob("PCSX2.ini.*.bak"))
+        assert profile_file in created
         assert len(backups) == 1
         assert backups[0].read_text(encoding="utf-8") == "[Custom]\nOpenPauseMenu = Keyboard/F1\n"
         assert (
             profile_file.read_text(encoding="utf-8")
             == controller_profiles.DEFAULT_PROFILE_TEXTS["pcsx2"]["kbm"]["PCSX2.ini"]
         )
-        assert any("controller profile backup created" in record.getMessage() for record in caplog.records)
-        assert any("controller profile saved" in record.getMessage() for record in caplog.records)
+        assert f"controller profile backup created path={profile_file}" in caplog.text
+        assert f"controller profile saved path={profile_file}" in caplog.text
 
 
 def test_seed_default_profiles_force_uses_unique_backup_name_when_collision_exists(
@@ -201,3 +210,34 @@ def test_seed_default_profiles_force_uses_unique_backup_name_when_collision_exis
         collision_backup = profile_file.with_name(f"{profile_file.name}.20260309120000.1.bak")
         assert existing_backup.read_text(encoding="utf-8") == "earlier backup\n"
         assert collision_backup.read_text(encoding="utf-8") == "[Custom]\nOpenPauseMenu = Keyboard/F1\n"
+
+
+def test_write_managed_metadata_entry_overwrite_creates_backup_and_logs(caplog, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        profile_file = resolve_profiles_root(config) / "pcsx2" / "kbm" / "PCSX2.ini"
+        metadata_file = profile_file.parent / ".gamehub-managed.json"
+        original_text = metadata_file.read_text(encoding="utf-8")
+
+        with caplog.at_level(logging.INFO):
+            changed = write_managed_metadata_entry(
+                profile_file,
+                ManagedMetadataEntry(
+                    source_profile="xbox_1p",
+                    source_template="profile://pcsx2/xbox_1p/PCSX2.ini",
+                    timestamp_utc="2026-03-15T00:00:00+00:00",
+                    fingerprint_sha256="b" * 64,
+                    ownership="managed",
+                ),
+            )
+
+        backups = sorted(metadata_file.parent.glob(".gamehub-managed.json.*.bak"))
+        assert changed is True
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == original_text
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+        assert metadata["entries"]["PCSX2.ini"]["source_profile"] == "xbox_1p"
+        assert metadata["entries"]["PCSX2.ini"]["fingerprint_sha256"] == "b" * 64
+        assert f"controller metadata backup created path={metadata_file}" in caplog.text
+        assert f"controller metadata saved path={metadata_file}" in caplog.text

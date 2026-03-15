@@ -2,10 +2,15 @@
 
 ## Implemented now
 - Steam userdata discovery (explicit path or common defaults)
+  - macOS auto-discovery includes `~/Library/Application Support/Steam/userdata`
 - SteamID discovery:
   - auto-select most recently active numeric profile by default
   - optional explicit profile via `steam.steam_id`
 - Steam running detection + close/wait lifecycle
+  - macOS checks native Steam process names first (`Steam`, `steam_osx`, `steamwebhelper`)
+  - macOS close sends a graceful app quit request and waits for confirmed exit; automatic sync does not escalate to `pkill` / `pkill -9`
+  - macOS reopen uses `open -a <Steam.app>` against either configured or auto-discovered app bundles
+- On macOS, `steam.steam_exe` may point to either `Steam.app` or its inner `Contents/MacOS/...` executable; GAMEHUB normalizes it to the app bundle for lifecycle actions
 - Backup before mutation:
   - `userdata/<steamid>/config/shortcuts.vdf`
   - `userdata/<steamid>/config/localconfig.vdf`
@@ -50,6 +55,7 @@
 
 ## Managed launch wrappers
 - When `[controllers].launch_autoconfig = true` or `[save_sync].enabled = true`, supported managed shortcuts (`RetroArch`, `PCSX2`, `Dolphin`, `Azahar`) are emitted through the hidden `shortcut-launch` wrapper so launch-time controller and save-session policy stays deterministic.
+- On macOS, when a managed shortcut target resolves to an app bundle executable (`*.app/Contents/MacOS/...`), sync stores the payload in `shortcut_payloads.json` and points Steam directly at `shortcut-launch` with `--payload-registry` and `--payload-ref <title_id>`. Apple Silicon shortcuts use `/usr/bin/arch -arm64` in front of the Python entrypoint so `shortcut-launch` still runs natively before it performs the bundle-safe `open -W -a <App> --args ...` launch and waits for the session to exit.
 - Linux Flatpak Azahar is a special case: sync first emits `python -m gamehub_cli.controllers.azahar_exit_hook --app-id org.azahar_emu.Azahar --rom ...` by default, and `shortcut-launch` treats that wrapper as the target command payload.
 - Linux Dolphin and Windows Azahar exit hooks live in `shortcut-launch` runtime behavior; the Linux Azahar hook lives in the sync-emitted Steam launch command instead.
 - After upgrading from older builds that still emitted `controller-launch`, run one non-dry `gamehub sync` so persisted Steam shortcut commands are rewritten.
@@ -88,6 +94,7 @@
 
 ## Safety behavior
 - If Steam is running, sync attempts close + wait.
+- On macOS, the automatic sync path only requests a graceful Steam app quit; it does not force-kill the desktop client when Steam stays open.
 - If Steam remains running:
   - with `--require-steam-closed`: sync fails
   - without it: Steam update stage is skipped for safety
@@ -96,3 +103,11 @@
   - atomic write of mutated files
   - copy artwork
   - reopen Steam if it was running at start
+
+## Quick Validation
+```bash
+./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.macos.toml
+```
+
+- Run this after the first non-dry sync on macOS.
+- Exit code `0` means every managed shortcut still points at `shortcut-launch`, and every `--payload-ref` shortcut also includes `--payload-registry`.

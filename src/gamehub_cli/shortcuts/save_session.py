@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 from gamehub_common.ids import make_save_id
 from gamehub_common.models import LibraryIndex, SaveBindingCatalog, SaveBindingSpec, SaveSpec
 
-from ..common.config import GamehubConfig
+from ..common.config import GamehubConfig, load_config
 from ..common.config_edit import upsert_simple_cfg_key
 from ..common.fsops import backup_existing_file
 from ..common.save_sync import (
@@ -32,6 +32,11 @@ from ..emulators.save_resolution import (
     snapshot_binding_tree,
 )
 from ..firmware.pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
+from ..firmware.runtime_retroarch import (
+    RetroArchMacOSN64RemediationError,
+    configure_managed_macos_n64_content_runtime,
+    configure_retroarch_runtime,
+)
 from ..firmware.targets import default_pcsx2_ini_path, retroarch_cfg_candidates_for_config
 from ..sync.index import fetch_index_with_retries, fetch_save_bindings_with_retries, probe_server_health
 from ..sync.planner import resolve_missed_upload_timestamp_decision, resolve_save_action
@@ -49,6 +54,10 @@ logger = logging.getLogger(__name__)
 
 class _ShortcutMetadataError(RuntimeError):
     """Raised when launch-session save metadata helpers cannot complete."""
+
+
+class ManagedMacOSN64RetroArchRuntimeError(RuntimeError):
+    """Raised when a managed macOS RetroArch N64 launch cannot converge safely."""
 
 
 @dataclass(frozen=True)
@@ -143,10 +152,20 @@ def _shortcut_flatpak_app_id(payload: ShortcutLaunchPayload) -> str | None:
     return None
 
 
+def _shortcut_resolver_config(payload: ShortcutLaunchPayload) -> GamehubConfig | None:
+    if not payload.config_path:
+        return None
+    try:
+        return load_config(Path(payload.config_path).expanduser())
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def build_shortcut_save_resolver(payload: ShortcutLaunchPayload) -> Callable[[str], str]:
     target_exe = unquote_executable(payload.target_exe).strip()
     payload_emulator = payload.emulator.casefold()
     flatpak_app_id = _shortcut_flatpak_app_id(payload)
+    resolver_config = _shortcut_resolver_config(payload)
     if not target_exe:
         return resolve_emulator_executable
 
@@ -168,6 +187,8 @@ def build_shortcut_save_resolver(payload: ShortcutLaunchPayload) -> Callable[[st
             return target_exe
         return resolve_emulator_executable(name)
 
+    if resolver_config is not None:
+        setattr(_resolve, "_gamehub_config", resolver_config)
     return _resolve
 
 
@@ -344,7 +365,6 @@ def _mark_missed_postexit_uploads_from_snapshots(
     state: Any,
     context: ShortcutSaveContext,
     verbose: bool,
-    audit: bool,
 ) -> bool:
     state_changed = False
     for save_id, snapshot in context.save_snapshots.items():
@@ -364,7 +384,7 @@ def _mark_missed_postexit_uploads_from_snapshots(
             )
             or state_changed
         )
-        if verbose or audit:
+        if verbose:
             print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
     return state_changed
 
@@ -419,7 +439,6 @@ def _run_shortcut_postexit_exact_binding_sync(
     server_url: str,
     timeout_seconds: float,
     verbose: bool,
-    audit: bool,
 ) -> bool:
     state_changed = False
     for exact_snapshot in exact_snapshots.values():
@@ -448,12 +467,12 @@ def _run_shortcut_postexit_exact_binding_sync(
                 if local_sha == save.sha256:
                     _record_shortcut_save_sync(state, save, destination, local_sha256=local_sha)
                     state_changed = True
-                    if verbose or audit:
+                    if verbose:
                         print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
                     continue
                 state.unresolved_save_conflicts[save_id] = "create-race-content-mismatch"
                 state_changed = True
-                if verbose or audit:
+                if verbose:
                     print(f"shortcut-save\tpostexit\tconflict\t{save_id}\tcreate-race-content-mismatch")
                 continue
             try:
@@ -473,7 +492,7 @@ def _run_shortcut_postexit_exact_binding_sync(
                 )
                 state_changed = True
                 action = "auto-create" if before_sha is None else "auto-create-existing-local"
-                if verbose or audit:
+                if verbose:
                     print(f"shortcut-save\tpostexit\tupload\t{save_id}\t{action}")
             except SaveUploadConflictError as exc:
                 if (
@@ -486,7 +505,7 @@ def _run_shortcut_postexit_exact_binding_sync(
                     is not None
                 ):
                     state_changed = True
-                    if verbose or audit:
+                    if verbose:
                         print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
                     continue
                 state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"
@@ -497,6 +516,74 @@ def _run_shortcut_postexit_exact_binding_sync(
                 state_changed = True
                 warn_shortcut_runtime(f"post-exit save upload failed for {save_id} ({exc})")
     return state_changed
+
+
+def _psx_runtime_candidate_filenames(payload: ShortcutLaunchPayload) -> tuple[str, ...]:
+    if not payload.title_id:
+        return ()
+    values = [f"GH_{payload.title_id}_1.mcd", f"GH_{payload.title_id}_2.mcd"]
+    if payload.rom_rel_path:
+        rom_stem = PurePosixPath(payload.rom_rel_path).stem.strip()
+        if rom_stem:
+            values.extend((f"{rom_stem}.srm", f"{rom_stem}_1.mcd", f"{rom_stem}_2.mcd"))
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return tuple(deduped)
+
+
+def _preferred_psx_memory_card_filenames(
+    payload: ShortcutLaunchPayload,
+) -> tuple[str, str]:
+    if not payload.title_id:
+        return "", ""
+    default_slot1 = f"GH_{payload.title_id}_1.mcd"
+    default_slot2 = f"GH_{payload.title_id}_2.mcd"
+    candidate_filenames = _psx_runtime_candidate_filenames(payload)
+    if not candidate_filenames:
+        return default_slot1, default_slot2
+    binding = SaveBindingSpec(
+        binding_id="savebind_runtime_psx",
+        title_id=payload.title_id,
+        system="PSX",
+        kind="memory_card",
+        server_rel_dir="saves/PSX/runtime/memory_card",
+        local_root="retroarch_saves_psx",
+        strategy="exact_files",
+        candidate_filenames=candidate_filenames,
+        learn_rule=None,
+        portable=True,
+    )
+    resolve_executable = build_shortcut_save_resolver(payload)
+    root = resolve_binding_local_root(binding, resolve_executable=resolve_executable)
+    if root is None:
+        return default_slot1, default_slot2
+
+    rom_stem = PurePosixPath(payload.rom_rel_path).stem.strip() if payload.rom_rel_path else ""
+    slot1_candidates = [default_slot1]
+    slot2_candidates = [default_slot2]
+    if rom_stem:
+        slot1_candidates.extend((f"{rom_stem}.srm", f"{rom_stem}_1.mcd"))
+        slot2_candidates.append(f"{rom_stem}_2.mcd")
+
+    def _first_existing(candidates: list[str]) -> str | None:
+        for candidate in candidates:
+            path = resolve_exact_local_save_destination(
+                system="PSX",
+                kind="memory_card",
+                root=root,
+                filename=candidate,
+                resolve_executable=resolve_executable,
+            )
+            if path.exists() and path.name == candidate:
+                return candidate
+        return None
+
+    return _first_existing(slot1_candidates) or default_slot1, _first_existing(slot2_candidates) or default_slot2
 
 
 def ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: GamehubConfig) -> bool:
@@ -546,9 +633,10 @@ def ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: Gam
     core_options_path = cfg_path.with_name("retroarch-core-options.cfg")
     lines = read_ini_lines(core_options_path)
     changed = False
+    slot1_filename, slot2_filename = _preferred_psx_memory_card_filenames(payload)
     for key, value in {
-        "swanstation_MemoryCard1Path": f"GH_{payload.title_id}_1.mcd",
-        "swanstation_MemoryCard2Path": f"GH_{payload.title_id}_2.mcd",
+        "swanstation_MemoryCard1Path": slot1_filename,
+        "swanstation_MemoryCard2Path": slot2_filename,
     }.items():
         lines, key_changed = upsert_simple_cfg_key(lines, key, value)
         changed |= key_changed
@@ -565,6 +653,39 @@ def ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: Gam
             payload.title_id,
         )
     return changed
+
+
+def _is_managed_macos_retroarch_n64_payload(payload: ShortcutLaunchPayload) -> bool:
+    if payload.system != "N64":
+        return False
+    if "retroarch" not in payload.emulator.casefold():
+        return False
+    return payload.macos_open_app is not None
+
+
+def ensure_managed_macos_n64_retroarch_runtime(payload: ShortcutLaunchPayload, config: GamehubConfig) -> bool:
+    if not _is_managed_macos_retroarch_n64_payload(payload):
+        return False
+    if not payload.rom_rel_path:
+        raise ManagedMacOSN64RetroArchRuntimeError(
+            "managed macOS N64 launch blocked: RetroArch remediation requires rom_rel_path"
+        )
+    try:
+        configure_retroarch_runtime(
+            config=config,
+            dry_run=False,
+            verbose=False,
+            writer=lambda _line: None,
+            strict_macos_n64=True,
+        )
+        configure_managed_macos_n64_content_runtime(config=config, rom_rel_path=payload.rom_rel_path)
+    except RetroArchMacOSN64RemediationError as exc:
+        raise ManagedMacOSN64RetroArchRuntimeError(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise ManagedMacOSN64RetroArchRuntimeError(
+            f"managed macOS N64 launch blocked: RetroArch remediation failed ({exc})"
+        ) from exc
+    return True
 
 
 def should_sync_shortcut_saves(payload: ShortcutLaunchPayload, config: GamehubConfig) -> bool:
@@ -584,16 +705,16 @@ def run_shortcut_prelaunch_save_sync(
     state: Any,
     resolve_executable: Callable[[str], str],
     verbose: bool,
-    audit: bool,
 ) -> tuple[ShortcutSaveContext, bool]:
     context = ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={})
+    ensure_managed_macos_n64_retroarch_runtime(payload, config)
     if not should_sync_shortcut_saves(payload, config):
         return context, False
     if not _shortcut_server_reachable_or_warn(config):
         state_changed = False
         if config.save_sync.mode == "bidirectional":
             state_changed = _mark_offline_shortcut_title(state, title_id=payload.title_id)
-        if verbose or audit:
+        if verbose:
             print("shortcut-save\tprelaunch\tskip\tserver-unreachable")
         return context, state_changed
 
@@ -608,6 +729,14 @@ def run_shortcut_prelaunch_save_sync(
     if config.save_sync.mode == "bidirectional":
         save_bindings = _load_shortcut_save_bindings_or_warn(config, verbose=verbose)
     title_saves = _iter_title_saves(index, payload.title_id)
+    needs_psx_exact_binding = any(save.system.upper() == "PSX" and save.kind == "memory_card" for save in title_saves)
+    if save_bindings is None and needs_psx_exact_binding:
+        save_bindings = _load_shortcut_save_bindings_or_warn(config, verbose=verbose)
+    binding_by_id = {
+        binding.binding_id: binding
+        for binding in (() if save_bindings is None else save_bindings.bindings)
+        if binding.title_id == payload.title_id
+    }
     remote_save_ids = {save.save_id for save in title_saves}
     if save_bindings is not None and config.save_sync.mode == "bidirectional":
         for binding in save_bindings.bindings:
@@ -636,6 +765,7 @@ def run_shortcut_prelaunch_save_sync(
         destination = resolve_local_save_destination(
             save,
             binding_roots=state.save_binding_roots,
+            binding=binding_by_id.get(save_binding_id_for_save(save)),
             resolve_executable=resolve_executable,
         )
         local_sha = local_file_sha256(destination) if destination is not None else None
@@ -649,7 +779,7 @@ def run_shortcut_prelaunch_save_sync(
                 allow_postexit_upload=False,
                 pending_postexit_upload=False,
             )
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tprelaunch\tskip\t{save.save_id}\t{reason}")
             continue
 
@@ -708,7 +838,7 @@ def run_shortcut_prelaunch_save_sync(
                     state_changed = True
             except Exception as exc:  # noqa: BLE001
                 warn_shortcut_runtime(f"pre-launch save sync failed for {save.save_id} ({exc})")
-        if verbose or audit:
+        if verbose:
             action_label = "keep-local" if decision == "upload_existing" else decision
             print(f"shortcut-save\tprelaunch\t{action_label}\t{save.save_id}\t{reason}")
         context.save_snapshots[save.save_id] = ShortcutSaveSnapshot(
@@ -731,7 +861,6 @@ def run_shortcut_postexit_save_sync(
     context: ShortcutSaveContext,
     resolve_executable: Callable[[str], str],
     verbose: bool,
-    audit: bool,
 ) -> bool:
     if config.save_sync.mode != "bidirectional" or (
         not context.save_snapshots and not context.exact_binding_snapshots and not context.tree_snapshots
@@ -744,9 +873,8 @@ def run_shortcut_postexit_save_sync(
             state=state,
             context=context,
             verbose=verbose,
-            audit=audit,
         )
-        if verbose or audit:
+        if verbose:
             print("shortcut-save\tpostexit\tskip\tserver-unreachable")
         return missed_upload_changed
 
@@ -758,7 +886,6 @@ def run_shortcut_postexit_save_sync(
             state=state,
             context=context,
             verbose=verbose,
-            audit=audit,
         )
 
     current_saves = {save.save_id: save for save in _iter_title_saves(index, payload.title_id)}
@@ -775,7 +902,7 @@ def run_shortcut_postexit_save_sync(
         if save is None or save.sha256 != snapshot.remote_sha256:
             state.unresolved_save_conflicts[save_id] = "remote-changed-during-session"
             state_changed = True
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tpostexit\tconflict\t{save_id}\tremote-changed-during-session")
             continue
         try:
@@ -792,7 +919,7 @@ def run_shortcut_postexit_save_sync(
                 save=updated_save,
             )
             state_changed = True
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-upload")
         except SaveUploadConflictError as exc:
             if (
@@ -805,12 +932,12 @@ def run_shortcut_postexit_save_sync(
                 is not None
             ):
                 state_changed = True
-                if verbose or audit:
+                if verbose:
                     print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
                 continue
             state.unresolved_save_conflicts[save_id] = str(exc)
             state_changed = True
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tpostexit\tconflict\t{save_id}\t{exc}")
         except Exception as exc:  # noqa: BLE001
             if local_sha is not None and not _shortcut_server_reachable_or_warn(config):
@@ -823,7 +950,7 @@ def run_shortcut_postexit_save_sync(
                     )
                     or state_changed
                 )
-                if verbose or audit:
+                if verbose:
                     print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
             warn_shortcut_runtime(f"post-exit save upload failed for {save_id} ({exc})")
 
@@ -835,7 +962,6 @@ def run_shortcut_postexit_save_sync(
         server_url=config.server_url,
         timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
         verbose=verbose,
-        audit=audit,
     )
     state_changed = state_changed or exact_binding_changed
 
@@ -851,7 +977,7 @@ def run_shortcut_postexit_save_sync(
             previous_reason = state.unresolved_save_conflicts.get(binding_id)
             state.unresolved_save_conflicts[binding_id] = "save-binding-root-ambiguous"
             state_changed = state_changed or previous_reason != "save-binding-root-ambiguous"
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tpostexit\tconflict\t{binding_id}\tsave-binding-root-ambiguous")
             continue
         canonical_root, materialized_root = learned_root
@@ -910,7 +1036,7 @@ def run_shortcut_postexit_save_sync(
                     save=created_save,
                 )
                 state_changed = True
-                if verbose or audit:
+                if verbose:
                     action = "auto-create" if rel_path in changed_paths else "auto-create-existing-local"
                     print(f"shortcut-save\tpostexit\tupload\t{save_id}\t{action}")
             except SaveUploadConflictError as exc:
@@ -924,7 +1050,7 @@ def run_shortcut_postexit_save_sync(
                     is not None
                 ):
                     state_changed = True
-                    if verbose or audit:
+                    if verbose:
                         print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
                     continue
                 state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"

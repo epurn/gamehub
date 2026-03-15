@@ -1,0 +1,894 @@
+# PLAN: macos-support
+
+## Summary
+- Bring GAMEHUB to first-class macOS host support on the latest stable Apple Silicon macOS release.
+- Keep the work entirely in `gamehub_cli`, docs, and tests unless implementation uncovers a missing contract that must be frozen first.
+- Structure the work as small STORY packets that can be handed to Codex web one at a time with minimal extra context.
+
+## Context
+- Background: GAMEHUB now treats macOS as an in-scope v1 host platform, but the current CLI implementation is still Windows/Linux-centric across config, Steam integration, emulator discovery, runtime file mutation, save resolution, controller detection, and auto-install.
+- Current behavior: native Steam on macOS is not modeled; managed shortcuts assume Windows/Linux launch patterns; emulator/config/save roots assume Windows paths or Linux/XDG/Flatpak paths; controller detection assumes Linux `/proc` or Windows XInput.
+- Trigger/problem statement: the `mac-support` branch needs first-class macOS support for the latest stable Apple Silicon macOS release, integrated with native Steam and the existing GAMEHUB save-sync/controller/Steam mutation model.
+- Main modules expected to change:
+  - `src/gamehub_cli/common/config.py`
+  - `src/gamehub_cli/common/platform_paths.py`
+  - `src/gamehub_cli/steam/*`
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/emulators/*`
+  - `src/gamehub_cli/firmware/*`
+  - `src/gamehub_cli/controllers/*`
+  - `src/gamehub_cli/shortcuts/*`
+  - `docs/*`
+  - `tests/*`
+- Research baseline:
+  - Latest stable macOS version reference: https://support.apple.com/en-us/HT201260
+  - Valve native Apple Silicon Steam client/helper rollout baseline: https://steamcommunity.com/groups/SteamClientBeta/announcements/detail/545611272206420782
+  - RetroArch macOS install docs: https://docs.libretro.com/guides/install-macos/
+  - Dolphin download page: https://us.dolphin-emu.org/download/
+  - Dolphin macOS user-dir docs: https://dolphin-emu.org/docs/guides/controlling-global-user-directory/
+  - Azahar upstream repo/releases: https://github.com/azahar-emu/azahar
+  - PCSX2 upstream repo/releases: https://github.com/PCSX2/pcsx2
+
+## Goals
+- Deliver full macOS CLI parity on Apple Silicon for `init`, `sync`, native Steam shortcut lifecycle, save sync, firmware/runtime writes, artwork sync, and launch-time controller autoconfig.
+- Keep all work inside `gamehub_cli`, docs, and tests; no server or `gamehub_common` contract changes are planned.
+- Keep the supported path native-first: prefer native/universal Apple Silicon builds, keep Rosetta scoped narrowly, and do not support Intel Mac hosts.
+- Produce story scopes that are strict enough to hand to Codex web as one-line jobs.
+
+## Non-Goals
+- Intel Mac support.
+- Rosetta-based support or fallback behavior for RetroArch, Dolphin, Azahar, Steam, or any non-PCSX2 emulator.
+- Silent Rosetta fallback on Apple Silicon.
+- Steam Deck template work on macOS.
+- Auto-installing Steam itself.
+- Server/API/schema changes.
+- Best-effort support for unknown third-party macOS emulator layouts beyond documented/configurable roots.
+
+## Constraints
+- Windows and macOS local development support are required.
+- Keep diffs minimal and conflict-resistant for parallel work.
+- No dependency/lockfile/packaging changes unless explicitly required.
+- No repo-wide formatting.
+- Add a first-class `[macos]` config section; do not rename or repurpose `[linux]`.
+- Default supported install behavior must stay admin-free; use `~/Applications` rather than system-wide writes.
+- If any emulator lacks a reliable native Apple Silicon build when its story lands, GAMEHUB must report that emulator/system unsupported on macOS instead of using Rosetta, unless a later story explicitly allows PCSX2-only Rosetta behavior.
+- All user-data mutations on macOS must still follow backup + temp write + atomic replace + explicit log behavior.
+- Windows and Linux behavior must remain unchanged except where shared helpers need macOS-capable generalization.
+
+## Frozen Decisions
+- Host target: latest stable macOS only.
+- CPU target: Apple Silicon only.
+- Support target: full GAMEHUB CLI parity on macOS, with native Apple Silicon binaries as the default and recommended path.
+- Steam target: native macOS Steam only; GAMEHUB integrates with an existing Steam install and does not install Steam itself.
+- Config shape: add `[macos]`; do not overload `[linux]`.
+- Unsupported-native policy: if a system/emulator lacks a reliable native Apple Silicon path at implementation time, fail clearly instead of falling back to Rosetta, except where a later story explicitly introduces PCSX2-only fallback behavior.
+- Rosetta scope, if enabled later: PCSX2 only, native/universal still preferred, and no expansion to other emulators without a separate plan update.
+- Generic emulator path override env vars remain cross-platform:
+  - `GAMEHUB_RETROARCH_*`
+  - `GAMEHUB_PCSX2_*`
+  - `GAMEHUB_DOLPHIN_*`
+- New macOS-specific env vars should be limited to install policy keys unless implementation proves a missing contract.
+
+## Host Baseline
+- Local planning baseline captured on `2026-03-08`:
+  - host CPU: `arm64`
+  - observed macOS version: `26.3.1`
+  - observed Steam install: `/Applications/Steam.app`
+  - observed Steam userdata root: `~/Library/Application Support/Steam/userdata`
+- These observations are implementation aids, not the sole supported discovery path. Auto-discovery must still handle both `~/Applications` and `/Applications`.
+
+## Dispatch Rules
+- Each STORY below is intended to be implemented as a standalone Codex job.
+- A job should stay inside the story's explicit scope. If implementation reveals a missing contract outside scope, stop and update this plan first instead of widening the diff.
+- Unless the story explicitly allows it, do not opportunistically refactor adjacent modules.
+- Do not edit this plan from implementation stories unless the story uncovers a contract bug or the user explicitly asks for status maintenance. This avoids unnecessary merge conflicts between parallel story branches.
+- Prompt pattern for jobs:
+  - `Implement STORY <ID> from PLANS/mac-support. Stay within the explicit scope, satisfy every acceptance criterion, update docs/tests in scope, and run the listed validation command plus repo quality gates if behavior changes broadly.`
+
+## Contract Surface
+- Existing contracts touched:
+  - CLI TOML config/defaults
+  - Steam userdata/executable discovery and lifecycle
+  - Managed shortcut launch semantics
+  - Emulator install/runtime/save/firmware path resolution
+  - Controller detection/profile application
+- New/updated contract artifacts:
+  - New `[macos]` section with:
+    - `emulator_install_backend`
+    - `emulator_install_command`
+    - `retroarch_cfg_path`
+    - `retroarch_system_dir`
+    - `retroarch_cores_dir`
+    - `retroarch_info_dir`
+    - `retroarch_cores_base_url`
+    - `pcsx2_ini_path`
+    - `pcsx2_bios_dir`
+    - `dolphin_user_path`
+  - New env overrides:
+    - `GAMEHUB_MACOS_EMULATOR_INSTALL_BACKEND`
+    - `GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND`
+- `steam.steam_exe` accepts either a `.app` bundle path or the inner executable path on macOS and normalizes internally.
+  - macOS managed shortcuts use a shared launcher script plus payload registry, preserving app-bundle-safe launch semantics so Apple Silicon apps start natively and the wrapper can still wait for session exit.
+- Cross-boundary implications:
+  - No `gamehub_common` or server changes are expected.
+  - If a story discovers a missing shared contract, do not implement around it silently; freeze the new contract in this plan first.
+
+## Milestones
+1. M1: Freeze the macOS host contract: config surface, baseline platform helpers, native Steam discovery/lifecycle policy, and managed shortcut launch policy.
+2. M2: Deliver macOS runtime parity: emulator bundle resolution, save/firmware/runtime paths, and controller/runtime behavior.
+3. M3: Deliver macOS operator parity: native install automation, RetroArch core provisioning, template config, and release-validation docs.
+
+### Progress Snapshot
+- `M1`: Complete.
+- `M2`: Complete; `MACOS-CLI-05` and `MACOS-CLI-06` landed the remaining macOS save/runtime and controller parity work.
+- `M3`: Complete; `MACOS-CLI-07`, `MACOS-CLI-08`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, `MACOS-CLI-12`, `MACOS-CLI-13`, and `MACOS-DOCS-01` are complete.
+- Next recommended story: none.
+
+## Implementation Status
+- All scoped implementation stories in this plan are complete.
+- Final ship/no-ship sign-off is now the documented manual validation run in:
+  - `docs/release-final-validation-playbook.md`
+  - `docs/release-manual-checklist-v1.4.0.md`
+
+## Story Contracts
+### Completed Stories
+- `MACOS-CLI-01`: Complete
+- `MACOS-CLI-02`: Complete
+- `MACOS-CLI-03`: Complete
+- `MACOS-CLI-04`: Complete
+- `MACOS-CLI-05`: Complete
+- `MACOS-CLI-06`: Complete
+- `MACOS-CLI-07`: Complete
+- `MACOS-CLI-08`: Complete
+- `MACOS-CLI-09`: Complete
+- `MACOS-CLI-10`: Complete
+- `MACOS-CLI-11`: Complete
+- `MACOS-CLI-12`: Complete
+- `MACOS-CLI-13`: Complete
+- `MACOS-DOCS-01`: Complete
+
+### Completed Hardening Notes
+- `MACOS-CLI-03` shipped additional launch hardening after the initial story landed:
+  - macOS managed shortcuts now store payloads in the shortcut payload registry and pass only `title_id` through Steam.
+  - managed macOS Azahar launches now pin to `~/Applications/Azahar.app` when that bundle is present.
+  - macOS managed shortcuts now invoke `shortcut-launch` directly instead of emitting `steam-shortcut-launch.sh`.
+  - Apple Silicon managed launches still force native Python execution under Steam via `/usr/bin/arch -arm64` before invoking `shortcut-launch`.
+  - the runtime keeps bundle-safe launch via `/usr/bin/open -W -a <App> --args ...` and still waits for app exit before post-exit save work.
+  - legacy macOS shell-launcher/debug artifacts are pruned on sync rewrite so backups stay minimal and useful.
+- `MACOS-CLI-11` shipped a validated macOS RetroArch `N64` fallback after direct Apple Silicon launch testing:
+  - managed macOS `N64` now converges to `video_driver = "glcore"`, `mupen64plus-rdp-plugin = "angrylion"`, and `mupen64plus-rsp-plugin = "hle"`.
+  - existing `Mupen64Plus-Next` core/folder/game `.opt` overrides are rewritten to the same managed baseline so launch-time overrides cannot silently reintroduce the black-screen path.
+  - stale legacy `GLideN64`/`rspmode` keys are pruned during convergence, and the typed launcher blocker remains in place if the managed macOS `N64` remediation cannot converge safely.
+- `MACOS-CLI-13` shipped a validated macOS Steam lifecycle hardening pass after desktop-client reopen testing:
+  - automatic macOS sync now requests a graceful Steam app quit and waits for confirmed exit instead of immediately escalating to `pkill` / `pkill -9`
+  - Steam lifecycle helpers now surface `graceful_exit`, `still_running`, and `close_attempt_failed` so sync policy stays explicit
+  - Steam config writes are skipped or failed safely when Steam does not exit in time, without force-killing the desktop client
+  - manual validation confirmed Steam reopens with a working desktop window after a GAMEHUB sync that had to close and reopen it
+
+### Pending Stories
+- none currently
+
+### Deferred Stories
+- none currently
+
+### STORY MACOS-CLI-01
+- Type: CLI
+- Status: Complete
+- Depends On: none
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/common/config.py`
+  - `src/gamehub_cli/common/platform_paths.py`
+  - `tests/test_cli_config_state.py`
+  - `docs/config-and-state.md`
+  - `docs/platform-support.md`
+  - `docs/templates/config.macos.template.toml`
+- Read This First:
+  - `src/gamehub_cli/common/config.py`
+  - `src/gamehub_cli/common/platform_paths.py`
+  - `tests/test_cli_config_state.py`
+- Goal: freeze the macOS config contract and baseline platform-path helpers without changing runtime behavior yet.
+- Acceptance Criteria (deterministic):
+  - [x] `GamehubConfig` exposes a dedicated `macos` section and existing `[linux]` behavior is unchanged.
+  - [x] `[macos]` supports `auto|official|command|none` install backend plus the current path override surface used by RetroArch, PCSX2, and Dolphin.
+  - [x] `GAMEHUB_MACOS_EMULATOR_INSTALL_BACKEND` and `GAMEHUB_MACOS_EMULATOR_INSTALL_COMMAND` override config with the same precedence rules as other config env overrides.
+  - [x] Generic emulator path override env vars continue to work cross-platform and are not duplicated into mac-only names.
+  - [x] `default_gamehub_dir()` and helper paths remain correct on macOS and existing Windows/Linux defaults do not regress.
+  - [x] A checked-in `config.macos.template.toml` documents the supported native Steam/macOS baseline, Apple Silicon scope, and `~/Applications` install default.
+- Non-Goals:
+  - Steam process handling.
+  - Managed shortcut emission/runtime.
+  - Emulator auto-install implementation.
+- Implementation Notes:
+  - Keep the dataclass shape parallel to `LinuxConfig`, but do not remove or reinterpret `LinuxConfig`.
+  - If helper functions need to become mac-aware, make them explicit rather than folding macOS into generic non-Windows behavior.
+  - Keep docs scoped to config/platform contract only; operational runtime docs land later.
+- Tests Required (exact locations / names):
+  - `tests/test_cli_config_state.py::test_load_config_supports_macos_overrides_block`
+  - `tests/test_cli_config_state.py::test_load_config_supports_macos_env_precedence`
+  - `tests/test_cli_config_state.py::test_load_config_defaults_keep_linux_unchanged_when_macos_missing`
+  - existing affected coverage in `tests/test_cli_config_state.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_cli_config_state.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-01 from PLANS/mac-support. Stay within the explicit scope and freeze the macOS config contract without changing runtime behavior.`
+- PR Title Template: `CLI: freeze macOS config contract`
+- Rollback Risk: Low
+
+### STORY MACOS-CLI-02
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-01`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/steam/lifecycle.py`
+  - `src/gamehub_cli/steam/types.py`
+  - `src/gamehub_cli/steam/__init__.py`
+  - `tests/test_steam.py`
+  - `docs/steam-integration.md`
+- Read This First:
+  - `src/gamehub_cli/steam/lifecycle.py`
+  - `src/gamehub_cli/steam/types.py`
+  - `tests/test_steam.py`
+- Goal: add native macOS Steam discovery and lifecycle behavior while preserving the existing safety-first close/wait/reopen contract.
+- Acceptance Criteria (deterministic):
+  - [x] Steam userdata auto-discovery includes `~/Library/Application Support/Steam/userdata`.
+  - [x] Steam executable/app discovery supports both `~/Applications/Steam.app` and `/Applications/Steam.app`.
+  - [x] On macOS, `steam.steam_exe` accepts either a `.app` bundle or the inner executable path and is normalized consistently for lifecycle use.
+  - [x] Steam running detection checks macOS-native Steam processes first and does not rely on Linux process names on macOS.
+  - [x] Steam close behavior on macOS attempts a graceful app quit first and retains kill fallback if Steam does not exit.
+  - [x] Steam reopen behavior on macOS uses bundle-safe launch semantics (`open -a ...` or equivalent explicit app-path launch) and preserves existing “return bool success” behavior.
+  - [x] Existing Windows and Linux lifecycle tests continue to pass unchanged.
+- Non-Goals:
+  - Managed shortcut emission.
+  - Emulator runtime or save-path changes.
+  - Steam installation automation.
+- Implementation Notes:
+  - Keep `--require-steam-closed` semantics unchanged; this story only changes how macOS fulfills close/wait/reopen.
+  - Prefer explicit macOS branches over widening Linux behavior.
+  - Do not make GUI-only assumptions that would break headless/unit-test execution; shell out in best-effort helpers only.
+- Tests Required (exact locations / names):
+  - `tests/test_steam.py::test_candidate_userdata_dirs_include_macos_path`
+  - `tests/test_steam.py::test_discover_userdata_dir_finds_macos_userdata`
+  - `tests/test_steam.py::test_is_steam_running_macos_checks_native_process_name`
+  - `tests/test_steam.py::test_close_steam_best_effort_macos_prefers_graceful_quit_then_kill`
+  - `tests/test_steam.py::test_reopen_steam_macos_uses_open_app`
+  - existing affected coverage in `tests/test_steam.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_steam.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-02 from PLANS/mac-support. Stay within the explicit scope and add macOS Steam discovery/lifecycle without touching shortcut emission yet.`
+- PR Title Template: `CLI: add macOS Steam discovery and lifecycle`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-03
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/common/shortcut_payload.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `src/gamehub_cli/shortcuts/shortcut_launch.py`
+  - `tests/test_sync.py`
+  - `tests/test_shortcut_payload.py`
+  - `tests/test_shortcut_runtime.py`
+  - `docs/steam-integration.md`
+- Read This First:
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/common/shortcut_payload.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `tests/test_sync.py`
+- Goal: emit macOS-managed Steam shortcuts with app-bundle-safe launch semantics and keep the wrapper able to wait for real session exit before post-launch save sync.
+- Acceptance Criteria (deterministic):
+  - [x] On macOS, GAMEHUB does not emit managed shortcuts that directly run `Contents/MacOS/...` for app bundles.
+  - [x] Managed shortcut payloads preserve enough structured information for the runtime wrapper to launch bundle apps natively and still know which emulator/session is being managed.
+  - [x] macOS launch-option parsing and joining use POSIX-safe behavior and do not regress current Windows quoting behavior.
+  - [x] The shortcut runtime waits for the launched macOS app session to exit before post-exit save sync runs.
+  - [x] On Apple Silicon macOS, managed shortcuts bootstrap native Python execution under Steam without per-title launcher churn.
+  - [x] Existing non-mac shortcut wrapper behavior remains unchanged.
+- Non-Goals:
+  - Steam process lifecycle.
+  - Emulator discovery/install.
+  - Save root resolution changes.
+- Implementation Notes:
+  - Final implementation uses a shared macOS launcher script plus the shortcut payload registry so Steam launch options stay short and deterministic.
+  - `open -W -a <App> --args ...` remains the bundle-safe runtime launch contract.
+  - If the payload contract must expand for macOS, keep it explicit and backwards-compatible in `parse_shortcut_payload`.
+  - Preserve existing fail-open runtime warnings and save-session ordering.
+- Tests Required (exact locations / names):
+  - `tests/test_sync.py::test_build_steam_shortcuts_macos_uses_bundle_safe_wrapper_launch`
+  - `tests/test_shortcut_payload.py::test_parse_shortcut_payload_preserves_macos_open_args`
+  - `tests/test_shortcut_runtime.py::test_run_target_macos_uses_open_wait_args`
+  - `tests/test_shortcut_runtime.py::test_run_target_macos_waits_for_session_exit_before_return`
+  - existing affected coverage in `tests/test_sync.py` and `tests/test_shortcut_runtime.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_sync.py tests/test_shortcut_payload.py tests/test_shortcut_runtime.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-03 from PLANS/mac-support. Stay within the explicit scope and make managed Steam shortcuts launch macOS app bundles safely while preserving wrapper wait behavior.`
+- PR Title Template: `CLI: add macOS managed shortcut emission`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-04
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-01`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/common/platform_paths.py`
+  - `src/gamehub_cli/emulators/resolution.py`
+  - `src/gamehub_cli/firmware/targets.py`
+  - `tests/test_emulators.py`
+  - `tests/test_firmware_deploy.py`
+- Read This First:
+  - `src/gamehub_cli/emulators/resolution.py`
+  - `src/gamehub_cli/firmware/targets.py`
+  - `tests/test_emulators.py`
+- Goal: make emulator resolution and runtime config root discovery deterministic on macOS, with `.app` bundle support and frozen default roots.
+- Acceptance Criteria (deterministic):
+  - [x] Emulator resolution discovers `.app` bundles in `~/Applications` first, then `/Applications`, then PATH aliases.
+  - [x] When a `.app` bundle is discovered, GAMEHUB resolves the actual executable from the bundle metadata instead of assuming a fixed binary name.
+  - [x] RetroArch default roots resolve under `~/Library/Application Support/RetroArch`.
+  - [x] Dolphin default roots resolve under `~/Library/Application Support/Dolphin`.
+  - [x] PCSX2 default roots resolve under `~/Library/Application Support/PCSX2`.
+  - [x] Azahar default roots resolve under `~/Library/Application Support/Azahar`.
+  - [x] Windows and Linux resolution order remains unchanged.
+- Non-Goals:
+  - Save artifact mapping.
+  - Controller profile behavior.
+  - Install automation.
+- Implementation Notes:
+  - Prefer helper extraction in `platform_paths.py` for app-bundle resolution if reused by multiple emulator/runtime callers.
+  - Do not hardcode `Contents/MacOS/<Name>` when `Info.plist` can provide the executable name.
+  - Keep existing Windows portable-layout behavior intact.
+- Tests Required (exact locations / names):
+  - `tests/test_emulators.py::test_resolve_emulator_executable_macos_prefers_user_applications_bundle`
+  - `tests/test_emulators.py::test_resolve_emulator_executable_macos_falls_back_to_system_applications_bundle`
+  - `tests/test_firmware_deploy.py::test_resolve_runtime_targets_macos_use_application_support_roots`
+  - existing affected coverage in `tests/test_emulators.py` and `tests/test_firmware_deploy.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_emulators.py tests/test_firmware_deploy.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-04 from PLANS/mac-support. Stay within the explicit scope and add deterministic macOS app-bundle resolution plus default runtime roots.`
+- PR Title Template: `CLI: add macOS emulator resolution and runtime roots`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-05
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-04`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/emulators/save_resolution.py`
+  - `src/gamehub_cli/firmware/runtime_retroarch.py`
+  - `src/gamehub_cli/firmware/runtime_pcsx2.py`
+  - `src/gamehub_cli/firmware/runtime_azahar.py`
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `tests/test_emulators.py`
+  - `tests/test_firmware_deploy.py`
+  - `tests/test_shortcut_save_session.py`
+- Read This First:
+  - `src/gamehub_cli/emulators/save_resolution.py`
+  - `src/gamehub_cli/firmware/runtime_retroarch.py`
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `tests/test_shortcut_save_session.py`
+- Goal: make save sync and runtime file mutation work against macOS-native emulator roots while preserving atomic/backup/logged mutation rules.
+- Acceptance Criteria (deterministic):
+  - [x] Save roots for RetroArch, Dolphin, PCSX2, and Azahar resolve correctly from macOS-native defaults or explicit config overrides.
+  - [x] Managed memory-card and battery-save handling continues to work for macOS launches.
+  - [x] Runtime mutation helpers for RetroArch, PCSX2, and Azahar use macOS roots without in-place overwrite regressions.
+  - [x] Existing save-session behavior stays deterministic and idempotent for repeated launches.
+  - [x] Windows and Linux save-resolution behavior remains unchanged.
+- Non-Goals:
+  - Controller discovery/binding.
+  - Emulator installation.
+  - Steam lifecycle.
+- Implementation Notes:
+  - Reuse the path-resolution helpers from `MACOS-CLI-04`; do not duplicate root logic in each runtime writer.
+  - If a macOS root does not exist, preserve current fail-open behavior with explicit warning rather than inventing new directories silently.
+  - Save-session helpers should continue to resolve the emulator/session identity from payload structure rather than from OS-specific heuristics.
+- Tests Required (exact locations / names):
+  - `tests/test_emulators.py::test_resolve_system_save_root_macos_retroarch`
+  - `tests/test_emulators.py::test_resolve_system_save_root_macos_pcsx2`
+  - `tests/test_emulators.py::test_resolve_system_save_root_macos_dolphin`
+  - `tests/test_emulators.py::test_resolve_system_save_root_macos_azahar`
+  - `tests/test_shortcut_save_session.py::test_managed_memory_card_paths_macos`
+  - existing affected coverage in `tests/test_firmware_deploy.py` and `tests/test_shortcut_save_session.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_emulators.py tests/test_firmware_deploy.py tests/test_shortcut_save_session.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-05 from PLANS/mac-support. Stay within the explicit scope and wire macOS save/runtime roots into save sync and runtime config mutation.`
+- PR Title Template: `CLI: add macOS save resolution and runtime mutation`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-06
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-04`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/controllers/detection.py`
+  - `src/gamehub_cli/controllers/sdl_guid.py`
+  - `src/gamehub_cli/controllers/apply_dolphin.py`
+  - `src/gamehub_cli/controllers/apply_azahar.py`
+  - `tests/test_controller_detection.py`
+  - `tests/test_controller_apply.py`
+- Read This First:
+  - `src/gamehub_cli/controllers/detection.py`
+  - `src/gamehub_cli/controllers/apply_dolphin.py`
+  - `src/gamehub_cli/controllers/apply_azahar.py`
+  - `tests/test_controller_detection.py`
+- Goal: add macOS controller discovery and deterministic profile application without adding new profile names or breaking fail-open launch behavior.
+- Acceptance Criteria (deterministic):
+  - [x] macOS controller detection uses SDL-based host probing rather than Linux `/proc` parsing or Windows XInput.
+  - [x] Profile selection remains `kbm`, `xbox_1p`, `xbox_2p`.
+  - [x] Controller detection failure still falls back to `kbm` with warning instead of aborting launch.
+  - [x] Dolphin macOS device bindings use mac-compatible identifiers and preserve existing deterministic rebind/preserve rules where applicable.
+  - [x] Azahar macOS profile application injects/normalizes SDL identity tokens suitable for native macOS runtime use.
+- Non-Goals:
+  - New dependencies for controller discovery.
+  - Steam Input template changes.
+  - New controller profile taxonomy.
+- Implementation Notes:
+  - Prefer extending the existing SDL identity helpers over adding a parallel mac-only detection stack.
+  - Keep host probing low-level and fail-open.
+  - Avoid embedding per-device vendor heuristics beyond what SDL already exposes.
+- Tests Required (exact locations / names):
+  - `tests/test_controller_detection.py::test_detect_xbox_controllers_macos_uses_sdl_probe`
+  - `tests/test_controller_detection.py::test_detect_xbox_controllers_macos_failure_returns_empty`
+  - `tests/test_controller_apply.py::test_apply_dolphin_profile_macos_uses_sdl_device_names`
+  - `tests/test_controller_apply.py::test_apply_azahar_profile_macos_injects_sdl_identity`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_controller_detection.py tests/test_controller_apply.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-06 from PLANS/mac-support. Stay within the explicit scope and add macOS SDL-based controller detection plus deterministic Dolphin/Azahar profile application.`
+- PR Title Template: `CLI: add macOS controller detection and profile application`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-12
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-05`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `src/gamehub_cli/emulators/save_resolution.py`
+  - `tests/test_shortcut_save_session.py`
+  - `docs/cli-sync.md`
+  - `docs/config-and-state.md`
+- Read This First:
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `src/gamehub_cli/emulators/save_resolution.py`
+  - `tests/test_shortcut_save_session.py`
+- Goal: close the macOS PSX save-sync gap discovered in manual validation so managed Swanstation memory-card saves sync deterministically at launch and post-exit.
+- Acceptance Criteria (deterministic):
+  - [x] A managed macOS `PSX` shortcut with save sync enabled downloads the indexed memory-card save into the resolved RetroArch save root before launch.
+  - [x] The same session uploads newly created or changed `GH_<title_id>_1.mcd` / `GH_<title_id>_2.mcd` artifacts after exit without waiting for a later full sync.
+  - [x] Existing per-title `.srm` preservation behavior remains intact when an operator already has a canonical local Swanstation save.
+  - [x] Save destination resolution stays deterministic across `~/Documents/RetroArch` and `~/Library/Application Support/RetroArch` layouts on macOS.
+  - [x] Windows and Linux `PSX` save-session behavior remains unchanged.
+- Non-Goals:
+  - PSX controller mapping changes.
+  - Non-PSX save-sync regressions.
+  - RetroArch core provisioning or launch-template changes.
+- Implementation Notes:
+  - Treat this as a validation remediation story layered on top of `MACOS-CLI-05`; do not widen it into generic save-sync refactoring.
+  - Reuse existing exact-file binding and runtime memory-card helpers instead of introducing macOS-only save heuristics.
+  - If the bug is caused by root selection drift between prelaunch download and post-exit upload, fix the shared resolver once and cover both phases in tests.
+- Tests Required (exact locations / names):
+  - `tests/test_shortcut_save_session.py::test_shortcut_prelaunch_download_mode_fetches_save_bindings_for_psx`
+  - `tests/test_shortcut_save_session.py::test_managed_memory_card_paths_macos`
+  - new focused macOS regression coverage in `tests/test_shortcut_save_session.py` for prelaunch download plus post-exit upload of managed PSX memory cards
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_shortcut_save_session.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-12 from PLANS/mac-support. Stay within the explicit scope and fix the macOS PSX managed save-sync regression discovered during manual validation.`
+- PR Title Template: `CLI: fix macOS PSX managed save sync`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-07
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-04`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/emulators/installer.py`
+  - `src/gamehub_cli/emulators/install_common.py`
+  - `src/gamehub_cli/emulators/install_macos.py`
+  - `src/gamehub_cli/emulators/resolution.py`
+  - `src/gamehub_cli/firmware/retroarch_cores.py`
+  - `tests/test_emulators.py`
+  - `tests/test_retroarch_cores.py`
+  - `docs/client-install.md`
+- Read This First:
+  - `src/gamehub_cli/emulators/installer.py`
+  - `src/gamehub_cli/firmware/retroarch_cores.py`
+  - `tests/test_emulators.py`
+  - `tests/test_retroarch_cores.py`
+- Goal: add native Apple Silicon macOS emulator install automation and RetroArch core provisioning, using only supported native/universal upstream assets.
+- Acceptance Criteria (deterministic):
+  - [x] `ensure_emulators()` supports macOS with `auto -> official`, `command`, and `none`.
+  - [x] The supported default install target is `~/Applications`.
+  - [x] Steam is never auto-installed by GAMEHUB.
+  - [x] Official install logic consumes only native Apple Silicon or universal upstream assets.
+  - [x] Missing or non-native upstream assets produce a deterministic unsupported/manual-install message instead of Rosetta fallback.
+  - [x] RetroArch core provisioning supports macOS `.dylib` cores and a macOS Apple Silicon buildbot base URL.
+- Non-Goals:
+  - Homebrew as a first-class built-in backend.
+  - Rosetta fallback.
+  - Installation of unsupported emulators through unofficial mirrors.
+- Implementation Notes:
+  - `install_macos.py` is the only justified new domain module in this feature.
+  - Freeze official asset URLs and selection rules at implementation time using primary upstream sources; do not hardcode speculative filenames from this plan.
+  - PCSX2 is the main risk area. Validate the current upstream release asset shape when implementing this story. If native Apple Silicon support is not reliable enough, fail clearly for PS2/macOS instead of silently degrading.
+- Tests Required (exact locations / names):
+  - `tests/test_emulators.py::test_ensure_emulators_macos_auto_uses_official_backend`
+  - `tests/test_emulators.py::test_ensure_emulators_macos_none_backend_reports_disabled`
+  - `tests/test_emulators.py::test_ensure_emulators_macos_command_backend_runs_template`
+  - `tests/test_emulators.py::test_ensure_emulators_macos_official_backend_rejects_non_native_asset`
+  - `tests/test_retroarch_cores.py::test_ensure_retroarch_cores_macos_uses_dylib_suffix`
+  - existing affected coverage in `tests/test_emulators.py` and `tests/test_retroarch_cores.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_emulators.py tests/test_retroarch_cores.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-07 from PLANS/mac-support. Stay within the explicit scope and add native macOS installer support plus RetroArch core provisioning without Rosetta fallback.`
+- PR Title Template: `CLI: add macOS install backend and RetroArch core provisioning`
+- Rollback Risk: High
+
+### STORY MACOS-CLI-08
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-04`, `MACOS-CLI-07`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/common/config.py`
+  - `src/gamehub_cli/emulators/installer.py`
+  - `src/gamehub_cli/emulators/install_macos.py`
+  - `src/gamehub_cli/emulators/resolution.py`
+  - `src/gamehub_cli/sync/orchestrator.py`
+  - `tests/test_cli_config_state.py`
+  - `tests/test_emulators.py`
+  - `docs/client-install.md`
+  - `docs/config-and-state.md`
+  - `docs/platform-support.md`
+  - `docs/templates/config.macos.template.toml`
+  - `PLANS/mac-support.md`
+- Read This First:
+  - `src/gamehub_cli/emulators/install_macos.py`
+  - `src/gamehub_cli/emulators/installer.py`
+  - `tests/test_emulators.py`
+- Goal: add default-on Rosetta fallback support for Intel-only PCSX2 on Apple Silicon macOS while keeping every other macOS emulator path native-only.
+- Acceptance Criteria (deterministic):
+  - [x] Default macOS behavior still prefers native/universal builds for all emulators.
+  - [x] A dedicated `[macos]` opt-out switch and matching env override control strict native-only PCSX2 behavior, defaulting to disabled.
+  - [x] When the opt-out is disabled, Intel-only PCSX2 is accepted only if Rosetta is already available on the host; otherwise GAMEHUB fails clearly with an actionable message.
+  - [x] When the opt-out is enabled, Intel-only PCSX2 assets remain unsupported on Apple Silicon macOS.
+  - [x] RetroArch, Dolphin, Azahar, and Steam remain native-only and continue to reject Intel-only/non-native assets.
+  - [x] Managed PCSX2 launch/runtime behavior remains unchanged after install/discovery; this story does not widen save/controller/runtime policy.
+- Non-Goals:
+  - Rosetta support for RetroArch, Dolphin, Azahar, or Steam.
+  - Automatic Rosetta installation or prompting the operator to install Rosetta from inside GAMEHUB.
+  - Intel Mac support.
+- Implementation Notes:
+  - Keep Rosetta policy local to the macOS config/install/discovery path; do not loosen runtime behavior globally.
+  - Preserve the existing native `.dylib` RetroArch core policy even when PCSX2 Rosetta support is enabled.
+  - Prefer an explicit host capability probe for Rosetta presence over best-effort launch assumptions.
+- Tests Required (exact locations / names):
+  - `tests/test_cli_config_state.py::test_load_config_defaults_disable_pcsx2_rosetta_to_false`
+  - `tests/test_emulators.py::test_ensure_emulators_macos_pcsx2_rejects_x86_64_when_rosetta_disabled`
+  - `tests/test_emulators.py::test_ensure_emulators_macos_pcsx2_accepts_x86_64_when_rosetta_available_by_default`
+  - `tests/test_emulators.py::test_ensure_emulators_macos_pcsx2_rosetta_requires_runtime`
+  - `tests/test_emulators.py::test_macos_non_pcsx2_emulators_still_reject_x86_64_assets`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_cli_config_state.py tests/test_emulators.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-08 from PLANS/mac-support. Stay within the explicit scope and add default-on PCSX2-only Rosetta fallback support on Apple Silicon macOS without widening Rosetta support to any other emulator.`
+- PR Title Template: `CLI: add default-on macOS Rosetta fallback for PCSX2`
+- Rollback Risk: High
+
+### STORY MACOS-CLI-09
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-07`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/emulators/resolution.py`
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `tests/test_emulators.py`
+  - `tests/test_shortcut_runtime.py`
+  - `tests/test_sync.py`
+  - `docs/client-install.md`
+- Read This First:
+  - `src/gamehub_cli/emulators/resolution.py`
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `tests/test_shortcut_runtime.py`
+- Goal: make managed macOS Azahar launches always target the working user-installed bundle under `~/Applications` when present, so Steam launch does not depend on Spotlight or LaunchServices choosing the right Azahar copy.
+- Acceptance Criteria (deterministic):
+  - [x] When `~/Applications/Azahar.app` exists, emulator resolution and managed shortcut payloads pin Azahar launch to that exact bundle path rather than relying on app-name lookup or another discovered copy.
+  - [x] Managed macOS runtime launch uses an explicit app path that reproduces the working Finder launch behavior for Azahar and still waits for process exit before post-exit save work.
+  - [x] If the user-installed Azahar bundle is absent, existing fallback order remains deterministic (`/Applications` bundle, then PATH alias) and non-Azahar macOS emulator behavior is unchanged.
+  - [x] Existing Windows/Linux launch behavior remains unchanged.
+- Non-Goals:
+  - Azahar save-root fixes.
+  - Controller binding changes.
+  - Rosetta support or architecture fallback.
+  - General macOS LaunchServices refactors beyond what is required to pin Azahar to the working bundle path.
+- Implementation Notes:
+  - Reuse the macOS bundle-resolution helpers from `MACOS-CLI-04`; do not add a second app-discovery path for Azahar.
+  - Prefer explicit bundle-path launch over app-name launch when building the managed payload/runtime command for macOS Azahar.
+  - Treat `~/Applications/Azahar.app` as the canonical working install when present, even if another Azahar copy is discoverable elsewhere.
+  - Preserve the existing shared launcher/payload-registry contract from `MACOS-CLI-03`.
+- Tests Required (exact locations / names):
+  - `tests/test_emulators.py::test_resolve_emulator_executable_macos_prefers_user_applications_bundle`
+  - `tests/test_sync.py::test_build_steam_shortcuts_macos_azahar_pins_user_applications_bundle`
+  - `tests/test_shortcut_runtime.py::test_run_target_macos_uses_explicit_azahar_user_bundle_path`
+  - existing affected coverage in `tests/test_emulators.py`, `tests/test_shortcut_runtime.py`, and `tests/test_sync.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_emulators.py tests/test_shortcut_runtime.py tests/test_sync.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-09 from PLANS/mac-support. Stay within the explicit scope and make managed macOS Azahar launch pin to the working ~/Applications bundle path when present, preserving wrapper wait behavior and leaving non-Azahar platforms unchanged.`
+- PR Title Template: `CLI: pin macOS Azahar launch to user Applications bundle`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-10
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-03`, `MACOS-CLI-09`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `tests/test_sync.py`
+  - `tests/test_shortcut_runtime.py`
+  - `docs/steam-integration.md`
+  - `docs/client-install.md`
+- Read This First:
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `src/gamehub_cli/shortcuts/runtime.py`
+  - `tests/test_sync.py`
+  - `tests/test_shortcut_runtime.py`
+- Goal: remove the shared macOS shell launcher from managed shortcuts while aligning the macOS managed launch chain with the existing Windows/Linux shape as closely as possible, without regressing the current payload-registry contract, Apple Silicon Python handoff, wait semantics, or pre/post-launch save work.
+- Acceptance Criteria (deterministic):
+  - [x] Managed macOS shortcuts no longer emit or depend on `steam-shortcut-launch.sh`.
+  - [x] Steam still launches managed macOS shortcuts through `shortcut-launch` with the payload registry or an equally explicit replacement contract.
+  - [x] The macOS managed shortcut emission/runtime path conforms to the existing Windows/Linux launch-chain structure as closely as possible; platform-specific differences are limited to what macOS app-bundle/native execution actually requires.
+  - [x] Apple Silicon macOS still executes the managed launch path natively without Rosetta-only fallback behavior.
+  - [x] Wait-for-exit behavior and post-exit save sync remain intact for RetroArch, Dolphin, and Azahar managed macOS launches.
+  - [x] Windows and Linux shortcut emission/runtime behavior remain unchanged.
+- Non-Goals:
+  - Azahar-specific launch heuristics beyond what already landed in `MACOS-CLI-09`.
+  - Save-root/controller-profile changes.
+  - Replacing the payload registry with a new cross-boundary contract.
+- Implementation Notes:
+  - Keep this as a launch-chain cleanup story, not a broad macOS shortcut redesign.
+  - Prefer reusing the same `shortcut-launch` entry model and overall control flow that Windows/Linux already use; only retain macOS-specific divergence where bundle launch/runtime semantics require it.
+  - If Steam still needs an intermediary on macOS, prefer a non-shell path and keep the diff scoped to managed shortcut emission/runtime.
+  - Preserve the safety properties that motivated the current shell wrapper: deterministic payload lookup, arm64 execution, and save-sync/wait coordination.
+- Tests Required (exact locations / names):
+  - `tests/test_sync.py::test_build_shortcut_specs_macos_managed_launch_does_not_emit_shell_launcher`
+  - `tests/test_shortcut_runtime.py::test_run_target_macos_managed_launch_without_shell_wrapper_preserves_wait_behavior`
+  - existing affected coverage in `tests/test_sync.py` and `tests/test_shortcut_runtime.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_sync.py tests/test_shortcut_runtime.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-10 from PLANS/mac-support. Stay within the explicit scope and remove the shared macOS shell launcher from managed shortcuts, conforming to the Windows/Linux managed launch shape as much as possible while preserving any macOS-specific differences still required for correct behavior.`
+- PR Title Template: `CLI: remove macOS managed shell launcher`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-11
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-07`, `MACOS-CLI-10`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/firmware/runtime_retroarch.py`
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `src/gamehub_cli/shortcuts/shortcut_launch.py`
+  - `tests/test_firmware_deploy.py`
+  - `tests/test_shortcut_save_session.py`
+  - `tests/test_shortcut_orchestrator.py`
+  - `docs/config-and-state.md`
+  - `docs/client-install.md`
+- Read This First:
+  - `src/gamehub_cli/firmware/runtime_retroarch.py`
+  - `src/gamehub_cli/shortcuts/save_session.py`
+  - `tests/test_firmware_deploy.py`
+  - `tests/test_shortcut_save_session.py`
+- Goal: diagnose and remediate the macOS RetroArch N64 black-screen launch issue on Apple Silicon, preferring a deterministic config/core-options fix that GAMEHUB can manage safely.
+- Acceptance Criteria (deterministic):
+  - [x] Manual validation for a managed macOS RetroArch N64 launch no longer produces the current "audio works, video stays black" failure on the tested Apple Silicon baseline.
+  - [x] Any required RetroArch or core-option mutation is scoped narrowly to the N64/macOS case and continues to follow backup + temp write + atomic replace + explicit log rules.
+  - [x] Repeated sync/launch passes remain deterministic and idempotent; no unrelated RetroArch keys churn after the first converged write.
+  - [x] Existing non-N64 RetroArch behavior and Windows/Linux RetroArch behavior remain unchanged.
+  - [x] If a safe config-only remediation is not reliable enough, GAMEHUB fails clearly for managed macOS N64 launches instead of silently preserving the broken black-screen path.
+- Non-Goals:
+  - Broad RetroArch video-driver redesign.
+  - Non-N64 core tuning or per-game hacks beyond the tested macOS N64 path.
+  - Rosetta fallback or alternate emulator support for N64.
+  - Reopening general Steam shortcut launch semantics outside the N64-specific diagnosis.
+- Implementation Notes:
+  - Start with the smallest plausible operator-safe remediation: RetroArch video-driver/default runtime keys and `retroarch-core-options.cfg` values for the N64 core path already provisioned by GAMEHUB.
+  - Prefer a config/core-options solution over launch-argument surgery. If launch-time overrides outside the listed scope become necessary, stop and update this plan first.
+  - Keep the fix explicit and testable; do not add heuristics that silently vary by title name or ROM content.
+  - Preserve existing save-session and runtime mutation guarantees while adding any N64-specific overrides.
+  - A typed launcher blocker in `shortcut_launch.py` is allowed for this story only because the existing generic prelaunch save-sync path is intentionally fail-open and cannot satisfy the story's "fail clearly instead of preserving the broken path" acceptance on its own.
+- Tests Required (exact locations / names):
+  - `tests/test_firmware_deploy.py::test_configure_retroarch_runtime_macos_applies_n64_video_remediation`
+  - `tests/test_shortcut_save_session.py::test_run_shortcut_prelaunch_save_sync_macos_n64_preserves_retroarch_n64_runtime_override_idempotently`
+  - `tests/test_shortcut_orchestrator.py::test_run_shortcut_launch_blocks_managed_macos_n64_when_retroarch_remediation_cannot_converge`
+  - existing affected coverage in `tests/test_firmware_deploy.py` and `tests/test_shortcut_save_session.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_firmware_deploy.py tests/test_shortcut_save_session.py tests/test_shortcut_orchestrator.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-11 from PLANS/mac-support. Stay within the explicit scope and remediate the managed macOS RetroArch N64 black-screen issue with a deterministic config/core-options fix if possible; otherwise fail clearly instead of preserving the broken path.`
+- PR Title Template: `CLI: remediate macOS RetroArch N64 black screen`
+- Rollback Risk: Medium
+
+### STORY MACOS-CLI-13
+- Type: CLI
+- Status: Complete
+- Depends On: `MACOS-CLI-02`
+- Scope (explicit files/modules allowed):
+  - `src/gamehub_cli/steam/lifecycle.py`
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `tests/test_steam.py`
+  - `tests/test_sync.py`
+  - `docs/steam-integration.md`
+  - `docs/cli-sync.md`
+- Read This First:
+  - `src/gamehub_cli/steam/lifecycle.py`
+  - `src/gamehub_cli/sync/steam_stage.py`
+  - `tests/test_steam.py`
+  - `tests/test_sync.py`
+- Goal: investigate the macOS Steam shutdown path used during sync and harden it so GAMEHUB closes Steam non-forcefully by default, avoiding automatic force-kill escalation that can leave the desktop client in a broken UI state.
+- Acceptance Criteria (deterministic):
+  - [x] The macOS Steam close path no longer unconditionally runs `pkill` / `pkill -9` immediately after the AppleScript quit request.
+  - [x] On macOS, GAMEHUB requests a graceful Steam app quit, waits for confirmed exit, and reports a clear non-destructive failure if Steam stays running.
+  - [x] `apply_steam_updates()` only writes Steam config after confirmed Steam exit; when Steam does not exit in time, it skips updates or fails according to `require_steam_closed` without force-killing the app.
+  - [x] Existing Windows and Linux Steam lifecycle behavior remains unchanged.
+  - [x] Manual macOS validation confirms Steam still reopens with a working desktop window after a GAMEHUB sync that had to close/reopen Steam.
+- Non-Goals:
+  - Big Picture-specific runtime changes.
+  - Adding a broad new force-kill CLI flag or policy toggle.
+  - General Steam desktop UI repair outside the GAMEHUB-managed shutdown/reopen path.
+- Implementation Notes:
+  - Treat the current macOS sequence in `close_steam_best_effort()` as the suspected regression trigger: it sends `osascript ... quit` and then immediately runs `pkill` plus `pkill -9` over the Steam process set without an intervening wait.
+  - Prefer tightening the lifecycle helper contract so the caller can distinguish `graceful_exit`, `still_running`, and `close_attempt_failed` instead of burying policy in a fire-and-forget helper.
+  - Keep the automatic macOS sync path safety-first: if investigation shows a forceful fallback is still needed for some operator workflow, stop and update this plan with an explicit opt-in policy instead of silently keeping it on by default.
+- Tests Required (exact locations / names):
+  - `tests/test_steam.py::test_close_steam_best_effort_macos_requests_quit_without_immediate_force_kill`
+  - `tests/test_sync.py::test_apply_steam_updates_macos_skips_when_steam_does_not_exit_gracefully`
+  - existing affected coverage in `tests/test_steam.py` and `tests/test_sync.py`
+- Validation Command:
+  - `./venv/bin/python -m pytest tests/test_steam.py tests/test_sync.py -p no:cacheprovider`
+- Prompt Seed:
+  - `Implement STORY MACOS-CLI-13 from PLANS/mac-support. Stay within the explicit scope and harden macOS Steam shutdown so GAMEHUB closes Steam non-forcefully by default and never force-kills the desktop client during automatic sync.`
+- PR Title Template: `CLI: harden macOS Steam shutdown`
+- Rollback Risk: Medium
+
+### STORY MACOS-DOCS-01
+- Type: DOCS
+- Status: Complete
+- Depends On: `MACOS-CLI-01`, `MACOS-CLI-02`, `MACOS-CLI-03`, `MACOS-CLI-04`, `MACOS-CLI-05`, `MACOS-CLI-06`, `MACOS-CLI-07`, `MACOS-CLI-09`, `MACOS-CLI-10`, `MACOS-CLI-11`, `MACOS-CLI-12`, `MACOS-CLI-13`
+- Scope (explicit files/modules allowed):
+  - `docs/client-install.md`
+  - `docs/platform-support.md`
+  - `docs/config-and-state.md`
+  - `docs/cli-sync.md`
+  - `docs/steam-integration.md`
+  - `docs/development.md`
+  - `docs/release-final-validation-playbook.md`
+  - `docs/release-manual-checklist-v1.4.0.md`
+  - `PLANS/mac-support.md`
+- Read This First:
+  - all finalized behavior in merged macOS stories
+  - current contents of the docs listed above
+- Goal: make macOS operator, development, and release-validation docs complete, runnable, and aligned with the implemented behavior.
+- Acceptance Criteria (deterministic):
+  - [x] Docs describe latest-macOS Apple Silicon as a validated host target and state the current Rosetta policy accurately.
+  - [x] Docs show native Steam roots, `Steam.app` handling, `~/Applications` install defaults, and macOS validation commands.
+  - [x] Docs describe the `[macos]` config section and its supported overrides.
+  - [x] Release validation adds a dedicated macOS lane covering first sync, second-pass idempotency, managed Steam launch, save sync, and controller autoconfig.
+  - [x] This plan file is updated with completed-story status and any implementation-driven contract refinements.
+- Non-Goals:
+  - New runtime behavior.
+  - Broad docs cleanup unrelated to macOS support.
+- Implementation Notes:
+  - This story should be the last one unless a prior story changes a user-facing contract that must be documented immediately.
+  - Keep docs runnable and terse; prefer concrete paths and commands over prose.
+- Tests Required (exact locations / names):
+  - documentation review only
+  - manual validation using the matrix below
+- Validation Command:
+  - repo quality gates after the final implementation story
+- Prompt Seed:
+  - `Implement STORY MACOS-DOCS-01 from PLANS/mac-support. Stay within docs/PLANS scope and make the macOS docs and validation playbook implementation-accurate.`
+- PR Title Template: `DOCS: finalize macOS operator and validation guides`
+- Rollback Risk: Low
+
+## Parallelization Notes
+- Lane assignment:
+  - Foundation lane:
+    - `MACOS-CLI-01`
+  - Steam lane:
+    - `MACOS-CLI-02`
+    - `MACOS-CLI-03`
+    - `MACOS-CLI-13`
+  - Runtime lane:
+    - `MACOS-CLI-04`
+    - `MACOS-CLI-05`
+    - `MACOS-CLI-11`
+    - `MACOS-CLI-12`
+  - Controller lane:
+    - `MACOS-CLI-06`
+  - Installer lane:
+    - `MACOS-CLI-07`
+  - Compatibility lane:
+    - `MACOS-CLI-08`
+  - Docs lane:
+    - `MACOS-DOCS-01`
+- Conflict-avoidance notes:
+  - Do not start any non-doc story before `MACOS-CLI-01` lands; it freezes the config/platform contract.
+  - Keep `MACOS-CLI-02` and `MACOS-CLI-03` sequential; both touch Steam/shortcut launch behavior and `docs/steam-integration.md`.
+  - `MACOS-CLI-04` should land before `MACOS-CLI-05` and `MACOS-CLI-06` so root resolution is shared rather than duplicated.
+  - `MACOS-CLI-07` depends on the config contract and emulator resolution contract but should avoid reopening save/controller/runtime files.
+  - `MACOS-CLI-08` landed as the PCSX2-only Rosetta policy follow-up; avoid reopening it unless a regression requires narrowly scoped compatibility fixes.
+  - `MACOS-CLI-10` should land after `MACOS-CLI-09`; it is a launch-chain cleanup and should not reopen broader runtime-policy questions.
+  - `MACOS-CLI-11` is a targeted follow-up from manual validation; keep it narrowly focused on the macOS RetroArch N64 black-screen failure and do not widen it into a general RetroArch graphics policy rewrite.
+  - `MACOS-CLI-12` is a save-session follow-up layered on top of `MACOS-CLI-05`; keep it narrowly scoped to managed macOS PSX memory-card sync and avoid reopening broader save-resolution policy.
+  - `MACOS-CLI-13` is a Steam-lifecycle hardening follow-up from manual validation; keep it scoped to macOS close/wait/reopen behavior and avoid reopening shortcut emission or non-macOS lifecycle policy.
+  - `MACOS-DOCS-01` lands last unless a prior story changes a public contract that cannot wait. Since `MACOS-CLI-08` landed, interim docs may describe the PCSX2-only Rosetta fallback before the final docs sweep.
+- Merge order constraints:
+  - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03`
+  - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-05`
+  - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-06`
+  - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-05` -> `MACOS-CLI-12`
+  - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-07`
+  - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-07` -> `MACOS-CLI-08`
+  - `MACOS-CLI-01` -> `MACOS-CLI-04` -> `MACOS-CLI-05` -> `MACOS-CLI-07` -> `MACOS-CLI-10` -> `MACOS-CLI-11`
+  - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-03` -> `MACOS-CLI-09` -> `MACOS-CLI-10`
+  - `MACOS-CLI-01` -> `MACOS-CLI-02` -> `MACOS-CLI-13`
+  - `MACOS-DOCS-01` after all behavior stories
+
+## Manual Validation Matrix
+- Host baseline:
+  - latest stable macOS on Apple Silicon
+  - native Steam installed in either `~/Applications/Steam.app` or `/Applications/Steam.app`
+- Config/init:
+  - `gamehub init` produces a valid macOS-targeted config using `[macos]` keys
+  - config template/docs match actual behavior
+- First sync:
+  - first non-dry `gamehub sync`
+  - Steam closes safely if needed
+  - managed shortcuts/artwork/collections sync successfully
+- Idempotency:
+  - second non-dry `gamehub sync` is effectively a no-op
+  - no duplicate shortcuts or repeated config churn
+- Managed launch:
+  - launch one RetroArch title from Steam
+  - launch one RetroArch N64 title from Steam and verify video output is present, not audio-only black screen
+  - launch one Dolphin title from Steam
+  - launch one Azahar title from Steam
+  - wrapper waits for emulator exit before post-exit save sync
+- Save sync:
+  - download-first save sync works on first launch
+  - post-exit upload/download behavior works for a changed save
+  - managed memory-card handling works for PS2/GC where applicable
+- Controller autoconfig:
+  - zero-controller fallback remains `kbm`
+  - one-controller case selects `xbox_1p`
+  - two-controller case selects `xbox_2p`
+- Install automation:
+  - `auto` backend installs into `~/Applications`
+  - `command` backend honors the configured template
+  - unsupported/non-native upstream asset path fails clearly
+- Optional deferred compatibility lane:
+  - with PCSX2 Rosetta fallback left enabled and Rosetta already installed
+  - sync accepts or installs Intel-only `PCSX2.app`
+  - managed PCSX2 launch still waits for exit and preserves runtime/save behavior
+  - other emulators continue to reject Intel-only/non-native assets
+
+## Completion Criteria
+- All milestone acceptance criteria are complete.
+- All story contracts are implemented in scoped PRs and marked complete in this file.
+- `ruff`, `mypy`, and `pytest` pass from `./venv/bin/python`.
+- A manual validation pass succeeds on the latest stable Apple Silicon macOS release with native Steam:
+  - first-run `gamehub init`
+  - first non-dry `gamehub sync`
+  - second idempotent `gamehub sync`
+  - one managed Steam launch with save upload/download behavior
+  - controller autoconfig validation for RetroArch, Dolphin, and Azahar
+  - macOS installer validation for the supported native path
+- Windows and Linux automated tests continue to pass with no behavioral regression.
+- Docs and `config.macos.template.toml` are implementation-accurate.

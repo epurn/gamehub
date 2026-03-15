@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import replace
 from pathlib import Path
 
@@ -62,11 +63,12 @@ def _pcsx2_index() -> LibraryIndex:
     )
 
 
-def test_controller_convergence_first_apply_writes_expected_state(workspace_tempdir) -> None:
+def test_controller_convergence_first_apply_writes_expected_state(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
 
         result = converge_controller_state(
             config,
@@ -94,11 +96,12 @@ def test_controller_convergence_first_apply_writes_expected_state(workspace_temp
         assert result.repaired_count > 0
 
 
-def test_controller_convergence_second_apply_is_no_op(workspace_tempdir) -> None:
+def test_controller_convergence_second_apply_is_no_op(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         index = _pcsx2_index()
 
         converge_controller_state(
@@ -123,11 +126,12 @@ def test_controller_convergence_second_apply_is_no_op(workspace_tempdir) -> None
         assert second.unchanged_count > 0
 
 
-def test_controller_convergence_detects_managed_profile_drift(workspace_tempdir) -> None:
+def test_controller_convergence_detects_managed_profile_drift(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         index = _pcsx2_index()
 
         converge_controller_state(
@@ -148,11 +152,14 @@ def test_controller_convergence_detects_managed_profile_drift(workspace_tempdir)
         assert result.drift_count > 0
 
 
-def test_controller_convergence_apply_repairs_managed_profile_drift(workspace_tempdir) -> None:
+def test_controller_convergence_apply_repairs_managed_profile_drift_with_backup(
+    monkeypatch, workspace_tempdir, caplog
+) -> None:
     with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         index = _pcsx2_index()
 
         converge_controller_state(
@@ -166,18 +173,83 @@ def test_controller_convergence_apply_repairs_managed_profile_drift(workspace_te
         profile_file.write_text("[Injected]\nUser = Drift\n", encoding="utf-8")
 
         plan = build_controller_convergence_plan(config, emulator_families={"pcsx2"})
-        repaired = apply_controller_convergence_plan(plan, apply=True, force_managed=False)
+        with caplog.at_level(logging.INFO):
+            repaired = apply_controller_convergence_plan(plan, apply=True, force_managed=False)
         finding = next(item for item in repaired.findings if item.target_path == profile_file)
+        backups = sorted(profile_file.parent.glob("PCSX2.ini.*.bak"))
+
         assert finding.status == ControllerTargetStatus.REPAIRED
         assert finding.repaired is True
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == "[Injected]\nUser = Drift\n"
         assert "OpenPauseMenu = Keyboard/Escape" in profile_file.read_text(encoding="utf-8")
+        assert f"controller profile backup created path={profile_file}" in caplog.text
+        assert f"controller profile saved path={profile_file}" in caplog.text
 
 
-def test_controller_convergence_does_not_overwrite_unmanaged_profile_without_marker(workspace_tempdir) -> None:
+def test_controller_convergence_apply_repairs_assisted_ini_with_backup(monkeypatch, workspace_tempdir, caplog) -> None:
     with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
+        original_text = "[InputSources]\nSDL = false\n\n[UI]\nConfirmShutdown = true\n"
+        pcsx2_ini.parent.mkdir(parents=True, exist_ok=True)
+        pcsx2_ini.write_text(original_text, encoding="utf-8")
+
+        plan = build_controller_convergence_plan(config, emulator_families={"pcsx2"})
+        with caplog.at_level(logging.INFO):
+            repaired = apply_controller_convergence_plan(plan, apply=True, force_managed=False)
+        finding = next(item for item in repaired.findings if item.target_path == pcsx2_ini)
+        backups = sorted(pcsx2_ini.parent.glob("PCSX2.ini.*.bak"))
+
+        assert finding.status == ControllerTargetStatus.REPAIRED
+        assert finding.repaired is True
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == original_text
+        updated_text = pcsx2_ini.read_text(encoding="utf-8")
+        assert "SDL = true" in updated_text
+        assert "ConfirmShutdown = false" in updated_text
+        assert f"controller config backup created path={pcsx2_ini}" in caplog.text
+        assert f"controller config saved path={pcsx2_ini}" in caplog.text
+
+
+def test_controller_convergence_apply_repairs_assisted_qsettings_with_backup(
+    monkeypatch, workspace_tempdir, caplog
+) -> None:
+    with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
+        config = _config(temp_root)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        original_text = "profile=9\nprofile\\default=false\n"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text(original_text, encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.controllers.convergence.azahar_target_config_paths", lambda: [qt_config])
+
+        plan = build_controller_convergence_plan(config, emulator_families={"azahar"})
+        with caplog.at_level(logging.INFO):
+            repaired = apply_controller_convergence_plan(plan, apply=True, force_managed=False)
+        finding = next(item for item in repaired.findings if item.target_path == qt_config)
+        backups = sorted(qt_config.parent.glob("qt-config.ini.*.bak"))
+
+        assert finding.status == ControllerTargetStatus.REPAIRED
+        assert finding.repaired is True
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == original_text
+        updated_text = qt_config.read_text(encoding="utf-8")
+        assert "profile=0" in updated_text
+        assert "profile\\default=true" in updated_text
+        assert f"controller config backup created path={qt_config}" in caplog.text
+        assert f"controller config saved path={qt_config}" in caplog.text
+
+
+def test_controller_convergence_does_not_overwrite_unmanaged_profile_without_marker(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
+        base = _config(temp_root)
+        pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
+        config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         profile_file = config.library_dir / "controller_profiles" / "pcsx2" / "kbm" / "PCSX2.ini"
         profile_file.parent.mkdir(parents=True, exist_ok=True)
         profile_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")
@@ -190,11 +262,12 @@ def test_controller_convergence_does_not_overwrite_unmanaged_profile_without_mar
         assert "[Custom]" in profile_file.read_text(encoding="utf-8")
 
 
-def test_controller_convergence_force_replaces_unmanaged_profile_with_backup(workspace_tempdir) -> None:
+def test_controller_convergence_force_replaces_unmanaged_profile_with_backup(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         profile_file = config.library_dir / "controller_profiles" / "pcsx2" / "kbm" / "PCSX2.ini"
         profile_file.parent.mkdir(parents=True, exist_ok=True)
         profile_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")
@@ -212,11 +285,12 @@ def test_controller_convergence_force_replaces_unmanaged_profile_with_backup(wor
         assert "[Custom]" in backups[0].read_text(encoding="utf-8")
 
 
-def test_controller_convergence_force_archives_extra_unmanaged_profile_file(workspace_tempdir) -> None:
+def test_controller_convergence_force_archives_extra_unmanaged_profile_file(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
         base = _config(temp_root)
         pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
         config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
         extra_file = config.library_dir / "controller_profiles" / "pcsx2" / "kbm" / "custom.ini"
         extra_file.parent.mkdir(parents=True, exist_ok=True)
         extra_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")

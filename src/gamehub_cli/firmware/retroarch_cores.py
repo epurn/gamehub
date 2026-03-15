@@ -10,15 +10,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
-from urllib.request import urlopen
 
 from gamehub_common.models import LibraryIndex
 
 from ..common.fsops import replace_file
+from ..common.http import open_url
 from ..common.platform_paths import (
     RETROARCH_FLATPAK_APP_ID,
+    host_home_path,
+    host_path,
     is_flatpak_command,
     linux_flatpak_retroarch_root,
+    macos_retroarch_root,
     parse_simple_kv_config,
     retroarch_cfg_candidates,
 )
@@ -60,10 +63,10 @@ class RetroArchPaths:
 def _path_with_tilde_expanded(raw: str) -> Path:
     value = raw.strip()
     if value == "~":
-        return Path.home()
+        return host_home_path()
     if value.startswith("~/") or value.startswith("~\\"):
-        return Path.home() / value[2:]
-    return Path(value)
+        return host_home_path() / value[2:]
+    return host_path(value)
 
 
 def _normalize_retroarch_cfg_path(raw: str, *, cfg_path: Path) -> Path | None:
@@ -75,9 +78,21 @@ def _normalize_retroarch_cfg_path(raw: str, *, cfg_path: Path) -> Path | None:
 def _core_suffix() -> str:
     if os.name == "nt":
         return ".dll"
+    if sys.platform == "darwin":
+        return ".dylib"
     if sys.platform.startswith("linux"):
         return ".so"
     return ""
+
+
+def _machine_name() -> str:
+    uname = getattr(os, "uname", None)
+    if uname is None:
+        return ""
+    try:
+        return str(uname().machine).lower()
+    except Exception:
+        return ""
 
 
 def _core_base_url(explicit_override: str | None = None) -> str | None:
@@ -85,8 +100,13 @@ def _core_base_url(explicit_override: str | None = None) -> str | None:
         return explicit_override.rstrip("/") + "/"
     if os.name == "nt":
         return "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
+    if sys.platform == "darwin":
+        machine = _machine_name()
+        if machine in {"arm64", "aarch64"}:
+            return "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/"
+        return None
     if sys.platform.startswith("linux"):
-        machine = os.uname().machine.lower() if hasattr(os, "uname") else ""
+        machine = _machine_name()
         if machine in {"x86_64", "amd64"}:
             return "https://buildbot.libretro.com/nightly/linux/x86_64/latest/"
     return None
@@ -102,6 +122,8 @@ def _parse_core_name(token: str) -> str | None:
         normalized = normalized.rsplit("/", 1)[-1]
     if normalized.endswith(".dll"):
         normalized = normalized[:-4]
+    elif normalized.endswith(".dylib"):
+        normalized = normalized[:-6]
     elif normalized.endswith(".so"):
         normalized = normalized[:-3]
     if not normalized.endswith("_libretro"):
@@ -145,11 +167,9 @@ def resolve_retroarch_paths(
     explicit_info_dir: Path | None = None,
     explicit_cfg_path: Path | None = None,
 ) -> RetroArchPaths | None:
-    explicit_cores = str(explicit_cores_dir) if explicit_cores_dir is not None else None
-    explicit_info = str(explicit_info_dir) if explicit_info_dir is not None else None
-    if explicit_cores:
-        cores_dir = Path(explicit_cores).expanduser()
-        info_dir = Path(explicit_info).expanduser() if explicit_info else cores_dir.parent / "info"
+    if explicit_cores_dir is not None:
+        cores_dir = explicit_cores_dir.expanduser()
+        info_dir = explicit_info_dir.expanduser() if explicit_info_dir is not None else cores_dir.parent / "info"
         return RetroArchPaths(cores_dir=cores_dir, info_dir=info_dir)
 
     config_cores: Path | None = None
@@ -182,11 +202,11 @@ def resolve_retroarch_paths(
         return RetroArchPaths(cores_dir=config_cores, info_dir=config_info or config_cores.parent / "info")
 
     exe_raw = resolve_emulator_executable("retroarch").strip('"')
-    exe = Path(exe_raw)
+    exe = host_path(exe_raw) if exe_raw else None
     flatpak_hint = (
-        is_flatpak_command(exe, RETROARCH_FLATPAK_APP_ID) or RETROARCH_FLATPAK_APP_ID.casefold() in exe_raw.casefold()
-    )
-    if exe.exists() and os.name == "nt":
+        exe is not None and is_flatpak_command(exe, RETROARCH_FLATPAK_APP_ID)
+    ) or RETROARCH_FLATPAK_APP_ID.casefold() in exe_raw.casefold()
+    if exe is not None and exe.exists() and os.name == "nt":
         return RetroArchPaths(cores_dir=exe.parent / "cores", info_dir=exe.parent / "info")
     if sys.platform.startswith("linux") and flatpak_hint:
         root = linux_flatpak_retroarch_root()
@@ -196,10 +216,10 @@ def resolve_retroarch_paths(
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
         if appdata:
-            root = Path(appdata) / "RetroArch"
+            root = host_path(appdata) / "RetroArch"
             return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
     if sys.platform.startswith("linux"):
-        native_root = Path.home() / ".config" / "retroarch"
+        native_root = host_home_path() / ".config" / "retroarch"
         flatpak_root = linux_flatpak_retroarch_root()
         prefer_flatpak = flatpak_hint
         roots = [flatpak_root, native_root] if prefer_flatpak else [native_root, flatpak_root]
@@ -208,6 +228,9 @@ def resolve_retroarch_paths(
                 return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
         fallback = roots[0]
         return RetroArchPaths(cores_dir=fallback / "cores", info_dir=fallback / "info")
+    if sys.platform == "darwin":
+        root = macos_retroarch_root()
+        return RetroArchPaths(cores_dir=root / "cores", info_dir=root / "info")
     return None
 
 
@@ -216,20 +239,20 @@ def _download_bytes(url: str, timeout_seconds: float = 30.0) -> bytes:
         response = httpx.get(url, timeout=timeout_seconds, follow_redirects=True)
         response.raise_for_status()
         return bytes(response.content)
-    with urlopen(url, timeout=timeout_seconds) as response:  # noqa: S310
+    with open_url(url, timeout=timeout_seconds) as response:  # noqa: S310
         return bytes(response.read())
 
 
 def _install_from_zip_blob(zip_blob: bytes, member_name: str, destination: Path) -> bool:
     with zipfile.ZipFile(io.BytesIO(zip_blob)) as archive:
-        matches = [name for name in archive.namelist() if Path(name).name == member_name]
+        matches = [name for name in archive.namelist() if host_path(name).name == member_name]
         if not matches:
             return False
         member = matches[0]
         destination.parent.mkdir(parents=True, exist_ok=True)
         with archive.open(member) as src:
             with tempfile.NamedTemporaryFile(delete=False, dir=destination.parent, suffix=".tmp") as tmp:
-                tmp_path = Path(tmp.name)
+                tmp_path = host_path(tmp.name)
                 while True:
                     chunk = src.read(1024 * 256)
                     if not chunk:

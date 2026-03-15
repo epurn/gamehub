@@ -1,21 +1,47 @@
 # CLI Flow
 
 Init command:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main init [flags]
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main init [flags]
 ```
 
 Sync command:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main sync [flags]
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main sync [flags]
 ```
 
 Controller doctor command:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main doctor controllers [--apply] [--force]
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor controllers [--apply] [--force]
 ```
 
 Managed content doctor commands:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main doctor roms [--verify] [--verbose]
+./venv/bin/python -m gamehub_cli.main doctor firmware [--verify] [--verbose]
+./venv/bin/python -m gamehub_cli.main doctor all [--verify] [--verbose]
+```
+
+Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor roms [--verify] [--verbose]
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor firmware [--verify] [--verbose]
@@ -43,6 +69,7 @@ Fresh installs must run `gamehub init` before the first `gamehub sync`.
 
 Steam close behavior:
 - non-dry sync attempts to close Steam first
+- on macOS, sync sends a graceful Steam app quit request and waits for confirmed exit; it does not auto-run `pkill` / `pkill -9` when Steam stays open
 - if Steam cannot be closed:
   - with `--require-steam-closed`: sync fails
   - without it: Steam update stage is skipped for safety
@@ -61,7 +88,7 @@ Steam close behavior:
 
 ## Sync Pipeline Order
 1. Load config and local state
-2. Fail fast on fresh installs when `bootstrap_version` is missing and no legacy sync evidence exists
+2. Fail fast when `bootstrap_version` is missing; run `gamehub init` before the first sync on any supported system
 3. Fetch and validate `/v1/index`
    - transient index fetch failures are retried with exponential backoff (`[server].index_fetch_attempts`, `[server].index_retry_backoff_seconds`)
    - per-attempt index timeout can be set via `[server].index_timeout_seconds` (defaults to current transport timeout behavior)
@@ -80,10 +107,16 @@ Steam close behavior:
      - `command`: run `[linux].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
      - `none`: disable Linux auto-install (sync prints actionable missing emulator output)
    - when Linux backend is flatpak-preferred (`flatpak`, or immutable-host `auto`), Dolphin and Azahar are treated as Flatpak-required; native installs are not used as substitutes for `org.DolphinEmu.dolphin-emu` / `org.azahar_emu.Azahar`, and sync fails fast if those Flatpak apps are unavailable
+   - on macOS non-dry-run, uses config-first install backend (`[macos].emulator_install_backend`):
+     - `auto` (default): `official`
+     - `official`: installs pinned official Apple Silicon or universal assets into `~/Applications`
+     - `command`: run `[macos].emulator_install_command` for each missing emulator (supports `{package}` and `{emulator}` tokens)
+     - `none`: disable macOS auto-install (sync prints actionable missing emulator output)
+     - `PCSX2` may accept an Intel-only bundle only when Rosetta is already installed and `[macos].disable_pcsx2_rosetta = false`
    - Steam shortcuts resolve emulator executable paths to concrete binaries when available
 5. Ensure required RetroArch cores are available:
    - detects required cores from index launch templates (`-L cores/<core>`)
-   - auto-downloads missing cores from Libretro buildbot on Windows/Linux x86_64
+   - auto-downloads missing cores from Libretro buildbot on Windows, Linux x86_64, and macOS Apple Silicon
    - auto-installs matching `.info` metadata from `assets/frontend/info.zip`
    - dry-run reports missing core/info files without writing
 6. Build plan:
@@ -105,8 +138,8 @@ Steam close behavior:
 9. Deploy firmware files into emulator-native BIOS locations (copy/link from `<gamehub_dir>/firmware/...`)
 10. Controller convergence stage (after runtime/bootstrap setup, before Steam mutation):
    - validates managed controller profile templates under `<gamehub_dir>/controller_profiles`
-   - records per-directory `.gamehub-managed.json` metadata markers (schema version, source profile/template, timestamp, fingerprint, ownership)
-   - applies assisted emulator config key convergence for known-safe controller sections (`PCSX2.ini`, `Dolphin.ini`, Azahar `qt-config.ini`) using minimal key/section edits
+   - records per-directory `.gamehub-managed.json` metadata markers (schema version, source profile/template, timestamp, fingerprint, ownership); rewrites back up the previous marker file to a timestamped `.bak` and log the save
+   - applies assisted emulator config key convergence for known-safe controller sections (`PCSX2.ini`, `Dolphin.ini`, Azahar `qt-config.ini`) using minimal key/section edits; when an existing config file is changed, GAMEHUB first writes a timestamped `.bak` beside that file and logs the rewrite
    - does not choose a fixed profile; runtime selection remains launch-time autodetect (`0 -> kbm`, `1 -> xbox_1p`, `2+ -> xbox_2p`)
 11. Discover Steam userdata + SteamID
 12. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
@@ -169,12 +202,11 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - First-time local `battery` and managed `memory_card` saves are discovered on the next non-dry sync from the server-published save-binding catalog and become `upload_new` actions in `bidirectional`.
 - Managed shortcut launches also auto-create those deterministic `exact_files` saves at post-exit, so wrapped RetroArch and managed `PSX`/`PS2` sessions do not need to wait for the next full `gamehub sync`.
   - For `PSX` Swanstation, GAMEHUB accepts managed `GH_<title_id>_1/2.mcd`, deterministic per-title `<title_name>.srm`, and deterministic per-title `<title_name>_1/2.mcd` output.
+  - On macOS, native `~/Library/Application Support/RetroArch/config/retroarch.cfg` layouts materialize those deterministic `PSX` saves under sibling `~/Library/Application Support/RetroArch/saves`, while an already-materialized `~/Documents/RetroArch/saves` tree still wins for existing local saves.
 - Managed shortcut launches also auto-create first-time deterministic `learned_tree` saves at post-exit when one root can be proven, even if that local save already existed before the connected bidirectional session began (for example after an offline launch or after switching from `disabled`/`download` to `bidirectional`).
 - `download` mode stays read-only: missing local saves may still download, existing local drift becomes `skip(download-mode-local-drift)`, local-only first-time saves become `skip(download-mode-local-new)`, and the server is never mutated.
 - If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
 - If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
-- After upgrading to the build that introduces `shortcut-launch`, run one non-dry `gamehub sync` before starting managed shortcuts so Steam commands are rewritten.
-
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.
 
@@ -190,6 +222,8 @@ Verbose sync output prints both `userdata_id` (short folder id) and derived `ste
   - Windows portable executable directory (`<retroarch-dir>/system`) when applicable
 - when a RetroArch config file is found, GAMEHUB sets `input_menu_toggle_gamepad_combo = "4"` (`Start+Select`) for controller quick-menu access
   - on Windows, RetroArch config discovery includes portable installs (`<retroarch-install>/retroarch.cfg`) before `%APPDATA%/RetroArch/retroarch.cfg`
+  - on macOS, config discovery prefers an existing native config file under `~/Library/Application Support/RetroArch/config/retroarch.cfg` before legacy root-level/document variants
+  - on macOS, that native nested config layout uses sibling `~/Library/Application Support/RetroArch/saves` for deterministic save-sync materialization instead of `.../config/saves`
   - on Linux, when RetroArch resolves to Flatpak, config discovery prefers the Flatpak config path before native `~/.config/retroarch/retroarch.cfg`
   - RetroArch `system_directory = ":/system"` (portable-relative) is normalized to `<retroarch.cfg dir>/system` on Windows
   - RetroArch `libretro_directory = ":/cores"` and `libretro_info_path = ":/info"` (portable-relative) are normalized to `<retroarch.cfg dir>/cores` / `<retroarch.cfg dir>/info` on Windows
@@ -236,6 +270,12 @@ Linux path notes:
   - monitors `/dev/input/js*` (configurable button indices) and `/dev/input/event*` (`BTN_SELECT` + `BTN_START`)
   - on combo press, issues `flatpak kill org.DolphinEmu.dolphin-emu`
 - Windows Azahar launches wrapped by `shortcut-launch` include a fail-open `Start+Select` XInput exit hook by default (disable with `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK=false`).
+- macOS Azahar launches wrapped by `shortcut-launch` include a fail-open `Start+Select` native controller exit hook by default:
+  - keeps the normal macOS bundle/document launch path so native shortcuts such as `Cmd+Q` still work
+  - prefers mapping-aware native `GameController` polling for the configured controller port / `Select+Start` pair when that mapping can be resolved, and otherwise falls back to Xbox HID consumer-usage tracking via `hidutil dump services -f xml`
+  - on combo press, requests the Azahar app to quit and only falls back to process termination if the app does not exit
+  - process-termination fallback only targets newly launched Azahar processes when one can be identified
+  - can be disabled by setting `GAMEHUB_AZAHAR_MACOS_EXIT_HOOK=false` (falls back to the standard managed macOS launch path)
 
 Windows path notes:
 - If Dolphin is installed by GAMEHUB (default `LOCALAPPDATA/Programs/Dolphin`), the runtime user dir is pinned to `<dolphin-install>/User`.
@@ -262,7 +302,15 @@ Controller launch profile defaults:
   - `kbm`: P1 keyboard/mouse, P2 disabled
   - `xbox_1p`: P1 controller, P2 keyboard/mouse
   - `xbox_2p`: P1 + P2 controllers
+- On macOS, controller-count detection promotes only Xbox-like controllers into `xbox_*` profiles, using Xbox-branded names first and falling back to Microsoft vendor/GUID evidence when names are generic.
+- On macOS, controller detection still prefers host SDL probing first, then falls back to `system_profiler` game-controller inventory, then `hidutil list` gamepad-class HID devices when no loadable SDL2 dylib is available; failure remains fail-open to `kbm`.
+- On macOS, Dolphin keyboard/mouse device identifiers use `Quartz/0/Keyboard & Mouse`.
+- On macOS, Dolphin keyboard profile apply also normalizes native Quartz key tokens such as `Escape`, `Return`, and arrow/control/shift names at launch time so existing managed configs do not need manual reseeding.
+- On macOS, Dolphin controller-mode apply rebinds to the current detected SDL device name when one is available; on guidless fallback inventory it prefers the emulator's embedded SDL mapping name for the exact detected vendor/product identity, and only falls back to generic `SDL/<slot>/Gamepad` when no meaningful SDL device name can be resolved.
+- On macOS, Dolphin controller-mode apply also normalizes managed controller token names to the native SDL labels Dolphin expects there (for example `Button S/E/W/N` and trigger analog bindings), binds controller hotkeys to the resolved SDL pad device instead of `All Devices`, flips Wii IR vertical stick direction to the native mapping expected there, and writes every existing native/XDG Dolphin config root it finds so native `~/Library/Application Support/Dolphin` installs are not missed.
 - Azahar GUID normalization is always detect-based.
+- On macOS, Azahar controller-mode apply also rewrites managed SDL button, trigger, D-pad, and analog bindings from the emulator's embedded SDL controller mapping database when a matching controller identity is found; otherwise it keeps the seeded profile layout and only normalizes GUID/port identity.
+- On macOS, when repairing older Azahar configs that already contain saved SDL bindings or multiple profiles, GAMEHUB preserves the existing Azahar-written runtime GUID for the managed profile when one is present, uses the emulator's embedded SDL mapping only for button-layout normalization, and restores managed `profiles\\1\\*\\default` keys to boolean defaults instead of leaving old binding payloads there.
 - GUID discovery order (Linux Flatpak config paths): probe Azahar Flatpak runtime first; if unavailable, preserve existing GUID and otherwise keep port-only mappings (host GUID is not injected into Flatpak configs).
 - GUID discovery order (Linux non-Flatpak config paths): fall back to host SDL, then keep existing GUID when discovery is unavailable.
 - GUID discovery order (Windows): attempt host SDL via Azahar's bundled SDL2 or other installed SDL2 bundles (RetroArch/PCSX2/Dolphin) when available, otherwise keep existing GUIDs and fall back to port-only mappings.
@@ -276,6 +324,7 @@ Environment overrides:
 - `GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL`
 - `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK`
 - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK`
+- `GAMEHUB_AZAHAR_MACOS_EXIT_HOOK`
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT`
 - `GAMEHUB_AZAHAR_EXIT_BUTTON_START`
 - `GAMEHUB_AZAHAR_EXIT_JS_DEVICE`

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import plistlib
 from pathlib import Path, PosixPath, WindowsPath
 from typing import Callable, Iterable
 
@@ -33,6 +34,14 @@ def _host_path(raw: str) -> Path:
     return _HOST_PATH_CLS(raw)
 
 
+def host_path(raw: str | os.PathLike[str]) -> Path:
+    return _host_path(os.fspath(raw))
+
+
+def host_home_path() -> Path:
+    return _safe_home_path()
+
+
 def linux_flatpak_retroarch_root() -> Path:
     return _safe_home_path() / ".var" / "app" / RETROARCH_FLATPAK_APP_ID / "config" / "retroarch"
 
@@ -55,6 +64,143 @@ def linux_flatpak_azahar_root() -> Path:
 
 def linux_flatpak_azahar_config_root() -> Path:
     return _safe_home_path() / ".var" / "app" / AZAHAR_FLATPAK_APP_ID / "config" / "azahar-emu"
+
+
+def macos_application_support_root() -> Path:
+    return _safe_home_path() / "Library" / "Application Support"
+
+
+def macos_user_applications_dir() -> Path:
+    return _safe_home_path() / "Applications"
+
+
+def macos_system_applications_dir() -> Path:
+    return _host_path("/Applications")
+
+
+def macos_retroarch_root() -> Path:
+    return macos_application_support_root() / "RetroArch"
+
+
+def macos_retroarch_documents_root() -> Path:
+    return _safe_home_path() / "Documents" / "RetroArch"
+
+
+def macos_retroarch_root_candidates() -> list[Path]:
+    values = [macos_retroarch_documents_root(), macos_retroarch_root()]
+    existing = [value for value in values if value.exists()]
+    if existing:
+        return unique_paths([*existing, *values])
+    return unique_paths(values)
+
+
+def macos_retroarch_cfg_candidates() -> list[Path]:
+    roots = macos_retroarch_root_candidates()
+    nested_candidates = [root / "config" / "retroarch.cfg" for root in roots]
+    root_level_candidates = [root / "retroarch.cfg" for root in roots]
+    existing_nested = [candidate for candidate in nested_candidates if candidate.exists()]
+    existing_root_level = [candidate for candidate in root_level_candidates if candidate.exists()]
+    if existing_nested or existing_root_level:
+        return unique_paths([*existing_nested, *existing_root_level, *nested_candidates, *root_level_candidates])
+    return unique_paths([*nested_candidates, *root_level_candidates])
+
+
+def macos_pcsx2_root() -> Path:
+    return macos_application_support_root() / "PCSX2"
+
+
+def macos_dolphin_root() -> Path:
+    return macos_application_support_root() / "Dolphin"
+
+
+def macos_azahar_root() -> Path:
+    return macos_application_support_root() / "Azahar"
+
+
+def macos_xdg_data_root() -> Path:
+    return _safe_home_path() / ".local" / "share"
+
+
+def macos_xdg_config_root() -> Path:
+    return _safe_home_path() / ".config"
+
+
+def macos_dolphin_root_candidates() -> list[Path]:
+    app_support_root = macos_dolphin_root()
+    xdg_root = macos_xdg_data_root() / "dolphin-emu"
+    values = [app_support_root, xdg_root]
+    existing = [candidate for candidate in (xdg_root, app_support_root) if candidate.exists()]
+    if existing:
+        return unique_paths([*existing, *values])
+    return unique_paths(values)
+
+
+def macos_azahar_root_candidates() -> list[Path]:
+    app_support_root = macos_azahar_root()
+    xdg_root = macos_xdg_data_root() / "azahar-emu"
+    values = [app_support_root, xdg_root]
+    existing = [candidate for candidate in (xdg_root, app_support_root) if candidate.exists()]
+    if existing:
+        return unique_paths([*existing, *values])
+    return unique_paths(values)
+
+
+def macos_azahar_qt_config_candidates() -> list[Path]:
+    app_support_cfg = macos_azahar_root() / "config" / "qt-config.ini"
+    xdg_cfg = macos_xdg_config_root() / "azahar-emu" / "qt-config.ini"
+    values = [app_support_cfg, xdg_cfg]
+    existing = [candidate for candidate in (xdg_cfg, app_support_cfg) if candidate.exists()]
+    if existing:
+        return unique_paths([*existing, *values])
+    xdg_data_root = macos_xdg_data_root() / "azahar-emu"
+    if xdg_cfg.parent.exists() or xdg_data_root.exists():
+        return unique_paths([xdg_cfg, *values])
+    return unique_paths(values)
+
+
+def macos_application_bundle_candidates(bundle_names: Iterable[str]) -> list[Path]:
+    normalized_names: list[str] = []
+    for bundle_name in bundle_names:
+        value = str(bundle_name).strip()
+        if not value:
+            continue
+        if not value.lower().endswith(".app"):
+            value = f"{value}.app"
+        normalized_names.append(value)
+
+    values: list[Path] = []
+    for applications_dir in (macos_user_applications_dir(), macos_system_applications_dir()):
+        for bundle_name in normalized_names:
+            values.append(applications_dir / bundle_name)
+    return unique_paths(values)
+
+
+def resolve_macos_app_bundle_executable(bundle_path: Path) -> Path | None:
+    candidate = bundle_path.expanduser()
+    if candidate.suffix.casefold() != ".app" or not candidate.is_dir():
+        return None
+
+    info_plist = candidate / "Contents" / "Info.plist"
+    if not info_plist.is_file():
+        return None
+
+    try:
+        with info_plist.open("rb") as handle:
+            plist = plistlib.load(handle)
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return None
+
+    executable_name = plist.get("CFBundleExecutable")
+    if not isinstance(executable_name, str):
+        return None
+    executable_name = executable_name.strip().replace("\\", "/")
+    if not executable_name or "/" in executable_name:
+        return None
+
+    executable_path = candidate / "Contents" / "MacOS" / executable_name
+    if executable_path.is_file():
+        return executable_path
+    return None
 
 
 def is_flatpak_command(path_value: str | Path, app_id: str) -> bool:
@@ -96,9 +242,11 @@ def retroarch_cfg_candidates(
     explicit_cfg_path: Path | None = None,
     resolve_emulator_executable: Callable[[str], str] | None = None,
     os_name: str | None = None,
+    sys_platform: str | None = None,
 ) -> list[Path]:
     values: list[Path] = []
     current_os_name = _OS_NAME if os_name is None else os_name
+    current_sys_platform = sys_platform if sys_platform is not None else ""
     if explicit_cfg_path is not None:
         values.append(explicit_cfg_path.expanduser())
 
@@ -115,6 +263,10 @@ def retroarch_cfg_candidates(
         values.append(_host_path(appdata) / "RetroArch" / "retroarch.cfg")
 
     if current_os_name != "nt":
+        if current_sys_platform == "darwin":
+            values.extend(macos_retroarch_cfg_candidates())
+            return unique_paths(values)
+
         home = _safe_home_path()
         native_cfg = home / ".config" / "retroarch" / "retroarch.cfg"
         flatpak_cfg = linux_flatpak_retroarch_root() / "retroarch.cfg"

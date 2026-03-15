@@ -17,7 +17,7 @@ Docker-first home server + client CLI that syncs emulator libraries into Steam n
 | Bazzite | ✅ |
 | SteamOS (Deck) | ✅ |
 | Other Linux distros (Fedora/Ubuntu/etc.) | ⚠️ |
-| macOS | ❌ |
+| macOS (Apple Silicon) | ✅ release target |
 
 ### Controller support (external Xbox)
 | Platform | Xbox controllers |
@@ -26,7 +26,7 @@ Docker-first home server + client CLI that syncs emulator libraries into Steam n
 | Windows | ✅ |
 | SteamOS (Deck) | ❌ |
 | Other Linux distros (Fedora/Ubuntu/etc.) | ❌ |
-| macOS | ❌ |
+| macOS (Apple Silicon) | ✅ |
 
 SteamOS (Deck) is fully supported with the built-in controller. External Xbox controller support on Deck is planned for a later update.
 
@@ -57,18 +57,21 @@ Create `config.toml` in one of the default locations:
 
 Start from a template:
 - Windows: [`docs/templates/config.windows.template.toml`](docs/templates/config.windows.template.toml)
+- macOS: [`docs/templates/config.macos.template.toml`](docs/templates/config.macos.template.toml)
 - Linux: [`docs/templates/config.linux.template.toml`](docs/templates/config.linux.template.toml)
 - Bazzite: [`docs/templates/config.bazzite.template.toml`](docs/templates/config.bazzite.template.toml)
 - Steam Deck: [`docs/templates/config.steamdeck.template.toml`](docs/templates/config.steamdeck.template.toml)
 
-Linux install from latest release wheel:
+macOS and Linux use the same universal release wheel; Windows ships a standalone EXE.
+
+macOS/Linux install from latest release wheel:
 ```bash
 LATEST_TAG="$(python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://api.github.com/repos/epurn/gamehub/releases/latest'))['tag_name'])")"
 LATEST_VER="${LATEST_TAG#v}"
 python3 -m pip install --user --upgrade "https://github.com/epurn/gamehub/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
 ```
 
-Linux first run + sync:
+macOS/Linux first run + sync:
 ```bash
 gamehub init --dry-run
 gamehub init
@@ -173,4 +176,3 @@ More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbo
 - Server API: [docs/server-api.md](docs/server-api.md)
 - Operational runbook: [docs/runbook.md](docs/runbook.md)
 - Release + pre-public audit flow: [docs/release-process.md](docs/release-process.md)
-

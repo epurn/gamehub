@@ -2,6 +2,79 @@
 
 Platform status and recommended templates:
 - [Platform Support (v1)](platform-support.md)
+- macOS and Linux use the same universal release wheel; Windows ships a standalone EXE.
+
+## macOS (Apple Silicon) via pip
+
+### Install from GitHub Release wheel
+```bash
+python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+```
+
+### Upgrade
+```bash
+python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+```
+
+### Uninstall
+```bash
+python3 -m pip uninstall gamehub
+```
+
+### Smoke check
+```bash
+gamehub --help
+gamehub init --help
+gamehub sync --help
+```
+
+Start from template [docs/templates/config.macos.template.toml](templates/config.macos.template.toml).
+
+### macOS first-run install checklist
+1. Install native Steam manually first. GAMEHUB integrates with an existing `Steam.app` and never auto-installs Steam.
+   - `steam.steam_exe` may point to `~/Applications/Steam.app`, `/Applications/Steam.app`, or the inner `Contents/MacOS/steam_osx` path; lifecycle handling is normalized back to the app bundle.
+2. Choose the macOS emulator install backend in `[macos]`:
+   - `emulator_install_backend = "auto"` (default) maps to `official`
+   - `emulator_install_backend = "official"` installs only official Apple Silicon or universal assets into `~/Applications`
+     - the current macOS implementation uses pinned official asset URLs in code; no extra macOS-only asset config is required
+   - `emulator_install_backend = "command"` runs your configured `emulator_install_command`
+   - `emulator_install_backend = "none"` disables emulator auto-install
+3. Supported official macOS auto-install targets are currently:
+   - `RetroArch`
+   - `Dolphin`
+   - `Azahar`
+   - `PCSX2`
+4. GAMEHUB still prefers native Apple Silicon or universal macOS assets first.
+   - For `PCSX2` only, GAMEHUB accepts an Intel-only bundle by default when Rosetta is already installed.
+   - Set `[macos].disable_pcsx2_rosetta = true` or `GAMEHUB_MACOS_DISABLE_PCSX2_ROSETTA=true` to force strict native-only `PCSX2` behavior.
+   - `RetroArch`, `Dolphin`, `Azahar`, and `Steam` remain native-only.
+5. Optional command backend placeholders:
+   - `{package}`: canonical install token (`retroarch`, `dolphin`, `azahar`, `pcsx2`)
+   - `{emulator}`: emulator name from the index/config
+6. Run bootstrap dry-run:
+```bash
+gamehub init --dry-run --verbose
+```
+7. Run bootstrap:
+```bash
+gamehub init
+```
+8. RetroArch macOS core provisioning defaults to:
+   - cores: `~/Library/Application Support/RetroArch/cores`
+   - info: `~/Library/Application Support/RetroArch/info`
+   - Apple Silicon buildbot base: `https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/`
+9. RetroArch macOS save discovery still checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`, but config discovery prefers an existing native config file under `~/Library/Application Support/RetroArch/config/retroarch.cfg` before legacy root-level/document variants. GAMEHUB can materialize deterministic RetroArch save downloads there on first sync even before RetroArch has created the `saves/` tree. If your RetroArch config uses different locations, set `[macos].retroarch_cfg_path`, `[macos].retroarch_cores_dir`, `[macos].retroarch_info_dir`, or `[macos].retroarch_cores_base_url` explicitly and re-run sync.
+10. Managed macOS `N64` RetroArch launches now force the tested Apple Silicon fallback `video_driver = "glcore"` plus `mupen64plus-rdp-plugin = "angrylion"` and `mupen64plus-rsp-plugin = "hle"` before launch. When RetroArch already has `config/Mupen64Plus-Next/*.cfg` or existing core, folder, or per-game `.opt` overrides such as `config/Mupen64Plus-Next/Mupen64Plus-Next.opt`, GAMEHUB converges those files too so they cannot supersede the managed baseline. If GAMEHUB cannot resolve `retroarch.cfg` or cannot find `mupen64plus_next_libretro.dylib` in the configured macOS cores directory, it blocks that launch and prints an actionable warning instead of continuing into the known black-screen failure.
+11. Dolphin macOS runtime/save discovery prefers an existing `~/.local/share/dolphin-emu` root first and otherwise falls back to `~/Library/Application Support/Dolphin`. If your Dolphin user dir is elsewhere, set `[macos].dolphin_user_path` explicitly.
+12. Azahar macOS save/runtime discovery prefers existing native-style paths first: `~/.local/share/azahar-emu/sdmc` for saves and `~/.config/azahar-emu/qt-config.ini` for runtime config. If those do not exist, GAMEHUB falls back to `~/Library/Application Support/Azahar`.
+13. Managed macOS Azahar launches pin to `~/Applications/Azahar.app` when that bundle exists, and GAMEHUB opens the ROM as a document with that bundle before falling back to CLI-style launch. This matches the app's declared macOS document handling more closely than relying on app-name lookup or ROM `--args` alone.
+14. Minimal macOS smoke after the template is filled:
+```bash
+gamehub init --config ./config.macos.toml --dry-run --verbose
+gamehub sync --config ./config.macos.toml --dry-run --verbose --require-steam-closed
+gamehub sync --config ./config.macos.toml --verbose --require-steam-closed
+```
+15. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code and run the macOS lane in [release-final-validation-playbook.md](release-final-validation-playbook.md).
 
 ## Linux (distro-agnostic) via pip
 
@@ -49,7 +122,7 @@ gamehub init --dry-run --verbose
 gamehub init
 ```
 6. Run first non-`--skip-steam` sync from a desktop session so Steam can relaunch after config mutation.
-7. If you used older preview/branch builds before recent controller profile fixes, run one reseed init to refresh defaults:
+7. If you need to reset managed controller or Deck template defaults, run one reseed init:
 ```bash
 gamehub init --reseed-profiles
 ```

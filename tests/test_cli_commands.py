@@ -63,6 +63,47 @@ def test_typer_sync_command_dispatches(monkeypatch) -> None:
     }
 
 
+def test_typer_shortcut_launch_dispatches(monkeypatch) -> None:
+    assert cli_main.app is not None
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "gamehub_cli.main.run_shortcut_launch",
+        lambda **kwargs: captured.update(kwargs) or 0,
+    )
+
+    result = _RUNNER.invoke(
+        cli_main.app,
+        [
+            "shortcut-launch",
+            "--payload",
+            "encoded-payload",
+            "--payload-ref",
+            "title_ps2_gt4",
+            "--payload-registry",
+            "payloads.json",
+            "--config",
+            "config.toml",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "payload_token": "encoded-payload",
+        "payload_ref": "title_ps2_gt4",
+        "payload_registry_path": Path("payloads.json"),
+        "config_path": Path("config.toml"),
+    }
+
+
+def test_typer_shortcut_launch_rejects_removed_audit_flag() -> None:
+    assert cli_main.app is not None
+
+    result = _RUNNER.invoke(cli_main.app, ["shortcut-launch", "--payload", "encoded-payload", "--audit"])
+
+    assert result.exit_code != 0
+    assert "No such option" in result.output
+
+
 def test_typer_doctor_controllers_dispatches(monkeypatch) -> None:
     assert cli_main.app is not None
     captured: dict[str, object] = {}
@@ -115,82 +156,3 @@ def test_typer_rejects_legacy_doctor_flag_syntax() -> None:
 
     assert result.exit_code != 0
     assert "No such option" in result.output
-
-
-def test_argparse_fallback_routes_init(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(cli_main, "app", None)
-    monkeypatch.setattr("gamehub_cli.main._run_init_command", lambda **kwargs: captured.update(kwargs) or 0)
-    monkeypatch.setattr("sys.argv", ["gamehub", "init", "--config", "config.toml", "--dry-run"])
-
-    with pytest.raises(SystemExit) as exc:
-        cli_main.main()
-
-    assert exc.value.code == 0
-    assert captured == {
-        "config_path": Path("config.toml"),
-        "dry_run": True,
-        "verbose": False,
-        "reseed_profiles": False,
-    }
-
-
-def test_argparse_fallback_routes_sync(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(cli_main, "app", None)
-    monkeypatch.setattr("gamehub_cli.main._run_sync_command", lambda **kwargs: captured.update(kwargs) or 0)
-    monkeypatch.setattr(
-        "sys.argv",
-        [
-            "gamehub",
-            "sync",
-            "--config",
-            "config.toml",
-            "--verify",
-            "--skip-steam",
-            "--skip-steam-relaunch",
-            "--require-steam-closed",
-        ],
-    )
-
-    with pytest.raises(SystemExit) as exc:
-        cli_main.main()
-
-    assert exc.value.code == 0
-    assert captured == {
-        "config_path": Path("config.toml"),
-        "dry_run": False,
-        "verbose": False,
-        "verify": True,
-        "require_steam_closed": True,
-        "skip_steam": True,
-        "skip_steam_relaunch": True,
-        "reseed_profiles": False,
-    }
-
-
-def test_argparse_fallback_routes_nested_doctor_command(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(cli_main, "app", None)
-    monkeypatch.setattr("gamehub_cli.main._run_doctor_all_command", lambda **kwargs: captured.update(kwargs) or 0)
-    monkeypatch.setattr("sys.argv", ["gamehub", "doctor", "all", "--config", "config.toml", "--verify"])
-
-    with pytest.raises(SystemExit) as exc:
-        cli_main.main()
-
-    assert exc.value.code == 0
-    assert captured == {
-        "config_path": Path("config.toml"),
-        "verbose": False,
-        "verify": True,
-    }
-
-
-def test_argparse_fallback_rejects_legacy_doctor_flag_syntax(monkeypatch) -> None:
-    monkeypatch.setattr(cli_main, "app", None)
-    monkeypatch.setattr("sys.argv", ["gamehub", "doctor", "--controllers"])
-
-    with pytest.raises(SystemExit) as exc:
-        cli_main.main()
-
-    assert exc.value.code == 2

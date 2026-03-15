@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import json
 import os
+from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
+import gamehub_cli.emulators.save_resolution as save_resolution_module
 import gamehub_cli.shortcuts.save_session as launch_module
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.common.shortcut_payload import ShortcutLaunchPayload
 from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON
 from gamehub_cli.sync.transfer import SaveUploadConflictError
-from gamehub_common.ids import make_save_id
-from gamehub_common.models import LibraryIndex, SaveBindingSpec, SaveSpec
+from gamehub_common.ids import make_save_binding_id, make_save_id
+from gamehub_common.models import LibraryIndex, SaveBindingCatalog, SaveBindingSpec, SaveSpec
 from tests.shortcut_test_helpers import default_shortcut_config as _config
 from tests.shortcut_test_helpers import sha256_bytes as _sha256_bytes
 
@@ -66,6 +69,353 @@ def test_ensure_managed_memory_card_paths_prefers_payload_retroarch_cfg_on_windo
         assert 'swanstation_MemoryCard1Path = "GH_title_psx_ctr_1.mcd"' in portable_text
         assert 'swanstation_MemoryCard2Path = "GH_title_psx_ctr_2.mcd"' in portable_text
         assert "swanstation_MemoryCard1Path" not in appdata_text
+
+
+def test_managed_memory_card_paths_macos(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-psx-managed-card-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Library" / "Application Support" / "RetroArch"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "config" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text("", encoding="utf-8")
+        pcsx2_ini_path = home / "Library" / "Application Support" / "PCSX2" / "inis" / "PCSX2.ini"
+        pcsx2_ini_path.parent.mkdir(parents=True, exist_ok=True)
+        pcsx2_ini_path.write_text("", encoding="utf-8")
+
+        monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+            target_args=(),
+            title_id="title_psx_macos",
+            system="PSX",
+            rom_rel_path="roms/PSX/Gran Turismo 2.chd",
+        )
+
+        changed = launch_module._ensure_managed_memory_card_paths(payload, _config())
+
+        assert changed is True
+        text = (cfg_path.parent / "retroarch-core-options.cfg").read_text(encoding="utf-8")
+        assert 'swanstation_MemoryCard1Path = "GH_title_psx_macos_1.mcd"' in text
+        assert 'swanstation_MemoryCard2Path = "GH_title_psx_macos_2.mcd"' in text
+
+        pcsx2_payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="pcsx2",
+            target_exe="/Applications/PCSX2.app/Contents/MacOS/pcsx2-qt",
+            target_args=(),
+            title_id="title_ps2_macos",
+            system="PS2",
+            rom_rel_path="roms/PS2/Gran Turismo 4.chd",
+        )
+
+        pcsx2_changed = launch_module._ensure_managed_memory_card_paths(pcsx2_payload, _config())
+
+        assert pcsx2_changed is True
+        pcsx2_text = pcsx2_ini_path.read_text(encoding="utf-8")
+        assert "Slot1_Filename = GH_title_ps2_macos_1.ps2" in pcsx2_text
+        assert "Slot2_Filename = GH_title_ps2_macos_2.ps2" in pcsx2_text
+        assert "Slot1_Enable = true" in pcsx2_text
+        assert "Slot2_Enable = true" in pcsx2_text
+
+
+def test_managed_memory_card_paths_preserve_existing_psx_srm(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-psx-managed-card-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Documents" / "RetroArch"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.write_text(
+            'savefile_directory = "saves"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        existing_save = retroarch_root / "saves" / "SwanStation" / "CTR - Crash Team Racing.srm"
+        existing_save.parent.mkdir(parents=True, exist_ok=True)
+        existing_save.write_bytes(b"save")
+
+        monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+            target_args=(),
+            title_id="title_psx_ctr",
+            system="PSX",
+            rom_rel_path="roms/PSX/CTR - Crash Team Racing.chd",
+        )
+
+        changed = launch_module._ensure_managed_memory_card_paths(payload, _config())
+
+        assert changed is True
+        text = (retroarch_root / "retroarch-core-options.cfg").read_text(encoding="utf-8")
+        assert 'swanstation_MemoryCard1Path = "CTR - Crash Team Racing.srm"' in text
+        assert 'swanstation_MemoryCard2Path = "GH_title_psx_ctr_2.mcd"' in text
+
+
+def test_managed_memory_card_paths_preserve_existing_psx_srm_across_macos_layouts(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-psx-managed-card-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Library" / "Application Support" / "RetroArch"
+        cfg_path = retroarch_root / "config" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            'sort_savefiles_enable = "true"\nsort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        existing_save = home / "Documents" / "RetroArch" / "saves" / "SwanStation" / "CTR - Crash Team Racing.srm"
+        existing_save.parent.mkdir(parents=True, exist_ok=True)
+        existing_save.write_bytes(b"save")
+
+        monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+            target_args=(),
+            title_id="title_psx_ctr",
+            system="PSX",
+            rom_rel_path="roms/PSX/CTR - Crash Team Racing.chd",
+        )
+
+        changed = launch_module._ensure_managed_memory_card_paths(payload, _config())
+
+        assert changed is True
+        text = (cfg_path.parent / "retroarch-core-options.cfg").read_text(encoding="utf-8")
+        assert 'swanstation_MemoryCard1Path = "CTR - Crash Team Racing.srm"' in text
+        assert 'swanstation_MemoryCard2Path = "GH_title_psx_ctr_2.mcd"' in text
+
+
+def test_managed_memory_card_paths_preserve_existing_psx_srm_normalizes_nonhost_root(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-psx-managed-card-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Documents" / "RetroArch"
+        retroarch_root.mkdir(parents=True, exist_ok=True)
+        cfg_path = retroarch_root / "retroarch.cfg"
+        cfg_path.write_text(
+            'savefile_directory = "saves"\n'
+            'sort_savefiles_enable = "true"\n'
+            'sort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        existing_save = retroarch_root / "saves" / "SwanStation" / "CTR - Crash Team Racing.srm"
+        existing_save.parent.mkdir(parents=True, exist_ok=True)
+        existing_save.write_bytes(b"save")
+
+        monkeypatch.setattr("gamehub_cli.firmware.targets._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.firmware.targets.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+        monkeypatch.setattr("gamehub_cli.firmware.targets.resolve_emulator_executable", lambda _name: "")
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.save_session.resolve_binding_local_root",
+            lambda binding, resolve_executable: PurePosixPath((retroarch_root / "saves").as_posix()),
+        )
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+            target_args=(),
+            title_id="title_psx_ctr",
+            system="PSX",
+            rom_rel_path="roms/PSX/CTR - Crash Team Racing.chd",
+        )
+
+        changed = launch_module._ensure_managed_memory_card_paths(payload, _config())
+
+        assert changed is True
+        text = (retroarch_root / "retroarch-core-options.cfg").read_text(encoding="utf-8")
+        assert 'swanstation_MemoryCard1Path = "CTR - Crash Team Racing.srm"' in text
+        assert 'swanstation_MemoryCard2Path = "GH_title_psx_ctr_2.mcd"' in text
+
+
+def test_run_shortcut_prelaunch_save_sync_macos_n64_preserves_retroarch_n64_runtime_override_idempotently(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-shortcut-macos-n64-runtime-") as temp_root:
+        base = _config()
+        cfg_path = temp_root / "retroarch" / "retroarch.cfg"
+        core_options_path = cfg_path.with_name("retroarch-core-options.cfg")
+        override_dir = cfg_path.parent / "config" / "Mupen64Plus-Next"
+        core_opt_override_path = override_dir / "Mupen64Plus-Next.opt"
+        game_opt_path = override_dir / "Super Mario 64.opt"
+        core_override_path = override_dir / "Mupen64Plus-Next.cfg"
+        cores_dir = temp_root / "retroarch" / "cores"
+        config = replace(
+            base,
+            macos=replace(
+                base.macos,
+                retroarch_cfg_path=cfg_path,
+                retroarch_cores_dir=cores_dir,
+            ),
+            save_sync=SaveSyncConfig(enabled=True, mode="download"),
+        )
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text('video_driver = "metal"\ngame_specific_options = "true"\n', encoding="utf-8")
+        core_options_path.write_text(
+            'mupen64plus-rdp-plugin = "parallel"\nmupen64plus-rspmode = "cxd4"\n',
+            encoding="utf-8",
+        )
+        override_dir.mkdir(parents=True, exist_ok=True)
+        core_opt_override_path.write_text(
+            'mupen64plus-rdp-plugin = "parallel"\nmupen64plus-rspmode = "cxd4"\n',
+            encoding="utf-8",
+        )
+        game_opt_path.write_text(
+            'mupen64plus-rdp-plugin = "parallel"\nmupen64plus-rspmode = "cxd4"\n',
+            encoding="utf-8",
+        )
+        core_override_path.write_text('video_driver = "metal"\n', encoding="utf-8")
+        cores_dir.mkdir(parents=True, exist_ok=True)
+        (cores_dir / "mupen64plus_next_libretro.dylib").write_bytes(b"core")
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Users/tester/Applications/RetroArch.app/Contents/MacOS/retroarch-metal",
+            target_args=(
+                "-f",
+                "-L",
+                str(cores_dir / "mupen64plus_next_libretro.dylib"),
+                "/Users/tester/Games/Super Mario 64.z64",
+            ),
+            macos_open_app="/Users/tester/Applications/RetroArch.app",
+            macos_open_args=(
+                "-f",
+                "-L",
+                str(cores_dir / "mupen64plus_next_libretro.dylib"),
+                "/Users/tester/Games/Super Mario 64.z64",
+            ),
+            title_id="title_n64_mario",
+            system="N64",
+            rom_rel_path="roms/N64/Super Mario 64.z64",
+        )
+        state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.firmware.runtime_retroarch._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.shortcuts.save_session._shortcut_server_reachable", lambda _config: True)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.save_session._load_shortcut_index",
+            lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=()),
+        )
+
+        first_context, first_changed = launch_module._run_shortcut_prelaunch_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            resolve_executable=lambda _name: str(
+                temp_root / "Applications" / "RetroArch.app" / "Contents" / "MacOS" / "retroarch-metal"
+            ),
+            verbose=False,
+        )
+        second_context, second_changed = launch_module._run_shortcut_prelaunch_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            resolve_executable=lambda _name: str(
+                temp_root / "Applications" / "RetroArch.app" / "Contents" / "MacOS" / "retroarch-metal"
+            ),
+            verbose=False,
+        )
+
+        cfg_text = cfg_path.read_text(encoding="utf-8")
+        core_text = core_options_path.read_text(encoding="utf-8")
+        core_opt_text = core_opt_override_path.read_text(encoding="utf-8")
+        game_opt_text = game_opt_path.read_text(encoding="utf-8")
+        core_override_text = core_override_path.read_text(encoding="utf-8")
+        assert first_context.save_snapshots == {}
+        assert second_context.save_snapshots == {}
+        assert first_changed is False
+        assert second_changed is False
+        assert 'video_driver = "glcore"' in cfg_text
+        assert "mupen64plus-gfxplugin" not in core_text
+        assert "mupen64plus-rspmode" not in core_text
+        assert 'mupen64plus-rdp-plugin = "angrylion"' in core_text
+        assert 'mupen64plus-rsp-plugin = "hle"' in core_text
+        assert "mupen64plus-gfxplugin" not in core_opt_text
+        assert "mupen64plus-rspmode" not in core_opt_text
+        assert 'mupen64plus-rdp-plugin = "angrylion"' in core_opt_text
+        assert 'mupen64plus-rsp-plugin = "hle"' in core_opt_text
+        assert "mupen64plus-gfxplugin" not in game_opt_text
+        assert "mupen64plus-rspmode" not in game_opt_text
+        assert 'mupen64plus-rdp-plugin = "angrylion"' in game_opt_text
+        assert 'mupen64plus-rsp-plugin = "hle"' in game_opt_text
+        assert 'video_driver = "glcore"' in core_override_text
+        assert len(list(cfg_path.parent.glob("retroarch.cfg.*.bak"))) == 1
+        assert len(list(core_options_path.parent.glob("retroarch-core-options.cfg.*.bak"))) == 1
+        assert len(list(core_opt_override_path.parent.glob("Mupen64Plus-Next.opt.*.bak"))) == 1
+        assert len(list(game_opt_path.parent.glob("Super Mario 64.opt.*.bak"))) == 1
+        assert len(list(core_override_path.parent.glob("Mupen64Plus-Next.cfg.*.bak"))) == 1
+
+
+def test_build_shortcut_save_resolver_uses_payload_macos_config_overrides(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-shortcut-macos-save-") as temp_root:
+        home = temp_root / "home"
+        dolphin_root = temp_root / "custom-dolphin"
+        gc_root = dolphin_root / "GC"
+        gc_root.mkdir(parents=True, exist_ok=True)
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            f"[macos]\ndolphin_user_path = {json.dumps(str(dolphin_root))}\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="dolphin",
+            target_exe="/Applications/Dolphin.app/Contents/MacOS/Dolphin",
+            target_args=(),
+            config_path=str(config_path),
+            title_id="title_gc_macos",
+            system="GC",
+            rom_rel_path="roms/GC/F-Zero GX.iso",
+        )
+
+        resolver = launch_module.build_shortcut_save_resolver(payload)
+        resolved = save_resolution_module.resolve_system_save_root("GC", resolve_executable=resolver)
+
+        assert resolved == gc_root
 
 
 def test_snapshot_exact_binding_tracks_remote_missing_local_file(monkeypatch, workspace_tempdir) -> None:
@@ -162,7 +512,6 @@ def test_shortcut_postexit_exact_binding_sync_creates_remote_missing_save(monkey
             server_url="http://localhost:8000",
             timeout_seconds=30.0,
             verbose=False,
-            audit=False,
         )
 
         save_id = make_save_id("saves/GBC/Pokemon - Crystal Version/battery/Pokemon - Crystal Version.srm")
@@ -257,7 +606,6 @@ def test_shortcut_postexit_learned_tree_uploads_existing_local_save_without_sess
             state=state,
             resolve_executable=lambda _name: "dolphin",
             verbose=False,
-            audit=False,
         )
 
         assert changed is False
@@ -271,7 +619,6 @@ def test_shortcut_postexit_learned_tree_uploads_existing_local_save_without_sess
             context=context,
             resolve_executable=lambda _name: "dolphin",
             verbose=False,
-            audit=False,
         )
 
         save_id = make_save_id("saves/GC/WindWaker/per_game/USA/Card A/01-GZLE-gczelda.gci")
@@ -379,7 +726,6 @@ def test_shortcut_postexit_learned_tree_ignores_local_gamehub_backup_files(monke
         state=state,
         resolve_executable=lambda _name: "azahar",
         verbose=False,
-        audit=False,
     )
 
     assert changed is False
@@ -396,7 +742,6 @@ def test_shortcut_postexit_learned_tree_ignores_local_gamehub_backup_files(monke
         context=context,
         resolve_executable=lambda _name: "azahar",
         verbose=False,
-        audit=False,
     )
 
     assert changed is True
@@ -447,7 +792,6 @@ def test_shortcut_prelaunch_save_sync_skips_when_server_unreachable(monkeypatch)
         state=state,
         resolve_executable=lambda _name: "retroarch",
         verbose=False,
-        audit=False,
     )
 
     assert changed is True
@@ -508,7 +852,6 @@ def test_shortcut_postexit_save_sync_skips_when_server_unreachable(monkeypatch) 
         context=context,
         resolve_executable=lambda _name: "retroarch",
         verbose=False,
-        audit=False,
     )
 
     assert changed is False
@@ -570,7 +913,6 @@ def test_shortcut_postexit_save_sync_records_missed_upload_when_server_unreachab
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -637,7 +979,6 @@ def test_shortcut_postexit_pending_upload_records_missed_upload_when_server_unre
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -722,7 +1063,6 @@ def test_shortcut_postexit_upload_failure_records_missed_upload_when_server_drop
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -809,7 +1149,6 @@ def test_shortcut_postexit_pending_upload_failure_records_missed_upload_when_ser
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -872,7 +1211,6 @@ def test_shortcut_postexit_metadata_fetch_failure_records_missed_upload(monkeypa
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -938,7 +1276,6 @@ def test_shortcut_postexit_pending_upload_metadata_fetch_failure_records_missed_
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1035,7 +1372,6 @@ def test_shortcut_postexit_upload_conflict_with_identical_remote_content_is_conv
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1115,7 +1451,6 @@ def test_shortcut_postexit_pending_upload_remote_drift_records_conflict(monkeypa
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1194,7 +1529,6 @@ def test_shortcut_prelaunch_uses_missed_upload_timestamp_to_keep_newer_local(
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=True,
-            audit=False,
         )
 
         assert changed is False
@@ -1292,7 +1626,6 @@ def test_shortcut_postexit_uploads_pending_prelaunch_keep_local_save_without_ses
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is False
@@ -1305,7 +1638,6 @@ def test_shortcut_postexit_uploads_pending_prelaunch_keep_local_save_without_ses
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1404,7 +1736,6 @@ def test_shortcut_postexit_uploads_missed_upload_recovery_without_session_change
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is False
@@ -1417,7 +1748,6 @@ def test_shortcut_postexit_uploads_missed_upload_recovery_without_session_change
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1517,7 +1847,6 @@ def test_shortcut_postexit_uploads_offline_launch_recovery_without_session_chang
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1532,7 +1861,6 @@ def test_shortcut_postexit_uploads_offline_launch_recovery_without_session_chang
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1585,13 +1913,257 @@ def test_shortcut_prelaunch_download_mode_skips_save_bindings_fetch(monkeypatch)
         state=state,
         resolve_executable=lambda _name: "retroarch",
         verbose=False,
-        audit=False,
     )
 
     assert changed is False
     assert context.save_snapshots == {}
     assert context.exact_binding_snapshots == {}
     assert context.tree_snapshots == {}
+
+
+def test_shortcut_prelaunch_download_mode_fetches_save_bindings_for_psx(monkeypatch) -> None:
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("D:/GameHub"),
+        firmware_dir=Path("D:/GameHub/firmware"),
+        state_path=Path("D:/GameHub/state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("D:/GameHub/cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+        save_sync=SaveSyncConfig(enabled=True, mode="download"),
+    )
+    payload = launch_module.ShortcutLaunchPayload(
+        version=1,
+        emulator="retroarch",
+        target_exe="retroarch",
+        target_args=("-f", "game.chd"),
+        title_id="title_psx_ctr",
+        system="PSX",
+        rom_rel_path="roms/PSX/CTR - Crash Team Racing.chd",
+    )
+    remote_save = SaveSpec(
+        save_id="save_psx_ctr_1",
+        title_id="title_psx_ctr",
+        system="PSX",
+        kind="memory_card",
+        rel_path="saves/PSX/CTR - Crash Team Racing/memory_card/GH_title_psx_ctr_1.mcd",
+        sha256="a" * 64,
+        size_bytes=4,
+        updated_at=datetime(2026, 3, 11, 12, 0, tzinfo=UTC),
+        portable=True,
+    )
+    binding = SaveBindingSpec(
+        binding_id=make_save_binding_id("title_psx_ctr", "memory_card"),
+        title_id="title_psx_ctr",
+        system="PSX",
+        kind="memory_card",
+        server_rel_dir="saves/PSX/CTR - Crash Team Racing/memory_card",
+        local_root="retroarch_saves_psx",
+        strategy="exact_files",
+        candidate_filenames=("GH_title_psx_ctr_1.mcd", "CTR - Crash Team Racing.srm"),
+        learn_rule=None,
+        portable=True,
+    )
+    state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+    seen_bindings: list[SaveBindingSpec | None] = []
+
+    monkeypatch.setattr("gamehub_cli.shortcuts.save_session._shortcut_server_reachable", lambda _config: True)
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session._load_shortcut_index",
+        lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=(remote_save,)),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session._load_shortcut_save_bindings",
+        lambda *args, **kwargs: SaveBindingCatalog(bindings=(binding,)),
+    )
+
+    def _fake_resolve_local_destination(save, **kwargs):
+        del save
+        seen_bindings.append(kwargs.get("binding"))
+        return None
+
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session.resolve_local_save_destination", _fake_resolve_local_destination
+    )
+
+    launch_module._run_shortcut_prelaunch_save_sync(
+        payload=payload,
+        config=config,
+        state=state,
+        resolve_executable=lambda _name: "retroarch",
+        verbose=False,
+    )
+
+    assert seen_bindings == [binding]
+
+
+def test_shortcut_save_sync_managed_psx_macos_uses_application_support_save_root(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-shortcut-psx-save-") as temp_root:
+        home = temp_root / "home"
+        retroarch_root = home / "Library" / "Application Support" / "RetroArch"
+        cfg_path = retroarch_root / "config" / "retroarch.cfg"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            'sort_savefiles_enable = "true"\nsort_savefiles_by_content_enable = "false"\n',
+            encoding="utf-8",
+        )
+        remote_bytes = b"remote-slot1"
+        updated_slot1_bytes = b"updated-slot1"
+        created_slot2_bytes = b"created-slot2"
+        remote_save = SaveSpec(
+            save_id=make_save_id("saves/PSX/CTR - Crash Team Racing/memory_card/GH_title_psx_ctr_1.mcd"),
+            title_id="title_psx_ctr",
+            system="PSX",
+            kind="memory_card",
+            rel_path="saves/PSX/CTR - Crash Team Racing/memory_card/GH_title_psx_ctr_1.mcd",
+            sha256=_sha256_bytes(remote_bytes),
+            size_bytes=len(remote_bytes),
+            updated_at=datetime(2026, 3, 11, 12, 0, tzinfo=UTC),
+            portable=True,
+        )
+        binding = SaveBindingSpec(
+            binding_id=make_save_binding_id("title_psx_ctr", "memory_card"),
+            title_id="title_psx_ctr",
+            system="PSX",
+            kind="memory_card",
+            server_rel_dir="saves/PSX/CTR - Crash Team Racing/memory_card",
+            local_root="retroarch_saves_psx",
+            strategy="exact_files",
+            candidate_filenames=("GH_title_psx_ctr_1.mcd", "GH_title_psx_ctr_2.mcd"),
+            learn_rule=None,
+            portable=True,
+        )
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=Path("D:/GameHub"),
+            firmware_dir=Path("D:/GameHub/firmware"),
+            state_path=Path("D:/GameHub/state.json"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=Path("D:/GameHub/cache"),
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="prefer_server"),
+        )
+        payload = launch_module.ShortcutLaunchPayload(
+            version=1,
+            emulator="retroarch",
+            target_exe="/Applications/RetroArch.app/Contents/MacOS/RetroArch",
+            target_args=("-f", "game.chd"),
+            title_id="title_psx_ctr",
+            system="PSX",
+            rom_rel_path="roms/PSX/CTR - Crash Team Racing.chd",
+        )
+        state = SimpleNamespace(save_binding_roots={}, save_lineage={}, unresolved_save_conflicts={}, save_checksums={})
+        expected_root = retroarch_root / "saves"
+        expected_slot1 = expected_root / "SwanStation" / "GH_title_psx_ctr_1.mcd"
+        expected_slot2 = expected_root / "SwanStation" / "GH_title_psx_ctr_2.mcd"
+        created_slot2_id = make_save_id("saves/PSX/CTR - Crash Team Racing/memory_card/GH_title_psx_ctr_2.mcd")
+        downloaded_paths: list[Path] = []
+        uploaded_existing: list[Path] = []
+        uploaded_new: list[tuple[str, Path]] = []
+
+        monkeypatch.setattr("gamehub_cli.shortcuts.save_session._shortcut_server_reachable", lambda _config: True)
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.save_session._load_shortcut_index",
+            lambda _config, verbose=False: LibraryIndex(index_version=1, systems=(), titles=(), saves=(remote_save,)),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.shortcuts.save_session._load_shortcut_save_bindings_or_warn",
+            lambda _config, verbose=False: SaveBindingCatalog(bindings=(binding,)),
+        )
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._OS_NAME", "posix")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution._SYS_PLATFORM", "darwin")
+        monkeypatch.setattr("gamehub_cli.emulators.save_resolution.Path.home", lambda: home)
+        monkeypatch.setattr("gamehub_cli.common.platform_paths.Path.home", classmethod(lambda cls: home))
+
+        def _fake_download(**kwargs) -> None:
+            destination = kwargs["destination"]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(remote_bytes)
+            downloaded_paths.append(destination)
+
+        def _fake_upload_existing(**kwargs):
+            source = kwargs["source"]
+            uploaded_existing.append(source)
+            return SaveSpec(
+                save_id=remote_save.save_id,
+                title_id=remote_save.title_id,
+                system=remote_save.system,
+                kind=remote_save.kind,
+                rel_path=remote_save.rel_path,
+                sha256=_sha256_bytes(source.read_bytes()),
+                size_bytes=source.stat().st_size,
+                updated_at=datetime(2026, 3, 12, 12, 0, tzinfo=UTC),
+                portable=remote_save.portable,
+            )
+
+        def _fake_upload_new(**kwargs):
+            source = kwargs["source"]
+            uploaded_new.append((kwargs["save_id"], source))
+            return SaveSpec(
+                save_id=kwargs["save_id"],
+                title_id=binding.title_id,
+                system=binding.system,
+                kind=binding.kind,
+                rel_path=f"{binding.server_rel_dir}/{kwargs['canonical_suffix']}",
+                sha256=_sha256_bytes(source.read_bytes()),
+                size_bytes=source.stat().st_size,
+                updated_at=datetime(2026, 3, 12, 12, 5, tzinfo=UTC),
+                portable=binding.portable,
+            )
+
+        monkeypatch.setattr("gamehub_cli.shortcuts.save_session.stream_to_destination_atomic", _fake_download)
+        monkeypatch.setattr("gamehub_cli.shortcuts.save_session._upload_save_from_path", _fake_upload_existing)
+        monkeypatch.setattr("gamehub_cli.shortcuts.save_session._upload_new_save_from_path", _fake_upload_new)
+
+        def resolver(_name: str) -> str:
+            return "/Applications/RetroArch.app/Contents/MacOS/RetroArch"
+
+        context, changed = launch_module._run_shortcut_prelaunch_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            resolve_executable=resolver,
+            verbose=False,
+        )
+
+        assert changed is True
+        assert downloaded_paths == [expected_slot1]
+        assert expected_slot1.read_bytes() == remote_bytes
+        assert context.save_snapshots[remote_save.save_id].destination == expected_slot1
+        assert context.exact_binding_snapshots[binding.binding_id].local_sha256_by_suffix == {
+            "GH_title_psx_ctr_2.mcd": None
+        }
+        assert state.save_checksums[remote_save.save_id] == _sha256_bytes(remote_bytes)
+
+        expected_slot1.write_bytes(updated_slot1_bytes)
+        expected_slot2.parent.mkdir(parents=True, exist_ok=True)
+        expected_slot2.write_bytes(created_slot2_bytes)
+
+        changed = launch_module._run_shortcut_postexit_save_sync(
+            payload=payload,
+            config=config,
+            state=state,
+            context=context,
+            resolve_executable=resolver,
+            verbose=False,
+        )
+
+        assert changed is True
+        assert uploaded_existing == [expected_slot1]
+        assert uploaded_new == [(created_slot2_id, expected_slot2)]
+        assert state.save_checksums[remote_save.save_id] == _sha256_bytes(updated_slot1_bytes)
+        assert state.save_checksums[created_slot2_id] == _sha256_bytes(created_slot2_bytes)
+        assert state.unresolved_save_conflicts == {}
 
 
 def test_shortcut_prelaunch_download_mode_preserves_existing_local_drift(
@@ -1658,7 +2230,6 @@ def test_shortcut_prelaunch_download_mode_preserves_existing_local_drift(
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=True,
-            audit=False,
         )
 
         assert changed is False

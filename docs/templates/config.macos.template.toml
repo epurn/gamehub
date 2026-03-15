@@ -1,0 +1,60 @@
+# macOS template.
+# Supported contract for the current macOS work:
+# - latest stable macOS on Apple Silicon
+# - native Steam install
+# - native/universal preferred; PCSX2 may use Rosetta when already installed
+[server]
+url = "http://<SERVER_IP>:8000"
+
+# Optional index fetch hardening for slower/unreliable links.
+# index_timeout_seconds = 45
+# index_fetch_attempts = 3
+# index_retry_backoff_seconds = 1.5
+# Parallel download workers for firmware/ROM/assets (1-16, default 4).
+# max_parallel_downloads = 4
+
+[paths]
+gamehub_dir = "/Users/<user>/GameHub"
+
+[steam]
+userdata_dir = "/Users/<user>/Library/Application Support/Steam/userdata"
+# Prefer the native app bundle path. Auto-discovery is expected to handle /Applications/Steam.app too.
+steam_exe = "/Users/<user>/Applications/Steam.app"
+# Optional but recommended for deterministic profile targeting.
+# Accepts userdata account id or SteamID64.
+# steam_id = "76561198000000001"
+
+[macos]
+# auto | official | command | none
+emulator_install_backend = "auto"
+# Default supported install target is ~/Applications for admin-free native app bundles.
+# Only used when emulator_install_backend = "command".
+# emulator_install_command = "brew install --cask {package}"
+# Set true to force strict native-only PCSX2 behavior on Apple Silicon macOS.
+# disable_pcsx2_rosetta = false
+
+# Optional macOS path hints (uncomment as needed):
+# RetroArch config/save discovery checks ~/Documents/RetroArch first, then
+# ~/Library/Application Support/RetroArch.
+# retroarch_cfg_path = "~/Documents/RetroArch/retroarch.cfg"
+# retroarch_system_dir = "~/Documents/RetroArch/system"
+# retroarch_cores_dir = "~/Library/Application Support/RetroArch/cores"
+# retroarch_info_dir = "~/Library/Application Support/RetroArch/info"
+# retroarch_cores_base_url = "https://example.invalid/apple-silicon/"
+# pcsx2_ini_path = "~/Library/Application Support/PCSX2/inis/PCSX2.ini"
+# pcsx2_bios_dir = "~/Library/Application Support/PCSX2/bios"
+# Dolphin discovery prefers an existing ~/.local/share/dolphin-emu root first.
+# dolphin_user_path = "~/.local/share/dolphin-emu"
+
+[sgdb]
+# Fallback only; prefer GAMEHUB_SGDB_API_KEY in environment.
+# api_key = "<OPTIONAL_SGDB_KEY>"
+cache_dir = "/Users/<user>/GameHub/artwork-cache/sgdb"
+enabled_kinds = ["grid", "hero", "logo", "icon"]
+
+[controllers]
+# Launch-time shortcut wrapper for PCSX2/Dolphin/Azahar (with controller profile autoconfig).
+launch_autoconfig = true
+# Optional explicit profile directory.
+# Default when omitted: <paths.gamehub_dir>/controller_profiles
+# profiles_dir = "/Users/<user>/GameHub/controller_profiles"

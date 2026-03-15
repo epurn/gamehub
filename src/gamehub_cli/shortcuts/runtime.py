@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes
 import os
+import shlex
 import subprocess
 import sys
 import threading
@@ -23,14 +24,27 @@ _DOLPHIN_EXIT_BUTTON_SELECT_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_SELECT"
 _DOLPHIN_EXIT_BUTTON_START_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_START"
 _DOLPHIN_EXIT_JS_DEVICE_ENV = "GAMEHUB_DOLPHIN_EXIT_JS_DEVICE"
 _AZAHAR_WINDOWS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK"
+_AZAHAR_MACOS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_MACOS_EXIT_HOOK"
 _XINPUT_GAMEPAD_START = 0x0010
 _XINPUT_GAMEPAD_BACK = 0x0020
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
 _WM_CLOSE = 0x0010
+_MACOS_OPEN_EXECUTABLE = "/usr/bin/open"
+_AZAHAR_MACOS_DOCUMENT_EXTENSIONS = {".3dsx", ".cci", ".cxi", ".cia", ".3ds", ".elf", ".axf"}
+_AZAHAR_FULLSCREEN_ARGS = {"-f", "--fullscreen"}
 
 
 def warn_shortcut_runtime(message: str) -> None:
-    print(f"Warning: {message}")
+    rendered = f"Warning: {message}"
+    try:
+        sys.stderr.write(f"{rendered}\n")
+        sys.stderr.flush()
+    except (BrokenPipeError, OSError, ValueError):
+        pass
+
+
+class ShortcutLaunchError(RuntimeError):
+    """Raised when the managed shortcut target cannot be spawned."""
 
 
 class _XInputGamepad(ctypes.Structure):
@@ -172,6 +186,14 @@ def _should_use_windows_azahar_exit_hook(payload: ShortcutLaunchPayload) -> bool
     return _env_enabled(_AZAHAR_WINDOWS_EXIT_HOOK_ENV, default=True)
 
 
+def _should_use_macos_azahar_exit_hook(payload: ShortcutLaunchPayload) -> bool:
+    if sys.platform != "darwin":
+        return False
+    if "azahar" not in payload.emulator:
+        return False
+    return _env_enabled(_AZAHAR_MACOS_EXIT_HOOK_ENV, default=True)
+
+
 def _should_use_linux_dolphin_exit_hook(payload: ShortcutLaunchPayload) -> bool:
     if not sys.platform.startswith("linux"):
         return False
@@ -190,7 +212,7 @@ def _run_linux_dolphin_target_with_exit_hook(payload: ShortcutLaunchPayload) -> 
         candidate = Path(payload.start_dir)
         if candidate.exists():
             cwd = str(candidate)
-    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    process = _spawn_shortcut_process(command, cwd=cwd)
     select_button = _int_env_optional(_DOLPHIN_EXIT_BUTTON_SELECT_ENV)
     start_button = _int_env_optional(_DOLPHIN_EXIT_BUTTON_START_ENV)
     js_devices = _discover_js_devices(_DOLPHIN_EXIT_JS_DEVICE_ENV)
@@ -212,26 +234,150 @@ def _run_linux_dolphin_target_with_exit_hook(payload: ShortcutLaunchPayload) -> 
 def _run_windows_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> int:
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
-    cwd = None
-    if payload.start_dir:
-        candidate = Path(payload.start_dir)
-        if candidate.exists():
-            cwd = str(candidate)
-    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    cwd = _resolve_launch_cwd(payload)
+    process = _spawn_shortcut_process(command, cwd=cwd)
     watcher = threading.Thread(target=_monitor_windows_azahar_exit_combo, args=(process,), daemon=True)
     watcher.start()
     return int(process.wait())
 
 
+def _run_macos_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> int:
+    raw_app_bundle = payload.macos_open_app
+    if raw_app_bundle is None:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    app_bundle = raw_app_bundle.strip().strip('"')
+    if not app_bundle:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    documents, passthrough_args = _split_macos_azahar_launch_args(payload)
+    if not documents:
+        raise ShortcutLaunchError("launch failed (error=missing Azahar document target)")
+    command = [_MACOS_OPEN_EXECUTABLE, "-W", "-a", app_bundle, *documents]
+    if passthrough_args:
+        command.extend(["--args", *passthrough_args])
+    process_name = Path(unquote_executable(payload.target_exe)).name
+    prelaunch_pids = azahar_exit_hook._discover_process_ids_by_name(process_name)
+    process = _spawn_shortcut_process(command, cwd=None)
+    select_button, start_button = azahar_exit_hook._resolve_select_and_start_buttons()
+    controller_port = azahar_exit_hook._resolve_port_from_config()
+    bundle_id = azahar_exit_hook._resolve_macos_bundle_identifier(app_bundle)
+    watcher = threading.Thread(
+        target=azahar_exit_hook._monitor_macos_combo_and_terminate,
+        args=(process,),
+        kwargs={
+            "select_button": select_button,
+            "start_button": start_button,
+            "controller_port": controller_port,
+            "bundle_id": bundle_id,
+            "process_name": process_name,
+            "prelaunch_pids": prelaunch_pids,
+        },
+        daemon=True,
+    )
+    watcher.start()
+    return int(process.wait())
+
+
+def _resolve_launch_cwd(payload: ShortcutLaunchPayload) -> str | None:
+    if not payload.start_dir:
+        return None
+    candidate = Path(payload.start_dir)
+    if not candidate.exists():
+        return None
+    return str(candidate)
+
+
+def _render_launch_command(command: list[str]) -> str:
+    if sys.platform.startswith("win"):
+        return subprocess.list2cmdline(command)
+    return shlex.join(command)
+
+
+def _spawn_shortcut_process(command: list[str], *, cwd: str | None) -> subprocess.Popen[bytes]:
+    try:
+        return subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    except OSError as exc:
+        raise ShortcutLaunchError(f"launch failed (command={_render_launch_command(command)}, error={exc})") from exc
+
+
+def _run_macos_bundle_target(payload: ShortcutLaunchPayload) -> int:
+    raw_app_bundle = payload.macos_open_app
+    if raw_app_bundle is None:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    app_bundle = raw_app_bundle.strip().strip('"')
+    if not app_bundle:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    command = [_MACOS_OPEN_EXECUTABLE, "-W"]
+    if "azahar" in payload.emulator:
+        command.append(app_bundle)
+    else:
+        command.extend(["-a", app_bundle])
+    if payload.macos_open_args:
+        command.extend(["--args", *payload.macos_open_args])
+    process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
+    return int(process.wait())
+
+
+def _split_macos_azahar_launch_args(payload: ShortcutLaunchPayload) -> tuple[list[str], list[str]]:
+    documents: list[str] = []
+    passthrough_args: list[str] = []
+    for arg in payload.macos_open_args or payload.target_args:
+        normalized = str(arg).strip()
+        if not normalized:
+            continue
+        if normalized in _AZAHAR_FULLSCREEN_ARGS:
+            continue
+        if Path(normalized).suffix.casefold() in _AZAHAR_MACOS_DOCUMENT_EXTENSIONS:
+            documents.append(normalized)
+            continue
+        passthrough_args.append(normalized)
+    return documents, passthrough_args
+
+
+def _run_macos_azahar_target_as_document(payload: ShortcutLaunchPayload) -> int:
+    raw_app_bundle = payload.macos_open_app
+    if raw_app_bundle is None:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    app_bundle = raw_app_bundle.strip().strip('"')
+    if not app_bundle:
+        raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
+    documents, passthrough_args = _split_macos_azahar_launch_args(payload)
+    if not documents:
+        raise ShortcutLaunchError("launch failed (error=missing Azahar document target)")
+    command = [_MACOS_OPEN_EXECUTABLE, "-W", "-a", app_bundle, *documents]
+    if passthrough_args:
+        command.extend(["--args", *passthrough_args])
+    process = _spawn_shortcut_process(command, cwd=None)
+    return int(process.wait())
+
+
+def _run_macos_azahar_target_direct(payload: ShortcutLaunchPayload) -> int:
+    executable = unquote_executable(payload.target_exe)
+    if not executable:
+        raise ShortcutLaunchError("launch failed (error=missing Azahar executable target)")
+    candidate = Path(executable)
+    cwd = _resolve_launch_cwd(payload)
+    if candidate.exists():
+        cwd = str(candidate.parent)
+    command = [executable, *payload.target_args]
+    process = _spawn_shortcut_process(command, cwd=cwd)
+    return int(process.wait())
+
+
 def _run_target(payload: ShortcutLaunchPayload) -> int:
+    if sys.platform == "darwin" and payload.macos_open_app:
+        if "azahar" in payload.emulator:
+            try:
+                return _run_macos_azahar_target_as_document(payload)
+            except Exception as exc:
+                warn_shortcut_runtime(f"Azahar document launch failed (error={exc}); falling back to direct launch")
+            try:
+                return _run_macos_azahar_target_direct(payload)
+            except Exception as exc:
+                warn_shortcut_runtime(f"Azahar direct launch failed (error={exc}); falling back to bundle launch")
+        return _run_macos_bundle_target(payload)
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
-    cwd = None
-    if payload.start_dir:
-        candidate = Path(payload.start_dir)
-        if candidate.exists():
-            cwd = str(candidate)
-    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+    process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
     return int(process.wait())
 
 
@@ -241,6 +387,11 @@ def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:
             return _run_windows_azahar_target_with_exit_hook(payload)
         except Exception as exc:
             warn_shortcut_runtime(f"Azahar exit hook failed (error={exc}); falling back to direct launch")
+    if _should_use_macos_azahar_exit_hook(payload):
+        try:
+            return _run_macos_azahar_target_with_exit_hook(payload)
+        except Exception as exc:
+            warn_shortcut_runtime(f"Azahar macOS exit hook failed (error={exc}); falling back to managed launch")
     if _should_use_linux_dolphin_exit_hook(payload):
         try:
             return _run_linux_dolphin_target_with_exit_hook(payload)
@@ -269,7 +420,6 @@ def apply_shortcut_controller_configuration(
     *,
     payload: ShortcutLaunchPayload,
     config: GamehubConfig,
-    audit: bool,
 ) -> str | None:
     if not config.controllers.launch_autoconfig:
         return None
@@ -281,64 +431,30 @@ def apply_shortcut_controller_configuration(
             "controller detection failed "
             f"(emulator={payload.emulator}, error={detect_error}); using keyboard/mouse fallback profile selection"
         )
-    zero_detect_policy = "none"
-    native_shortcut_policy = "native-first"
     if sys.platform.startswith("linux") and is_steam_deck_linux() and controller_count == 0:
-        zero_detect_policy = "xbox_1p"
         controller_count = 1
         warn_shortcut_runtime(
             "Steam Deck controller detection returned 0 controllers; forcing xbox_1p profile fallback"
         )
-    effective_controller_count = controller_count
-    if audit:
-        detect_status = "ok" if detect_error is None else "error"
-        print(
-            "controller-autoconfig\t"
-            f"detected_controller_count={detected_controller_count}\t"
-            f"effective_controller_count={effective_controller_count}\t"
-            f"detect_status={detect_status}\t"
-            f"zero_detect_policy={zero_detect_policy}\t"
-            f"native_shortcut_policy={native_shortcut_policy}"
-        )
 
     selected_profile = profile_name_for_controller_count(controller_count)
     try:
-        if audit:
-            selected_profile = apply_controller_profile(
-                config,
-                emulator_name=payload.emulator,
-                controller_count=controller_count,
-                verbose=True,
-            )
-        else:
-            selected_profile = apply_controller_profile(
-                config,
-                emulator_name=payload.emulator,
-                controller_count=controller_count,
-            )
-        if audit:
-            print(f"controller-autoconfig\tselected_profile={selected_profile}")
+        selected_profile = apply_controller_profile(
+            config,
+            emulator_name=payload.emulator,
+            controller_count=controller_count,
+        )
     except Exception as exc:
         warn_shortcut_runtime(
             "controller autoconfig failed "
             f"(emulator={payload.emulator}, profile={PROFILE_KBM}, error={exc}); using keyboard/mouse fallback"
         )
         try:
-            if audit:
-                selected_profile = apply_named_controller_profile(
-                    config,
-                    emulator_name=payload.emulator,
-                    profile_name=PROFILE_KBM,
-                    verbose=True,
-                )
-            else:
-                selected_profile = apply_named_controller_profile(
-                    config,
-                    emulator_name=payload.emulator,
-                    profile_name=PROFILE_KBM,
-                )
-            if audit:
-                print(f"controller-autoconfig\tselected_profile={selected_profile}\tfallback=true")
+            selected_profile = apply_named_controller_profile(
+                config,
+                emulator_name=payload.emulator,
+                profile_name=PROFILE_KBM,
+            )
         except Exception as fallback_exc:
             warn_shortcut_runtime(
                 "keyboard/mouse fallback profile application failed "

@@ -21,7 +21,6 @@ from .planner import create_sync_plan
 from .state import (
     SyncState,
     has_bootstrap_marker,
-    has_legacy_sync_evidence,
     load_state,
     mark_bootstrapped,
     mark_synced,
@@ -262,6 +261,9 @@ def _bootstrap_runtime(
         linux_install_backend=config.linux.emulator_install_backend,
         linux_install_command=config.linux.emulator_install_command,
         linux_flatpak_remote=config.linux.flatpak_remote,
+        macos_install_backend=config.macos.emulator_install_backend,
+        macos_install_command=config.macos.emulator_install_command,
+        macos_disable_pcsx2_rosetta=config.macos.disable_pcsx2_rosetta,
     )
     ensure_retroarch_cores(
         index=index,
@@ -304,7 +306,7 @@ def _converge_bootstrap_controller_state(
 
 
 def _sync_requires_init(state: SyncState) -> bool:
-    return not has_bootstrap_marker(state) and not has_legacy_sync_evidence(state)
+    return not has_bootstrap_marker(state)
 
 
 def run_init(

@@ -1,5 +1,6 @@
 # Local planning files
 kanban/
+.manual/
 
 # Python cache/bytecode
 __pycache__/
@@ -53,3 +54,7 @@ Thumbs.db
 data/
 config.toml
 library/
+steam-shortcut-launch.sh
+steam-shortcut-launch.sh.*.bak
+shortcut_payloads.json
+shortcut_payloads.json.*.bak

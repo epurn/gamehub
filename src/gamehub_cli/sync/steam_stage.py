@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from gamehub_common.models import LibraryIndex
 
@@ -22,8 +23,13 @@ from ..common.platform_paths import (
 )
 from ..common.shortcut_payload import encode_shortcut_payload
 from ..common.shortcut_payload import strip_wrapping_quotes as _strip_wrapping_quotes
+from ..common.shortcut_payload_registry import (
+    save_shortcut_payload_registry_atomic,
+    shortcut_payload_registry_path,
+)
 from ..controllers.detection import is_steam_deck_linux
 from ..emulators import resolve_emulator_executable
+from ..emulators.resolution import resolve_macos_preferred_bundle_executable
 from ..firmware.retroarch_cores import resolve_retroarch_paths
 from ..firmware.targets import resolve_dolphin_runtime_user_dir
 from ..steam import (
@@ -44,7 +50,6 @@ from ..steam import (
     update_cloud_collections,
     update_collections,
     upsert_shortcuts,
-    wait_for_steam_exit,
 )
 
 _RETROARCH_CORE_TOKEN_RE = re.compile(r"(?P<prefix>-L\s+)(?P<token>[^\s]+)")
@@ -59,6 +64,7 @@ _DOLPHIN_USER_ARG_RE = re.compile(r"\s(-u|--user)(\s|=)")
 _AZAHAR_LINUX_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_LINUX_EXIT_HOOK"
 _STEAM_ALLOW_DESKTOP_CONFIG_ENV = "GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG"
 _WRAPPED_EMULATORS = {"pcsx2", "dolphin", "azahar", "retroarch"}
+_MACOS_ARCH_EXECUTABLE = "/usr/bin/arch"
 
 
 def _env_enabled(name: str, *, default: bool = True) -> bool:
@@ -71,6 +77,11 @@ def _env_enabled(name: str, *, default: bool = True) -> bool:
     if normalized in {"1", "true", "yes", "on"}:
         return True
     return default
+
+
+@lru_cache(maxsize=1)
+def _machine_name() -> str:
+    return platform.machine().strip().casefold()
 
 
 def _env_optional_bool(name: str) -> bool | None:
@@ -114,7 +125,13 @@ def _normalize_linux_retroarch_launch_template(
     config: GamehubConfig,
     emulator_exe: str,
 ) -> str:
-    if not sys.platform.startswith("linux") or _is_windows_style_runtime_path(emulator_exe):
+    if _is_windows_style_runtime_path(emulator_exe):
+        return launch_template
+    if sys.platform.startswith("linux"):
+        core_suffix = ".so"
+    elif sys.platform == "darwin":
+        core_suffix = ".dylib"
+    else:
         return launch_template
     match = _RETROARCH_CORE_TOKEN_RE.search(launch_template)
     if not match:
@@ -129,12 +146,19 @@ def _normalize_linux_retroarch_launch_template(
     if not core_name.endswith("_libretro"):
         return launch_template
 
-    core_filename = f"{core_name}.so"
+    core_filename = f"{core_name}{core_suffix}"
     core_token = f"cores/{core_filename}"
+    explicit_cores_dir = config.linux.retroarch_cores_dir
+    explicit_info_dir = config.linux.retroarch_info_dir
+    explicit_cfg_path = config.linux.retroarch_cfg_path
+    if sys.platform == "darwin":
+        explicit_cores_dir = config.macos.retroarch_cores_dir
+        explicit_info_dir = config.macos.retroarch_info_dir
+        explicit_cfg_path = config.macos.retroarch_cfg_path
     paths = resolve_retroarch_paths(
-        explicit_cores_dir=config.linux.retroarch_cores_dir,
-        explicit_info_dir=config.linux.retroarch_info_dir,
-        explicit_cfg_path=config.linux.retroarch_cfg_path,
+        explicit_cores_dir=explicit_cores_dir,
+        explicit_info_dir=explicit_info_dir,
+        explicit_cfg_path=explicit_cfg_path,
     )
     if paths is not None:
         core_token = (paths.cores_dir / core_filename).as_posix()
@@ -260,36 +284,63 @@ def _is_python_executable_name(value: str) -> bool:
     return normalized == "python" or normalized.startswith("python") or normalized.startswith("pypy")
 
 
-def _is_known_emulator_flatpak_export(value: str) -> bool:
-    app_ids = (
-        RETROARCH_FLATPAK_APP_ID,
-        PCSX2_FLATPAK_APP_ID,
-        DOLPHIN_FLATPAK_APP_ID,
-        AZAHAR_FLATPAK_APP_ID,
-    )
-    return any(is_flatpak_command(value, app_id) for app_id in app_ids)
+def _resolved_existing_path(path: Path) -> str | None:
+    candidate = path.expanduser()
+    if not candidate.exists():
+        return None
+    return str(candidate.absolute())
+
+
+def _is_absolute_runtime_path(value: str) -> bool:
+    if value.startswith("/"):
+        return True
+    path = Path(value).expanduser()
+    return path.is_absolute()
+
+
+def _normalize_wrapper_candidate(value: str) -> str | None:
+    normalized = _strip_wrapping_quotes(value)
+    if not normalized:
+        return None
+    if _is_windows_style_runtime_path(normalized):
+        return normalized
+    path = Path(normalized).expanduser()
+    if path.exists():
+        return _resolved_existing_path(path)
+    if _is_absolute_runtime_path(normalized):
+        return str(path)
+    return None
+
+
+def _resolve_invoked_gamehub_wrapper_executable() -> str | None:
+    if sys.argv and sys.argv[0]:
+        argv0 = _strip_wrapping_quotes(sys.argv[0])
+        argv_name = Path(argv0).name.casefold()
+        if argv_name in {"gamehub", "gamehub.exe"}:
+            path = Path(argv0)
+            resolved = _resolved_existing_path(path)
+            if resolved:
+                return resolved
+            if not path.is_absolute():
+                resolved = shutil.which(argv0)
+                if resolved:
+                    return _normalize_wrapper_candidate(resolved) or resolved
+
+    exe_path = Path(sys.executable)
+    exe_name = exe_path.name.casefold()
+    if exe_name in {"gamehub", "gamehub.exe"}:
+        resolved = _resolved_existing_path(exe_path)
+        if resolved:
+            return resolved
+    return None
 
 
 def _resolve_gamehub_wrapper_executable() -> str | None:
     candidates: list[str] = []
 
-    if sys.argv and sys.argv[0]:
-        argv0 = _strip_wrapping_quotes(sys.argv[0])
-        argv_name = Path(argv0).name.casefold()
-        if argv_name in {"gamehub", "gamehub.exe"}:
-            path = Path(argv0).expanduser()
-            if path.exists():
-                candidates.append(str(path))
-
-    exe_path = Path(sys.executable)
-    exe_name = exe_path.name.casefold()
-    if exe_name in {"gamehub", "gamehub.exe"}:
-        candidates.append(str(exe_path))
-
-    sibling_name = "gamehub.exe" if sys.platform.startswith("win") else "gamehub"
-    sibling = exe_path.with_name(sibling_name)
-    if sibling.exists():
-        candidates.append(str(sibling))
+    invoked_wrapper = _resolve_invoked_gamehub_wrapper_executable()
+    if invoked_wrapper:
+        candidates.append(invoked_wrapper)
 
     for command in ("gamehub", "gamehub.exe"):
         resolved = shutil.which(command)
@@ -297,48 +348,119 @@ def _resolve_gamehub_wrapper_executable() -> str | None:
             candidates.append(str(resolved))
 
     for candidate in candidates:
-        normalized = _strip_wrapping_quotes(candidate)
-        if not normalized:
-            continue
-        if _is_known_emulator_flatpak_export(normalized):
-            continue
-        return normalized
+        normalized = _normalize_wrapper_candidate(candidate)
+        if normalized:
+            return normalized
     return None
 
 
 def _wrapper_executable_and_args() -> tuple[str, list[str]]:
-    exe_path = str(sys.executable)
-    executable_name = exe_path.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    resolved_executable = _normalize_wrapper_candidate(str(sys.executable)) or str(sys.executable)
+    executable_name = resolved_executable.replace("\\", "/").rsplit("/", 1)[-1].casefold()
     is_frozen = bool(getattr(sys, "frozen", False))
 
     if is_frozen:
-        return exe_path, ["shortcut-launch"]
+        return resolved_executable, ["shortcut-launch"]
 
     wrapper_executable = _resolve_gamehub_wrapper_executable()
     if wrapper_executable:
         return wrapper_executable, ["shortcut-launch"]
 
     if not _is_python_executable_name(executable_name) and executable_name.endswith(".exe"):
-        return exe_path, ["shortcut-launch"]
+        return resolved_executable, ["shortcut-launch"]
     if sys.platform.startswith("win"):
         candidate = Path(sys.executable).with_name("pythonw.exe")
         if candidate.exists():
             return str(candidate), ["-m", "gamehub_cli.main", "shortcut-launch"]
-    return exe_path, ["-m", "gamehub_cli.main", "shortcut-launch"]
+    return resolved_executable, ["-m", "gamehub_cli.main", "shortcut-launch"]
 
 
-def _split_launch_options(value: str) -> list[str]:
+def _split_launch_options(value: str, *, windows_style: bool | None = None) -> list[str]:
     if not value.strip():
         return []
-    return shlex.split(value, posix=not sys.platform.startswith("win"))
+    if windows_style is None:
+        windows_style = sys.platform.startswith("win")
+    return shlex.split(value, posix=not windows_style)
 
 
-def _join_launch_options(args: list[str]) -> str:
+def _join_launch_options(args: list[str], *, windows_style: bool | None = None) -> str:
     if not args:
         return ""
-    if sys.platform.startswith("win"):
+    if windows_style is None:
+        windows_style = sys.platform.startswith("win")
+    if windows_style:
         return subprocess.list2cmdline(args)
     return shlex.join(args)
+
+
+def _macos_app_bundle_for_executable(executable: str) -> str | None:
+    token = _strip_wrapping_quotes(executable).replace("\\", "/")
+    if not token:
+        return None
+    path = PurePosixPath(token)
+    candidates = (path, *path.parents)
+    for candidate in candidates:
+        if candidate.name.casefold().endswith(".app"):
+            return candidate.as_posix()
+    return None
+
+
+def _managed_shortcut_payload_ref(spec: SteamShortcutSpec) -> str:
+    return spec.title_id
+
+
+def _start_dir_for_launch_executable(executable: str) -> str:
+    normalized = executable.replace("\\", "/").strip().strip('"')
+    if "/" not in normalized:
+        return ""
+    return normalized.rsplit("/", 1)[0]
+
+
+def _macos_managed_shortcut_executable_and_args() -> tuple[str, list[str], str]:
+    wrapper_exe, wrapper_args = _wrapper_executable_and_args()
+    launch_exe = wrapper_exe
+    launch_args = list(wrapper_args)
+    start_dir = _start_dir_for_launch_executable(wrapper_exe)
+
+    if _machine_name() in {"arm64", "aarch64"}:
+        launch_args = ["-arm64", launch_exe, *launch_args]
+        launch_exe = _MACOS_ARCH_EXECUTABLE
+
+    return launch_exe, launch_args, start_dir
+
+
+def _build_managed_shortcut_payload(
+    spec: SteamShortcutSpec,
+    *,
+    emulator_name: str,
+    config: GamehubConfig,
+    rom_rel_path: str,
+) -> dict[str, object]:
+    target_exe = spec.exe
+    if sys.platform == "darwin" and emulator_name.casefold() == "azahar":
+        preferred_executable = resolve_macos_preferred_bundle_executable("azahar", user_only=True)
+        if preferred_executable is not None:
+            target_exe = preferred_executable
+    windows_style = _is_windows_style_runtime_path(spec.exe)
+    target_args = _split_launch_options(spec.launch_options, windows_style=windows_style)
+    payload: dict[str, object] = {
+        "v": 1,
+        "emulator": emulator_name.casefold(),
+        "title_id": spec.title_id,
+        "system": spec.system,
+        "rom_rel_path": rom_rel_path,
+        "target_exe": target_exe,
+        "target_args": target_args,
+        "start_dir": spec.start_dir,
+    }
+    if sys.platform == "darwin":
+        app_bundle = _macos_app_bundle_for_executable(target_exe)
+        if app_bundle:
+            payload["macos_open_app"] = app_bundle
+            payload["macos_open_args"] = target_args
+    if config.config_path is not None:
+        payload["config_path"] = str(config.config_path)
+    return payload
 
 
 def _wrap_shortcut_for_managed_launch(
@@ -347,37 +469,59 @@ def _wrap_shortcut_for_managed_launch(
     emulator_name: str,
     config: GamehubConfig,
     rom_rel_path: str,
-) -> SteamShortcutSpec:
-    target_args = _split_launch_options(spec.launch_options)
-    payload: dict[str, object] = {
-        "v": 1,
-        "emulator": emulator_name.casefold(),
-        "title_id": spec.title_id,
-        "system": spec.system,
-        "rom_rel_path": rom_rel_path,
-        "target_exe": spec.exe,
-        "target_args": target_args,
-        "start_dir": spec.start_dir,
-    }
-    if config.config_path is not None:
-        payload["config_path"] = str(config.config_path)
+) -> tuple[SteamShortcutSpec, str | None, str | None]:
+    payload = _build_managed_shortcut_payload(
+        spec,
+        emulator_name=emulator_name,
+        config=config,
+        rom_rel_path=rom_rel_path,
+    )
     payload_token = encode_shortcut_payload(payload)
 
+    payload_ref: str | None = None
+    if sys.platform == "darwin" and isinstance(payload.get("macos_open_app"), str):
+        payload_ref = _managed_shortcut_payload_ref(spec)
+        wrapper_exe, wrapper_args, start_dir = _macos_managed_shortcut_executable_and_args()
+        launch_args = [
+            *wrapper_args,
+            "--payload-registry",
+            str(shortcut_payload_registry_path(config.state_path)),
+            "--payload-ref",
+            payload_ref,
+        ]
+        return (
+            SteamShortcutSpec(
+                title_id=spec.title_id,
+                system=spec.system,
+                title_name=spec.title_name,
+                exe=_maybe_quote_executable(wrapper_exe),
+                launch_options=_join_launch_options(launch_args),
+                start_dir=start_dir,
+                icon_path=spec.icon_path,
+                allow_desktop_config=spec.allow_desktop_config,
+            ),
+            payload_ref,
+            payload_token,
+        )
     wrapper_exe, wrapper_args = _wrapper_executable_and_args()
     launch_args = [*wrapper_args, "--payload", payload_token]
     start_dir = ""
     normalized_wrapper = wrapper_exe.replace("\\", "/").strip().strip('"')
     if "/" in normalized_wrapper:
         start_dir = normalized_wrapper.rsplit("/", 1)[0]
-    return SteamShortcutSpec(
-        title_id=spec.title_id,
-        system=spec.system,
-        title_name=spec.title_name,
-        exe=_maybe_quote_executable(wrapper_exe),
-        launch_options=_join_launch_options(launch_args),
-        start_dir=start_dir,
-        icon_path=spec.icon_path,
-        allow_desktop_config=spec.allow_desktop_config,
+    return (
+        SteamShortcutSpec(
+            title_id=spec.title_id,
+            system=spec.system,
+            title_name=spec.title_name,
+            exe=_maybe_quote_executable(wrapper_exe),
+            launch_options=_join_launch_options(launch_args, windows_style=_is_windows_style_runtime_path(wrapper_exe)),
+            start_dir=start_dir,
+            icon_path=spec.icon_path,
+            allow_desktop_config=spec.allow_desktop_config,
+        ),
+        payload_ref,
+        None,
     )
 
 
@@ -411,11 +555,12 @@ def _normalize_retroarch_flatpak_tokens(tokens: list[str]) -> list[str]:
     return normalized
 
 
-def build_shortcut_specs(
+def _build_shortcut_specs_and_payloads(
     index: LibraryIndex,
     config: GamehubConfig,
-) -> list[SteamShortcutSpec]:
+) -> tuple[list[SteamShortcutSpec], dict[str, str]]:
     specs: list[SteamShortcutSpec] = []
+    payload_tokens_by_ref: dict[str, str] = {}
     steam_deck_linux = sys.platform.startswith("linux") and is_steam_deck_linux()
     for title in sorted(index.titles, key=lambda item: (item.system, item.title_name.casefold(), item.title_id)):
         allow_desktop_config = _managed_shortcut_allow_desktop_config(
@@ -480,12 +625,14 @@ def build_shortcut_specs(
                 allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
-                spec = _wrap_shortcut_for_managed_launch(
+                spec, payload_ref, payload_token = _wrap_shortcut_for_managed_launch(
                     spec,
                     emulator_name=title.emulator,
                     config=config,
                     rom_rel_path=title.rom.rel_path,
                 )
+                if payload_ref is not None and payload_token is not None:
+                    payload_tokens_by_ref[payload_ref] = payload_token
             specs.append(spec)
             continue
         if dolphin_flatpak:
@@ -505,12 +652,14 @@ def build_shortcut_specs(
                 allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
-                spec = _wrap_shortcut_for_managed_launch(
+                spec, payload_ref, payload_token = _wrap_shortcut_for_managed_launch(
                     spec,
                     emulator_name=title.emulator,
                     config=config,
                     rom_rel_path=title.rom.rel_path,
                 )
+                if payload_ref is not None and payload_token is not None:
+                    payload_tokens_by_ref[payload_ref] = payload_token
             specs.append(spec)
             continue
         if pcsx2_flatpak:
@@ -528,12 +677,14 @@ def build_shortcut_specs(
                 allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
-                spec = _wrap_shortcut_for_managed_launch(
+                spec, payload_ref, payload_token = _wrap_shortcut_for_managed_launch(
                     spec,
                     emulator_name=title.emulator,
                     config=config,
                     rom_rel_path=title.rom.rel_path,
                 )
+                if payload_ref is not None and payload_token is not None:
+                    payload_tokens_by_ref[payload_ref] = payload_token
             specs.append(spec)
             continue
         if azahar_flatpak:
@@ -555,12 +706,14 @@ def build_shortcut_specs(
                     allow_desktop_config=allow_desktop_config,
                 )
                 if _should_wrap_shortcut(title.emulator, config):
-                    spec = _wrap_shortcut_for_managed_launch(
+                    spec, payload_ref, payload_token = _wrap_shortcut_for_managed_launch(
                         spec,
                         emulator_name=title.emulator,
                         config=config,
                         rom_rel_path=title.rom.rel_path,
                     )
+                    if payload_ref is not None and payload_token is not None:
+                        payload_tokens_by_ref[payload_ref] = payload_token
                 specs.append(spec)
                 continue
             spec = SteamShortcutSpec(
@@ -576,12 +729,14 @@ def build_shortcut_specs(
                 allow_desktop_config=allow_desktop_config,
             )
             if _should_wrap_shortcut(title.emulator, config):
-                spec = _wrap_shortcut_for_managed_launch(
+                spec, payload_ref, payload_token = _wrap_shortcut_for_managed_launch(
                     spec,
                     emulator_name=title.emulator,
                     config=config,
                     rom_rel_path=title.rom.rel_path,
                 )
+                if payload_ref is not None and payload_token is not None:
+                    payload_tokens_by_ref[payload_ref] = payload_token
             specs.append(spec)
             continue
         launch_template = title.launch_template
@@ -595,13 +750,20 @@ def build_shortcut_specs(
         if "dolphin" in title.emulator.casefold():
             launch_template = _normalize_dolphin_launch_template(launch_template, emulator_exe, config)
         launch_line = launch_template.format(emulator=emulator_exe, rom=str(rom_path))
-        parts = shlex.split(launch_line, posix=False)
+        windows_style = _is_windows_style_runtime_path(emulator_exe)
+        parts = _split_launch_options(launch_line, windows_style=windows_style)
         if parts:
             exe = parts[0]
-            launch_options = " ".join(parts[1:])
+            if windows_style:
+                launch_options = " ".join(parts[1:])
+            else:
+                launch_options = _join_launch_options(parts[1:], windows_style=False)
         else:
             exe = emulator_exe
-            launch_options = f'"{rom_path}"'
+            if windows_style:
+                launch_options = f'"{rom_path}"'
+            else:
+                launch_options = _join_launch_options([str(rom_path)], windows_style=False)
         start_dir = ""
         exe_path = Path(exe.strip('"'))
         if exe_path.parent != Path("."):
@@ -617,13 +779,23 @@ def build_shortcut_specs(
             allow_desktop_config=allow_desktop_config,
         )
         if _should_wrap_shortcut(title.emulator, config):
-            spec = _wrap_shortcut_for_managed_launch(
+            spec, payload_ref, payload_token = _wrap_shortcut_for_managed_launch(
                 spec,
                 emulator_name=title.emulator,
                 config=config,
                 rom_rel_path=title.rom.rel_path,
             )
+            if payload_ref is not None and payload_token is not None:
+                payload_tokens_by_ref[payload_ref] = payload_token
         specs.append(spec)
+    return specs, payload_tokens_by_ref
+
+
+def build_shortcut_specs(
+    index: LibraryIndex,
+    config: GamehubConfig,
+) -> list[SteamShortcutSpec]:
+    specs, _ = _build_shortcut_specs_and_payloads(index, config)
     return specs
 
 
@@ -654,19 +826,26 @@ def apply_steam_updates(
         return
     was_running = is_steam_running()
     if was_running:
-        close_steam_best_effort()
-        closed = wait_for_steam_exit()
-        if not closed and require_steam_closed:
-            raise RuntimeError("Steam must be closed before writing config files")
-        if not closed:
-            print("Steam is still running after close attempt; skipping Steam updates for safety")
+        close_result = close_steam_best_effort()
+        if not close_result.closed:
+            reason = close_result.detail or "Steam is still running after close attempt"
+            if sys.platform == "darwin":
+                reason = f"{reason}; not force-killing Steam"
+            if require_steam_closed:
+                raise RuntimeError(f"{reason}; Steam must be closed before writing config files")
+            print(f"{reason}; skipping Steam updates for safety")
             return
 
     backups = backup_steam_configs(context)
     if backups:
         print(f"Backed up Steam config files: {', '.join(str(item) for item in backups)}")
 
-    shortcut_specs = build_shortcut_specs(index, config)
+    shortcut_specs, payload_tokens_by_ref = _build_shortcut_specs_and_payloads(index, config)
+    if sys.platform == "darwin":
+        save_shortcut_payload_registry_atomic(
+            shortcut_payload_registry_path(config.state_path),
+            payload_tokens_by_ref,
+        )
     shortcut_result = upsert_shortcuts(context, shortcut_specs)
     print(
         "Steam shortcuts synced: "

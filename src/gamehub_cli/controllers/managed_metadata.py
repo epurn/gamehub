@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from dataclasses import dataclass
@@ -8,10 +9,11 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 
-from ..common.fsops import replace_file
+from ..common.fsops import backup_existing_file, replace_file
 
 MANAGED_METADATA_FILENAME = ".gamehub-managed.json"
 MANAGED_METADATA_SCHEMA_VERSION = 1
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,17 @@ def _atomic_write_text(path: Path, payload: str) -> None:
     replace_file(tmp_path, path)
 
 
+def _write_metadata_text_atomic(path: Path, payload: str, *, backup_existing: bool = False) -> Path | None:
+    backup_path: Path | None = None
+    if backup_existing:
+        backup_path = backup_existing_file(path)
+        if backup_path is not None:
+            logger.info("controller metadata backup created path=%s backup=%s", path, backup_path)
+    _atomic_write_text(path, payload)
+    logger.info("controller metadata saved path=%s", path)
+    return backup_path
+
+
 def _base_payload() -> dict[str, object]:
     return {
         "schema_version": MANAGED_METADATA_SCHEMA_VERSION,
@@ -122,32 +135,54 @@ def read_managed_metadata_entry(target: Path) -> tuple[ManagedMetadataEntry | No
     return entry, error
 
 
-def write_managed_metadata_entry(target: Path, entry: ManagedMetadataEntry) -> bool:
-    path = managed_metadata_path(target)
-    payload, _ = _load_payload(path)
+def _render_payload(payload: dict[str, object]) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def _write_payload(path: Path, payload: dict[str, object], *, existing_text: str | None) -> bool:
+    rendered = _render_payload(payload)
+    if existing_text == rendered:
+        return False
+    _write_metadata_text_atomic(path, rendered, backup_existing=path.exists())
+    return True
+
+
+def _existing_text(path: Path) -> str | None:
     existing_text: str | None = None
     if path.exists():
         try:
             existing_text = path.read_text(encoding="utf-8")
         except OSError:
             existing_text = None
+    return existing_text
+
+
+def write_managed_metadata_entries(directory: Path, entries_by_name: dict[str, ManagedMetadataEntry]) -> bool:
+    path = directory / MANAGED_METADATA_FILENAME
+    payload, _ = _load_payload(path)
+    existing_text = _existing_text(path)
     entries = payload.get("entries")
     if not isinstance(entries, dict):
         entries = {}
         payload["entries"] = entries
-    current = entries.get(target.name)
-    next_entry = entry.to_mapping()
-    if isinstance(current, dict):
-        normalized = {str(key): value for key, value in current.items()}
-        if normalized == next_entry:
-            current_payload = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-            if existing_text == current_payload:
-                return False
-    entries[target.name] = next_entry
+    changed = False
+    for filename, entry in entries_by_name.items():
+        current = entries.get(filename)
+        next_entry = entry.to_mapping()
+        if isinstance(current, dict):
+            normalized = {str(key): value for key, value in current.items()}
+            if normalized == next_entry:
+                continue
+        entries[filename] = next_entry
+        changed = True
+    if not changed:
+        current_payload = _render_payload(payload)
+        if existing_text == current_payload:
+            return False
     payload["schema_version"] = MANAGED_METADATA_SCHEMA_VERSION
     payload["updated_at"] = utc_now_iso()
-    rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-    if existing_text == rendered:
-        return False
-    _atomic_write_text(path, rendered)
-    return True
+    return _write_payload(path, payload, existing_text=existing_text)
+
+
+def write_managed_metadata_entry(target: Path, entry: ManagedMetadataEntry) -> bool:
+    return write_managed_metadata_entries(target.parent, {target.name: entry})

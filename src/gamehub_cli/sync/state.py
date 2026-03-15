@@ -100,17 +100,3 @@ def mark_bootstrapped(state: SyncState) -> None:
 
 def has_bootstrap_marker(state: SyncState) -> bool:
     return isinstance(state.bootstrap_version, int) and state.bootstrap_version >= BOOTSTRAP_VERSION
-
-
-def has_legacy_sync_evidence(state: SyncState) -> bool:
-    if state.last_sync:
-        return True
-    if state.downloaded_checksums:
-        return True
-    if state.firmware_checksums:
-        return True
-    if state.save_checksums:
-        return True
-    if state.save_binding_roots:
-        return True
-    return False

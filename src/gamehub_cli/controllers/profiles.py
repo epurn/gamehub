@@ -10,7 +10,7 @@ from typing import Callable
 from ..common.config import GamehubConfig
 from ..common.fsops import backup_existing_file, replace_file
 from ..firmware.pcsx2_ini import pcsx2_pad_bindings
-from .managed_metadata import ManagedMetadataEntry, sha256_text, utc_now_iso, write_managed_metadata_entry
+from .managed_metadata import ManagedMetadataEntry, sha256_text, utc_now_iso, write_managed_metadata_entries
 
 PROFILE_KBM = "kbm"
 PROFILE_XBOX_1P = "xbox_1p"
@@ -41,6 +41,17 @@ def _atomic_write_text(path: Path, text: str) -> None:
         os.fsync(tmp.fileno())
         tmp_path = path.parent / os.path.basename(tmp.name)
     replace_file(tmp_path, path)
+
+
+def write_profile_text_atomic(path: Path, text: str, *, backup_existing: bool = False) -> Path | None:
+    backup_path: Path | None = None
+    if backup_existing:
+        backup_path = backup_existing_file(path)
+        if backup_path is not None:
+            logger.info("controller profile backup created path=%s backup=%s", path, backup_path)
+    _atomic_write_text(path, text)
+    logger.info("controller profile saved path=%s", path)
+    return backup_path
 
 
 def _managed_source_template(*, emulator_name: str, profile_name: str, filename: str) -> str:
@@ -282,12 +293,21 @@ _DOLPHIN_KBM_WIIMOTE_BINDINGS: tuple[tuple[str, str], ...] = (
     ("Nunchuk/Shake/Z", "`Click 2`"),
 )
 
+_DOLPHIN_MACOS_KBM_DEVICE = "Quartz/0/Keyboard & Mouse"
+_DOLPHIN_MACOS_HOTKEY_COMBO = "`Back` & `Start`"
+
 
 def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
     if profile_name == PROFILE_KBM:
         if sys.platform.startswith("linux"):
             return "XInput2/0/Virtual core pointer", "None"
+        if sys.platform == "darwin":
+            return _DOLPHIN_MACOS_KBM_DEVICE, "None"
         return "DInput/0/Keyboard Mouse", "None"
+    if sys.platform == "darwin":
+        if profile_name == PROFILE_XBOX_1P:
+            return "SDL/0/Gamepad", _DOLPHIN_MACOS_KBM_DEVICE
+        return "SDL/0/Gamepad", "SDL/1/Gamepad"
     if sys.platform.startswith("linux"):
         if profile_name == PROFILE_XBOX_1P:
             return "SDL/0/Gamepad", "DInput/0/Keyboard Mouse"
@@ -295,6 +315,20 @@ def _dolphin_device_pair(profile_name: str) -> tuple[str, str]:
     if profile_name == PROFILE_XBOX_1P:
         return "XInput/0/Gamepad", "DInput/0/Keyboard Mouse"
     return "XInput/0/Gamepad", "XInput/1/Gamepad"
+
+
+def _dolphin_macos_wiimote_bindings(
+    bindings: tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...]:
+    updated: list[tuple[str, str]] = []
+    for key, value in bindings:
+        if key == "IR/Up":
+            updated.append((key, "`Right Y+`"))
+        elif key == "IR/Down":
+            updated.append((key, "`Right Y-`"))
+        else:
+            updated.append((key, value))
+    return tuple(updated)
 
 
 def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
@@ -316,6 +350,8 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
         }
         if sys.platform.startswith("linux"):
             hotkey_device0, hotkey_device1 = "XInput2/0/Virtual core pointer", "XInput2/0/Virtual core pointer"
+        elif sys.platform == "darwin":
+            hotkey_device0, hotkey_device1 = _DOLPHIN_MACOS_KBM_DEVICE, _DOLPHIN_MACOS_KBM_DEVICE
         else:
             hotkey_device0, hotkey_device1 = device0, device1
     elif profile_name == PROFILE_XBOX_1P:
@@ -323,19 +359,35 @@ def _dolphin_profile_files(profile_name: str) -> dict[str, str]:
         gcpad_bindings_2 = _DOLPHIN_KBM_GCPAD_BINDINGS
         wiimote_bindings_1 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
         wiimote_bindings_2 = _DOLPHIN_KBM_WIIMOTE_BINDINGS
-        hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
-        general_stop = "@(SELECT+START)"
-        general_exit = "@(SELECT+START)"
-        hotkey_device0, hotkey_device1 = device0, device1
+        if sys.platform == "darwin":
+            hotkey_value = _DOLPHIN_MACOS_HOTKEY_COMBO
+            general_stop = _DOLPHIN_MACOS_HOTKEY_COMBO
+            general_exit = _DOLPHIN_MACOS_HOTKEY_COMBO
+            hotkey_device0, hotkey_device1 = device0, device1
+            wiimote_bindings_1 = _dolphin_macos_wiimote_bindings(wiimote_bindings_1)
+            wiimote_bindings_2 = _dolphin_macos_wiimote_bindings(wiimote_bindings_2)
+        else:
+            hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
+            general_stop = "@(SELECT+START)"
+            general_exit = "@(SELECT+START)"
+            hotkey_device0, hotkey_device1 = device0, device1
     else:
         gcpad_bindings_1 = _DOLPHIN_XBOX_GCPAD_BINDINGS
         gcpad_bindings_2 = _DOLPHIN_XBOX_GCPAD_BINDINGS
         wiimote_bindings_1 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
         wiimote_bindings_2 = _DOLPHIN_XBOX_WIIMOTE_BINDINGS
-        hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
-        general_stop = "@(SELECT+START)"
-        general_exit = "@(SELECT+START)"
-        hotkey_device0, hotkey_device1 = device0, device1
+        if sys.platform == "darwin":
+            hotkey_value = _DOLPHIN_MACOS_HOTKEY_COMBO
+            general_stop = _DOLPHIN_MACOS_HOTKEY_COMBO
+            general_exit = _DOLPHIN_MACOS_HOTKEY_COMBO
+            hotkey_device0, hotkey_device1 = device0, device1
+            wiimote_bindings_1 = _dolphin_macos_wiimote_bindings(wiimote_bindings_1)
+            wiimote_bindings_2 = _dolphin_macos_wiimote_bindings(wiimote_bindings_2)
+        else:
+            hotkey_value = "((`BACK` | `Back` | `SELECT` | `Select` | `Button 6`) & (`START` | `Start` | `Button 7`))"
+            general_stop = "@(SELECT+START)"
+            general_exit = "@(SELECT+START)"
+            hotkey_device0, hotkey_device1 = device0, device1
 
     gcpad_sections: dict[str, dict[str, str]] = {}
     for pad_number, device, bindings in (
@@ -560,6 +612,7 @@ def seed_default_profiles(
         return []
     root = resolve_profiles_root(config)
     created: list[Path] = []
+    metadata_updates: dict[Path, dict[str, ManagedMetadataEntry]] = {}
     for emulator_name, profiles in DEFAULT_PROFILE_TEXTS.items():
         for profile_name, files in profiles.items():
             for filename, payload in files.items():
@@ -567,29 +620,23 @@ def seed_default_profiles(
                 target_exists = target.exists()
                 if target_exists and not force:
                     continue
-                if target_exists:
-                    backup_path = backup_existing_file(target)
-                    if backup_path is not None:
-                        logger.info("controller profile backup created path=%s backup=%s", target, backup_path)
-                _atomic_write_text(target, payload)
-                logger.info("controller profile saved path=%s overwritten=%s", target, target_exists)
-                write_managed_metadata_entry(
-                    target,
-                    ManagedMetadataEntry(
-                        source_profile=profile_name,
-                        source_template=_managed_source_template(
-                            emulator_name=emulator_name,
-                            profile_name=profile_name,
-                            filename=filename,
-                        ),
-                        timestamp_utc=utc_now_iso(),
-                        fingerprint_sha256=sha256_text(payload),
-                        ownership="managed",
+                write_profile_text_atomic(target, payload, backup_existing=target_exists)
+                metadata_updates.setdefault(target.parent, {})[target.name] = ManagedMetadataEntry(
+                    source_profile=profile_name,
+                    source_template=_managed_source_template(
+                        emulator_name=emulator_name,
+                        profile_name=profile_name,
+                        filename=filename,
                     ),
+                    timestamp_utc=utc_now_iso(),
+                    fingerprint_sha256=sha256_text(payload),
+                    ownership="managed",
                 )
                 created.append(target)
                 if verbose:
                     writer(f"controller-profile\tseeded\t{target}")
+    for directory, entries in metadata_updates.items():
+        write_managed_metadata_entries(directory, entries)
     return created
 
 
