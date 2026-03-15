@@ -68,10 +68,17 @@ macOS and Linux use the same universal release wheel; Windows ships a standalone
 
 macOS/Linux install from latest release wheel:
 ```bash
-LATEST_TAG="$(python3 -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://api.github.com/repos/epurn/gamehub/releases/latest'))['tag_name'])")"
+LATEST_TAG="$(curl -fsSL https://api.github.com/repos/epurn/gamehub/releases/latest | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"tag_name\"])')"
 LATEST_VER="${LATEST_TAG#v}"
+
+# Outside a virtualenv:
 python3 -m pip install --user --upgrade "https://github.com/epurn/gamehub/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
+
+# Inside an active virtualenv:
+python3 -m pip install --upgrade "https://github.com/epurn/gamehub/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
 ```
+
+If your macOS Python.org install still reports certificate verification failures, run `/Applications/Python 3.14/Install Certificates.command` once for that Python installation and retry.
 
 macOS/Linux first run + sync:
 ```bash

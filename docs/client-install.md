@@ -8,13 +8,35 @@ Platform status and recommended templates:
 
 ### Install from GitHub Release wheel
 ```bash
+# Outside a virtualenv:
 python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+
+# Inside an active virtualenv:
+python3 -m pip install --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
 ```
 
 ### Upgrade
 ```bash
+# Outside a virtualenv:
 python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+
+# Inside an active virtualenv:
+python3 -m pip install --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
 ```
+
+### Install latest release dynamically
+```bash
+LATEST_TAG="$(curl -fsSL https://api.github.com/repos/<org>/<repo>/releases/latest | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+LATEST_VER="${LATEST_TAG#v}"
+
+# Outside a virtualenv:
+python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
+
+# Inside an active virtualenv:
+python3 -m pip install --upgrade "https://github.com/<org>/<repo>/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
+```
+
+If your macOS Python.org install still reports certificate verification failures, run `/Applications/Python 3.14/Install Certificates.command` once for that Python installation and retry.
 
 ### Uninstall
 ```bash
@@ -80,12 +102,32 @@ gamehub sync --config ./config.macos.toml --verbose --require-steam-closed
 
 ### Install from GitHub Release wheel
 ```bash
+# Outside a virtualenv:
 python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+
+# Inside an active virtualenv:
+python3 -m pip install --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
 ```
 
 ### Upgrade
 ```bash
+# Outside a virtualenv:
 python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+
+# Inside an active virtualenv:
+python3 -m pip install --upgrade "https://github.com/<org>/<repo>/releases/download/<tag>/gamehub-<version>-py3-none-any.whl"
+```
+
+### Install latest release dynamically
+```bash
+LATEST_TAG="$(curl -fsSL https://api.github.com/repos/<org>/<repo>/releases/latest | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+LATEST_VER="${LATEST_TAG#v}"
+
+# Outside a virtualenv:
+python3 -m pip install --user --upgrade "https://github.com/<org>/<repo>/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
+
+# Inside an active virtualenv:
+python3 -m pip install --upgrade "https://github.com/<org>/<repo>/releases/download/${LATEST_TAG}/gamehub-${LATEST_VER}-py3-none-any.whl"
 ```
 
 ### Uninstall
