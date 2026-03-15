@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -13,11 +11,11 @@ from gamehub_common.models import LibraryIndex
 from ..common.config import GamehubConfig
 from ..common.config_edit import read_qsettings_key, upsert_qsettings_key
 from ..common.fsops import replace_file
-from ..firmware.pcsx2_ini import read_ini_lines, write_ini_atomic
+from ..firmware.pcsx2_ini import read_ini_lines
 from ..firmware.targets import default_pcsx2_ini_path
 from .apply_azahar import azahar_target_config_paths
 from .apply_dolphin import dolphin_target_config_dirs
-from .apply_ini import apply_managed_ini_sections, parse_ini_sections
+from .apply_ini import apply_managed_ini_sections, parse_ini_sections, write_controller_config_lines_atomic
 from .managed_metadata import (
     MANAGED_METADATA_FILENAME,
     ManagedMetadataEntry,
@@ -26,7 +24,14 @@ from .managed_metadata import (
     utc_now_iso,
     write_managed_metadata_entry,
 )
-from .profiles import DEFAULT_PROFILE_TEXTS, PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P, resolve_profiles_root
+from .profiles import (
+    DEFAULT_PROFILE_TEXTS,
+    PROFILE_KBM,
+    PROFILE_XBOX_1P,
+    PROFILE_XBOX_2P,
+    resolve_profiles_root,
+    write_profile_text_atomic,
+)
 
 _KNOWN_EMULATOR_FAMILIES = ("pcsx2", "dolphin", "azahar")
 _UNMANAGED_BACKUP_DIRNAME = ".gamehub-unmanaged-backups"
@@ -250,16 +255,6 @@ def format_runtime_selection_rules(rules: tuple[ControllerRuntimeSelectionRule, 
     return ",".join(f"{rule.controller_count}->{rule.profile_name}" for rule in rules)
 
 
-def _atomic_write_text(path: Path, payload: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent, suffix=".tmp") as tmp:
-        tmp.write(payload)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        tmp_path = path.parent / Path(tmp.name).name
-    replace_file(tmp_path, path)
-
-
 def _archive_unmanaged_profile_file(path: Path) -> Path:
     backup_root = path.parent / _UNMANAGED_BACKUP_DIRNAME
     backup_root.mkdir(parents=True, exist_ok=True)
@@ -311,7 +306,7 @@ def _evaluate_managed_target(
 
     if not path.exists():
         if apply:
-            _atomic_write_text(path, spec.payload)
+            write_profile_text_atomic(path, spec.payload)
             _record_managed_metadata(path, spec)
             return ControllerConvergenceFinding(
                 ownership=ControllerOwnership.MANAGED,
@@ -384,7 +379,7 @@ def _evaluate_managed_target(
 
     if force_managed or metadata_owned:
         if apply:
-            _atomic_write_text(path, spec.payload)
+            write_profile_text_atomic(path, spec.payload, backup_existing=True)
             _record_managed_metadata(path, spec)
             return ControllerConvergenceFinding(
                 ownership=ControllerOwnership.MANAGED,
@@ -405,7 +400,7 @@ def _evaluate_managed_target(
 
     if apply and force_unmanaged:
         backup_path = _archive_unmanaged_profile_file(path)
-        _atomic_write_text(path, spec.payload)
+        write_profile_text_atomic(path, spec.payload)
         _record_managed_metadata(path, spec)
         return ControllerConvergenceFinding(
             ownership=ControllerOwnership.MANAGED,
@@ -519,7 +514,7 @@ def _evaluate_assisted_qsettings_target(
             lines, key_changed = upsert_qsettings_key(lines, key, desired)
             changed |= key_changed
         if changed or not path.exists():
-            write_ini_atomic(path, lines)
+            write_controller_config_lines_atomic(path, lines)
     except OSError as exc:
         return ControllerConvergenceFinding(
             ownership=ControllerOwnership.ASSISTED,

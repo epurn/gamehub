@@ -8,20 +8,7 @@ This is the short manual path for user-visible behavior. It intentionally skips 
 
 Full release flow still lives in [release-final-validation-playbook.md](./release-final-validation-playbook.md).
 
-## Already verified on this branch
-
-These do not need to be repeated unless the branch changes again:
-
-- `.\venv\Scripts\python.exe -m ruff format --check .`
-- `.\venv\Scripts\python.exe -m ruff check .`
-- `.\venv\Scripts\python.exe -m mypy src`
-- `.\venv\Scripts\python.exe -m pytest . -p no:cacheprovider`
-- `.\venv\Scripts\python.exe scripts\audit_repo_readiness.py`
-  - current result is `WARN` only because of a known revoked historical SGDB key in local `config.toml`
-- `.\venv\Scripts\python.exe -m build --wheel`
-- `.\venv\Scripts\pyinstaller.exe --noconfirm --clean packaging\windows\gamehub.spec`
-- `.\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe --help`
-- `.\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe sync --help`
+This checklist assumes the candidate commit already passed the automated gates and artifact smoke checks in [release-final-validation-playbook.md](./release-final-validation-playbook.md). If the candidate changed after those ran, rerun them before starting this manual pass.
 
 ## Before manual testing
 

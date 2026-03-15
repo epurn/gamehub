@@ -551,12 +551,12 @@
   - `tests/test_emulators.py`
 - Goal: add default-on Rosetta fallback support for Intel-only PCSX2 on Apple Silicon macOS while keeping every other macOS emulator path native-only.
 - Acceptance Criteria (deterministic):
-  - [ ] Default macOS behavior still prefers native/universal builds for all emulators.
-  - [ ] A dedicated `[macos]` opt-out switch and matching env override control strict native-only PCSX2 behavior, defaulting to disabled.
-  - [ ] When the opt-out is disabled, Intel-only PCSX2 is accepted only if Rosetta is already available on the host; otherwise GAMEHUB fails clearly with an actionable message.
-  - [ ] When the opt-out is enabled, Intel-only PCSX2 assets remain unsupported on Apple Silicon macOS.
-  - [ ] RetroArch, Dolphin, Azahar, and Steam remain native-only and continue to reject Intel-only/non-native assets.
-  - [ ] Managed PCSX2 launch/runtime behavior remains unchanged after install/discovery; this story does not widen save/controller/runtime policy.
+  - [x] Default macOS behavior still prefers native/universal builds for all emulators.
+  - [x] A dedicated `[macos]` opt-out switch and matching env override control strict native-only PCSX2 behavior, defaulting to disabled.
+  - [x] When the opt-out is disabled, Intel-only PCSX2 is accepted only if Rosetta is already available on the host; otherwise GAMEHUB fails clearly with an actionable message.
+  - [x] When the opt-out is enabled, Intel-only PCSX2 assets remain unsupported on Apple Silicon macOS.
+  - [x] RetroArch, Dolphin, Azahar, and Steam remain native-only and continue to reject Intel-only/non-native assets.
+  - [x] Managed PCSX2 launch/runtime behavior remains unchanged after install/discovery; this story does not widen save/controller/runtime policy.
 - Non-Goals:
   - Rosetta support for RetroArch, Dolphin, Azahar, or Steam.
   - Automatic Rosetta installation or prompting the operator to install Rosetta from inside GAMEHUB.

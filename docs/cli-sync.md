@@ -138,8 +138,8 @@ Steam close behavior:
 9. Deploy firmware files into emulator-native BIOS locations (copy/link from `<gamehub_dir>/firmware/...`)
 10. Controller convergence stage (after runtime/bootstrap setup, before Steam mutation):
    - validates managed controller profile templates under `<gamehub_dir>/controller_profiles`
-   - records per-directory `.gamehub-managed.json` metadata markers (schema version, source profile/template, timestamp, fingerprint, ownership)
-   - applies assisted emulator config key convergence for known-safe controller sections (`PCSX2.ini`, `Dolphin.ini`, Azahar `qt-config.ini`) using minimal key/section edits
+   - records per-directory `.gamehub-managed.json` metadata markers (schema version, source profile/template, timestamp, fingerprint, ownership); rewrites back up the previous marker file to a timestamped `.bak` and log the save
+   - applies assisted emulator config key convergence for known-safe controller sections (`PCSX2.ini`, `Dolphin.ini`, Azahar `qt-config.ini`) using minimal key/section edits; when an existing config file is changed, GAMEHUB first writes a timestamped `.bak` beside that file and logs the rewrite
    - does not choose a fixed profile; runtime selection remains launch-time autodetect (`0 -> kbm`, `1 -> xbox_1p`, `2+ -> xbox_2p`)
 11. Discover Steam userdata + SteamID
 12. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
@@ -292,6 +292,7 @@ Controller launch profile defaults:
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
   - with `--reseed-profiles`, managed files are rewritten even when bytes already match
+  - when an existing managed controller profile file is replaced, GAMEHUB first writes a timestamped `.bak` backup beside that file and logs the rewrite
 - Controller profiles apply input mappings for `PCSX2`, `Dolphin`, and `Azahar` at launch; firmware deploy does not write controller bindings.
 - Profile selection:
   - `0` Xbox controllers -> `kbm`

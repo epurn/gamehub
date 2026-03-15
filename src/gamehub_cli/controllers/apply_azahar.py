@@ -8,7 +8,8 @@ from pathlib import Path
 from ..common.config import GamehubConfig
 from ..common.config_edit import parse_qsettings_pairs, read_qsettings_key, upsert_qsettings_key
 from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID, macos_azahar_qt_config_candidates
-from ..firmware.pcsx2_ini import read_ini_lines, write_ini_atomic
+from ..firmware.pcsx2_ini import read_ini_lines
+from .apply_ini import write_controller_config_lines_atomic
 from .profiles import PROFILE_KBM, load_profile_file
 from .sdl_guid import (
     _azahar_detect_sdl_identity,
@@ -312,6 +313,6 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
             lines, key_changed = upsert_qsettings_key(lines, key, desired)
             changed |= key_changed
         if changed or not target_path.exists():
-            write_ini_atomic(target_path, lines)
+            write_controller_config_lines_atomic(target_path, lines)
         touched.append(target_path)
     return touched

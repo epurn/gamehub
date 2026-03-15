@@ -299,12 +299,15 @@ Managed shortcut launch autoconfig:
   - non-dry `gamehub init` and non-dry `gamehub sync` seed any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
   - with `--reseed-profiles`, managed files are rewritten even when bytes already match
+  - when an existing managed controller profile file is replaced, GAMEHUB first writes a timestamped `.bak` backup beside that file and logs the rewrite
+- Launch-time assisted controller config repairs for `PCSX2.ini`, `Dolphin.ini`, and Azahar `qt-config.ini` also back up the previous file to a timestamped `.bak` before replacing it and log the save.
 - Managed profile directories include `.gamehub-managed.json` markers for drift-safe ownership tracking:
   - schema version
   - source profile/template
   - timestamp
   - fingerprint/hash
   - ownership tier (`managed`)
+  - when an existing marker file is rewritten, GAMEHUB writes a timestamped `.bak` beside it and logs the save
 - Sync convergence applies assisted controller safety keys before Steam mutation and never fixes controller count to a single profile.
 - Doctor mode for controller convergence:
   - inspect only: `gamehub doctor controllers`
