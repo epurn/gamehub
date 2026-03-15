@@ -64,7 +64,9 @@ def main() -> int:
         )
         has_payload = has_inline_payload or has_payload_ref
 
-        if has_payload and not (uses_gamehub or uses_python_module):
+        if not has_payload:
+            bad_wrappers.append((key, entry.get("AppName", ""), exe, launch))
+        elif not (uses_gamehub or uses_python_module):
             bad_wrappers.append((key, entry.get("AppName", ""), exe, launch))
         if uses_gamehub and launch.startswith("-m "):
             bad_gamehub_mismatch.append((key, entry.get("AppName", ""), exe, launch))
