@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import tempfile
 import time
 import traceback
@@ -19,12 +20,15 @@ def _append_entrypoint_log(message: str) -> None:
 
 
 if __name__ == "__main__":
-    _append_entrypoint_log("startup")
+    _append_entrypoint_log(f"startup argv={sys.argv!r}")
     try:
         from gamehub_cli.main import main
 
         main()
         _append_entrypoint_log("exit_ok")
+    except SystemExit as exc:
+        _append_entrypoint_log(f"system_exit code={exc.code!r}")
+        raise
     except Exception as exc:  # noqa: BLE001
         _append_entrypoint_log(f"fatal_exception={type(exc).__name__}: {exc}")
         for line in traceback.format_exc().splitlines():
