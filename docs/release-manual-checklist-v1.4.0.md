@@ -60,7 +60,7 @@ Budget: 35 to 50 minutes.
 ```
 - [ ] Confirm the EXE reports the expected version in artifact naming or release notes.
 - [ ] Prepare `config.windows.toml` from [docs/templates/config.windows.template.toml](./templates/config.windows.template.toml).
-- [ ] If this machine previously used older preview builds, run one reseed bootstrap first:
+- [ ] If you want a clean managed baseline on this machine, run one reseed bootstrap first:
 ```powershell
 .\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe init --config .\config.windows.toml --reseed-profiles
 ```
@@ -122,7 +122,7 @@ Use the prepared `RetroArch` and `PSX`/`PS2` titles here.
 Budget: 40 to 55 minutes.
 
 - [ ] Prepare `config.macos.toml` from [docs/templates/config.macos.template.toml](./templates/config.macos.template.toml).
-- [ ] If this machine previously used older preview builds, run one reseed bootstrap first:
+- [ ] If you want a clean managed baseline on this machine, run one reseed bootstrap first:
 ```bash
 ./venv/bin/python -m gamehub_cli.main init --config ./config.macos.toml --reseed-profiles
 ```
@@ -174,7 +174,7 @@ Use this pass for Flatpak, Deck-template, and Linux launch behavior.
 
 - [ ] Install the rebuilt wheel candidate on Bazzite or Steam Deck.
 - [ ] Prepare `config.bazzite.toml` or Steam Deck config from the template docs.
-- [ ] If this machine previously used older preview builds, run one reseed bootstrap first:
+- [ ] If you want a clean managed baseline on this machine, run one reseed bootstrap first:
 ```bash
 gamehub init --config ./config.bazzite.toml --reseed-profiles
 ```

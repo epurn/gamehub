@@ -41,7 +41,7 @@ def main() -> int:
     bad_gamehub_mismatch: list[tuple[object, ...]] = []
     bad_payload_registry: list[tuple[object, ...]] = []
     managed = 0
-    launcher_path = config.state_path.with_name("steam-shortcut-launch.sh")
+    legacy_launcher_path = config.state_path.with_name("steam-shortcut-launch.sh")
 
     for key, entry in data.get("shortcuts", {}).items():
         if not isinstance(entry, dict):
@@ -64,10 +64,12 @@ def main() -> int:
             launch.startswith("-m gamehub_cli.main shortcut-launch --payload ")
             or launch.startswith("-m gamehub_cli.main shortcut-launch --payload-ref ")
         )
-        uses_macos_launcher = Path(exe) == launcher_path and bool(launch)
-        has_payload = has_inline_payload or has_payload_ref or uses_macos_launcher
+        has_payload = has_inline_payload or has_payload_ref
 
-        if has_payload and not (uses_gamehub or uses_python_module or uses_macos_launcher):
+        if Path(exe) == legacy_launcher_path:
+            bad_wrappers.append((key, entry.get("AppName", ""), exe, launch))
+            continue
+        if has_payload and not (uses_gamehub or uses_python_module):
             bad_wrappers.append((key, entry.get("AppName", ""), exe, launch))
         if uses_gamehub and launch.startswith("-m "):
             bad_gamehub_mismatch.append((key, entry.get("AppName", ""), exe, launch))
