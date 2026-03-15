@@ -284,6 +284,17 @@ def _is_python_executable_name(value: str) -> bool:
     return normalized == "python" or normalized.startswith("python") or normalized.startswith("pypy")
 
 
+def _gamehub_wrapper_command_names() -> tuple[str, ...]:
+    if sys.platform.startswith("win"):
+        return ("gamehub.exe", "gamehub-windows-amd64.exe", "gamehub")
+    return ("gamehub",)
+
+
+def _is_gamehub_wrapper_name(value: str) -> bool:
+    normalized = _strip_wrapping_quotes(value).replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    return normalized in {name.casefold() for name in _gamehub_wrapper_command_names()}
+
+
 def _resolved_existing_path(path: Path) -> str | None:
     candidate = path.expanduser()
     if not candidate.exists():
@@ -316,7 +327,7 @@ def _resolve_invoked_gamehub_wrapper_executable() -> str | None:
     if sys.argv and sys.argv[0]:
         argv0 = _strip_wrapping_quotes(sys.argv[0])
         argv_name = Path(argv0).name.casefold()
-        if argv_name in {"gamehub", "gamehub.exe"}:
+        if _is_gamehub_wrapper_name(argv_name):
             path = Path(argv0)
             resolved = _resolved_existing_path(path)
             if resolved:
@@ -328,8 +339,19 @@ def _resolve_invoked_gamehub_wrapper_executable() -> str | None:
 
     exe_path = Path(sys.executable)
     exe_name = exe_path.name.casefold()
-    if exe_name in {"gamehub", "gamehub.exe"}:
+    if _is_gamehub_wrapper_name(exe_name):
         resolved = _resolved_existing_path(exe_path)
+        if resolved:
+            return resolved
+    return None
+
+
+def _resolve_adjacent_gamehub_wrapper_executable() -> str | None:
+    base_path = Path(sys.executable)
+    for sibling_name in _gamehub_wrapper_command_names():
+        if sibling_name.casefold() == base_path.name.casefold():
+            continue
+        resolved = _resolved_existing_path(base_path.with_name(sibling_name))
         if resolved:
             return resolved
     return None
@@ -342,7 +364,11 @@ def _resolve_gamehub_wrapper_executable() -> str | None:
     if invoked_wrapper:
         candidates.append(invoked_wrapper)
 
-    for command in ("gamehub", "gamehub.exe"):
+    adjacent_wrapper = _resolve_adjacent_gamehub_wrapper_executable()
+    if adjacent_wrapper:
+        candidates.append(adjacent_wrapper)
+
+    for command in _gamehub_wrapper_command_names():
         resolved = shutil.which(command)
         if resolved:
             candidates.append(str(resolved))
