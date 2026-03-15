@@ -292,11 +292,80 @@ def _render_launch_command(command: list[str]) -> str:
     return shlex.join(command)
 
 
-def _spawn_shortcut_process(command: list[str], *, cwd: str | None) -> subprocess.Popen[bytes]:
+def _is_windows_frozen_runtime() -> bool:
+    return sys.platform.startswith("win") and bool(getattr(sys, "frozen", False))
+
+
+def _windows_meipass_root() -> str | None:
+    raw = getattr(sys, "_MEIPASS", None)
+    if not isinstance(raw, str):
+        return None
+    normalized = raw.strip()
+    return normalized or None
+
+
+def _sanitize_windows_path_for_external_process(path_value: str, *, meipass_root: str | None) -> str:
+    if not path_value or not meipass_root:
+        return path_value
+
+    delimiter = ";"
+    meipass_marker = meipass_root.replace("\\", "/").rstrip("/").casefold()
+    sanitized_entries: list[str] = []
+    for raw_entry in path_value.split(delimiter):
+        entry = raw_entry.strip()
+        if not entry:
+            continue
+        normalized = entry.strip('"').replace("\\", "/").rstrip("/").casefold()
+        if normalized == meipass_marker or normalized.startswith(f"{meipass_marker}/"):
+            continue
+        sanitized_entries.append(raw_entry)
+    return delimiter.join(sanitized_entries)
+
+
+def _set_windows_dll_directory(path: str | None) -> bool:
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        return False
+    kernel32 = getattr(windll, "kernel32", None)
+    if kernel32 is None:
+        return False
+    set_dll_directory = getattr(kernel32, "SetDllDirectoryW", None)
+    if set_dll_directory is None:
+        return False
     try:
-        return subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+        return bool(set_dll_directory(path))
+    except (AttributeError, OSError, TypeError, ValueError):
+        return False
+
+
+def _prepare_external_process_environment() -> tuple[dict[str, str] | None, str | None]:
+    if not _is_windows_frozen_runtime():
+        return None, None
+
+    env = dict(os.environ)
+    meipass_root = _windows_meipass_root()
+    path_value = env.get("PATH", "")
+    env["PATH"] = _sanitize_windows_path_for_external_process(path_value, meipass_root=meipass_root)
+
+    restored_dll_directory: str | None = None
+    if _set_windows_dll_directory(None):
+        restored_dll_directory = meipass_root
+    else:
+        warn_shortcut_runtime("unable to reset frozen Windows DLL search path before emulator launch")
+    return env, restored_dll_directory
+
+
+def _spawn_shortcut_process(command: list[str], *, cwd: str | None) -> subprocess.Popen[bytes]:
+    env, restored_dll_directory = _prepare_external_process_environment()
+    try:
+        if env is None:
+            return subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
+        return subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL, env=env)
     except OSError as exc:
         raise ShortcutLaunchError(f"launch failed (command={_render_launch_command(command)}, error={exc})") from exc
+    finally:
+        if restored_dll_directory is not None:
+            _set_windows_dll_directory(restored_dll_directory)
 
 
 def _run_macos_bundle_target(payload: ShortcutLaunchPayload) -> int:

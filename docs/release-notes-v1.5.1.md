@@ -3,6 +3,7 @@
 ## Highlights
 - Fix Windows managed Steam shortcut wrapper resolution for installed release layouts.
 - Managed shortcuts now correctly reuse adjacent or PATH-discovered `gamehub-windows-amd64.exe`, which prevents Steam's "missing game executable" error after sync rewrites wrapper launches.
+- Frozen Windows shortcut launches now sanitize the packaged runtime DLL search state before spawning emulators, which prevents immediate emulator exits from the packaged wrapper path.
 - This is a patch release with no server API or schema changes.
 
 ## Server

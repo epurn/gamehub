@@ -36,7 +36,7 @@ Budget: 35 to 50 minutes.
 .\venv\Scripts\python.exe scripts\validate_steam_shortcuts.py --config .\config.windows.toml
 ```
 - [ ] In Steam, launch at least two managed titles that previously failed with "missing game executable".
-- [ ] Confirm each managed title launches through the wrapper and no Steam dialog reports a missing executable.
+- [ ] Confirm each managed title launches through the wrapper, no Steam dialog reports a missing executable, and the emulator does not exit immediately after launch.
 - [ ] Run a second real sync and confirm it remains effectively idempotent:
 ```powershell
 .\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe sync --config .\config.windows.toml --verbose --require-steam-closed
@@ -70,6 +70,7 @@ Call `v1.5.1` ready only if all of these are true:
 - [ ] Rebuilt artifacts and metadata report `1.5.1`.
 - [ ] Windows packaged sync rewrites managed shortcuts cleanly.
 - [ ] Previously affected Windows managed titles launch without a "missing game executable" error.
+- [ ] Previously affected Windows managed titles remain running instead of exiting immediately from the packaged wrapper path.
 - [ ] Shortcut structure validation passes after the rewrite sync.
 - [ ] Server smoke passed.
 - [ ] macOS and Linux/Bazzite client smoke checks passed.

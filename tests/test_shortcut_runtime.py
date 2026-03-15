@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -633,3 +634,74 @@ def test_warn_shortcut_runtime_swallows_broken_pipe(monkeypatch) -> None:
     monkeypatch.setattr(runtime_module.sys, "stderr", _BrokenStderr())
 
     runtime_module.warn_shortcut_runtime("controller autoconfig failed")
+
+
+def test_spawn_shortcut_process_windows_frozen_sanitizes_external_env(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    dll_calls: list[str | None] = []
+
+    class _Process:
+        pass
+
+    def _fake_popen(command, cwd=None, stdin=None, env=None):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["stdin"] = stdin
+        captured["env"] = env
+        return _Process()
+
+    def _fake_set_dll_directory(value: str | None) -> int:
+        dll_calls.append(value)
+        return 1
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "win32")
+    monkeypatch.setattr(runtime_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(runtime_module.sys, "_MEIPASS", r"C:\GameHub\_internal", raising=False)
+    monkeypatch.setenv(
+        "PATH",
+        r"C:\GameHub\_internal;C:\Windows\System32;C:\Tools;C:\GameHub\_internal\qt",
+    )
+    monkeypatch.setattr(
+        runtime_module.ctypes,
+        "windll",
+        SimpleNamespace(kernel32=SimpleNamespace(SetDllDirectoryW=_fake_set_dll_directory)),
+        raising=False,
+    )
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", _fake_popen)
+
+    process = runtime_module._spawn_shortcut_process(
+        [r"C:\RetroArch\retroarch.exe", r"D:\Games\Pokemon Crystal.gbc"],
+        cwd=r"C:\RetroArch",
+    )
+
+    assert isinstance(process, _Process)
+    assert captured["command"] == [r"C:\RetroArch\retroarch.exe", r"D:\Games\Pokemon Crystal.gbc"]
+    assert captured["cwd"] == r"C:\RetroArch"
+    assert captured["stdin"] is runtime_module.subprocess.DEVNULL
+    assert captured["env"] is not None
+    assert captured["env"]["PATH"] == r"C:\Windows\System32;C:\Tools"
+    assert dll_calls == [None, r"C:\GameHub\_internal"]
+
+
+def test_spawn_shortcut_process_nonfrozen_keeps_default_env(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _Process:
+        pass
+
+    def _fake_popen(command, cwd=None, stdin=None, env=None):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["stdin"] = stdin
+        captured["env"] = env
+        return _Process()
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "win32")
+    monkeypatch.delattr(runtime_module.sys, "frozen", raising=False)
+    monkeypatch.delattr(runtime_module.sys, "_MEIPASS", raising=False)
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", _fake_popen)
+
+    process = runtime_module._spawn_shortcut_process(["retroarch.exe", "game.gbc"], cwd="C:\\RetroArch")
+
+    assert isinstance(process, _Process)
+    assert captured["env"] is None
