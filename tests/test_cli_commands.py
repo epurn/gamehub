@@ -83,7 +83,6 @@ def test_typer_shortcut_launch_dispatches(monkeypatch) -> None:
             "payloads.json",
             "--config",
             "config.toml",
-            "--audit",
         ],
     )
 
@@ -93,8 +92,16 @@ def test_typer_shortcut_launch_dispatches(monkeypatch) -> None:
         "payload_ref": "title_ps2_gt4",
         "payload_registry_path": Path("payloads.json"),
         "config_path": Path("config.toml"),
-        "audit": True,
     }
+
+
+def test_typer_shortcut_launch_rejects_removed_audit_flag() -> None:
+    assert cli_main.app is not None
+
+    result = _RUNNER.invoke(cli_main.app, ["shortcut-launch", "--payload", "encoded-payload", "--audit"])
+
+    assert result.exit_code != 0
+    assert "No such option" in result.output
 
 
 def test_typer_doctor_controllers_dispatches(monkeypatch) -> None:

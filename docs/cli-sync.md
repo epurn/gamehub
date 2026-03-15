@@ -88,7 +88,7 @@ Steam close behavior:
 
 ## Sync Pipeline Order
 1. Load config and local state
-2. Fail fast on fresh installs when `bootstrap_version` is missing and no legacy sync evidence exists
+2. Fail fast when `bootstrap_version` is missing; run `gamehub init` before the first sync on any supported system
 3. Fetch and validate `/v1/index`
    - transient index fetch failures are retried with exponential backoff (`[server].index_fetch_attempts`, `[server].index_retry_backoff_seconds`)
    - per-attempt index timeout can be set via `[server].index_timeout_seconds` (defaults to current transport timeout behavior)

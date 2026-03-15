@@ -343,7 +343,6 @@ def test_run_shortcut_prelaunch_save_sync_macos_n64_preserves_retroarch_n64_runt
                 temp_root / "Applications" / "RetroArch.app" / "Contents" / "MacOS" / "retroarch-metal"
             ),
             verbose=False,
-            audit=False,
         )
         second_context, second_changed = launch_module._run_shortcut_prelaunch_save_sync(
             payload=payload,
@@ -353,7 +352,6 @@ def test_run_shortcut_prelaunch_save_sync_macos_n64_preserves_retroarch_n64_runt
                 temp_root / "Applications" / "RetroArch.app" / "Contents" / "MacOS" / "retroarch-metal"
             ),
             verbose=False,
-            audit=False,
         )
 
         cfg_text = cfg_path.read_text(encoding="utf-8")
@@ -514,7 +512,6 @@ def test_shortcut_postexit_exact_binding_sync_creates_remote_missing_save(monkey
             server_url="http://localhost:8000",
             timeout_seconds=30.0,
             verbose=False,
-            audit=False,
         )
 
         save_id = make_save_id("saves/GBC/Pokemon - Crystal Version/battery/Pokemon - Crystal Version.srm")
@@ -609,7 +606,6 @@ def test_shortcut_postexit_learned_tree_uploads_existing_local_save_without_sess
             state=state,
             resolve_executable=lambda _name: "dolphin",
             verbose=False,
-            audit=False,
         )
 
         assert changed is False
@@ -623,7 +619,6 @@ def test_shortcut_postexit_learned_tree_uploads_existing_local_save_without_sess
             context=context,
             resolve_executable=lambda _name: "dolphin",
             verbose=False,
-            audit=False,
         )
 
         save_id = make_save_id("saves/GC/WindWaker/per_game/USA/Card A/01-GZLE-gczelda.gci")
@@ -731,7 +726,6 @@ def test_shortcut_postexit_learned_tree_ignores_local_gamehub_backup_files(monke
         state=state,
         resolve_executable=lambda _name: "azahar",
         verbose=False,
-        audit=False,
     )
 
     assert changed is False
@@ -748,7 +742,6 @@ def test_shortcut_postexit_learned_tree_ignores_local_gamehub_backup_files(monke
         context=context,
         resolve_executable=lambda _name: "azahar",
         verbose=False,
-        audit=False,
     )
 
     assert changed is True
@@ -799,7 +792,6 @@ def test_shortcut_prelaunch_save_sync_skips_when_server_unreachable(monkeypatch)
         state=state,
         resolve_executable=lambda _name: "retroarch",
         verbose=False,
-        audit=False,
     )
 
     assert changed is True
@@ -860,7 +852,6 @@ def test_shortcut_postexit_save_sync_skips_when_server_unreachable(monkeypatch) 
         context=context,
         resolve_executable=lambda _name: "retroarch",
         verbose=False,
-        audit=False,
     )
 
     assert changed is False
@@ -922,7 +913,6 @@ def test_shortcut_postexit_save_sync_records_missed_upload_when_server_unreachab
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -989,7 +979,6 @@ def test_shortcut_postexit_pending_upload_records_missed_upload_when_server_unre
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1074,7 +1063,6 @@ def test_shortcut_postexit_upload_failure_records_missed_upload_when_server_drop
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1161,7 +1149,6 @@ def test_shortcut_postexit_pending_upload_failure_records_missed_upload_when_ser
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1224,7 +1211,6 @@ def test_shortcut_postexit_metadata_fetch_failure_records_missed_upload(monkeypa
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1290,7 +1276,6 @@ def test_shortcut_postexit_pending_upload_metadata_fetch_failure_records_missed_
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1387,7 +1372,6 @@ def test_shortcut_postexit_upload_conflict_with_identical_remote_content_is_conv
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1467,7 +1451,6 @@ def test_shortcut_postexit_pending_upload_remote_drift_records_conflict(monkeypa
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1546,7 +1529,6 @@ def test_shortcut_prelaunch_uses_missed_upload_timestamp_to_keep_newer_local(
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=True,
-            audit=False,
         )
 
         assert changed is False
@@ -1644,7 +1626,6 @@ def test_shortcut_postexit_uploads_pending_prelaunch_keep_local_save_without_ses
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is False
@@ -1657,7 +1638,6 @@ def test_shortcut_postexit_uploads_pending_prelaunch_keep_local_save_without_ses
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1756,7 +1736,6 @@ def test_shortcut_postexit_uploads_missed_upload_recovery_without_session_change
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is False
@@ -1769,7 +1748,6 @@ def test_shortcut_postexit_uploads_missed_upload_recovery_without_session_change
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1869,7 +1847,6 @@ def test_shortcut_postexit_uploads_offline_launch_recovery_without_session_chang
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1884,7 +1861,6 @@ def test_shortcut_postexit_uploads_offline_launch_recovery_without_session_chang
             context=context,
             resolve_executable=lambda _name: "retroarch",
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -1937,7 +1913,6 @@ def test_shortcut_prelaunch_download_mode_skips_save_bindings_fetch(monkeypatch)
         state=state,
         resolve_executable=lambda _name: "retroarch",
         verbose=False,
-        audit=False,
     )
 
     assert changed is False
@@ -2021,7 +1996,6 @@ def test_shortcut_prelaunch_download_mode_fetches_save_bindings_for_psx(monkeypa
         state=state,
         resolve_executable=lambda _name: "retroarch",
         verbose=False,
-        audit=False,
     )
 
     assert seen_bindings == [binding]
@@ -2160,7 +2134,6 @@ def test_shortcut_save_sync_managed_psx_macos_uses_application_support_save_root
             state=state,
             resolve_executable=resolver,
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -2183,7 +2156,6 @@ def test_shortcut_save_sync_managed_psx_macos_uses_application_support_save_root
             context=context,
             resolve_executable=resolver,
             verbose=False,
-            audit=False,
         )
 
         assert changed is True
@@ -2258,7 +2230,6 @@ def test_shortcut_prelaunch_download_mode_preserves_existing_local_drift(
             state=state,
             resolve_executable=lambda _name: "retroarch",
             verbose=True,
-            audit=False,
         )
 
         assert changed is False

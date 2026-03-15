@@ -377,8 +377,6 @@ Save sync state semantics:
 
 Bootstrap notes:
 - Fresh installs must run `gamehub init` before the first `gamehub sync`.
-- `gamehub sync` fails fast on fresh installs when `bootstrap_version` is missing and no legacy sync evidence exists.
-- Existing installs upgrade in place:
-  - if older `state.json` files do not include `bootstrap_version` but do include prior sync evidence (`last_sync`, downloaded checksums, firmware checksums, save checksums, or learned save roots), `gamehub sync` still runs and backfills `bootstrap_version` after a successful non-dry sync.
+- `gamehub sync` requires `bootstrap_version`; if it is missing, run `gamehub init` again before syncing.
 
 State writes back up existing `state.json`, write via `.tmp` + fsync + atomic replace, and emit explicit sync-state log records.

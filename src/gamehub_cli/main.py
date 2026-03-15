@@ -220,7 +220,6 @@ def shortcut_launch(
         "--config",
         help="Optional config TOML path override for shortcut launch.",
     ),
-    audit: bool = typer.Option(False, "--audit", help="Print controller profile apply diagnostics."),
 ) -> None:
     raise typer.Exit(
         code=run_shortcut_launch(
@@ -228,7 +227,6 @@ def shortcut_launch(
             payload_ref=payload_ref,
             payload_registry_path=payload_registry,
             config_path=config,
-            audit=audit,
         )
     )
 

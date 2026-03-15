@@ -40,7 +40,6 @@
 - Deck-managed shortcuts default to native-first `AllowDesktopConfig` behavior.
   - Override with `GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false`.
 - Managed app overrides are repaired for Steam Input consistency.
-- Hidden `shortcut-launch --audit` diagnostics are available for managed shortcut launch diagnostics.
 
 ## Packaging
 - Steam Deck template seed files are now packaged with client artifacts.

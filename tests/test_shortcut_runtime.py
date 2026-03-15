@@ -68,7 +68,6 @@ def test_apply_shortcut_controller_configuration_fail_open_uses_kbm_fallback(mon
     runtime_module.apply_shortcut_controller_configuration(
         payload=_payload(emulator="dolphin", target_exe="dolphin", target_args=("-b", "-e", "rom.iso")),
         config=config,
-        audit=False,
     )
 
     assert fallback_calls == ["dolphin:kbm"]
@@ -95,7 +94,6 @@ def test_apply_shortcut_controller_configuration_detection_failure_falls_back_to
     runtime_module.apply_shortcut_controller_configuration(
         payload=_payload(emulator="pcsx2", target_exe="pcsx2-qt.exe", target_args=("--nogui", "game.iso")),
         config=config,
-        audit=False,
     )
 
     assert applied_counts == [0]
@@ -123,7 +121,6 @@ def test_apply_shortcut_controller_configuration_macos_non_xbox_controller_uses_
             target_args=("-f", "rom.3ds"),
         ),
         config=config,
-        audit=False,
     )
 
     assert applied_counts == [0]
@@ -277,27 +274,6 @@ def test_run_target_with_optional_exit_hook_uses_dolphin_linux_exit_hook_for_fla
 
     assert exit_code == 9
     assert hook_calls == ["dolphin"]
-
-
-def test_apply_shortcut_controller_configuration_audit_enables_verbose_profile_logs(monkeypatch) -> None:
-    config = default_shortcut_config()
-    observed: dict[str, object] = {}
-
-    monkeypatch.setattr(runtime_module, "detect_xbox_controllers", lambda max_devices=2: [])
-
-    def _fake_apply(*args, **kwargs):
-        observed["verbose"] = kwargs.get("verbose")
-        return "kbm"
-
-    monkeypatch.setattr(runtime_module, "apply_controller_profile", _fake_apply)
-
-    runtime_module.apply_shortcut_controller_configuration(
-        payload=_payload(emulator="dolphin", target_exe="dolphin", target_args=("-b", "-e", "rom.iso")),
-        config=config,
-        audit=True,
-    )
-
-    assert observed["verbose"] is True
 
 
 def test_run_target_with_optional_exit_hook_can_disable_dolphin_linux_exit_hook(monkeypatch) -> None:
@@ -602,7 +578,7 @@ def test_run_target_macos_launch_failure_raises_shortcut_launch_error(monkeypatc
         )
 
 
-def test_apply_shortcut_controller_configuration_deck_zero_detect_defaults_to_xbox_1p(monkeypatch, capsys) -> None:
+def test_apply_shortcut_controller_configuration_deck_zero_detect_defaults_to_xbox_1p(monkeypatch) -> None:
     config = default_shortcut_config()
     observed: dict[str, int] = {}
 
@@ -619,13 +595,9 @@ def test_apply_shortcut_controller_configuration_deck_zero_detect_defaults_to_xb
     runtime_module.apply_shortcut_controller_configuration(
         payload=_payload(emulator="dolphin", target_exe="dolphin", target_args=("-b", "-e", "rom.iso")),
         config=config,
-        audit=True,
     )
 
     assert observed["count"] == 1
-    out = capsys.readouterr().out
-    assert "zero_detect_policy=xbox_1p" in out
-    assert "effective_controller_count=1" in out
 
 
 def test_apply_shortcut_controller_configuration_non_deck_zero_detect_behavior_unchanged(monkeypatch) -> None:
@@ -645,7 +617,6 @@ def test_apply_shortcut_controller_configuration_non_deck_zero_detect_behavior_u
     runtime_module.apply_shortcut_controller_configuration(
         payload=_payload(emulator="dolphin", target_exe="dolphin", target_args=("-b", "-e", "rom.iso")),
         config=config,
-        audit=False,
     )
 
     assert observed["count"] == 0

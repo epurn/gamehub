@@ -78,8 +78,8 @@ def test_run_sync_fails_fast_when_init_is_required(monkeypatch, workspace_tempdi
         assert "Run 'gamehub init' before the first sync" in capsys.readouterr().out
 
 
-def test_run_sync_allows_legacy_state_and_backfills_bootstrap_version(monkeypatch, workspace_tempdir) -> None:
-    with workspace_tempdir("gamehub-sync-legacy-") as temp_root:
+def test_run_sync_requires_bootstrap_version_even_with_existing_last_sync(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-bootstrap-required-") as temp_root:
         config = _config(temp_root)
         config.state_path.parent.mkdir(parents=True, exist_ok=True)
         config.state_path.write_text(
@@ -94,21 +94,13 @@ def test_run_sync_allows_legacy_state_and_backfills_bootstrap_version(monkeypatc
             encoding="utf-8",
         )
         monkeypatch.setattr(
-            "gamehub_cli.sync.orchestrator._load_validated_index", lambda *args, **kwargs: _empty_index()
-        )
-        monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_runtime", lambda *args, **kwargs: None)
-        monkeypatch.setattr("gamehub_cli.sync.orchestrator._apply_downloads", lambda *args, **kwargs: None)
-        monkeypatch.setattr("gamehub_cli.sync.orchestrator.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
-        monkeypatch.setattr("gamehub_cli.sync.orchestrator._build_artwork_assignments", lambda *args, **kwargs: {})
-        monkeypatch.setattr("gamehub_cli.sync.orchestrator._resolve_steam_context", lambda *args, **kwargs: None)
-        monkeypatch.setattr(
-            "gamehub_cli.sync.orchestrator._converge_bootstrap_controller_state",
-            lambda *args, **kwargs: None,
+            "gamehub_cli.sync.orchestrator._load_validated_index",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("index fetch should not run")),
         )
 
         exit_code = run_sync(
             config=config,
-            dry_run=False,
+            dry_run=True,
             verbose=False,
             verify=False,
             require_steam_closed=False,
@@ -116,9 +108,9 @@ def test_run_sync_allows_legacy_state_and_backfills_bootstrap_version(monkeypatc
         )
 
         saved = load_state(config.state_path)
-        assert exit_code == 0
-        assert saved.bootstrap_version == 1
-        assert saved.last_sync is not None
+        assert exit_code == 1
+        assert saved.bootstrap_version is None
+        assert saved.last_sync == "2026-02-14T18:00:00+00:00"
 
 
 def test_run_roms_doctor_reports_content_actions_and_skipped_titles(capsys) -> None:

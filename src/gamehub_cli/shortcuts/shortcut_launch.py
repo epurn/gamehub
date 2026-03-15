@@ -77,7 +77,6 @@ def run_shortcut_launch(
     payload_ref: str | None = None,
     payload_registry_path: Path | None = None,
     config_path: Path | None = None,
-    audit: bool = False,
 ) -> int:
     try:
         try:
@@ -110,7 +109,7 @@ def run_shortcut_launch(
             except _ManagedMacOSN64RetroArchRuntimeError as exc:
                 _warn_shortcut_runtime(str(exc))
                 return 1
-        apply_shortcut_controller_configuration(payload=payload, config=config, audit=audit)
+        apply_shortcut_controller_configuration(payload=payload, config=config)
 
         if save_sync_requested:
             try:
@@ -127,7 +126,6 @@ def run_shortcut_launch(
                     state=state,
                     resolve_executable=save_resolver,
                     verbose=False,
-                    audit=audit,
                 )
                 state_changed = state_changed or prelaunch_changed
             except _ManagedMacOSN64RetroArchRuntimeError as exc:
@@ -155,7 +153,6 @@ def run_shortcut_launch(
                             context=save_context,
                             resolve_executable=save_resolver,
                             verbose=False,
-                            audit=audit,
                         )
                         state_changed = state_changed or postexit_changed
                     except Exception as exc:  # noqa: BLE001

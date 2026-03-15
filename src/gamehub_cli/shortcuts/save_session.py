@@ -365,7 +365,6 @@ def _mark_missed_postexit_uploads_from_snapshots(
     state: Any,
     context: ShortcutSaveContext,
     verbose: bool,
-    audit: bool,
 ) -> bool:
     state_changed = False
     for save_id, snapshot in context.save_snapshots.items():
@@ -385,7 +384,7 @@ def _mark_missed_postexit_uploads_from_snapshots(
             )
             or state_changed
         )
-        if verbose or audit:
+        if verbose:
             print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
     return state_changed
 
@@ -440,7 +439,6 @@ def _run_shortcut_postexit_exact_binding_sync(
     server_url: str,
     timeout_seconds: float,
     verbose: bool,
-    audit: bool,
 ) -> bool:
     state_changed = False
     for exact_snapshot in exact_snapshots.values():
@@ -469,12 +467,12 @@ def _run_shortcut_postexit_exact_binding_sync(
                 if local_sha == save.sha256:
                     _record_shortcut_save_sync(state, save, destination, local_sha256=local_sha)
                     state_changed = True
-                    if verbose or audit:
+                    if verbose:
                         print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
                     continue
                 state.unresolved_save_conflicts[save_id] = "create-race-content-mismatch"
                 state_changed = True
-                if verbose or audit:
+                if verbose:
                     print(f"shortcut-save\tpostexit\tconflict\t{save_id}\tcreate-race-content-mismatch")
                 continue
             try:
@@ -494,7 +492,7 @@ def _run_shortcut_postexit_exact_binding_sync(
                 )
                 state_changed = True
                 action = "auto-create" if before_sha is None else "auto-create-existing-local"
-                if verbose or audit:
+                if verbose:
                     print(f"shortcut-save\tpostexit\tupload\t{save_id}\t{action}")
             except SaveUploadConflictError as exc:
                 if (
@@ -507,7 +505,7 @@ def _run_shortcut_postexit_exact_binding_sync(
                     is not None
                 ):
                     state_changed = True
-                    if verbose or audit:
+                    if verbose:
                         print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
                     continue
                 state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"
@@ -707,7 +705,6 @@ def run_shortcut_prelaunch_save_sync(
     state: Any,
     resolve_executable: Callable[[str], str],
     verbose: bool,
-    audit: bool,
 ) -> tuple[ShortcutSaveContext, bool]:
     context = ShortcutSaveContext(save_snapshots={}, exact_binding_snapshots={}, tree_snapshots={})
     ensure_managed_macos_n64_retroarch_runtime(payload, config)
@@ -717,7 +714,7 @@ def run_shortcut_prelaunch_save_sync(
         state_changed = False
         if config.save_sync.mode == "bidirectional":
             state_changed = _mark_offline_shortcut_title(state, title_id=payload.title_id)
-        if verbose or audit:
+        if verbose:
             print("shortcut-save\tprelaunch\tskip\tserver-unreachable")
         return context, state_changed
 
@@ -782,7 +779,7 @@ def run_shortcut_prelaunch_save_sync(
                 allow_postexit_upload=False,
                 pending_postexit_upload=False,
             )
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tprelaunch\tskip\t{save.save_id}\t{reason}")
             continue
 
@@ -841,7 +838,7 @@ def run_shortcut_prelaunch_save_sync(
                     state_changed = True
             except Exception as exc:  # noqa: BLE001
                 warn_shortcut_runtime(f"pre-launch save sync failed for {save.save_id} ({exc})")
-        if verbose or audit:
+        if verbose:
             action_label = "keep-local" if decision == "upload_existing" else decision
             print(f"shortcut-save\tprelaunch\t{action_label}\t{save.save_id}\t{reason}")
         context.save_snapshots[save.save_id] = ShortcutSaveSnapshot(
@@ -864,7 +861,6 @@ def run_shortcut_postexit_save_sync(
     context: ShortcutSaveContext,
     resolve_executable: Callable[[str], str],
     verbose: bool,
-    audit: bool,
 ) -> bool:
     if config.save_sync.mode != "bidirectional" or (
         not context.save_snapshots and not context.exact_binding_snapshots and not context.tree_snapshots
@@ -877,9 +873,8 @@ def run_shortcut_postexit_save_sync(
             state=state,
             context=context,
             verbose=verbose,
-            audit=audit,
         )
-        if verbose or audit:
+        if verbose:
             print("shortcut-save\tpostexit\tskip\tserver-unreachable")
         return missed_upload_changed
 
@@ -891,7 +886,6 @@ def run_shortcut_postexit_save_sync(
             state=state,
             context=context,
             verbose=verbose,
-            audit=audit,
         )
 
     current_saves = {save.save_id: save for save in _iter_title_saves(index, payload.title_id)}
@@ -908,7 +902,7 @@ def run_shortcut_postexit_save_sync(
         if save is None or save.sha256 != snapshot.remote_sha256:
             state.unresolved_save_conflicts[save_id] = "remote-changed-during-session"
             state_changed = True
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tpostexit\tconflict\t{save_id}\tremote-changed-during-session")
             continue
         try:
@@ -925,7 +919,7 @@ def run_shortcut_postexit_save_sync(
                 save=updated_save,
             )
             state_changed = True
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tpostexit\tupload\t{save_id}\tauto-upload")
         except SaveUploadConflictError as exc:
             if (
@@ -938,12 +932,12 @@ def run_shortcut_postexit_save_sync(
                 is not None
             ):
                 state_changed = True
-                if verbose or audit:
+                if verbose:
                     print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
                 continue
             state.unresolved_save_conflicts[save_id] = str(exc)
             state_changed = True
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tpostexit\tconflict\t{save_id}\t{exc}")
         except Exception as exc:  # noqa: BLE001
             if local_sha is not None and not _shortcut_server_reachable_or_warn(config):
@@ -956,7 +950,7 @@ def run_shortcut_postexit_save_sync(
                     )
                     or state_changed
                 )
-                if verbose or audit:
+                if verbose:
                     print(f"shortcut-save\tpostexit\tdefer\t{save_id}\t{MISSED_POSTEXIT_UPLOAD_REASON}")
             warn_shortcut_runtime(f"post-exit save upload failed for {save_id} ({exc})")
 
@@ -968,7 +962,6 @@ def run_shortcut_postexit_save_sync(
         server_url=config.server_url,
         timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
         verbose=verbose,
-        audit=audit,
     )
     state_changed = state_changed or exact_binding_changed
 
@@ -984,7 +977,7 @@ def run_shortcut_postexit_save_sync(
             previous_reason = state.unresolved_save_conflicts.get(binding_id)
             state.unresolved_save_conflicts[binding_id] = "save-binding-root-ambiguous"
             state_changed = state_changed or previous_reason != "save-binding-root-ambiguous"
-            if verbose or audit:
+            if verbose:
                 print(f"shortcut-save\tpostexit\tconflict\t{binding_id}\tsave-binding-root-ambiguous")
             continue
         canonical_root, materialized_root = learned_root
@@ -1043,7 +1036,7 @@ def run_shortcut_postexit_save_sync(
                     save=created_save,
                 )
                 state_changed = True
-                if verbose or audit:
+                if verbose:
                     action = "auto-create" if rel_path in changed_paths else "auto-create-existing-local"
                     print(f"shortcut-save\tpostexit\tupload\t{save_id}\t{action}")
             except SaveUploadConflictError as exc:
@@ -1057,7 +1050,7 @@ def run_shortcut_postexit_save_sync(
                     is not None
                 ):
                     state_changed = True
-                    if verbose or audit:
+                    if verbose:
                         print(f"shortcut-save\tpostexit\tskip\t{save_id}\talready-synced")
                     continue
                 state.unresolved_save_conflicts[save_id] = "create-race-or-upload-failed"

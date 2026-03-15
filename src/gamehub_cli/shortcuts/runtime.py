@@ -420,7 +420,6 @@ def apply_shortcut_controller_configuration(
     *,
     payload: ShortcutLaunchPayload,
     config: GamehubConfig,
-    audit: bool,
 ) -> str | None:
     if not config.controllers.launch_autoconfig:
         return None
@@ -432,64 +431,30 @@ def apply_shortcut_controller_configuration(
             "controller detection failed "
             f"(emulator={payload.emulator}, error={detect_error}); using keyboard/mouse fallback profile selection"
         )
-    zero_detect_policy = "none"
-    native_shortcut_policy = "native-first"
     if sys.platform.startswith("linux") and is_steam_deck_linux() and controller_count == 0:
-        zero_detect_policy = "xbox_1p"
         controller_count = 1
         warn_shortcut_runtime(
             "Steam Deck controller detection returned 0 controllers; forcing xbox_1p profile fallback"
         )
-    effective_controller_count = controller_count
-    if audit:
-        detect_status = "ok" if detect_error is None else "error"
-        print(
-            "controller-autoconfig\t"
-            f"detected_controller_count={detected_controller_count}\t"
-            f"effective_controller_count={effective_controller_count}\t"
-            f"detect_status={detect_status}\t"
-            f"zero_detect_policy={zero_detect_policy}\t"
-            f"native_shortcut_policy={native_shortcut_policy}"
-        )
 
     selected_profile = profile_name_for_controller_count(controller_count)
     try:
-        if audit:
-            selected_profile = apply_controller_profile(
-                config,
-                emulator_name=payload.emulator,
-                controller_count=controller_count,
-                verbose=True,
-            )
-        else:
-            selected_profile = apply_controller_profile(
-                config,
-                emulator_name=payload.emulator,
-                controller_count=controller_count,
-            )
-        if audit:
-            print(f"controller-autoconfig\tselected_profile={selected_profile}")
+        selected_profile = apply_controller_profile(
+            config,
+            emulator_name=payload.emulator,
+            controller_count=controller_count,
+        )
     except Exception as exc:
         warn_shortcut_runtime(
             "controller autoconfig failed "
             f"(emulator={payload.emulator}, profile={PROFILE_KBM}, error={exc}); using keyboard/mouse fallback"
         )
         try:
-            if audit:
-                selected_profile = apply_named_controller_profile(
-                    config,
-                    emulator_name=payload.emulator,
-                    profile_name=PROFILE_KBM,
-                    verbose=True,
-                )
-            else:
-                selected_profile = apply_named_controller_profile(
-                    config,
-                    emulator_name=payload.emulator,
-                    profile_name=PROFILE_KBM,
-                )
-            if audit:
-                print(f"controller-autoconfig\tselected_profile={selected_profile}\tfallback=true")
+            selected_profile = apply_named_controller_profile(
+                config,
+                emulator_name=payload.emulator,
+                profile_name=PROFILE_KBM,
+            )
         except Exception as fallback_exc:
             warn_shortcut_runtime(
                 "keyboard/mouse fallback profile application failed "

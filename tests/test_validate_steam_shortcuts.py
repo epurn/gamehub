@@ -71,21 +71,19 @@ def test_validate_steam_shortcuts_accepts_payload_ref_shortcuts(workspace_tempdi
         assert "BAD_PAYLOAD_REGISTRY: 0" in captured
 
 
-def test_validate_steam_shortcuts_rejects_legacy_macos_launcher_shortcuts(
+def test_validate_steam_shortcuts_rejects_payload_shortcuts_without_gamehub_wrapper(
     workspace_tempdir, monkeypatch, capsys
 ) -> None:
-    with workspace_tempdir("gamehub-validate-shortcuts-macos-launcher-") as temp_root:
+    with workspace_tempdir("gamehub-validate-shortcuts-bad-wrapper-") as temp_root:
         shortcuts_path = temp_root / "shortcuts.vdf"
-        state_path = temp_root / "Gamehub" / "state.json"
-        launcher_path = state_path.with_name("steam-shortcut-launch.sh")
         shortcuts_path.write_bytes(
             vdf.binary_dumps(
                 {
                     "shortcuts": {
                         "0": {
                             "AppName": "Wind Waker",
-                            "Exe": str(launcher_path),
-                            "LaunchOptions": "title_gc_zelda",
+                            "Exe": '"/bin/bash"',
+                            "LaunchOptions": "shortcut-launch --payload encoded-payload",
                             "tags": {"0": "GAMEHUB"},
                         }
                     }
@@ -94,11 +92,7 @@ def test_validate_steam_shortcuts_rejects_legacy_macos_launcher_shortcuts(
         )
         module = _load_script_module()
         monkeypatch.setattr(module, "_parse_args", lambda: SimpleNamespace(config=None))
-        monkeypatch.setattr(
-            module,
-            "load_config",
-            lambda _path=None: SimpleNamespace(state_path=state_path),
-        )
+        monkeypatch.setattr(module, "load_config", lambda _path=None: SimpleNamespace())
         monkeypatch.setattr(
             module,
             "resolve_steam_context",
@@ -110,3 +104,38 @@ def test_validate_steam_shortcuts_rejects_legacy_macos_launcher_shortcuts(
         assert exit_code == 1
         captured = capsys.readouterr().out
         assert "BAD_WRAPPERS: 1" in captured
+
+
+def test_validate_steam_shortcuts_rejects_payload_ref_shortcuts_without_payload_registry(
+    workspace_tempdir, monkeypatch, capsys
+) -> None:
+    with workspace_tempdir("gamehub-validate-shortcuts-payload-registry-") as temp_root:
+        shortcuts_path = temp_root / "shortcuts.vdf"
+        shortcuts_path.write_bytes(
+            vdf.binary_dumps(
+                {
+                    "shortcuts": {
+                        "0": {
+                            "AppName": "Wind Waker",
+                            "Exe": '"/Users/tester/gamehub"',
+                            "LaunchOptions": "shortcut-launch --payload-ref title_gc_zelda",
+                            "tags": {"0": "GAMEHUB"},
+                        }
+                    }
+                }
+            )
+        )
+        module = _load_script_module()
+        monkeypatch.setattr(module, "_parse_args", lambda: SimpleNamespace(config=None))
+        monkeypatch.setattr(module, "load_config", lambda _path=None: SimpleNamespace())
+        monkeypatch.setattr(
+            module,
+            "resolve_steam_context",
+            lambda _config: SimpleNamespace(shortcuts_path=shortcuts_path),
+        )
+
+        exit_code = module.main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr().out
+        assert "BAD_PAYLOAD_REGISTRY: 1" in captured

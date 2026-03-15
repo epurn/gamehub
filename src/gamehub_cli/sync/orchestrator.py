@@ -21,7 +21,6 @@ from .planner import create_sync_plan
 from .state import (
     SyncState,
     has_bootstrap_marker,
-    has_legacy_sync_evidence,
     load_state,
     mark_bootstrapped,
     mark_synced,
@@ -307,7 +306,7 @@ def _converge_bootstrap_controller_state(
 
 
 def _sync_requires_init(state: SyncState) -> bool:
-    return not has_bootstrap_marker(state) and not has_legacy_sync_evidence(state)
+    return not has_bootstrap_marker(state)
 
 
 def run_init(
