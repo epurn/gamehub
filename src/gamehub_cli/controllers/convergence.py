@@ -11,11 +11,11 @@ from gamehub_common.models import LibraryIndex
 from ..common.config import GamehubConfig
 from ..common.config_edit import read_qsettings_key, upsert_qsettings_key
 from ..common.fsops import replace_file
-from ..firmware.pcsx2_ini import read_ini_lines, write_ini_atomic
+from ..firmware.pcsx2_ini import read_ini_lines
 from ..firmware.targets import default_pcsx2_ini_path
 from .apply_azahar import azahar_target_config_paths
 from .apply_dolphin import dolphin_target_config_dirs
-from .apply_ini import apply_managed_ini_sections, parse_ini_sections
+from .apply_ini import apply_managed_ini_sections, parse_ini_sections, write_controller_config_lines_atomic
 from .managed_metadata import (
     MANAGED_METADATA_FILENAME,
     ManagedMetadataEntry,
@@ -514,7 +514,7 @@ def _evaluate_assisted_qsettings_target(
             lines, key_changed = upsert_qsettings_key(lines, key, desired)
             changed |= key_changed
         if changed or not path.exists():
-            write_ini_atomic(path, lines)
+            write_controller_config_lines_atomic(path, lines)
     except OSError as exc:
         return ControllerConvergenceFinding(
             ownership=ControllerOwnership.ASSISTED,

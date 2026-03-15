@@ -187,6 +187,61 @@ def test_controller_convergence_apply_repairs_managed_profile_drift_with_backup(
         assert f"controller profile saved path={profile_file}" in caplog.text
 
 
+def test_controller_convergence_apply_repairs_assisted_ini_with_backup(monkeypatch, workspace_tempdir, caplog) -> None:
+    with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
+        base = _config(temp_root)
+        pcsx2_ini = temp_root / "pcsx2" / "inis" / "PCSX2.ini"
+        config = replace(base, linux=replace(base.linux, pcsx2_ini_path=pcsx2_ini))
+        monkeypatch.setattr("gamehub_cli.firmware.targets._SYS_PLATFORM", "linux")
+        original_text = "[InputSources]\nSDL = false\n\n[UI]\nConfirmShutdown = true\n"
+        pcsx2_ini.parent.mkdir(parents=True, exist_ok=True)
+        pcsx2_ini.write_text(original_text, encoding="utf-8")
+
+        plan = build_controller_convergence_plan(config, emulator_families={"pcsx2"})
+        with caplog.at_level(logging.INFO):
+            repaired = apply_controller_convergence_plan(plan, apply=True, force_managed=False)
+        finding = next(item for item in repaired.findings if item.target_path == pcsx2_ini)
+        backups = sorted(pcsx2_ini.parent.glob("PCSX2.ini.*.bak"))
+
+        assert finding.status == ControllerTargetStatus.REPAIRED
+        assert finding.repaired is True
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == original_text
+        updated_text = pcsx2_ini.read_text(encoding="utf-8")
+        assert "SDL = true" in updated_text
+        assert "ConfirmShutdown = false" in updated_text
+        assert f"controller config backup created path={pcsx2_ini}" in caplog.text
+        assert f"controller config saved path={pcsx2_ini}" in caplog.text
+
+
+def test_controller_convergence_apply_repairs_assisted_qsettings_with_backup(
+    monkeypatch, workspace_tempdir, caplog
+) -> None:
+    with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
+        config = _config(temp_root)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        original_text = "profile=9\nprofile\\default=false\n"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text(original_text, encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.controllers.convergence.azahar_target_config_paths", lambda: [qt_config])
+
+        plan = build_controller_convergence_plan(config, emulator_families={"azahar"})
+        with caplog.at_level(logging.INFO):
+            repaired = apply_controller_convergence_plan(plan, apply=True, force_managed=False)
+        finding = next(item for item in repaired.findings if item.target_path == qt_config)
+        backups = sorted(qt_config.parent.glob("qt-config.ini.*.bak"))
+
+        assert finding.status == ControllerTargetStatus.REPAIRED
+        assert finding.repaired is True
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == original_text
+        updated_text = qt_config.read_text(encoding="utf-8")
+        assert "profile=0" in updated_text
+        assert "profile\\default=true" in updated_text
+        assert f"controller config backup created path={qt_config}" in caplog.text
+        assert f"controller config saved path={qt_config}" in caplog.text
+
+
 def test_controller_convergence_does_not_overwrite_unmanaged_profile_without_marker(
     monkeypatch, workspace_tempdir
 ) -> None:

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import gamehub_cli.controllers.profiles as controller_profiles
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig
+from gamehub_cli.controllers.managed_metadata import ManagedMetadataEntry, write_managed_metadata_entry
 from gamehub_cli.controllers.profiles import (
     PROFILE_KBM,
     PROFILE_XBOX_1P,
@@ -59,6 +60,7 @@ def test_seed_default_profiles_creates_profile_tree(workspace_tempdir) -> None:
         assert metadata["schema_version"] == 1
         assert metadata["entries"]["PCSX2.ini"]["ownership"] == "managed"
         assert metadata["entries"]["PCSX2.ini"]["source_profile"] == "kbm"
+        assert not list((root / "dolphin" / "kbm").glob(".gamehub-managed.json.*.bak"))
 
         pcsx2_xbox_1p = (root / "pcsx2" / "xbox_1p" / "PCSX2.ini").read_text(encoding="utf-8")
         assert "Cross = SDL-0/A" in pcsx2_xbox_1p
@@ -174,3 +176,34 @@ def test_seed_default_profiles_force_overwrite_creates_backup_and_logs(caplog, w
         assert profile_file.read_text(encoding="utf-8") == original_text
         assert f"controller profile backup created path={profile_file}" in caplog.text
         assert f"controller profile saved path={profile_file}" in caplog.text
+
+
+def test_write_managed_metadata_entry_overwrite_creates_backup_and_logs(caplog, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        profile_file = resolve_profiles_root(config) / "pcsx2" / "kbm" / "PCSX2.ini"
+        metadata_file = profile_file.parent / ".gamehub-managed.json"
+        original_text = metadata_file.read_text(encoding="utf-8")
+
+        with caplog.at_level(logging.INFO):
+            changed = write_managed_metadata_entry(
+                profile_file,
+                ManagedMetadataEntry(
+                    source_profile="xbox_1p",
+                    source_template="profile://pcsx2/xbox_1p/PCSX2.ini",
+                    timestamp_utc="2026-03-15T00:00:00+00:00",
+                    fingerprint_sha256="b" * 64,
+                    ownership="managed",
+                ),
+            )
+
+        backups = sorted(metadata_file.parent.glob(".gamehub-managed.json.*.bak"))
+        assert changed is True
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == original_text
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+        assert metadata["entries"]["PCSX2.ini"]["source_profile"] == "xbox_1p"
+        assert metadata["entries"]["PCSX2.ini"]["fingerprint_sha256"] == "b" * 64
+        assert f"controller metadata backup created path={metadata_file}" in caplog.text
+        assert f"controller metadata saved path={metadata_file}" in caplog.text

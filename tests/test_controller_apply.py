@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from dataclasses import replace
@@ -411,6 +412,31 @@ def test_apply_controller_profile_azahar_kbm(monkeypatch, workspace_tempdir) -> 
         assert profile == "kbm"
         assert "custom_key=keep" in text
         assert r'profiles\1\button_a="code:65,engine:keyboard"' in text
+
+
+def test_apply_controller_profile_azahar_overwrite_creates_backup_and_logs(
+    monkeypatch, workspace_tempdir, caplog
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        original_text = "custom_key=keep\nprofile=9\n"
+        qt_config.write_text(original_text, encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+
+        with caplog.at_level(logging.INFO):
+            apply_named_controller_profile(config, emulator_name="azahar", profile_name="kbm")
+
+        backups = sorted(qt_config.parent.glob("qt-config.ini.*.bak"))
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == original_text
+        updated_text = qt_config.read_text(encoding="utf-8")
+        assert "custom_key=keep" in updated_text
+        assert r'profiles\1\button_a="code:65,engine:keyboard"' in updated_text
+        assert f"controller config backup created path={qt_config}" in caplog.text
+        assert f"controller config saved path={qt_config}" in caplog.text
 
 
 def test_apply_controller_profile_azahar_updates_all_known_target_paths(monkeypatch, workspace_tempdir) -> None:

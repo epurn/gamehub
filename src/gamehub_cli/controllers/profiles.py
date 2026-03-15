@@ -10,7 +10,7 @@ from typing import Callable
 from ..common.config import GamehubConfig
 from ..common.fsops import backup_existing_file, replace_file
 from ..firmware.pcsx2_ini import pcsx2_pad_bindings
-from .managed_metadata import ManagedMetadataEntry, sha256_text, utc_now_iso, write_managed_metadata_entry
+from .managed_metadata import ManagedMetadataEntry, sha256_text, utc_now_iso, write_managed_metadata_entries
 
 PROFILE_KBM = "kbm"
 PROFILE_XBOX_1P = "xbox_1p"
@@ -612,6 +612,7 @@ def seed_default_profiles(
         return []
     root = resolve_profiles_root(config)
     created: list[Path] = []
+    metadata_updates: dict[Path, dict[str, ManagedMetadataEntry]] = {}
     for emulator_name, profiles in DEFAULT_PROFILE_TEXTS.items():
         for profile_name, files in profiles.items():
             for filename, payload in files.items():
@@ -619,23 +620,22 @@ def seed_default_profiles(
                 if target.exists() and not force:
                     continue
                 write_profile_text_atomic(target, payload, backup_existing=target.exists())
-                write_managed_metadata_entry(
-                    target,
-                    ManagedMetadataEntry(
-                        source_profile=profile_name,
-                        source_template=_managed_source_template(
-                            emulator_name=emulator_name,
-                            profile_name=profile_name,
-                            filename=filename,
-                        ),
-                        timestamp_utc=utc_now_iso(),
-                        fingerprint_sha256=sha256_text(payload),
-                        ownership="managed",
+                metadata_updates.setdefault(target.parent, {})[target.name] = ManagedMetadataEntry(
+                    source_profile=profile_name,
+                    source_template=_managed_source_template(
+                        emulator_name=emulator_name,
+                        profile_name=profile_name,
+                        filename=filename,
                     ),
+                    timestamp_utc=utc_now_iso(),
+                    fingerprint_sha256=sha256_text(payload),
+                    ownership="managed",
                 )
                 created.append(target)
                 if verbose:
                     writer(f"controller-profile\tseeded\t{target}")
+    for directory, entries in metadata_updates.items():
+        write_managed_metadata_entries(directory, entries)
     return created
 
 
