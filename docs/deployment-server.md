@@ -32,7 +32,7 @@ Required values in `docker/.env`:
   - Official release image: `ghcr.io/epurn/gamehub-server`
 - `GAMEHUB_IMAGE_TAG`: image tag to run
   - `latest` for most recent release
-  - `v1.5.0` (or any release tag) for pinned deploys
+  - `v1.5.1` (or any release tag) for pinned deploys
 - Optional: `GAMEHUB_INDEX_POLL_SECONDS` (defaults to `1`; set `0` to disable background polling)
 - Optional: `GAMEHUB_INDEX_STABLE_SECONDS` (defaults to `2`; changed files must stop changing for this long before auto-reindex)
 - Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`; adds TTL-based rebuilds on top of change detection)

@@ -2264,6 +2264,62 @@ def test_build_shortcut_specs_wrapper_uses_direct_command_for_frozen_exe(monkeyp
         assert _normalize_path_token(payload.target_exe) == "C:/PCSX2/pcsx2-qt.exe"
 
 
+def test_build_shortcut_specs_windows_prefers_adjacent_release_wrapper(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-win-adjacent-wrap-") as temp_root:
+        runtime_dir = temp_root / "runtime"
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        python_exe = runtime_dir / "python.exe"
+        pythonw_exe = runtime_dir / "pythonw.exe"
+        release_wrapper = runtime_dir / "gamehub-windows-amd64.exe"
+        python_exe.write_text("", encoding="utf-8")
+        pythonw_exe.write_text("", encoding="utf-8")
+        release_wrapper.write_text("", encoding="utf-8")
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=True),
+        )
+        title = TitleEntry(
+            title_id="title_ps2_gt4_adjacent_wrapper",
+            system="PS2",
+            title_name="Gran Turismo 4",
+            title_rel_dir="PS2/Gran Turismo 4.iso",
+            emulator="pcsx2",
+            launch_template='"{emulator}" -fullscreen "{rom}"',
+            rom=RomSpec(
+                file_id="rom_ps2_adjacent_wrapper",
+                rel_path="roms/PS2/Gran Turismo 4.iso",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".iso",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable",
+            lambda value: "C:\\PCSX2\\pcsx2-qt.exe",
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "win32")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", str(python_exe))
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.argv", [str(python_exe), "sync"])
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.shutil.which", lambda name: None)
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert _normalize_path_token(specs[0].exe) == _normalize_path_token(str(release_wrapper))
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
+
+
 def test_build_shortcut_specs_wrapper_uses_pythonw_when_wrapper_missing(monkeypatch, workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-sync-shortcuts-win-pythonw-wrap-") as temp_root:
         runtime_dir = temp_root / "runtime"
@@ -2317,6 +2373,60 @@ def test_build_shortcut_specs_wrapper_uses_pythonw_when_wrapper_missing(monkeypa
         assert _normalize_path_token(specs[0].exe) == _normalize_path_token(str(pythonw_exe))
         assert launch_parts[:3] == ["-m", "gamehub_cli.main", "shortcut-launch"]
         assert launch_parts[-2] == "--payload"
+
+
+def test_build_shortcut_specs_windows_accepts_release_named_wrapper_on_path(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-shortcuts-win-release-path-wrap-") as temp_root:
+        runtime_dir = temp_root / "runtime"
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        python_exe = runtime_dir / "python.exe"
+        python_exe.write_text("", encoding="utf-8")
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=True),
+        )
+        title = TitleEntry(
+            title_id="title_nes_mario_release_wrapper",
+            system="NES",
+            title_name="Super Mario Bros",
+            title_rel_dir="NES/Super Mario Bros.nes",
+            emulator="retroarch",
+            launch_template='"{emulator}" -L cores/fceumm_libretro.dll "{rom}"',
+            rom=RomSpec(
+                file_id="rom_nes_release_wrapper",
+                rel_path="roms/NES/Super Mario Bros.nes",
+                sha256="a" * 64,
+                size_bytes=3,
+                extension=".nes",
+            ),
+            assets=(),
+        )
+        index = LibraryIndex(index_version=1, systems=(), titles=(title,))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.resolve_emulator_executable",
+            lambda value: "C:\\RetroArch\\retroarch.exe",
+        )
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "win32")
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.executable", str(python_exe))
+        monkeypatch.setattr(
+            "gamehub_cli.sync.steam_stage.shutil.which",
+            lambda name: "C:\\GameHub\\gamehub-windows-amd64.exe" if name == "gamehub-windows-amd64.exe" else None,
+        )
+
+        specs = _build_shortcut_specs(index=index, config=config)
+
+        assert len(specs) == 1
+        assert _normalize_path_token(specs[0].exe) == "C:/GameHub/gamehub-windows-amd64.exe"
+        assert specs[0].launch_options.startswith("shortcut-launch --payload ")
 
 
 def test_build_shortcut_specs_wraps_retroarch_with_controller_autoconfig(monkeypatch, workspace_tempdir) -> None:
