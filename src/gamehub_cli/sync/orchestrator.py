@@ -333,7 +333,7 @@ def run_init(
         print("Init dry-run completed")
         return 0
     mark_bootstrapped(state)
-    save_state_atomic(config.state_path, state)
+    save_state_atomic(config.state_path, state, keep_limit=config.backups.keep_limit)
     print("Init completed")
     return 0
 
@@ -382,6 +382,7 @@ def run_sync(
             timeout_seconds=transfer_timeout,
             dry_run=True,
             verbose=verbose,
+            backup_keep_limit=config.backups.keep_limit,
         )
         deploy_firmware_to_emulators(config=config, index=index, dry_run=True, verbose=verbose)
         _converge_bootstrap_controller_state(
@@ -408,6 +409,7 @@ def run_sync(
         timeout_seconds=transfer_timeout,
         dry_run=False,
         verbose=verbose,
+        backup_keep_limit=config.backups.keep_limit,
     )
     deploy_firmware_to_emulators(config=config, index=index, dry_run=False, verbose=verbose)
     _converge_bootstrap_controller_state(
@@ -432,6 +434,6 @@ def run_sync(
         )
     mark_synced(state)
     mark_bootstrapped(state)
-    save_state_atomic(config.state_path, state)
+    save_state_atomic(config.state_path, state, keep_limit=config.backups.keep_limit)
     print("Sync completed")
     return 0

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 
-from ..common.fsops import backup_existing_file, replace_file
+from ..common.fsops import DEFAULT_BACKUP_KEEP_LIMIT, backup_existing_file, replace_file
 
 MANAGED_METADATA_FILENAME = ".gamehub-managed.json"
 MANAGED_METADATA_SCHEMA_VERSION = 1
@@ -81,12 +81,21 @@ def _atomic_write_text(path: Path, payload: str) -> None:
     replace_file(tmp_path, path)
 
 
-def _write_metadata_text_atomic(path: Path, payload: str, *, backup_existing: bool = False) -> Path | None:
+def _write_metadata_text_atomic(
+    path: Path,
+    payload: str,
+    *,
+    backup_existing: bool = False,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
+) -> Path | None:
     backup_path: Path | None = None
     if backup_existing:
-        backup_path = backup_existing_file(path)
+        backup_result = backup_existing_file(path, keep_limit=keep_limit)
+        backup_path = backup_result.created_path
         if backup_path is not None:
             logger.info("controller metadata backup created path=%s backup=%s", path, backup_path)
+        for pruned_path in backup_result.pruned_paths:
+            logger.info("controller metadata backup pruned path=%s pruned_backup=%s", path, pruned_path)
     _atomic_write_text(path, payload)
     logger.info("controller metadata saved path=%s", path)
     return backup_path
@@ -139,11 +148,17 @@ def _render_payload(payload: dict[str, object]) -> str:
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
 
-def _write_payload(path: Path, payload: dict[str, object], *, existing_text: str | None) -> bool:
+def _write_payload(
+    path: Path,
+    payload: dict[str, object],
+    *,
+    existing_text: str | None,
+    keep_limit: int,
+) -> bool:
     rendered = _render_payload(payload)
     if existing_text == rendered:
         return False
-    _write_metadata_text_atomic(path, rendered, backup_existing=path.exists())
+    _write_metadata_text_atomic(path, rendered, backup_existing=path.exists(), keep_limit=keep_limit)
     return True
 
 
@@ -157,7 +172,12 @@ def _existing_text(path: Path) -> str | None:
     return existing_text
 
 
-def write_managed_metadata_entries(directory: Path, entries_by_name: dict[str, ManagedMetadataEntry]) -> bool:
+def write_managed_metadata_entries(
+    directory: Path,
+    entries_by_name: dict[str, ManagedMetadataEntry],
+    *,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
+) -> bool:
     path = directory / MANAGED_METADATA_FILENAME
     payload, _ = _load_payload(path)
     existing_text = _existing_text(path)
@@ -181,8 +201,13 @@ def write_managed_metadata_entries(directory: Path, entries_by_name: dict[str, M
             return False
     payload["schema_version"] = MANAGED_METADATA_SCHEMA_VERSION
     payload["updated_at"] = utc_now_iso()
-    return _write_payload(path, payload, existing_text=existing_text)
+    return _write_payload(path, payload, existing_text=existing_text, keep_limit=keep_limit)
 
 
-def write_managed_metadata_entry(target: Path, entry: ManagedMetadataEntry) -> bool:
-    return write_managed_metadata_entries(target.parent, {target.name: entry})
+def write_managed_metadata_entry(
+    target: Path,
+    entry: ManagedMetadataEntry,
+    *,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
+) -> bool:
+    return write_managed_metadata_entries(target.parent, {target.name: entry}, keep_limit=keep_limit)

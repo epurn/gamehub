@@ -23,7 +23,7 @@ from .logging_utils import get_server_logger
 from .save_api import get_save as resolve_save_response
 from .save_api import get_save_bindings as build_save_bindings_response
 from .save_api import put_save as put_save_payload
-from .save_api import read_max_save_upload_bytes
+from .save_api import read_backup_keep_limit, read_max_save_upload_bytes
 
 logger = get_server_logger(__name__)
 
@@ -35,6 +35,7 @@ INDEX_REPO = IndexRepository(
     stable_seconds=read_index_stable_seconds(),
 )
 MAX_SAVE_UPLOAD_BYTES = read_max_save_upload_bytes()
+BACKUP_KEEP_LIMIT = read_backup_keep_limit()
 
 
 def _is_safe_segment(value: str) -> bool:
@@ -137,6 +138,7 @@ async def put_save(save_id: str, request: Request, response: Response) -> dict[s
         data_root=DATA_ROOT,
         index_repo=INDEX_REPO,
         max_upload_bytes=MAX_SAVE_UPLOAD_BYTES,
+        backup_keep_limit=BACKUP_KEEP_LIMIT,
     )
 
 

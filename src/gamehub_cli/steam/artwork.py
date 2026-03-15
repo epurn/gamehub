@@ -1,19 +1,26 @@
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 from datetime import datetime
 from pathlib import Path
 
+from ..common.fsops import DEFAULT_BACKUP_KEEP_LIMIT, prune_backup_family
 from .shortcuts import _canonical_unsigned_app_id
 from .types import SteamArtworkAssignment, SteamContext
 
 _SIGNED_APP_ID_BOUNDARY = 0x7FFFFFFF
 _U32_MODULUS = 2**32
 _GRID_ART_FILENAME_PATTERN = re.compile(r"^(?P<app_id>-?\d+)(?P<suffix>p|_hero|_logo|_icon)?(?P<ext>\.[^.]+)$")
+logger = logging.getLogger(__name__)
 
 
-def backup_steam_configs(context: SteamContext) -> list[Path]:
+def backup_steam_configs(
+    context: SteamContext,
+    *,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
+) -> list[Path]:
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     backups: list[Path] = []
     sources: list[Path] = [context.shortcuts_path, context.localconfig_path]
@@ -24,6 +31,8 @@ def backup_steam_configs(context: SteamContext) -> list[Path]:
             continue
         destination = source.with_name(f"{source.name}.{timestamp}.bak")
         shutil.copy2(source, destination)
+        for pruned_path in prune_backup_family(source.parent, source.name, keep_limit=keep_limit):
+            logger.info("steam config backup pruned path=%s pruned_backup=%s", source, pruned_path)
         backups.append(destination)
     return backups
 

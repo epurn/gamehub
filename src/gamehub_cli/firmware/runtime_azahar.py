@@ -94,9 +94,11 @@ def configure_azahar_runtime(
         or not ini_path.exists()
     ):
         if ini_path.exists():
-            backup = backup_existing_file(ini_path)
-            if backup is not None:
-                logger.info("azahar runtime backup created path=%s backup=%s", ini_path, backup)
+            backup_result = backup_existing_file(ini_path, keep_limit=config.backups.keep_limit)
+            if backup_result.created_path is not None:
+                logger.info("azahar runtime backup created path=%s backup=%s", ini_path, backup_result.created_path)
+            for pruned_path in backup_result.pruned_paths:
+                logger.info("azahar runtime backup pruned path=%s pruned_backup=%s", ini_path, pruned_path)
         write_ini_atomic(ini_path, lines)
         logger.info("azahar runtime config updated path=%s", ini_path)
 

@@ -165,7 +165,8 @@ def test_apply_steam_updates_lifecycle_order(monkeypatch) -> None:
         lambda: order.append("close") or type("CloseResult", (), {"closed": True, "detail": None})(),
     )
     monkeypatch.setattr(
-        "gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: order.append("backup") or []
+        "gamehub_cli.sync.steam_stage.backup_steam_configs",
+        lambda context, keep_limit=3: order.append("backup") or [],
     )
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.upsert_shortcuts",
@@ -240,7 +241,7 @@ def test_apply_steam_updates_macos_saves_payload_registry_before_shortcuts(monke
             "gamehub_cli.sync.steam_stage.build_context", lambda userdata, steam_id, steam_exe: object()
         )
         monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
-        monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+        monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context, keep_limit=3: [])
         monkeypatch.setattr(
             "gamehub_cli.sync.steam_stage._build_shortcut_specs_and_payloads",
             lambda index, config: (
@@ -265,7 +266,7 @@ def test_apply_steam_updates_macos_saves_payload_registry_before_shortcuts(monke
         )
         monkeypatch.setattr(
             "gamehub_cli.sync.steam_stage.save_shortcut_payload_registry_atomic",
-            lambda path, payloads: saved.append((path, dict(payloads))) or order.append("registry"),
+            lambda path, payloads, keep_limit=3: saved.append((path, dict(payloads))) or order.append("registry"),
         )
         monkeypatch.setattr(
             "gamehub_cli.sync.steam_stage.upsert_shortcuts",
@@ -318,7 +319,7 @@ def test_apply_steam_updates_deck_repairs_steam_input_overrides(monkeypatch) -> 
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
-    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context, keep_limit=3: [])
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
         lambda context, index, shortcut_result, overwrite_existing=False: type(
@@ -404,7 +405,7 @@ def test_apply_steam_updates_deck_always_repairs_steam_input_overrides(monkeypat
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
-    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context, keep_limit=3: [])
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
         lambda context, index, shortcut_result, overwrite_existing=False: type(
@@ -476,7 +477,7 @@ def test_apply_steam_updates_deck_runs_template_sync_pass(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
-    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context, keep_limit=3: [])
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.upsert_shortcuts",
         lambda context, desired_shortcuts: type(
@@ -547,7 +548,7 @@ def test_apply_steam_updates_deck_template_sync_overwrites_when_reseed_enabled(m
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
-    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context, keep_limit=3: [])
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.upsert_shortcuts",
         lambda context, desired_shortcuts: type(
@@ -616,7 +617,7 @@ def test_apply_steam_updates_deck_always_runs_template_sync(monkeypatch) -> None
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.sys.platform", "linux")
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: True)
-    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: [])
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context, keep_limit=3: [])
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.upsert_shortcuts",
         lambda context, desired_shortcuts: type(
@@ -695,7 +696,8 @@ def test_apply_steam_updates_macos_skips_when_steam_does_not_exit_gracefully(mon
         ),
     )
     monkeypatch.setattr(
-        "gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: order.append("backup") or []
+        "gamehub_cli.sync.steam_stage.backup_steam_configs",
+        lambda context, keep_limit=3: order.append("backup") or [],
     )
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.upsert_shortcuts",
@@ -760,7 +762,8 @@ def test_apply_steam_updates_reopens_even_if_steam_was_not_running(monkeypatch) 
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
     monkeypatch.setattr(
-        "gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: order.append("backup") or []
+        "gamehub_cli.sync.steam_stage.backup_steam_configs",
+        lambda context, keep_limit=3: order.append("backup") or [],
     )
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.upsert_shortcuts",
@@ -821,7 +824,8 @@ def test_apply_steam_updates_skip_relaunch_still_updates_steam(monkeypatch, caps
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_deck_linux", lambda: False)
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.is_steam_running", lambda: False)
     monkeypatch.setattr(
-        "gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context: order.append("backup") or []
+        "gamehub_cli.sync.steam_stage.backup_steam_configs",
+        lambda context, keep_limit=3: order.append("backup") or [],
     )
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.upsert_shortcuts",

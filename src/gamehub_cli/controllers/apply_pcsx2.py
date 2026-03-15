@@ -25,5 +25,9 @@ def apply_pcsx2_profile(config: GamehubConfig, profile_name: str) -> list[Path]:
     }
     managed_sections.setdefault("UI", {})["ConfirmShutdown"] = "false"
     target = default_pcsx2_ini_path(config=config)
-    apply_managed_ini_sections(target_path=target, sections=managed_sections)
+    apply_managed_ini_sections(
+        target_path=target,
+        sections=managed_sections,
+        keep_limit=config.backups.keep_limit,
+    )
     return [target]

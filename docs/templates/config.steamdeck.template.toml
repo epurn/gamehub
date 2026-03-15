@@ -51,3 +51,7 @@ launch_autoconfig = true
 # GAMEHUB_STEAM_ALLOW_DESKTOP_CONFIG=true|false      (default false on Deck)
 # Steam Deck template sync + managed app override repair are always on for managed Wii/N3DS titles.
 # Steam Deck zero-detect policy is fixed to xbox_1p fallback after a single detect pass.
+
+[backups]
+# Keep the newest GAMEHUB backup files per target path/family (default 3).
+# keep_limit = 3

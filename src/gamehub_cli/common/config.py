@@ -53,6 +53,11 @@ class SaveSyncConfig:
 
 
 @dataclass(frozen=True)
+class BackupsConfig:
+    keep_limit: int = 3
+
+
+@dataclass(frozen=True)
 class GamehubConfig:
     server_url: str
     library_dir: Path
@@ -74,6 +79,7 @@ class GamehubConfig:
     controllers: ControllersConfig = field(default_factory=ControllersConfig)
     save_sync: SaveSyncConfig = field(default_factory=SaveSyncConfig)
     config_path: Path | None = None
+    backups: BackupsConfig = field(default_factory=BackupsConfig)
 
 
 _VALID_SGDB_KINDS = ("grid", "hero", "logo", "icon")
@@ -310,6 +316,7 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     macos = _as_section(data.get("macos"))
     controllers = _as_section(data.get("controllers"))
     save_sync = _as_section(data.get("save_sync"))
+    backups = _as_section(data.get("backups"))
     _reject_removed_path_keys(paths)
     _reject_removed_env_aliases()
 
@@ -390,6 +397,8 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
     config_controller_profiles_dir = _normalize_optional_path(controllers.get("profiles_dir"))
     env_controller_profiles_dir = _normalize_optional_path(_first_env_value("GAMEHUB_CONTROLLER_PROFILES_DIR"))
     save_sync_config = _load_save_sync_config(save_sync)
+    config_backup_keep_limit = _normalize_optional_int(backups.get("keep_limit"), minimum=1)
+    env_backup_keep_limit = _normalize_optional_int(_first_env_value("GAMEHUB_BACKUP_KEEP_LIMIT"), minimum=1)
     server_url = _normalize_optional_text(server.get("url")) or "http://127.0.0.1:8000"
     steam_id = _normalize_optional_text(steam.get("steam_id"))
     steam_exe = _normalize_optional_path(steam.get("steam_exe"))
@@ -504,4 +513,7 @@ def load_config(config_path: Path | None = None) -> GamehubConfig:
         ),
         save_sync=save_sync_config,
         config_path=path,
+        backups=BackupsConfig(
+            keep_limit=env_backup_keep_limit if env_backup_keep_limit is not None else (config_backup_keep_limit or 3)
+        ),
     )

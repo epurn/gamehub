@@ -156,6 +156,34 @@ def test_save_upload_route_updates_existing_save_and_returns_refreshed_metadata(
     assert backups[0].read_bytes() == b"save-bytes"
 
 
+def test_save_upload_route_prunes_older_backups_after_repeated_updates(api_client: TestClient) -> None:
+    index_response = api_client.get("/v1/index")
+    assert index_response.status_code == 200
+
+    payload = index_response.json()
+    save_id = payload["saves"][0]["save_id"]
+    expected_sha = payload["saves"][0]["sha256"]
+    binding_id = api_client.get("/v1/save-bindings").json()["bindings"][0]["binding_id"]
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav"
+
+    for content in (b"new-save-1", b"new-save-2", b"new-save-3", b"new-save-4"):
+        response = api_client.put(
+            f"/v1/saves/{save_id}",
+            data={
+                "binding_id": binding_id,
+                "canonical_suffix": "slot1.sav",
+                "expected_remote_sha256": expected_sha,
+            },
+            files={"file": ("slot1.sav", content, "application/octet-stream")},
+        )
+        assert response.status_code == 200
+        expected_sha = response.json()["sha256"]
+
+    backups = sorted(save_path.parent.glob(f"{save_path.name}.*.bak"))
+    assert len(backups) == 3
+    assert sorted(candidate.read_bytes() for candidate in backups) == [b"new-save-1", b"new-save-2", b"new-save-3"]
+
+
 def test_save_upload_route_creates_unknown_save_from_binding(api_client: TestClient) -> None:
     binding = api_client.get("/v1/save-bindings").json()["bindings"][0]
     save_id = make_save_id("saves/NES/SuperMarioBros/battery/SuperMarioBros.srm")

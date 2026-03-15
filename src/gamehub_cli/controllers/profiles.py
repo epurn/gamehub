@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..common.config import GamehubConfig
-from ..common.fsops import backup_existing_file, replace_file
+from ..common.fsops import DEFAULT_BACKUP_KEEP_LIMIT, backup_existing_file, replace_file
 from ..firmware.pcsx2_ini import pcsx2_pad_bindings
 from .managed_metadata import ManagedMetadataEntry, sha256_text, utc_now_iso, write_managed_metadata_entries
 
@@ -43,12 +43,21 @@ def _atomic_write_text(path: Path, text: str) -> None:
     replace_file(tmp_path, path)
 
 
-def write_profile_text_atomic(path: Path, text: str, *, backup_existing: bool = False) -> Path | None:
+def write_profile_text_atomic(
+    path: Path,
+    text: str,
+    *,
+    backup_existing: bool = False,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
+) -> Path | None:
     backup_path: Path | None = None
     if backup_existing:
-        backup_path = backup_existing_file(path)
+        backup_result = backup_existing_file(path, keep_limit=keep_limit)
+        backup_path = backup_result.created_path
         if backup_path is not None:
             logger.info("controller profile backup created path=%s backup=%s", path, backup_path)
+        for pruned_path in backup_result.pruned_paths:
+            logger.info("controller profile backup pruned path=%s pruned_backup=%s", path, pruned_path)
     _atomic_write_text(path, text)
     logger.info("controller profile saved path=%s", path)
     return backup_path
@@ -620,7 +629,12 @@ def seed_default_profiles(
                 target_exists = target.exists()
                 if target_exists and not force:
                     continue
-                write_profile_text_atomic(target, payload, backup_existing=target_exists)
+                write_profile_text_atomic(
+                    target,
+                    payload,
+                    backup_existing=target_exists,
+                    keep_limit=config.backups.keep_limit,
+                )
                 metadata_updates.setdefault(target.parent, {})[target.name] = ManagedMetadataEntry(
                     source_profile=profile_name,
                     source_template=_managed_source_template(
@@ -636,7 +650,7 @@ def seed_default_profiles(
                 if verbose:
                     writer(f"controller-profile\tseeded\t{target}")
     for directory, entries in metadata_updates.items():
-        write_managed_metadata_entries(directory, entries)
+        write_managed_metadata_entries(directory, entries, keep_limit=config.backups.keep_limit)
     return created
 
 

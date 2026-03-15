@@ -605,9 +605,13 @@ def ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: Gam
             changed |= key_changed
         if changed or not path.exists():
             if path.exists():
-                backup = backup_existing_file(path)
-                if backup is not None:
-                    logger.info("managed memory-card backup created path=%s backup=%s", path, backup)
+                backup_result = backup_existing_file(path, keep_limit=config.backups.keep_limit)
+                if backup_result.created_path is not None:
+                    logger.info(
+                        "managed memory-card backup created path=%s backup=%s", path, backup_result.created_path
+                    )
+                for pruned_path in backup_result.pruned_paths:
+                    logger.info("managed memory-card backup pruned path=%s pruned_backup=%s", path, pruned_path)
             write_ini_atomic(path, lines)
             logger.info(
                 "managed memory-card config updated path=%s system=%s title_id=%s",
@@ -642,9 +646,19 @@ def ensure_managed_memory_card_paths(payload: ShortcutLaunchPayload, config: Gam
         changed |= key_changed
     if changed or not core_options_path.exists():
         if core_options_path.exists():
-            backup = backup_existing_file(core_options_path)
-            if backup is not None:
-                logger.info("managed memory-card backup created path=%s backup=%s", core_options_path, backup)
+            backup_result = backup_existing_file(core_options_path, keep_limit=config.backups.keep_limit)
+            if backup_result.created_path is not None:
+                logger.info(
+                    "managed memory-card backup created path=%s backup=%s",
+                    core_options_path,
+                    backup_result.created_path,
+                )
+            for pruned_path in backup_result.pruned_paths:
+                logger.info(
+                    "managed memory-card backup pruned path=%s pruned_backup=%s",
+                    core_options_path,
+                    pruned_path,
+                )
         write_ini_atomic(core_options_path, lines)
         logger.info(
             "managed memory-card config updated path=%s system=%s title_id=%s",
@@ -831,6 +845,7 @@ def run_shortcut_prelaunch_save_sync(
                     destination=destination,
                     expected_sha256=save.sha256,
                     timeout_seconds=config.index_timeout_seconds if config.index_timeout_seconds is not None else 30.0,
+                    backup_keep_limit=config.backups.keep_limit,
                 )
                 local_sha = local_file_sha256(destination)
                 if local_sha is not None:

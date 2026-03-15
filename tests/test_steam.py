@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 
 import vdf
@@ -203,6 +204,44 @@ def test_backup_steam_configs_creates_timestamped_files(workspace_tempdir) -> No
         for backup_path in backups:
             assert backup_path.exists()
             assert re.match(r".+\.\d{14}\.bak$", backup_path.name)
+
+
+def test_backup_steam_configs_prunes_older_backups(monkeypatch, workspace_tempdir) -> None:
+    from gamehub_cli.steam import artwork as steam_artwork
+
+    with workspace_tempdir("gamehub-steam-") as temp_root:
+        config_dir = temp_root / "userdata" / "76561198000000001" / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        shortcuts = config_dir / "shortcuts.vdf"
+        localconfig = config_dir / "localconfig.vdf"
+        shortcuts.write_bytes(b"shortcuts")
+        localconfig.write_bytes(b"localconfig")
+        for stamp in ("20260309115957", "20260309115958", "20260309115959"):
+            (config_dir / f"shortcuts.vdf.{stamp}.bak").write_bytes(stamp.encode("utf-8"))
+        context = SteamContext(
+            userdata_dir=temp_root / "userdata",
+            steam_id="76561198000000001",
+            shortcuts_path=shortcuts,
+            localconfig_path=localconfig,
+            steam_exe=None,
+        )
+
+        fixed_now = datetime(2026, 3, 9, 12, 0, 0)
+
+        class _FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                del tz
+                return fixed_now
+
+        monkeypatch.setattr(steam_artwork, "datetime", _FixedDateTime)
+
+        backup_steam_configs(context, keep_limit=3)
+
+        shortcut_backups = sorted(config_dir.glob("shortcuts.vdf.*.bak"))
+        assert len(shortcut_backups) == 3
+        assert not (config_dir / "shortcuts.vdf.20260309115957.bak").exists()
+        assert (config_dir / "shortcuts.vdf.20260309120000.bak").exists()
 
 
 def test_wait_for_steam_exit_returns_true_when_process_stops(monkeypatch) -> None:

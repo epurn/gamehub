@@ -862,7 +862,7 @@ def apply_steam_updates(
             print(f"{reason}; skipping Steam updates for safety")
             return
 
-    backups = backup_steam_configs(context)
+    backups = backup_steam_configs(context, keep_limit=config.backups.keep_limit)
     if backups:
         print(f"Backed up Steam config files: {', '.join(str(item) for item in backups)}")
 
@@ -871,6 +871,7 @@ def apply_steam_updates(
         save_shortcut_payload_registry_atomic(
             shortcut_payload_registry_path(config.state_path),
             payload_tokens_by_ref,
+            keep_limit=config.backups.keep_limit,
         )
     shortcut_result = upsert_shortcuts(context, shortcut_specs)
     print(

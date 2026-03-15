@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from gamehub_cli.common.config import (
+    BackupsConfig,
     ControllersConfig,
     LinuxConfig,
     MacOSConfig,
@@ -55,6 +56,7 @@ def test_load_config_uses_defaults_when_file_is_missing(monkeypatch, workspace_t
         assert loaded.linux == LinuxConfig()
         assert loaded.macos == MacOSConfig()
         assert loaded.controllers == ControllersConfig()
+        assert loaded.backups == BackupsConfig()
 
 
 def test_load_config_prefers_workspace_config_when_present(monkeypatch, workspace_tempdir) -> None:
@@ -681,6 +683,46 @@ def test_load_config_normalizes_invalid_save_sync_values(workspace_tempdir) -> N
         assert loaded.save_sync.mode == "download"
         assert loaded.save_sync.conflict_policy == "prefer_server"
         assert loaded.save_sync.systems == ("NES",)
+
+
+def test_load_config_supports_backups_block(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[backups]",
+                    "keep_limit = 5",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_config(config_path)
+
+        assert loaded.backups.keep_limit == 5
+
+
+def test_load_config_prefers_backup_keep_limit_from_env(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text("[backups]\nkeep_limit = 4\n", encoding="utf-8")
+        monkeypatch.setenv("GAMEHUB_BACKUP_KEEP_LIMIT", "7")
+
+        loaded = load_config(config_path)
+
+        assert loaded.backups.keep_limit == 7
+
+
+def test_load_config_normalizes_invalid_backup_keep_limit_to_default(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text("[backups]\nkeep_limit = 0\n", encoding="utf-8")
+        monkeypatch.setenv("GAMEHUB_BACKUP_KEEP_LIMIT", "invalid")
+
+        loaded = load_config(config_path)
+
+        assert loaded.backups.keep_limit == 3
 
 
 def test_default_gamehub_dir_supports_macos_state_root(monkeypatch) -> None:

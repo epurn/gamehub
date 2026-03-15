@@ -38,6 +38,7 @@ Required values in `docker/.env`:
 - Optional: `GAMEHUB_INDEX_REFRESH_SECONDS` (defaults to `0`; adds TTL-based rebuilds on top of change detection)
 - Optional: `GAMEHUB_HASH_CACHE_PATH` (path for persistent SHA256 cache DB; default is `/app/.cache/gamehub/hash-cache.sqlite3`)
 - Optional: `GAMEHUB_MAX_SAVE_UPLOAD_BYTES` (defaults to `134217728`; caps streamed save-upload size in bytes)
+- Optional: `GAMEHUB_BACKUP_KEEP_LIMIT` (defaults to `3`; keeps the newest server-generated save backups per save file)
 
 ## 2) Pull released server image
 ```powershell

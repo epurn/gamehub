@@ -8,7 +8,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import cast
 
-from ..common.fsops import backup_existing_file, replace_file
+from ..common.fsops import DEFAULT_BACKUP_KEEP_LIMIT, backup_existing_file, replace_file
 from ..common.save_sync import SaveBindingRootRecord, SaveLineageRecord
 
 BOOTSTRAP_VERSION = 1
@@ -74,11 +74,13 @@ def load_state(path: Path) -> SyncState:
     return SyncState.from_dict(raw)
 
 
-def save_state_atomic(path: Path, state: SyncState) -> None:
+def save_state_atomic(path: Path, state: SyncState, *, keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    backup_path = backup_existing_file(path)
-    if backup_path is not None:
-        logger.info("sync state backup created path=%s backup=%s", path, backup_path)
+    backup_result = backup_existing_file(path, keep_limit=keep_limit)
+    if backup_result.created_path is not None:
+        logger.info("sync state backup created path=%s backup=%s", path, backup_result.created_path)
+    for pruned_path in backup_result.pruned_paths:
+        logger.info("sync state backup pruned path=%s pruned_backup=%s", path, pruned_path)
 
     tmp = path.with_suffix(f"{path.suffix}.tmp")
     payload = json.dumps(state.to_dict(), indent=2, sort_keys=True)
