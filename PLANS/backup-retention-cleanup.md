@@ -28,32 +28,32 @@
 - Type: CLI
 - Goal: make CLI-created backups self-pruning and configurable.
 - Acceptance Criteria:
-  - [ ] `[backups].keep_limit` defaults to `3` and `GAMEHUB_BACKUP_KEEP_LIMIT` overrides it.
-  - [ ] CLI backup families prune to the newest configured count immediately after creating a new backup.
-  - [ ] Steam config backups and unmanaged controller archive backups follow the same retention rule.
-  - [ ] Backup pruning is explicitly logged by the mutation owner.
+  - [x] `[backups].keep_limit` defaults to `3` and `GAMEHUB_BACKUP_KEEP_LIMIT` overrides it.
+  - [x] CLI backup families prune to the newest configured count immediately after creating a new backup.
+  - [x] Steam config backups and unmanaged controller archive backups follow the same retention rule.
+  - [x] Backup pruning is explicitly logged by the mutation owner.
 
 ### STORY BRC-2
 - Type: Server
 - Goal: make server save-upload backups self-pruning.
 - Acceptance Criteria:
-  - [ ] `GAMEHUB_BACKUP_KEEP_LIMIT` defaults to `3` on the server.
-  - [ ] Repeated save uploads keep only the newest configured save backups per canonical save file.
-  - [ ] Server backup pruning stays local to `gamehub_server`.
+  - [x] `GAMEHUB_BACKUP_KEEP_LIMIT` defaults to `3` on the server.
+  - [x] Repeated save uploads keep only the newest configured save backups per canonical save file.
+  - [x] Server backup pruning stays local to `gamehub_server`.
 
 ### STORY BRC-3
 - Type: Operator Utility
 - Goal: give operators a safe way to prune legacy backup buildup.
 - Acceptance Criteria:
-  - [ ] `scripts/cleanup_backups.py` supports `--config`, repeated `--root`, `--server-data-root`, `--keep`, and `--apply`.
-  - [ ] Dry-run is the default and prints exact deletions without mutating files.
-  - [ ] Apply mode deletes only GAMEHUB timestamped backups and preserves non-GAMEHUB `.bak` files.
+  - [x] `scripts/cleanup_backups.py` supports `--config`, repeated `--root`, `--server-data-root`, `--keep`, and `--apply`.
+  - [x] Dry-run is the default and prints exact deletions without mutating files.
+  - [x] Apply mode deletes only GAMEHUB timestamped backups and preserves non-GAMEHUB `.bak` files.
 
 ### STORY BRC-4
 - Type: Docs + Tests
 - Goal: document and verify the retention contract.
 - Acceptance Criteria:
-  - [ ] Config docs/templates describe `[backups].keep_limit`.
-  - [ ] Server deployment docs describe `GAMEHUB_BACKUP_KEEP_LIMIT`.
-  - [ ] CLI docs describe automatic retention and the cleanup script.
-  - [ ] Regression tests cover config parsing, helper pruning, Steam/controller outliers, server save retention, and script dry-run/apply flows.
+  - [x] Config docs/templates describe `[backups].keep_limit`.
+  - [x] Server deployment docs describe `GAMEHUB_BACKUP_KEEP_LIMIT`.
+  - [x] CLI docs describe automatic retention and the cleanup script.
+  - [x] Regression tests cover config parsing, helper pruning, Steam/controller outliers, server save retention, and script dry-run/apply flows.
