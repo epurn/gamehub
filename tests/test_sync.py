@@ -20,7 +20,7 @@ from gamehub_cli.sync.orchestrator import (
 )
 from gamehub_cli.sync.planner import PlanAction, SavePlanAction, SyncPlan
 from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON, SyncState
-from gamehub_cli.sync.steam_stage import _build_shortcut_specs_and_payloads
+from gamehub_cli.sync.steam_stage import _build_shortcut_specs_and_payloads, _normalize_wrapper_candidate
 from gamehub_cli.sync.steam_stage import (
     build_shortcut_specs as _build_shortcut_specs,
 )
@@ -75,10 +75,31 @@ def test_apply_downloads_runs_firmware_before_content(monkeypatch) -> None:
     plan = SyncPlan(firmware_actions=[firmware_action], content_actions=[rom_action])
 
     _apply_downloads("http://localhost:8000", plan, state, timeout_seconds=20.0)
-
     assert calls == ["/v1/firmware/PSX/scph5501.bin", "/v1/files/file_mgs"]
     assert state.firmware_checksums["PSX/scph5501.bin"] == "a" * 64
     assert state.downloaded_checksums["file_mgs"] == "b" * 64
+
+
+def test_normalize_wrapper_candidate_keeps_posix_absolute_path_on_windows_host(monkeypatch) -> None:
+    class FakeWindowsPath:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+        def expanduser(self) -> "FakeWindowsPath":
+            return self
+
+        def exists(self) -> bool:
+            return False
+
+        def is_absolute(self) -> bool:
+            return False
+
+        def __str__(self) -> str:
+            return self.value
+
+    monkeypatch.setattr("gamehub_cli.sync.steam_stage.Path", FakeWindowsPath)
+
+    assert _normalize_wrapper_candidate("/usr/bin/gamehub") == "/usr/bin/gamehub"
 
 
 def test_bootstrap_runtime_forwards_macos_emulator_install_config(monkeypatch) -> None:
