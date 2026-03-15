@@ -53,9 +53,11 @@ def configure_pcsx2_runtime(
     lines, changed_bios = upsert_ini_key(lines, "Folders", "Bios", str(bios_dir_for_config))
     if changed_ui or changed_bios or not ini_path.exists():
         if ini_path.exists():
-            backup = backup_existing_file(ini_path)
-            if backup is not None:
-                logger.info("pcsx2 runtime backup created path=%s backup=%s", ini_path, backup)
+            backup_result = backup_existing_file(ini_path, keep_limit=config.backups.keep_limit)
+            if backup_result.created_path is not None:
+                logger.info("pcsx2 runtime backup created path=%s backup=%s", ini_path, backup_result.created_path)
+            for pruned_path in backup_result.pruned_paths:
+                logger.info("pcsx2 runtime backup pruned path=%s pruned_backup=%s", ini_path, pruned_path)
         write_ini_atomic(ini_path, lines)
         logger.info("pcsx2 runtime config updated path=%s bios=%s", ini_path, bios_dir_for_config)
     bios_dir_for_config.mkdir(parents=True, exist_ok=True)

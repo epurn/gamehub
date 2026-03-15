@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
-from ..common.fsops import backup_existing_file
+from ..common.fsops import DEFAULT_BACKUP_KEEP_LIMIT, backup_existing_file
 from .downloads import DEFAULT_DOWNLOAD_CHUNK_BYTES, download_with_atomic_write, httpx
 
 logger = logging.getLogger(__name__)
@@ -29,10 +29,13 @@ def stream_to_destination_atomic(
     expected_sha256: str,
     timeout_seconds: float,
     http_client: Any | None = None,
+    backup_keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
 ) -> None:
-    backup_path = backup_existing_file(destination)
-    if backup_path is not None:
-        logger.info("save download backup created destination=%s backup=%s", destination, backup_path)
+    backup_result = backup_existing_file(destination, keep_limit=backup_keep_limit)
+    if backup_result.created_path is not None:
+        logger.info("save download backup created destination=%s backup=%s", destination, backup_result.created_path)
+    for pruned_path in backup_result.pruned_paths:
+        logger.info("save download backup pruned destination=%s pruned_backup=%s", destination, pruned_path)
     download_with_atomic_write(
         server_url,
         url,

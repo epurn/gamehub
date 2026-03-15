@@ -64,3 +64,6 @@ launch_autoconfig = true
 # Default when omitted: <paths.gamehub_dir>/controller_profiles
 # profiles_dir = "/home/<user>/GameHub/controller_profiles"
 
+[backups]
+# Keep the newest GAMEHUB backup files per target path/family (default 3).
+# keep_limit = 3

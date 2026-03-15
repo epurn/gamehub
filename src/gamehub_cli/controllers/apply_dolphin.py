@@ -503,7 +503,11 @@ def apply_dolphin_profile(
             "Core": {"SIDevice0": "6", "SIDevice1": "6"},
             "Controls": {"WiimoteSource0": "1", "WiimoteSource1": "1"},
         }
-        apply_managed_ini_sections(target_path=dolphin_ini, sections=dolphin_sections)
+        apply_managed_ini_sections(
+            target_path=dolphin_ini,
+            sections=dolphin_sections,
+            keep_limit=config.backups.keep_limit,
+        )
         touched.append(dolphin_ini)
         for filename in ("GCPadNew.ini", "WiimoteNew.ini", "Hotkeys.ini"):
             profile_lines = load_profile_file(
@@ -536,7 +540,11 @@ def apply_dolphin_profile(
                     sections = _normalize_macos_kbm_sections(sections)
                 else:
                     sections = _normalize_macos_controller_sections(sections, profile_name=profile_name)
-            apply_managed_ini_sections(target_path=target_path, sections=sections)
+            apply_managed_ini_sections(
+                target_path=target_path,
+                sections=sections,
+                keep_limit=config.backups.keep_limit,
+            )
             touched.append(target_path)
             device_identity_modes.append(device_identity_mode)
             if selected_device:

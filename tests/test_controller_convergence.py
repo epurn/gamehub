@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
-from gamehub_cli.common.config import ControllersConfig, GamehubConfig
+import gamehub_cli.controllers.convergence as convergence_module
+from gamehub_cli.common.config import BackupsConfig, ControllersConfig, GamehubConfig
 from gamehub_cli.controllers.convergence import (
     ControllerTargetStatus,
     apply_controller_convergence_plan,
@@ -311,6 +313,40 @@ def test_controller_convergence_force_archives_extra_unmanaged_profile_file(monk
         backups = list(backup_root.glob("custom.ini.*.bak"))
         assert backups
         assert "[Custom]" in backups[0].read_text(encoding="utf-8")
+
+
+def test_controller_convergence_force_archive_prunes_older_backups(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
+        base = _config(temp_root)
+        config = replace(base, backups=BackupsConfig(keep_limit=2))
+        fixed_now = datetime(2026, 3, 9, 12, 0, 0, tzinfo=UTC)
+
+        class _FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed_now if tz is None else fixed_now.astimezone(tz)
+
+        monkeypatch.setattr(convergence_module, "datetime", _FixedDateTime)
+        profile_file = config.library_dir / "controller_profiles" / "pcsx2" / "kbm" / "PCSX2.ini"
+        backup_root = profile_file.parent / ".gamehub-unmanaged-backups"
+        backup_root.mkdir(parents=True, exist_ok=True)
+        (backup_root / "PCSX2.ini.20260309115957.bak").write_text("older-1\n", encoding="utf-8")
+        (backup_root / "PCSX2.ini.20260309115958.bak").write_text("older-2\n", encoding="utf-8")
+        profile_file.parent.mkdir(parents=True, exist_ok=True)
+        profile_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")
+
+        plan = build_controller_convergence_plan(config, emulator_families={"pcsx2"})
+        apply_controller_convergence_plan(
+            plan,
+            apply=True,
+            force_unmanaged=True,
+            keep_limit=config.backups.keep_limit,
+        )
+
+        backups = sorted(backup_root.glob("PCSX2.ini.*.bak"))
+        assert len(backups) == 2
+        assert not (backup_root / "PCSX2.ini.20260309115957.bak").exists()
+        assert (backup_root / "PCSX2.ini.20260309120000.bak").exists()
 
 
 def test_controller_convergence_runtime_selection_rules_remain_autodetect() -> None:

@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from logging import getLogger
 from pathlib import Path
 
-from .fsops import backup_existing_file, replace_file
+from .fsops import DEFAULT_BACKUP_KEEP_LIMIT, backup_existing_file, replace_file
 
 SHORTCUT_PAYLOAD_REGISTRY_FILENAME = "shortcut_payloads.json"
 SHORTCUT_PAYLOAD_REGISTRY_VERSION = 1
@@ -52,7 +52,12 @@ def load_shortcut_payload_token(path: Path, payload_ref: str) -> str:
     return token
 
 
-def save_shortcut_payload_registry_atomic(path: Path, payload_tokens_by_ref: Mapping[str, str]) -> None:
+def save_shortcut_payload_registry_atomic(
+    path: Path,
+    payload_tokens_by_ref: Mapping[str, str],
+    *,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
+) -> None:
     normalized: dict[str, str] = {}
     for key, value in payload_tokens_by_ref.items():
         if not isinstance(key, str) or not isinstance(value, str):
@@ -78,9 +83,11 @@ def save_shortcut_payload_registry_atomic(path: Path, payload_tokens_by_ref: Map
             return
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    backup_path = backup_existing_file(path)
-    if backup_path is not None:
-        logger.info("shortcut payload registry backup created path=%s backup=%s", path, backup_path)
+    backup_result = backup_existing_file(path, keep_limit=keep_limit)
+    if backup_result.created_path is not None:
+        logger.info("shortcut payload registry backup created path=%s backup=%s", path, backup_result.created_path)
+    for pruned_path in backup_result.pruned_paths:
+        logger.info("shortcut payload registry backup pruned path=%s pruned_backup=%s", path, pruned_path)
 
     tmp = path.with_suffix(f"{path.suffix}.tmp")
     with tmp.open("w", encoding="utf-8", newline="\n") as handle:

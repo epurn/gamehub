@@ -90,6 +90,10 @@ launch_autoconfig = true
 # Default when omitted: <paths.gamehub_dir>/controller_profiles
 profiles_dir = "~/.gamehub/controller_profiles"
 
+[backups]
+# Keep the newest GAMEHUB backup files per target path/family.
+keep_limit = 3
+
 [save_sync]
 # Rollout default is disabled.
 enabled = false
@@ -199,10 +203,15 @@ Shared emulator path/runtime env overrides (Linux and macOS):
   - also watches available `/dev/input/event*` devices and exits only on strict `BTN_SELECT` + `BTN_START`
 - `GAMEHUB_CONTROLLER_LAUNCH_AUTOCONFIG`: overrides `[controllers].launch_autoconfig` (`true`/`false`).
 - `GAMEHUB_CONTROLLER_PROFILES_DIR`: overrides `[controllers].profiles_dir`.
+- `GAMEHUB_BACKUP_KEEP_LIMIT`: overrides `[backups].keep_limit` (minimum `1`, default `3`).
 - `GAMEHUB_INDEX_TIMEOUT_SECONDS`: overrides `[server].index_timeout_seconds`.
 - `GAMEHUB_INDEX_FETCH_ATTEMPTS`: overrides `[server].index_fetch_attempts`.
 - `GAMEHUB_INDEX_RETRY_BACKOFF_SECONDS`: overrides `[server].index_retry_backoff_seconds`.
 - `GAMEHUB_MAX_PARALLEL_DOWNLOADS`: overrides `[server].max_parallel_downloads` (clamped to `1..16`).
+
+Backup config keys:
+- `[backups].keep_limit`: default `3`; automatic GAMEHUB backup families keep only the newest `N` timestamped backups after each new backup is created.
+- Legacy backup buildup can be pruned manually with `./venv/bin/python scripts/cleanup_backups.py --config ./config.toml [--server-data-root <path>] [--apply]`.
 
 Save sync config keys (TOML only for now):
 - `[save_sync].enabled`: default `false` (safe rollout).

@@ -128,6 +128,7 @@ def _write_retroarch_simple_cfg_updates(
     updates: dict[str, str],
     kind: str,
     create_if_missing: bool,
+    keep_limit: int,
     remove_keys: tuple[str, ...] = (),
 ) -> bool:
     if not path.exists() and not create_if_missing:
@@ -146,9 +147,21 @@ def _write_retroarch_simple_cfg_updates(
     changed = changed or removed
     if changed or (create_if_missing and not path.exists()):
         if path.exists():
-            backup = backup_existing_file(path)
-            if backup is not None:
-                logger.info("retroarch runtime backup created path=%s backup=%s kind=%s", path, backup, kind)
+            backup_result = backup_existing_file(path, keep_limit=keep_limit)
+            if backup_result.created_path is not None:
+                logger.info(
+                    "retroarch runtime backup created path=%s backup=%s kind=%s",
+                    path,
+                    backup_result.created_path,
+                    kind,
+                )
+            for pruned_path in backup_result.pruned_paths:
+                logger.info(
+                    "retroarch runtime backup pruned path=%s pruned_backup=%s kind=%s",
+                    path,
+                    pruned_path,
+                    kind,
+                )
         write_ini_atomic(path, lines)
         logger.info("retroarch runtime config updated path=%s kind=%s", path, kind)
     return changed
@@ -173,7 +186,12 @@ def _remove_simple_cfg_keys(lines: list[str], keys: tuple[str, ...]) -> tuple[li
     return output, changed
 
 
-def _write_retroarch_remap_file(remap_dir: Path, *, core_name: str) -> tuple[Path, bool]:
+def _write_retroarch_remap_file(
+    remap_dir: Path,
+    *,
+    core_name: str,
+    keep_limit: int,
+) -> tuple[Path, bool]:
     remap_path = remap_dir / core_name / f"{core_name}.rmp"
     remap_lines = read_ini_lines(remap_path)
     changed = False
@@ -192,9 +210,19 @@ def _write_retroarch_remap_file(remap_dir: Path, *, core_name: str) -> tuple[Pat
         changed |= updated
     if changed or not remap_path.exists():
         if remap_path.exists():
-            backup = backup_existing_file(remap_path)
-            if backup is not None:
-                logger.info("retroarch runtime backup created path=%s backup=%s kind=remap", remap_path, backup)
+            backup_result = backup_existing_file(remap_path, keep_limit=keep_limit)
+            if backup_result.created_path is not None:
+                logger.info(
+                    "retroarch runtime backup created path=%s backup=%s kind=remap",
+                    remap_path,
+                    backup_result.created_path,
+                )
+            for pruned_path in backup_result.pruned_paths:
+                logger.info(
+                    "retroarch runtime backup pruned path=%s pruned_backup=%s kind=remap",
+                    remap_path,
+                    pruned_path,
+                )
         write_ini_atomic(remap_path, remap_lines)
         logger.info("retroarch runtime config updated path=%s kind=remap", remap_path)
     return remap_path, changed
@@ -349,6 +377,7 @@ def configure_managed_macos_n64_content_runtime(
             updates={_RETROARCH_VIDEO_DRIVER_KEY: _RETROARCH_VIDEO_DRIVER_GLCORE},
             kind="n64-macos-override",
             create_if_missing=False,
+            keep_limit=config.backups.keep_limit,
         )
 
     override_opt_paths = [
@@ -365,6 +394,7 @@ def configure_managed_macos_n64_content_runtime(
                 updates=_RETROARCH_MACOS_N64_CORE_OPTIONS,
                 kind="n64-macos-core-options-override",
                 create_if_missing=False,
+                keep_limit=config.backups.keep_limit,
                 remove_keys=_RETROARCH_MACOS_N64_LEGACY_CORE_OPTION_KEYS,
             )
 
@@ -507,9 +537,19 @@ def configure_retroarch_runtime(
         or not cfg_path.exists()
     ):
         if cfg_path.exists():
-            backup = backup_existing_file(cfg_path)
-            if backup is not None:
-                logger.info("retroarch runtime backup created path=%s backup=%s kind=config", cfg_path, backup)
+            backup_result = backup_existing_file(cfg_path, keep_limit=config.backups.keep_limit)
+            if backup_result.created_path is not None:
+                logger.info(
+                    "retroarch runtime backup created path=%s backup=%s kind=config",
+                    cfg_path,
+                    backup_result.created_path,
+                )
+            for pruned_path in backup_result.pruned_paths:
+                logger.info(
+                    "retroarch runtime backup pruned path=%s pruned_backup=%s kind=config",
+                    cfg_path,
+                    pruned_path,
+                )
         write_ini_atomic(cfg_path, lines)
         logger.info("retroarch runtime config updated path=%s kind=config", cfg_path)
     core_changed = False
@@ -521,12 +561,18 @@ def configure_retroarch_runtime(
     core_changed = core_changed or n64_core_changed
     if core_changed or not core_options_path.exists():
         if core_options_path.exists():
-            backup = backup_existing_file(core_options_path)
-            if backup is not None:
+            backup_result = backup_existing_file(core_options_path, keep_limit=config.backups.keep_limit)
+            if backup_result.created_path is not None:
                 logger.info(
                     "retroarch runtime backup created path=%s backup=%s kind=core-options",
                     core_options_path,
-                    backup,
+                    backup_result.created_path,
+                )
+            for pruned_path in backup_result.pruned_paths:
+                logger.info(
+                    "retroarch runtime backup pruned path=%s pruned_backup=%s kind=core-options",
+                    core_options_path,
+                    pruned_path,
                 )
         write_ini_atomic(core_options_path, core_lines)
         logger.info("retroarch runtime config updated path=%s kind=core-options", core_options_path)
@@ -537,7 +583,11 @@ def configure_retroarch_runtime(
             n64_core_path,
         )
     remap_dir = _resolve_retroarch_remap_dir(cfg_path, lines)
-    remap_path, _ = _write_retroarch_remap_file(remap_dir, core_name=_RETROARCH_SWANSTATION_CORE_NAME)
+    remap_path, _ = _write_retroarch_remap_file(
+        remap_dir,
+        core_name=_RETROARCH_SWANSTATION_CORE_NAME,
+        keep_limit=config.backups.keep_limit,
+    )
     if verbose:
         if is_windows:
             details = f"menu_combo={_RETROARCH_MENU_COMBO_LABEL}\tall_users_menu=true"

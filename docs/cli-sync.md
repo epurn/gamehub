@@ -48,6 +48,17 @@ Windows PowerShell:
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor all [--verify] [--verbose]
 ```
 
+Backup cleanup utility:
+macOS/Linux:
+```bash
+./venv/bin/python scripts/cleanup_backups.py [--config ./config.toml] [--root <path>] [--server-data-root <path>] [--keep 3] [--apply]
+```
+
+Windows PowerShell:
+```powershell
+.\venv\Scripts\python.exe scripts/cleanup_backups.py [--config .\config.toml] [--root <path>] [--server-data-root <path>] [--keep 3] [--apply]
+```
+
 Fresh installs must run `gamehub init` before the first `gamehub sync`.
 
 ## Init Flags
@@ -138,11 +149,12 @@ Steam close behavior:
 9. Deploy firmware files into emulator-native BIOS locations (copy/link from `<gamehub_dir>/firmware/...`)
 10. Controller convergence stage (after runtime/bootstrap setup, before Steam mutation):
    - validates managed controller profile templates under `<gamehub_dir>/controller_profiles`
-   - records per-directory `.gamehub-managed.json` metadata markers (schema version, source profile/template, timestamp, fingerprint, ownership); rewrites back up the previous marker file to a timestamped `.bak` and log the save
-   - applies assisted emulator config key convergence for known-safe controller sections (`PCSX2.ini`, `Dolphin.ini`, Azahar `qt-config.ini`) using minimal key/section edits; when an existing config file is changed, GAMEHUB first writes a timestamped `.bak` beside that file and logs the rewrite
+   - records per-directory `.gamehub-managed.json` metadata markers (schema version, source profile/template, timestamp, fingerprint, ownership); rewrites back up the previous marker file to a timestamped `.bak`, prunes that family to the newest `[backups].keep_limit` files (default `3`), and logs the save/prune
+   - applies assisted emulator config key convergence for known-safe controller sections (`PCSX2.ini`, `Dolphin.ini`, Azahar `qt-config.ini`) using minimal key/section edits; when an existing config file is changed, GAMEHUB first writes a timestamped `.bak`, prunes that family to the newest `[backups].keep_limit` files (default `3`), and logs the rewrite/prune
    - does not choose a fixed profile; runtime selection remains launch-time autodetect (`0 -> kbm`, `1 -> xbox_1p`, `2+ -> xbox_2p`)
 11. Discover Steam userdata + SteamID
 12. Close Steam (best effort), backup configs, upsert Steam shortcuts, update collections (localconfig + cloud namespace), copy cached artwork into Steam grid, reopen Steam
+   - Steam config backups also prune to the newest `[backups].keep_limit` files per file family (default `3`)
    - managed shortcuts persist stable `appid` values on write, so first-run artwork/category mapping does not depend on a later Steam rewrite pass
    - collection membership appids are canonicalized to unsigned numeric values in both localconfig and cloud payloads
     - when `[controllers].launch_autoconfig = true` or `[save_sync].enabled = true`, GAMEHUB wraps `RetroArch`/`PCSX2`/`Dolphin`/`Azahar` shortcuts through an internal `shortcut-launch` command that:
@@ -284,6 +296,8 @@ Windows path notes:
   - can be disabled by setting `GAMEHUB_DOLPHIN_LINUX_EXIT_HOOK=false`
 Controller launch profile defaults:
 - Profile root default: `<paths.gamehub_dir>/controller_profiles` (override with `[controllers].profiles_dir` or `GAMEHUB_CONTROLLER_PROFILES_DIR`).
+- Automatic GAMEHUB backup retention default: `[backups].keep_limit = 3` (override with `GAMEHUB_BACKUP_KEEP_LIMIT`; minimum `1`).
+- Use `scripts/cleanup_backups.py` to prune existing legacy backup buildup across client roots and optional server data roots.
 - Non-dry `gamehub init` and non-dry `gamehub sync` seed missing default profiles when `launch_autoconfig` is enabled.
 - `shortcut-launch` does not seed controller profiles at launch time; run non-dry `gamehub init` or `gamehub sync` first when managed profiles may not exist yet.
 - Use `--reseed-profiles` to force-overwrite managed defaults (controller profiles + Deck per-title Steam templates) on demand.

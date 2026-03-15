@@ -111,6 +111,7 @@ def apply_save_stage(
     timeout_seconds: float,
     dry_run: bool,
     verbose: bool = False,
+    backup_keep_limit: int = 3,
 ) -> SaveStageResult:
     downloaded = 0
     uploaded = 0
@@ -184,6 +185,7 @@ def apply_save_stage(
                 destination=action.destination,
                 expected_sha256=action.expected_sha256,
                 timeout_seconds=timeout_seconds,
+                backup_keep_limit=backup_keep_limit,
             )
             _record_converged_save(
                 state,

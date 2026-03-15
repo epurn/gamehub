@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -10,7 +11,7 @@ from gamehub_common.models import LibraryIndex
 
 from ..common.config import GamehubConfig
 from ..common.config_edit import read_qsettings_key, upsert_qsettings_key
-from ..common.fsops import replace_file
+from ..common.fsops import DEFAULT_BACKUP_KEEP_LIMIT, prune_backup_family, replace_file
 from ..firmware.pcsx2_ini import read_ini_lines
 from ..firmware.targets import default_pcsx2_ini_path
 from .apply_azahar import azahar_target_config_paths
@@ -35,6 +36,7 @@ from .profiles import (
 
 _KNOWN_EMULATOR_FAMILIES = ("pcsx2", "dolphin", "azahar")
 _UNMANAGED_BACKUP_DIRNAME = ".gamehub-unmanaged-backups"
+logger = logging.getLogger(__name__)
 
 
 class ControllerOwnership(str, Enum):
@@ -255,7 +257,7 @@ def format_runtime_selection_rules(rules: tuple[ControllerRuntimeSelectionRule, 
     return ",".join(f"{rule.controller_count}->{rule.profile_name}" for rule in rules)
 
 
-def _archive_unmanaged_profile_file(path: Path) -> Path:
+def _archive_unmanaged_profile_file(path: Path, *, keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT) -> Path:
     backup_root = path.parent / _UNMANAGED_BACKUP_DIRNAME
     backup_root.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
@@ -265,10 +267,17 @@ def _archive_unmanaged_profile_file(path: Path) -> Path:
         candidate = backup_root / f"{path.name}.{stamp}.{suffix}.bak"
         suffix += 1
     replace_file(path, candidate)
+    for pruned_path in prune_backup_family(backup_root, path.name, keep_limit=keep_limit):
+        logger.info("controller unmanaged backup pruned path=%s pruned_backup=%s", path, pruned_path)
     return candidate
 
 
-def _record_managed_metadata(target: Path, spec: ManagedProfileTarget) -> None:
+def _record_managed_metadata(
+    target: Path,
+    spec: ManagedProfileTarget,
+    *,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
+) -> None:
     write_managed_metadata_entry(
         target,
         ManagedMetadataEntry(
@@ -278,6 +287,7 @@ def _record_managed_metadata(target: Path, spec: ManagedProfileTarget) -> None:
             fingerprint_sha256=sha256_text(spec.payload),
             ownership=ControllerOwnership.MANAGED.value,
         ),
+        keep_limit=keep_limit,
     )
 
 
@@ -299,6 +309,7 @@ def _evaluate_managed_target(
     apply: bool,
     force_managed: bool,
     force_unmanaged: bool,
+    keep_limit: int,
 ) -> ControllerConvergenceFinding:
     path = spec.destination
     expected_sha = sha256_text(spec.payload)
@@ -306,8 +317,8 @@ def _evaluate_managed_target(
 
     if not path.exists():
         if apply:
-            write_profile_text_atomic(path, spec.payload)
-            _record_managed_metadata(path, spec)
+            write_profile_text_atomic(path, spec.payload, keep_limit=keep_limit)
+            _record_managed_metadata(path, spec, keep_limit=keep_limit)
             return ControllerConvergenceFinding(
                 ownership=ControllerOwnership.MANAGED,
                 status=ControllerTargetStatus.REPAIRED,
@@ -379,8 +390,8 @@ def _evaluate_managed_target(
 
     if force_managed or metadata_owned:
         if apply:
-            write_profile_text_atomic(path, spec.payload, backup_existing=True)
-            _record_managed_metadata(path, spec)
+            write_profile_text_atomic(path, spec.payload, backup_existing=True, keep_limit=keep_limit)
+            _record_managed_metadata(path, spec, keep_limit=keep_limit)
             return ControllerConvergenceFinding(
                 ownership=ControllerOwnership.MANAGED,
                 status=ControllerTargetStatus.REPAIRED,
@@ -399,9 +410,9 @@ def _evaluate_managed_target(
         )
 
     if apply and force_unmanaged:
-        backup_path = _archive_unmanaged_profile_file(path)
-        write_profile_text_atomic(path, spec.payload)
-        _record_managed_metadata(path, spec)
+        backup_path = _archive_unmanaged_profile_file(path, keep_limit=keep_limit)
+        write_profile_text_atomic(path, spec.payload, keep_limit=keep_limit)
+        _record_managed_metadata(path, spec, keep_limit=keep_limit)
         return ControllerConvergenceFinding(
             ownership=ControllerOwnership.MANAGED,
             status=ControllerTargetStatus.REPAIRED,
@@ -424,7 +435,12 @@ def _evaluate_managed_target(
     )
 
 
-def _evaluate_assisted_ini_target(spec: AssistedIniTarget, *, apply: bool) -> ControllerConvergenceFinding:
+def _evaluate_assisted_ini_target(
+    spec: AssistedIniTarget,
+    *,
+    apply: bool,
+    keep_limit: int,
+) -> ControllerConvergenceFinding:
     path = spec.destination
     if path.exists():
         existing_sections = parse_ini_sections(read_ini_lines(path))
@@ -460,7 +476,7 @@ def _evaluate_assisted_ini_target(spec: AssistedIniTarget, *, apply: bool) -> Co
         )
 
     try:
-        apply_managed_ini_sections(target_path=path, sections=spec.sections)
+        apply_managed_ini_sections(target_path=path, sections=spec.sections, keep_limit=keep_limit)
     except OSError as exc:
         return ControllerConvergenceFinding(
             ownership=ControllerOwnership.ASSISTED,
@@ -484,6 +500,7 @@ def _evaluate_assisted_qsettings_target(
     spec: AssistedQSettingsTarget,
     *,
     apply: bool,
+    keep_limit: int,
 ) -> ControllerConvergenceFinding:
     path = spec.destination
     lines = read_ini_lines(path)
@@ -514,7 +531,7 @@ def _evaluate_assisted_qsettings_target(
             lines, key_changed = upsert_qsettings_key(lines, key, desired)
             changed |= key_changed
         if changed or not path.exists():
-            write_controller_config_lines_atomic(path, lines)
+            write_controller_config_lines_atomic(path, lines, keep_limit=keep_limit)
     except OSError as exc:
         return ControllerConvergenceFinding(
             ownership=ControllerOwnership.ASSISTED,
@@ -539,6 +556,7 @@ def _unmanaged_profile_findings(
     *,
     apply: bool,
     force_unmanaged: bool,
+    keep_limit: int,
 ) -> list[ControllerConvergenceFinding]:
     findings: list[ControllerConvergenceFinding] = []
     expected_by_dir: dict[Path, set[str]] = {}
@@ -555,7 +573,7 @@ def _unmanaged_profile_findings(
             if candidate.name in expected_files:
                 continue
             if apply and force_unmanaged:
-                backup_path = _archive_unmanaged_profile_file(candidate)
+                backup_path = _archive_unmanaged_profile_file(candidate, keep_limit=keep_limit)
                 findings.append(
                     ControllerConvergenceFinding(
                         ownership=ControllerOwnership.UNMANAGED,
@@ -587,6 +605,7 @@ def apply_controller_convergence_plan(
     force_managed: bool = False,
     force_unmanaged: bool = False,
     include_unmanaged_scan: bool = False,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
 ) -> ControllerConvergenceResult:
     findings: list[ControllerConvergenceFinding] = []
     for managed_target in plan.managed_profile_targets:
@@ -596,14 +615,28 @@ def apply_controller_convergence_plan(
                 apply=apply,
                 force_managed=force_managed,
                 force_unmanaged=force_unmanaged,
+                keep_limit=keep_limit,
             )
         )
     for assisted_ini_target in plan.assisted_ini_targets:
-        findings.append(_evaluate_assisted_ini_target(assisted_ini_target, apply=apply))
+        findings.append(_evaluate_assisted_ini_target(assisted_ini_target, apply=apply, keep_limit=keep_limit))
     for assisted_qsettings_target in plan.assisted_qsettings_targets:
-        findings.append(_evaluate_assisted_qsettings_target(assisted_qsettings_target, apply=apply))
+        findings.append(
+            _evaluate_assisted_qsettings_target(
+                assisted_qsettings_target,
+                apply=apply,
+                keep_limit=keep_limit,
+            )
+        )
     if include_unmanaged_scan:
-        findings.extend(_unmanaged_profile_findings(plan, apply=apply, force_unmanaged=force_unmanaged))
+        findings.extend(
+            _unmanaged_profile_findings(
+                plan,
+                apply=apply,
+                force_unmanaged=force_unmanaged,
+                keep_limit=keep_limit,
+            )
+        )
 
     result = ControllerConvergenceResult(findings=findings, total_targets=plan.total_targets)
     for finding in findings:
@@ -649,6 +682,7 @@ def converge_controller_state(
         apply=not dry_run,
         force_managed=force_managed,
         include_unmanaged_scan=False,
+        keep_limit=config.backups.keep_limit,
     )
     if verbose or result.unresolved_count > 0:
         writer(
@@ -696,6 +730,7 @@ def run_controller_doctor(
         force_managed=False,
         force_unmanaged=force,
         include_unmanaged_scan=True,
+        keep_limit=config.backups.keep_limit,
     )
     for finding in sorted(
         result.findings,

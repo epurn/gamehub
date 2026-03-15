@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from ..common.fsops import backup_existing_file
+from ..common.fsops import DEFAULT_BACKUP_KEEP_LIMIT, backup_existing_file
 from ..firmware.pcsx2_ini import read_ini_lines, upsert_ini_key, write_ini_atomic
 
 logger = logging.getLogger(__name__)
@@ -27,19 +27,27 @@ def parse_ini_sections(lines: list[str]) -> dict[str, dict[str, str]]:
     return sections
 
 
-def write_controller_config_lines_atomic(path: Path, lines: list[str]) -> Path | None:
-    backup_path = backup_existing_file(path)
-    if backup_path is not None:
-        logger.info("controller config backup created path=%s backup=%s", path, backup_path)
+def write_controller_config_lines_atomic(
+    path: Path,
+    lines: list[str],
+    *,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
+) -> Path | None:
+    backup_result = backup_existing_file(path, keep_limit=keep_limit)
+    if backup_result.created_path is not None:
+        logger.info("controller config backup created path=%s backup=%s", path, backup_result.created_path)
+    for pruned_path in backup_result.pruned_paths:
+        logger.info("controller config backup pruned path=%s pruned_backup=%s", path, pruned_path)
     write_ini_atomic(path, lines)
     logger.info("controller config saved path=%s", path)
-    return backup_path
+    return backup_result.created_path
 
 
 def apply_managed_ini_sections(
     *,
     target_path: Path,
     sections: dict[str, dict[str, str]],
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
 ) -> bool:
     lines = read_ini_lines(target_path)
     changed = False
@@ -48,5 +56,5 @@ def apply_managed_ini_sections(
             lines, key_changed = upsert_ini_key(lines, section_name, key, value)
             changed |= key_changed
     if changed or not target_path.exists():
-        write_controller_config_lines_atomic(target_path, lines)
+        write_controller_config_lines_atomic(target_path, lines, keep_limit=keep_limit)
     return changed

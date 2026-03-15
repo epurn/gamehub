@@ -313,6 +313,10 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
             lines, key_changed = upsert_qsettings_key(lines, key, desired)
             changed |= key_changed
         if changed or not target_path.exists():
-            write_controller_config_lines_atomic(target_path, lines)
+            write_controller_config_lines_atomic(
+                target_path,
+                lines,
+                keep_limit=config.backups.keep_limit,
+            )
         touched.append(target_path)
     return touched

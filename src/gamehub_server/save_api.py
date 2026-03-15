@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import errno
 import os
+import re
 import shutil
 import threading
 from collections.abc import AsyncIterator, Callable
@@ -26,10 +27,12 @@ from .save_index import SAVES_ROOT_NAME, is_server_generated_save_backup_name
 
 logger = get_server_logger(__name__)
 DEFAULT_MAX_SAVE_UPLOAD_BYTES = 128 * 1024 * 1024
+DEFAULT_BACKUP_KEEP_LIMIT = 3
 SAVE_UPLOAD_CHUNK_BYTES = 1024 * 1024
 _SAVE_UPLOAD_LOCKS_GUARD = threading.Lock()
 _SAVE_UPLOAD_LOCKS: dict[tuple[int, str], asyncio.Lock] = {}
 _SAVE_UPLOAD_LOCK_REFS: dict[tuple[int, str], int] = {}
+_SERVER_SAVE_BACKUP_NAME_RE = re.compile(r"^(?P<original_name>.+)\.(?P<stamp>\d{14})(?:\.(?P<collision>\d+))?\.bak$")
 
 
 def read_max_save_upload_bytes() -> int:
@@ -40,6 +43,17 @@ def read_max_save_upload_bytes() -> int:
         return DEFAULT_MAX_SAVE_UPLOAD_BYTES
     if limit <= 0:
         return DEFAULT_MAX_SAVE_UPLOAD_BYTES
+    return limit
+
+
+def read_backup_keep_limit() -> int:
+    raw = os.environ.get("GAMEHUB_BACKUP_KEEP_LIMIT", str(DEFAULT_BACKUP_KEEP_LIMIT)).strip()
+    try:
+        limit = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_BACKUP_KEEP_LIMIT
+    if limit <= 0:
+        return DEFAULT_BACKUP_KEEP_LIMIT
     return limit
 
 
@@ -88,9 +102,45 @@ class _MultipartReader:
                 raise HTTPException(status_code=400, detail="Malformed multipart payload")
 
 
-def _backup_existing_save(path: Path) -> Path | None:
-    if not path.exists() or not path.is_file():
+def _parse_server_save_backup_name(filename: str) -> tuple[str, str, int] | None:
+    matched = _SERVER_SAVE_BACKUP_NAME_RE.match(filename)
+    if matched is None:
         return None
+    collision = matched.group("collision")
+    return matched.group("original_name"), matched.group("stamp"), int(collision) if collision is not None else 0
+
+
+def _sort_server_save_backups(paths: list[Path]) -> list[Path]:
+    ordered: list[tuple[str, int, str, Path]] = []
+    for path in paths:
+        parsed = _parse_server_save_backup_name(path.name)
+        if parsed is None:
+            continue
+        original_name, stamp, collision = parsed
+        ordered.append((stamp, collision, f"{original_name}\0{path.name.casefold()}", path))
+    ordered.sort(reverse=True)
+    return [item[-1] for item in ordered]
+
+
+def _prune_server_save_backups(directory: Path, original_name: str, *, keep_limit: int) -> tuple[Path, ...]:
+    family_paths: list[Path] = []
+    for candidate in directory.iterdir():
+        if not candidate.is_file():
+            continue
+        parsed = _parse_server_save_backup_name(candidate.name)
+        if parsed is None or parsed[0] != original_name:
+            continue
+        family_paths.append(candidate)
+    ordered = _sort_server_save_backups(family_paths)
+    pruned = tuple(ordered[keep_limit:])
+    for candidate in pruned:
+        candidate.unlink(missing_ok=True)
+    return pruned
+
+
+def _backup_existing_save(path: Path, *, keep_limit: int) -> tuple[Path | None, tuple[Path, ...]]:
+    if not path.exists() or not path.is_file():
+        return None, ()
 
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     candidate = path.with_name(f"{path.name}.{stamp}.bak")
@@ -100,7 +150,8 @@ def _backup_existing_save(path: Path) -> Path | None:
         suffix += 1
 
     shutil.copy2(path, candidate)
-    return candidate
+    pruned = _prune_server_save_backups(candidate.parent, path.name, keep_limit=keep_limit)
+    return candidate, pruned
 
 
 def _save_conflict_response(*, reason: str, current: SaveSpec | None, status_code: int = 409) -> HTTPException:
@@ -387,15 +438,20 @@ async def _write_save_upload(
     save_id: str,
     create: bool,
     max_upload_bytes: int,
+    backup_keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
 ) -> int:
     part_path = path.with_suffix(f"{path.suffix}.part")
     bytes_written = 0
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         if not create:
-            backup_path = _backup_existing_save(path)
+            backup_path, pruned_paths = _backup_existing_save(path, keep_limit=backup_keep_limit)
             if backup_path is not None:
                 logger.info("save upload backup created save_id=%s rel_path=%s backup=%s", save_id, path, backup_path)
+            for pruned_path in pruned_paths:
+                logger.info(
+                    "save upload backup pruned save_id=%s rel_path=%s pruned_backup=%s", save_id, path, pruned_path
+                )
         with part_path.open("wb") as handle:
             while True:
                 chunk = await upload.read(SAVE_UPLOAD_CHUNK_BYTES)
@@ -436,6 +492,7 @@ async def put_save(
     data_root: Path,
     index_repo: IndexRepository,
     max_upload_bytes: int,
+    backup_keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
 ) -> dict[str, object]:
     fields, file_upload = await _parse_multipart_save_request(request, max_upload_bytes=max_upload_bytes)
     binding_id = fields.get("binding_id", "").strip()
@@ -484,6 +541,7 @@ async def put_save(
                     save_id=save_id,
                     create=True,
                     max_upload_bytes=max_upload_bytes,
+                    backup_keep_limit=backup_keep_limit,
                 )
                 refreshed_bundle = index_repo.load(force_refresh=True)
                 save = _save_spec_from_bundle(refreshed_bundle, save_id)
@@ -508,6 +566,7 @@ async def put_save(
                 save_id=save_id,
                 create=False,
                 max_upload_bytes=max_upload_bytes,
+                backup_keep_limit=backup_keep_limit,
             )
             refreshed_bundle = index_repo.load(force_refresh=True)
             save = _save_spec_from_bundle(refreshed_bundle, save_id)

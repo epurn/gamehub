@@ -33,6 +33,9 @@ launch_autoconfig = true
 # Default when omitted: <paths.gamehub_dir>/controller_profiles
 # profiles_dir = "D:/GameHub/controller_profiles"
 
+[backups]
+# Keep the newest GAMEHUB backup files per target path/family (default 3).
+# keep_limit = 3
+
 # Optional Windows Azahar installer override for emulator auto-install:
 # set env var GAMEHUB_AZAHAR_WINDOWS_INSTALLER_URL to a tested GitHub release installer URL.
-
