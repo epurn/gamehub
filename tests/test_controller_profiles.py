@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -154,3 +155,22 @@ def test_load_profile_file_prefers_user_override(workspace_tempdir) -> None:
         )
 
         assert "OpenPauseMenu = Keyboard/F1" in "\n".join(lines)
+
+
+def test_seed_default_profiles_force_overwrite_creates_backup_and_logs(caplog, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        profile_file = resolve_profiles_root(config) / "pcsx2" / "kbm" / "PCSX2.ini"
+        original_text = profile_file.read_text(encoding="utf-8")
+        profile_file.write_text("[Custom]\nUser = Keep\n", encoding="utf-8")
+
+        with caplog.at_level(logging.INFO):
+            seed_default_profiles(config, force=True)
+
+        backups = sorted(profile_file.parent.glob("PCSX2.ini.*.bak"))
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == "[Custom]\nUser = Keep\n"
+        assert profile_file.read_text(encoding="utf-8") == original_text
+        assert f"controller profile backup created path={profile_file}" in caplog.text
+        assert f"controller profile saved path={profile_file}" in caplog.text

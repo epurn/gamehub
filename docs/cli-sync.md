@@ -292,6 +292,7 @@ Controller launch profile defaults:
   - non-dry sync seeds any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
   - with `--reseed-profiles`, managed files are rewritten even when bytes already match
+  - when an existing managed controller profile file is replaced, GAMEHUB first writes a timestamped `.bak` backup beside that file and logs the rewrite
 - Controller profiles apply input mappings for `PCSX2`, `Dolphin`, and `Azahar` at launch; firmware deploy does not write controller bindings.
 - Profile selection:
   - `0` Xbox controllers -> `kbm`

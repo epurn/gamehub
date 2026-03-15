@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -26,7 +24,14 @@ from .managed_metadata import (
     utc_now_iso,
     write_managed_metadata_entry,
 )
-from .profiles import DEFAULT_PROFILE_TEXTS, PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P, resolve_profiles_root
+from .profiles import (
+    DEFAULT_PROFILE_TEXTS,
+    PROFILE_KBM,
+    PROFILE_XBOX_1P,
+    PROFILE_XBOX_2P,
+    resolve_profiles_root,
+    write_profile_text_atomic,
+)
 
 _KNOWN_EMULATOR_FAMILIES = ("pcsx2", "dolphin", "azahar")
 _UNMANAGED_BACKUP_DIRNAME = ".gamehub-unmanaged-backups"
@@ -250,16 +255,6 @@ def format_runtime_selection_rules(rules: tuple[ControllerRuntimeSelectionRule, 
     return ",".join(f"{rule.controller_count}->{rule.profile_name}" for rule in rules)
 
 
-def _atomic_write_text(path: Path, payload: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent, suffix=".tmp") as tmp:
-        tmp.write(payload)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        tmp_path = path.parent / Path(tmp.name).name
-    replace_file(tmp_path, path)
-
-
 def _archive_unmanaged_profile_file(path: Path) -> Path:
     backup_root = path.parent / _UNMANAGED_BACKUP_DIRNAME
     backup_root.mkdir(parents=True, exist_ok=True)
@@ -311,7 +306,7 @@ def _evaluate_managed_target(
 
     if not path.exists():
         if apply:
-            _atomic_write_text(path, spec.payload)
+            write_profile_text_atomic(path, spec.payload)
             _record_managed_metadata(path, spec)
             return ControllerConvergenceFinding(
                 ownership=ControllerOwnership.MANAGED,
@@ -384,7 +379,7 @@ def _evaluate_managed_target(
 
     if force_managed or metadata_owned:
         if apply:
-            _atomic_write_text(path, spec.payload)
+            write_profile_text_atomic(path, spec.payload, backup_existing=True)
             _record_managed_metadata(path, spec)
             return ControllerConvergenceFinding(
                 ownership=ControllerOwnership.MANAGED,
@@ -405,7 +400,7 @@ def _evaluate_managed_target(
 
     if apply and force_unmanaged:
         backup_path = _archive_unmanaged_profile_file(path)
-        _atomic_write_text(path, spec.payload)
+        write_profile_text_atomic(path, spec.payload)
         _record_managed_metadata(path, spec)
         return ControllerConvergenceFinding(
             ownership=ControllerOwnership.MANAGED,

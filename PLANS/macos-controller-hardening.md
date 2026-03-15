@@ -39,12 +39,13 @@
 
 ### STORY MACOS-HARDEN-01
 - Type: CLI
+- Status: Complete
 - Goal: harden macOS controller/quit-hook behavior without widening feature scope.
 - Acceptance Criteria (deterministic):
-  - [ ] macOS Azahar quit fallback only targets newly launched Azahar processes when one can be identified.
-  - [ ] macOS quit monitoring uses the resolved controller port/button mapping when native selector polling is available.
-  - [ ] macOS embedded SDL mapping lookup returns `None` when there is no exact identity or exact-name match.
-  - [ ] targeted controller/quit-hook tests cover the new fail-open behavior.
+  - [x] macOS Azahar quit fallback only targets newly launched Azahar processes when one can be identified.
+  - [x] macOS quit monitoring uses the resolved controller port/button mapping when native selector polling is available.
+  - [x] macOS embedded SDL mapping lookup returns `None` when there is no exact identity or exact-name match.
+  - [x] targeted controller/quit-hook tests cover the new fail-open behavior.
 - Non-Goals:
   - changing Windows/Linux controller flows
   - broad controller support policy changes
@@ -69,3 +70,4 @@
 - Mapping-aware selector polling is live or explicitly fail-open.
 - Unknown controller identities no longer receive guessed embedded SDL mappings.
 - Required tests and affected docs are updated and accurate.
+- Story `MACOS-HARDEN-01` is complete on this branch.

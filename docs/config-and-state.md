@@ -299,6 +299,7 @@ Managed shortcut launch autoconfig:
   - non-dry `gamehub init` and non-dry `gamehub sync` seed any missing profile files into that directory when `launch_autoconfig` is enabled
   - existing files are left unchanged unless `--reseed-profiles` is used
   - with `--reseed-profiles`, managed files are rewritten even when bytes already match
+  - when an existing managed controller profile file is replaced, GAMEHUB first writes a timestamped `.bak` backup beside that file and logs the rewrite
 - Managed profile directories include `.gamehub-managed.json` markers for drift-safe ownership tracking:
   - schema version
   - source profile/template

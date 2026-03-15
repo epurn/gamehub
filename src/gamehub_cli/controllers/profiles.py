@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import tempfile
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..common.config import GamehubConfig
-from ..common.fsops import replace_file
+from ..common.fsops import backup_existing_file, replace_file
 from ..firmware.pcsx2_ini import pcsx2_pad_bindings
 from .managed_metadata import ManagedMetadataEntry, sha256_text, utc_now_iso, write_managed_metadata_entry
 
@@ -15,6 +16,7 @@ PROFILE_KBM = "kbm"
 PROFILE_XBOX_1P = "xbox_1p"
 PROFILE_XBOX_2P = "xbox_2p"
 VALID_PROFILES = (PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P)
+logger = logging.getLogger(__name__)
 
 
 def profile_name_for_controller_count(controller_count: int) -> str:
@@ -39,6 +41,17 @@ def _atomic_write_text(path: Path, text: str) -> None:
         os.fsync(tmp.fileno())
         tmp_path = path.parent / os.path.basename(tmp.name)
     replace_file(tmp_path, path)
+
+
+def write_profile_text_atomic(path: Path, text: str, *, backup_existing: bool = False) -> Path | None:
+    backup_path: Path | None = None
+    if backup_existing:
+        backup_path = backup_existing_file(path)
+        if backup_path is not None:
+            logger.info("controller profile backup created path=%s backup=%s", path, backup_path)
+    _atomic_write_text(path, text)
+    logger.info("controller profile saved path=%s", path)
+    return backup_path
 
 
 def _managed_source_template(*, emulator_name: str, profile_name: str, filename: str) -> str:
@@ -605,7 +618,7 @@ def seed_default_profiles(
                 target = root / emulator_name / profile_name / filename
                 if target.exists() and not force:
                     continue
-                _atomic_write_text(target, payload)
+                write_profile_text_atomic(target, payload, backup_existing=target.exists())
                 write_managed_metadata_entry(
                     target,
                     ManagedMetadataEntry(
