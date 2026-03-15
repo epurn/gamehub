@@ -636,9 +636,30 @@ def test_warn_shortcut_runtime_swallows_broken_pipe(monkeypatch) -> None:
     runtime_module.warn_shortcut_runtime("controller autoconfig failed")
 
 
+def test_warn_shortcut_runtime_logs_in_windows_frozen_mode(monkeypatch) -> None:
+    logged: list[str] = []
+
+    class _Stderr:
+        def write(self, _text: str) -> int:
+            return 0
+
+        def flush(self) -> None:
+            return None
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "win32")
+    monkeypatch.setattr(runtime_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(runtime_module.sys, "stderr", _Stderr())
+    monkeypatch.setattr(runtime_module, "_append_windows_shortcut_runtime_log", lambda message: logged.append(message))
+
+    runtime_module.warn_shortcut_runtime("launch failed")
+
+    assert logged == ["Warning: launch failed"]
+
+
 def test_spawn_shortcut_process_windows_frozen_sanitizes_external_env(monkeypatch) -> None:
     captured: dict[str, object] = {}
     dll_calls: list[str | None] = []
+    logged: list[str] = []
 
     class _Process:
         pass
@@ -667,6 +688,7 @@ def test_spawn_shortcut_process_windows_frozen_sanitizes_external_env(monkeypatc
         SimpleNamespace(kernel32=SimpleNamespace(SetDllDirectoryW=_fake_set_dll_directory)),
         raising=False,
     )
+    monkeypatch.setattr(runtime_module, "_append_windows_shortcut_runtime_log", lambda message: logged.append(message))
     monkeypatch.setattr(runtime_module.subprocess, "Popen", _fake_popen)
 
     process = runtime_module._spawn_shortcut_process(
@@ -681,6 +703,7 @@ def test_spawn_shortcut_process_windows_frozen_sanitizes_external_env(monkeypatc
     assert captured["env"] is not None
     assert captured["env"]["PATH"] == r"C:\Windows\System32;C:\Tools"
     assert dll_calls == [None, r"C:\GameHub\_internal"]
+    assert any(message.startswith("spawn command=") for message in logged)
 
 
 def test_spawn_shortcut_process_nonfrozen_keeps_default_env(monkeypatch) -> None:
@@ -705,3 +728,19 @@ def test_spawn_shortcut_process_nonfrozen_keeps_default_env(monkeypatch) -> None
 
     assert isinstance(process, _Process)
     assert captured["env"] is None
+
+
+def test_wait_for_shortcut_process_logs_exit_code(monkeypatch) -> None:
+    logged: list[str] = []
+
+    class _Process:
+        def wait(self) -> int:
+            return 17
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "win32")
+    monkeypatch.setattr(runtime_module, "_append_windows_shortcut_runtime_log", lambda message: logged.append(message))
+
+    exit_code = runtime_module._wait_for_shortcut_process(_Process(), command=["retroarch.exe", "game.gbc"])
+
+    assert exit_code == 17
+    assert logged == ["exit_code=17 command=retroarch.exe game.gbc"]

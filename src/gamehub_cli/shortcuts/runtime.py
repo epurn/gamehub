@@ -6,6 +6,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -32,10 +33,24 @@ _WM_CLOSE = 0x0010
 _MACOS_OPEN_EXECUTABLE = "/usr/bin/open"
 _AZAHAR_MACOS_DOCUMENT_EXTENSIONS = {".3dsx", ".cci", ".cxi", ".cia", ".3ds", ".elf", ".axf"}
 _AZAHAR_FULLSCREEN_ARGS = {"-f", "--fullscreen"}
+_WINDOWS_SHORTCUT_LOG_NAME = "gamehub-shortcut-launch.log"
+
+
+def _append_windows_shortcut_runtime_log(message: str) -> None:
+    if not _is_windows_frozen_runtime():
+        return
+    try:
+        log_path = Path(tempfile.gettempdir()) / _WINDOWS_SHORTCUT_LOG_NAME
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"[{timestamp}] {message}\n")
+    except OSError:
+        return
 
 
 def warn_shortcut_runtime(message: str) -> None:
     rendered = f"Warning: {message}"
+    _append_windows_shortcut_runtime_log(rendered)
     try:
         sys.stderr.write(f"{rendered}\n")
         sys.stderr.flush()
@@ -228,7 +243,9 @@ def _run_linux_dolphin_target_with_exit_hook(payload: ShortcutLaunchPayload) -> 
         daemon=True,
     )
     watcher.start()
-    return int(azahar_exit_hook._wait_for_session_exit(process, DOLPHIN_FLATPAK_APP_ID))
+    exit_code = int(azahar_exit_hook._wait_for_session_exit(process, DOLPHIN_FLATPAK_APP_ID))
+    _append_windows_shortcut_runtime_log(f"exit_code={exit_code} command={_render_launch_command(command)}")
+    return exit_code
 
 
 def _run_windows_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> int:
@@ -238,7 +255,7 @@ def _run_windows_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) ->
     process = _spawn_shortcut_process(command, cwd=cwd)
     watcher = threading.Thread(target=_monitor_windows_azahar_exit_combo, args=(process,), daemon=True)
     watcher.start()
-    return int(process.wait())
+    return _wait_for_shortcut_process(process, command=command)
 
 
 def _run_macos_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> int:
@@ -274,7 +291,7 @@ def _run_macos_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> i
         daemon=True,
     )
     watcher.start()
-    return int(process.wait())
+    return _wait_for_shortcut_process(process, command=command)
 
 
 def _resolve_launch_cwd(payload: ShortcutLaunchPayload) -> str | None:
@@ -357,6 +374,12 @@ def _prepare_external_process_environment() -> tuple[dict[str, str] | None, str 
 
 def _spawn_shortcut_process(command: list[str], *, cwd: str | None) -> subprocess.Popen[bytes]:
     env, restored_dll_directory = _prepare_external_process_environment()
+    _append_windows_shortcut_runtime_log(
+        "spawn "
+        f"command={_render_launch_command(command)} "
+        f"cwd={cwd or '-'} "
+        f"sanitized_env={'yes' if env is not None else 'no'}"
+    )
     try:
         if env is None:
             return subprocess.Popen(command, cwd=cwd, stdin=subprocess.DEVNULL)
@@ -366,6 +389,12 @@ def _spawn_shortcut_process(command: list[str], *, cwd: str | None) -> subproces
     finally:
         if restored_dll_directory is not None:
             _set_windows_dll_directory(restored_dll_directory)
+
+
+def _wait_for_shortcut_process(process: subprocess.Popen[bytes], *, command: list[str]) -> int:
+    exit_code = int(process.wait())
+    _append_windows_shortcut_runtime_log(f"exit_code={exit_code} command={_render_launch_command(command)}")
+    return exit_code
 
 
 def _run_macos_bundle_target(payload: ShortcutLaunchPayload) -> int:
@@ -383,7 +412,7 @@ def _run_macos_bundle_target(payload: ShortcutLaunchPayload) -> int:
     if payload.macos_open_args:
         command.extend(["--args", *payload.macos_open_args])
     process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
-    return int(process.wait())
+    return _wait_for_shortcut_process(process, command=command)
 
 
 def _split_macos_azahar_launch_args(payload: ShortcutLaunchPayload) -> tuple[list[str], list[str]]:
@@ -416,7 +445,7 @@ def _run_macos_azahar_target_as_document(payload: ShortcutLaunchPayload) -> int:
     if passthrough_args:
         command.extend(["--args", *passthrough_args])
     process = _spawn_shortcut_process(command, cwd=None)
-    return int(process.wait())
+    return _wait_for_shortcut_process(process, command=command)
 
 
 def _run_macos_azahar_target_direct(payload: ShortcutLaunchPayload) -> int:
@@ -429,7 +458,7 @@ def _run_macos_azahar_target_direct(payload: ShortcutLaunchPayload) -> int:
         cwd = str(candidate.parent)
     command = [executable, *payload.target_args]
     process = _spawn_shortcut_process(command, cwd=cwd)
-    return int(process.wait())
+    return _wait_for_shortcut_process(process, command=command)
 
 
 def _run_target(payload: ShortcutLaunchPayload) -> int:
@@ -447,7 +476,7 @@ def _run_target(payload: ShortcutLaunchPayload) -> int:
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
     process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
-    return int(process.wait())
+    return _wait_for_shortcut_process(process, command=command)
 
 
 def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:
