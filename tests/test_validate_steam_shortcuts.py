@@ -106,6 +106,41 @@ def test_validate_steam_shortcuts_rejects_payload_shortcuts_without_gamehub_wrap
         assert "BAD_WRAPPERS: 1" in captured
 
 
+def test_validate_steam_shortcuts_rejects_managed_shortcuts_without_payload_args(
+    workspace_tempdir, monkeypatch, capsys
+) -> None:
+    with workspace_tempdir("gamehub-validate-shortcuts-missing-payload-") as temp_root:
+        shortcuts_path = temp_root / "shortcuts.vdf"
+        shortcuts_path.write_bytes(
+            vdf.binary_dumps(
+                {
+                    "shortcuts": {
+                        "0": {
+                            "AppName": "Wind Waker",
+                            "Exe": '"/Users/tester/gamehub"',
+                            "LaunchOptions": "title_gc_zelda",
+                            "tags": {"0": "GAMEHUB"},
+                        }
+                    }
+                }
+            )
+        )
+        module = _load_script_module()
+        monkeypatch.setattr(module, "_parse_args", lambda: SimpleNamespace(config=None))
+        monkeypatch.setattr(module, "load_config", lambda _path=None: SimpleNamespace())
+        monkeypatch.setattr(
+            module,
+            "resolve_steam_context",
+            lambda _config: SimpleNamespace(shortcuts_path=shortcuts_path),
+        )
+
+        exit_code = module.main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr().out
+        assert "BAD_WRAPPERS: 1" in captured
+
+
 def test_validate_steam_shortcuts_rejects_payload_ref_shortcuts_without_payload_registry(
     workspace_tempdir, monkeypatch, capsys
 ) -> None:
