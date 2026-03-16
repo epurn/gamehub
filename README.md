@@ -151,17 +151,18 @@ Notes:
 ## 🖥️ Server Deployment (Latest Release)
 Place `docker/.env` next to [`docker/compose.yaml`](docker/compose.yaml).
 
-```powershell
-Copy-Item docker/.env.template docker/.env
+```bash
+cp docker/.env.template docker/.env
 # Edit docker/.env:
-# - GAMEHUB_DATA_HOST_PATH=<host path containing roms/ and firmware/>
+# - GAMEHUB_DATA_HOST_PATH=/srv/gamehub/data
+# - GAMEHUB_SERVER_BIND_ADDRESS=127.0.0.1
 # - GAMEHUB_SERVER_PORT=8000
-# - GAMEHUB_IMAGE_TAG=latest
+# - GAMEHUB_IMAGE_TAG=vX.Y.Z  # replace with the pinned release tag you want to run
 docker compose -f docker/compose.yaml --env-file docker/.env pull gamehub-server
 docker compose -f docker/compose.yaml --env-file docker/.env up -d
-.\scripts\verify_server_deploy.ps1 -BaseUrl "http://127.0.0.1:8000"
+python3 scripts/verify_server_deploy.py --base-url "http://127.0.0.1:8000" --wait-seconds 30
 ```
-If you changed `GAMEHUB_SERVER_PORT`, update the verify URL to match.
+For real servers, prefer the GitHub Release deploy bundle; its bundled `docker/.env.template` is already pinned to that release tag.
 
 More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbook.md](docs/runbook.md), [docs/server-api.md](docs/server-api.md)
 

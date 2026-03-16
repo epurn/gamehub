@@ -6,6 +6,7 @@ import shutil
 import sys
 import time
 from contextlib import contextmanager
+from errno import EACCES, EPERM
 from pathlib import Path
 from uuid import uuid4
 
@@ -45,6 +46,21 @@ def _workspace_tempdir(prefix: str):
 @pytest.fixture
 def workspace_tempdir():
     return _workspace_tempdir
+
+
+def _make_symlink(path: Path, target: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.symlink_to(target, target_is_directory=target.is_dir())
+    except (NotImplementedError, OSError) as exc:
+        if getattr(exc, "errno", None) in {EACCES, EPERM}:
+            pytest.skip("symlink creation is not permitted on this host")
+        raise
+
+
+@pytest.fixture
+def make_symlink():
+    return _make_symlink
 
 
 def _purge_managed_tempdirs() -> None:

@@ -17,7 +17,33 @@ on:
         type: boolean
 
 jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build local server image
+        run: docker build -f docker/Dockerfile -t gamehub-server-release-smoke .
+
+      - name: Verify containerized server
+        run: |
+          docker run -d --name gamehub-server-release-smoke \
+            -p 127.0.0.1:18000:8000 \
+            -v "$PWD/tests/fixtures/indexer_case:/data:ro" \
+            gamehub-server-release-smoke
+          python3 scripts/verify_server_deploy.py --base-url http://127.0.0.1:18000 --wait-seconds 30
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker logs gamehub-server-release-smoke || true
+
+      - name: Clean up container
+        if: always()
+        run: docker rm -f gamehub-server-release-smoke || true
+
   release:
+    needs: smoke
     runs-on: ubuntu-latest
     permissions:
       contents: read

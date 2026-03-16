@@ -41,6 +41,11 @@ def is_server_generated_save_backup_name(filename: str) -> bool:
     return bool(_SERVER_GENERATED_SAVE_BACKUP_NAME_RE.match(filename))
 
 
+def _raise_if_symlink(path: Path, *, context: str) -> None:
+    if path.is_symlink():
+        raise ValueError(f"Symlinked content is not allowed for {context}: {path}")
+
+
 def build_save_bindings(titles: tuple[TitleEntry, ...]) -> tuple[SaveBindingSpec, ...]:
     bindings: list[SaveBindingSpec] = []
     for title in titles:
@@ -182,6 +187,7 @@ def scan_save_specs(
     save_specs: list[SaveSpec] = []
     save_paths: dict[str, Path] = {}
     for system_dir in sorted(saves_root.iterdir(), key=lambda item: item.name.lower()):
+        _raise_if_symlink(system_dir, context="save system directory")
         if not system_dir.is_dir():
             raise ValueError(f"Malformed save layout: expected system directory in {saves_root}, got {system_dir.name}")
         system_name = system_dir.name
@@ -189,6 +195,7 @@ def scan_save_specs(
             raise ValueError(f"Malformed save layout: unknown system in saves root: {system_name}")
 
         for title_dir in sorted(system_dir.iterdir(), key=lambda item: item.name.lower()):
+            _raise_if_symlink(title_dir, context=f"save title directory for {system_name}")
             if not title_dir.is_dir():
                 raise ValueError(
                     "Malformed save layout: expected title directory under "
@@ -203,6 +210,7 @@ def scan_save_specs(
                 )
 
             for kind_dir in sorted(title_dir.iterdir(), key=lambda item: item.name.lower()):
+                _raise_if_symlink(kind_dir, context=f"save kind directory for {system_name}/{title_dir.name}")
                 if not kind_dir.is_dir():
                     raise ValueError(
                         "Malformed save layout: expected save kind directory under "
@@ -260,6 +268,7 @@ def _server_save_binding_dir(*, system: str, title_rel_dir: str, kind: SaveKind)
 def _iter_save_files(kind_dir: Path, save_kind: SaveKind) -> list[Path]:
     files: list[Path] = []
     for child in sorted(kind_dir.iterdir(), key=lambda item: item.name.lower()):
+        _raise_if_symlink(child, context=f"{save_kind} save entry")
         if child.is_dir():
             if save_kind != "per_game":
                 raise ValueError(

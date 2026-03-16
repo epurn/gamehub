@@ -55,7 +55,7 @@ git push origin vX.Y.Z
    - server deploy bundle zip on GitHub Release
    - checksums file
 11. Run post-release smoke checks:
-   - deploy server and run `scripts/verify_server_deploy.ps1`
+   - deploy server and run `scripts/verify_server_deploy.py`
    - run client `--help` and `sync --dry-run`
 
 ## Secret Rotation
@@ -72,6 +72,7 @@ git push origin vX.Y.Z
 ## Server Release Channel
 - Server is released via GHCR image tags (`ghcr.io/<org>/gamehub-server:<tag>`).
 - GitHub Release assets include client artifacts, checksums, and an optional deploy bundle zip (compose/env template/docs/scripts).
+- The deploy bundle ships a release-pinned `docker/.env.template`, plus both the portable Python verifier and the PowerShell convenience verifier.
 
 ## Known Scope Limits (Current Phase)
 - Server image architecture: `amd64` only

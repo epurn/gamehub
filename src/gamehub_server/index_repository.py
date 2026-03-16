@@ -11,7 +11,7 @@ from typing import Callable
 
 from gamehub_common.models import FirmwareSpec, LibraryIndex, SaveBindingSpec, SaveSpec, TitleEntry
 
-from .indexer import FIRMWARE_ROOT_NAME, IndexBundle, build_index
+from .indexer import FIRMWARE_ROOT_NAME, ROMS_ROOT_NAME, IndexBundle, build_index
 from .logging_utils import get_server_logger
 from .save_index import SAVES_ROOT_NAME
 
@@ -20,14 +20,50 @@ DEFAULT_INDEX_POLL_SECONDS = 1.0
 DEFAULT_INDEX_STABLE_SECONDS = 2.0
 
 
+def _path_has_symlink_component(path: Path, *, allowed_root: Path) -> bool:
+    try:
+        relative_parts = path.relative_to(allowed_root).parts
+    except ValueError:
+        return True
+
+    current = allowed_root
+    if current.is_symlink():
+        return True
+    for part in relative_parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def validate_served_file_path(path: Path, *, allowed_root: Path) -> Path | None:
+    try:
+        if not allowed_root.exists() or not allowed_root.is_dir() or allowed_root.is_symlink():
+            return None
+        if _path_has_symlink_component(path, allowed_root=allowed_root):
+            return None
+        resolved_root = allowed_root.resolve(strict=True)
+        resolved_path = path.resolve(strict=True)
+    except OSError:
+        return None
+
+    if not resolved_path.is_relative_to(resolved_root):
+        return None
+    if not resolved_path.is_file():
+        return None
+    return resolved_path
+
+
 def _path_signature_fields(path: Path, data_root: Path) -> tuple[str, str, int, int] | None:
     try:
-        stat_result = path.stat()
+        stat_result = path.lstat()
     except OSError:
         return None
 
     mode = stat_result.st_mode
-    if stat.S_ISDIR(mode):
+    if stat.S_ISLNK(mode):
+        kind = "symlink"
+    elif stat.S_ISDIR(mode):
         kind = "dir"
     elif stat.S_ISREG(mode):
         kind = "file"
@@ -391,9 +427,23 @@ class IndexRepository:
     def resolve_save_path(self, save_id: str) -> Path | None:
         bundle = self.load(check_sources=False)
         path = bundle.save_paths.get(save_id)
-        if path is None or not path.exists() or not path.is_file():
+        if path is None:
             return None
-        return path
+        return validate_served_file_path(path, allowed_root=self._data_root / SAVES_ROOT_NAME)
+
+    def resolve_file_path(self, file_id: str) -> Path | None:
+        bundle = self.load(check_sources=False)
+        path = bundle.file_paths.get(file_id)
+        if path is None:
+            return None
+        return validate_served_file_path(path, allowed_root=self._data_root / ROMS_ROOT_NAME)
+
+    def resolve_asset_path(self, asset_id: str) -> Path | None:
+        bundle = self.load(check_sources=False)
+        path = bundle.asset_paths.get(asset_id)
+        if path is None:
+            return None
+        return validate_served_file_path(path, allowed_root=self._data_root)
 
     def resolve_save_spec(self, save_id: str, *, force_refresh: bool = False) -> SaveSpec | None:
         bundle = self.load(force_refresh=force_refresh) if force_refresh else self.load(check_sources=False)

@@ -19,13 +19,25 @@ python -m venv venv
 ## Run server
 macOS/Linux:
 ```bash
-./venv/bin/python -m uvicorn gamehub_server.main:app --host 0.0.0.0 --port 8000
+./venv/bin/gamehub-server
 ```
 
 Windows PowerShell:
 ```powershell
+.\venv\Scripts\gamehub-server.exe
+```
+
+Development-only broad bind examples:
+
+```bash
+./venv/bin/python -m uvicorn gamehub_server.main:app --host 0.0.0.0 --port 8000
+```
+
+```powershell
 .\venv\Scripts\python.exe -m uvicorn gamehub_server.main:app --host 0.0.0.0 --port 8000
 ```
+
+Use `0.0.0.0` only when you intentionally want a development server reachable beyond the local host.
 
 ## Run CLI
 macOS/Linux:
