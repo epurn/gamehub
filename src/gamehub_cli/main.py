@@ -9,7 +9,8 @@ from .controllers.convergence import run_controller_doctor
 from .shortcuts.shortcut_launch import run_shortcut_launch
 from .steam import build_context, discover_deck_steam_input_roots, discover_steam_id, discover_userdata_dir
 from .sync import run_init, run_sync
-from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor
+from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor, run_save_doctor
+from .sync.save_resolution import run_save_resolution
 
 
 def _resolve_existing_config_path(config_path: Path | None) -> Path:
@@ -102,6 +103,41 @@ def _run_doctor_firmware_command(
     return run_firmware_doctor(loaded, verify=verify, verbose=verbose)
 
 
+def _run_doctor_saves_command(
+    *,
+    config_path: Path | None,
+    verbose: bool,
+    verify: bool,
+    dry_run: bool,
+    keep_local_save_id: str | None,
+    keep_server_save_id: str | None,
+) -> int:
+    loaded = load_config(config_path)
+    if keep_local_save_id is not None and keep_server_save_id is not None:
+        raise ValueError("Choose only one of --keep-local or --keep-server.")
+    if keep_local_save_id is not None:
+        return run_save_resolution(
+            loaded,
+            save_id=keep_local_save_id,
+            choice="keep-local",
+            dry_run=dry_run,
+            verbose=verbose,
+            verify=verify,
+        )
+    if keep_server_save_id is not None:
+        return run_save_resolution(
+            loaded,
+            save_id=keep_server_save_id,
+            choice="keep-server",
+            dry_run=dry_run,
+            verbose=verbose,
+            verify=verify,
+        )
+    if dry_run:
+        raise ValueError("--dry-run requires --keep-local or --keep-server.")
+    return run_save_doctor(loaded, verify=verify, verbose=verbose)
+
+
 def _run_doctor_all_command(
     *,
     config_path: Path | None,
@@ -118,9 +154,10 @@ def _run_doctor_all_command(
         steam_discovery_note=note,
     )
     snapshot = build_sync_diagnostics_snapshot(loaded, verify=verify, verbose=verbose)
+    save_code = run_save_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
     firmware_code = run_firmware_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
     roms_code = run_roms_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
-    return 1 if any(code != 0 for code in (controller_code, firmware_code, roms_code)) else 0
+    return 1 if any(code != 0 for code in (controller_code, save_code, firmware_code, roms_code)) else 0
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -276,6 +313,41 @@ def doctor_firmware(
     verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
 ) -> None:
     raise typer.Exit(code=_run_doctor_firmware_command(config_path=config, verbose=verbose, verify=verify))
+
+
+@doctor_app.command("saves")
+def doctor_saves(
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
+    verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview a requested save resolution without mutating data"),
+    keep_local: str | None = typer.Option(
+        None,
+        "--keep-local",
+        help="Resolve one indexed save by uploading the local copy to the server",
+    ),
+    keep_server: str | None = typer.Option(
+        None,
+        "--keep-server",
+        help="Resolve one indexed save by downloading the server copy locally",
+    ),
+) -> None:
+    try:
+        code = _run_doctor_saves_command(
+            config_path=config,
+            verbose=verbose,
+            verify=verify,
+            dry_run=dry_run,
+            keep_local_save_id=keep_local,
+            keep_server_save_id=keep_server,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    raise typer.Exit(code=code)
 
 
 @doctor_app.command("all")

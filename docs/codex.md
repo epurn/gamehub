@@ -18,9 +18,12 @@ Short working defaults:
 
 Codex local environments can run a setup script automatically for each new worktree. This repo wires that through `.codex/environments/environment.toml`, which calls `scripts/codex_worktree_setup.py`.
 
+The default `[setup]` entry is intentionally non-empty as a fallback for Codex surfaces that do not honor the per-platform override tables; the Windows override remains `py -3 ...`.
+
 The bootstrap script:
 - creates a repo-local `venv/` when the worktree does not have one yet
 - installs the editable project plus `dev` extras into that worktree's venv
+- if editable install fails but another GameHub worktree already has a populated `venv/`, writes a local `.pth` bridge so the new worktree can reuse those shared dependencies while still importing its own `src/`
 
 If a worktree setup fails or you need to rerun it manually:
 - macOS/Linux: `python3 scripts/codex_worktree_setup.py`

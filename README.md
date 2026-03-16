@@ -107,7 +107,6 @@ Start with read-only download mode:
 [save_sync]
 enabled = true
 mode = "download"
-conflict_policy = "prefer_server"
 ```
 
 Then run a safety preview before the first real save pass:
@@ -129,6 +128,7 @@ conflict_policy = "manual"
 Notes:
 - `mode = "download"` is read-only for saves. GAMEHUB may download missing/newer remote saves, but it will not mutate the server.
 - `mode = "bidirectional"` allows upload planning and managed post-exit upload for supported save types.
+- New or unspecified bidirectional configs default to `conflict_policy = "manual"`, so both-side or ambiguous drift becomes an explicit conflict instead of silently clobbering local saves.
 - Run one non-dry `gamehub sync` after upgrading before launching managed Steam shortcuts so existing commands are rewritten to `shortcut-launch`.
 - Review `gamehub sync --dry-run` output first when enabling save sync on an existing library.
 

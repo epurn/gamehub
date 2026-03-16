@@ -99,8 +99,8 @@ keep_limit = 3
 enabled = false
 # download | bidirectional
 mode = "download"
-# prefer_server | prefer_local | manual
-conflict_policy = "prefer_server"
+# manual | prefer_server | prefer_local
+conflict_policy = "manual"
 # Optional allow-list of systems; empty means all supported systems.
 systems = ["PS2", "Wii"]
 
@@ -216,17 +216,22 @@ Backup config keys:
 Save sync config keys (TOML only for now):
 - `[save_sync].enabled`: default `false` (safe rollout).
 - `[save_sync].mode`: `download` (default) or `bidirectional`.
-- `[save_sync].conflict_policy`: `prefer_server` (default), `prefer_local`, or `manual`.
+- `[save_sync].conflict_policy`: `manual` (default), `prefer_server`, or `prefer_local`; missing or invalid values normalize to `manual`.
 - `[save_sync].systems`: optional allow-list of system names (case-insensitive in config, normalized to uppercase). Managed launch-session save sync and managed `PSX`/`PS2` memory-card rewrites only run for included systems.
-- Save planning decisions are deterministic and include explicit reasons for `download`, `upload_existing`, `upload_new`, `conflict`, and `skip` paths (for example: `local-missing`, `download-mode-local-drift`, `local-only-create`, `download-mode-local-new`, `both-changed-manual`, `save-sync-disabled`, `missed-upload-local-newer`, `missed-upload-remote-newer`).
+- Save planning decisions are deterministic and include explicit reasons for `download`, `upload_existing`, `upload_new`, `conflict`, and `skip` paths (for example: `local-missing`, `download-mode-local-drift`, `local-only-create`, `download-mode-local-new`, `both-changed-manual`, `lineage-ambiguous-manual`, `save-sync-disabled`, `missed-upload-local-newer`, `missed-upload-remote-newer`).
 
 Mode behavior reference:
 - `enabled=false`: planner emits deterministic `skip` reasons (for example `save-sync-disabled`) and performs no save transfers.
 - `mode=download`: planner may emit `download` or `skip`; missing local saves still download, while existing local drift becomes `skip(download-mode-local-drift)` and local-only first-time exact-file saves become `skip(download-mode-local-new)`. Both `upload_existing` and `upload_new` actions are suppressed.
 - `mode=bidirectional`: planner may emit `download`, `upload_existing`, `upload_new`, `conflict`, or `skip` based on checksum lineage, local-only discovery, and `conflict_policy`.
-- `conflict_policy=prefer_server`: conflict path converges to server copy (planned `download`).
-- `conflict_policy=prefer_local`: conflict path converges to local copy (planned `upload`).
-- `conflict_policy=manual`: planner emits `conflict` and records unresolved entries in state until operator intervention.
+- `conflict_policy=manual`: planner emits `conflict` for both-side drift and lineage-ambiguous drift, and records unresolved entries in state until operator intervention.
+- `conflict_policy=prefer_server`: both-side drift and lineage-ambiguous drift converge to the server copy (planned `download`).
+- `conflict_policy=prefer_local`: both-side drift and lineage-ambiguous drift converge to the local copy (planned `upload_existing`).
+- Overwrite/conflict matrix:
+  - `download`: only missing local indexed saves auto-download; any existing local drift is preserved as `skip`.
+  - `bidirectional + manual` (default): one-sided drift auto-converges, but both-side or lineage-ambiguous drift becomes `conflict`.
+  - `bidirectional + prefer_server`: one-sided drift auto-converges, and both-side or lineage-ambiguous drift downloads the server copy.
+  - `bidirectional + prefer_local`: one-sided drift auto-converges, and both-side or lineage-ambiguous drift uploads the local copy.
 - In `mode=bidirectional`, if `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"`, planner and managed `shortcut-launch` pre-launch resolution compare local file mtime vs remote `updated_at` after UTC normalization/truncation to seconds:
   - local newer -> `upload_existing` (`missed-upload-local-newer`)
   - remote newer -> `download` (`missed-upload-remote-newer`)
@@ -382,6 +387,9 @@ Save sync state semantics:
 - `offline_shortcut_titles` persists reconnect-recovery markers for managed launches that skipped metadata/save work while the server was unreachable.
 - `unresolved_save_conflicts` persists manual-resolution-required conflicts between runs.
 - `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` marks a managed launch-session upload miss caused by unreachable server; on reconnect in bidirectional mode, this enables deterministic timestamp comparison before fallback conflict logic.
+- Use `gamehub doctor saves` for a read-only view of persisted save conflicts, binding-root ambiguity, and current save drift without opening `state.json` manually.
+- Use `gamehub doctor saves --keep-local <save_id>` or `--keep-server <save_id>` for explicit single-save resolution; successful resolution updates lineage/checksum state and removes that save's unresolved marker.
+- Binding-root ambiguity markers (`savebind_*`) remain manual in this phase and are not cleared by the save-resolution flags.
 
 Bootstrap notes:
 - Fresh installs must run `gamehub init` before the first `gamehub sync`.

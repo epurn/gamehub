@@ -48,7 +48,7 @@ class ControllersConfig:
 class SaveSyncConfig:
     enabled: bool = False
     mode: str = "download"
-    conflict_policy: str = "prefer_server"
+    conflict_policy: str = "manual"
     systems: tuple[str, ...] = ()
 
 
@@ -145,9 +145,9 @@ def _normalize_save_sync_mode(raw: object) -> str:
 
 def _normalize_save_sync_conflict_policy(raw: object) -> str:
     if not isinstance(raw, str):
-        return "prefer_server"
+        return "manual"
     value = raw.strip().lower().replace("-", "_")
-    return value if value in _VALID_SAVE_SYNC_CONFLICT_POLICIES else "prefer_server"
+    return value if value in _VALID_SAVE_SYNC_CONFLICT_POLICIES else "manual"
 
 
 def _normalize_system_filter(raw: object) -> tuple[str, ...]:

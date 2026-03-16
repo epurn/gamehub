@@ -3,7 +3,7 @@ version = 1
 name = "gamehub"
 
 [setup]
-script = ""
+script = "python3 scripts/codex_worktree_setup.py"
 
 [setup.darwin]
 script = "python3 scripts/codex_worktree_setup.py"
