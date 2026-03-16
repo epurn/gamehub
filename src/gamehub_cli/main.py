@@ -10,6 +10,7 @@ from .shortcuts.shortcut_launch import run_shortcut_launch
 from .steam import build_context, discover_deck_steam_input_roots, discover_steam_id, discover_userdata_dir
 from .sync import run_init, run_sync
 from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor, run_save_doctor
+from .sync.save_resolution import run_save_resolution
 
 
 def _resolve_existing_config_path(config_path: Path | None) -> Path:
@@ -107,8 +108,33 @@ def _run_doctor_saves_command(
     config_path: Path | None,
     verbose: bool,
     verify: bool,
+    dry_run: bool,
+    keep_local_save_id: str | None,
+    keep_server_save_id: str | None,
 ) -> int:
     loaded = load_config(config_path)
+    if keep_local_save_id is not None and keep_server_save_id is not None:
+        raise ValueError("Choose only one of --keep-local or --keep-server.")
+    if keep_local_save_id is not None:
+        return run_save_resolution(
+            loaded,
+            save_id=keep_local_save_id,
+            choice="keep-local",
+            dry_run=dry_run,
+            verbose=verbose,
+            verify=verify,
+        )
+    if keep_server_save_id is not None:
+        return run_save_resolution(
+            loaded,
+            save_id=keep_server_save_id,
+            choice="keep-server",
+            dry_run=dry_run,
+            verbose=verbose,
+            verify=verify,
+        )
+    if dry_run:
+        raise ValueError("--dry-run requires --keep-local or --keep-server.")
     return run_save_doctor(loaded, verify=verify, verbose=verbose)
 
 
@@ -298,8 +324,30 @@ def doctor_saves(
     ),
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
     verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview a requested save resolution without mutating data"),
+    keep_local: str | None = typer.Option(
+        None,
+        "--keep-local",
+        help="Resolve one indexed save by uploading the local copy to the server",
+    ),
+    keep_server: str | None = typer.Option(
+        None,
+        "--keep-server",
+        help="Resolve one indexed save by downloading the server copy locally",
+    ),
 ) -> None:
-    raise typer.Exit(code=_run_doctor_saves_command(config_path=config, verbose=verbose, verify=verify))
+    try:
+        code = _run_doctor_saves_command(
+            config_path=config,
+            verbose=verbose,
+            verify=verify,
+            dry_run=dry_run,
+            keep_local_save_id=keep_local,
+            keep_server_save_id=keep_server,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    raise typer.Exit(code=code)
 
 
 @doctor_app.command("all")

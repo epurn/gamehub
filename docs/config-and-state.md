@@ -383,6 +383,8 @@ Save sync state semantics:
 - `unresolved_save_conflicts` persists manual-resolution-required conflicts between runs.
 - `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` marks a managed launch-session upload miss caused by unreachable server; on reconnect in bidirectional mode, this enables deterministic timestamp comparison before fallback conflict logic.
 - Use `gamehub doctor saves` for a read-only view of persisted save conflicts, binding-root ambiguity, and current save drift without opening `state.json` manually.
+- Use `gamehub doctor saves --keep-local <save_id>` or `--keep-server <save_id>` for explicit single-save resolution; successful resolution updates lineage/checksum state and removes that save's unresolved marker.
+- Binding-root ambiguity markers (`savebind_*`) remain manual in this phase and are not cleared by the save-resolution flags.
 
 Bootstrap notes:
 - Fresh installs must run `gamehub init` before the first `gamehub sync`.

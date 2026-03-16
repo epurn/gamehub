@@ -39,6 +39,8 @@ macOS/Linux:
 ./venv/bin/python -m gamehub_cli.main doctor roms [--verify] [--verbose]
 ./venv/bin/python -m gamehub_cli.main doctor firmware [--verify] [--verbose]
 ./venv/bin/python -m gamehub_cli.main doctor saves [--verify] [--verbose]
+./venv/bin/python -m gamehub_cli.main doctor saves --keep-local <save_id> [--dry-run]
+./venv/bin/python -m gamehub_cli.main doctor saves --keep-server <save_id> [--dry-run]
 ./venv/bin/python -m gamehub_cli.main doctor all [--verify] [--verbose]
 ```
 
@@ -47,6 +49,8 @@ Windows PowerShell:
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor roms [--verify] [--verbose]
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor firmware [--verify] [--verbose]
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor saves [--verify] [--verbose]
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor saves --keep-local <save_id> [--dry-run]
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor saves --keep-server <save_id> [--dry-run]
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor all [--verify] [--verbose]
 ```
 
@@ -222,6 +226,11 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
 - If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
 - `gamehub doctor saves` is a read-only audit for persisted save conflicts, save-binding ambiguity, and current non-benign save actions; `gamehub doctor all` includes the same save audit.
+- Phase 2 manual resolution is explicit and one-save-at-a-time:
+  - `gamehub doctor saves --keep-local <save_id>` uploads the local save to the server and clears that save's unresolved conflict on success
+  - `gamehub doctor saves --keep-server <save_id>` downloads the current server save locally and clears that save's unresolved conflict on success
+  - add `--dry-run` to preview the chosen winner without writing
+- Binding-root ambiguity remains inspect-only in this pass; there is no `doctor saves` auto-repair for `savebind_*` conflicts yet.
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.
 

@@ -126,15 +126,40 @@ def test_typer_doctor_controllers_dispatches(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
-    ("command_path", "helper_name"),
+    ("command_path", "helper_name", "expected"),
     [
-        (["doctor", "roms", "--config", "config.toml", "--verify"], "_run_doctor_roms_command"),
-        (["doctor", "firmware", "--config", "config.toml"], "_run_doctor_firmware_command"),
-        (["doctor", "saves", "--config", "config.toml", "--verify"], "_run_doctor_saves_command"),
-        (["doctor", "all", "--config", "config.toml", "--verify"], "_run_doctor_all_command"),
+        (
+            ["doctor", "roms", "--config", "config.toml", "--verify"],
+            "_run_doctor_roms_command",
+            {"config_path": Path("config.toml"), "verbose": False, "verify": True},
+        ),
+        (
+            ["doctor", "firmware", "--config", "config.toml"],
+            "_run_doctor_firmware_command",
+            {"config_path": Path("config.toml"), "verbose": False, "verify": False},
+        ),
+        (
+            ["doctor", "saves", "--config", "config.toml", "--verify"],
+            "_run_doctor_saves_command",
+            {
+                "config_path": Path("config.toml"),
+                "verbose": False,
+                "verify": True,
+                "dry_run": False,
+                "keep_local_save_id": None,
+                "keep_server_save_id": None,
+            },
+        ),
+        (
+            ["doctor", "all", "--config", "config.toml", "--verify"],
+            "_run_doctor_all_command",
+            {"config_path": Path("config.toml"), "verbose": False, "verify": True},
+        ),
     ],
 )
-def test_typer_doctor_target_dispatches(monkeypatch, command_path: list[str], helper_name: str) -> None:
+def test_typer_doctor_target_dispatches(
+    monkeypatch, command_path: list[str], helper_name: str, expected: dict[str, object]
+) -> None:
     assert cli_main.app is not None
     captured: dict[str, object] = {}
     monkeypatch.setattr(f"gamehub_cli.main.{helper_name}", lambda **kwargs: captured.update(kwargs) or 0)
@@ -142,12 +167,28 @@ def test_typer_doctor_target_dispatches(monkeypatch, command_path: list[str], he
     result = _RUNNER.invoke(cli_main.app, command_path)
 
     assert result.exit_code == 0
-    expected = {
+    assert captured == expected
+
+
+def test_typer_doctor_saves_resolution_dispatches(monkeypatch) -> None:
+    assert cli_main.app is not None
+    captured: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.main._run_doctor_saves_command", lambda **kwargs: captured.update(kwargs) or 0)
+
+    result = _RUNNER.invoke(
+        cli_main.app,
+        ["doctor", "saves", "--config", "config.toml", "--keep-local", "save_ps2_ffx_1", "--dry-run"],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
         "config_path": Path("config.toml"),
         "verbose": False,
-        "verify": "--verify" in command_path,
+        "verify": False,
+        "dry_run": True,
+        "keep_local_save_id": "save_ps2_ffx_1",
+        "keep_server_save_id": None,
     }
-    assert captured == expected
 
 
 def test_typer_rejects_legacy_doctor_flag_syntax() -> None:
