@@ -2,6 +2,10 @@
 
 Base URL: `http://<host>:8000`
 
+Direct-run note:
+- `gamehub-server` now defaults to `127.0.0.1:8000`
+- set `GAMEHUB_SERVER_LISTEN_HOST` explicitly if you want broader host exposure outside Docker
+
 ## Endpoints
 - `GET /health`
   - Returns `{ "status": "ok" }`
@@ -12,12 +16,15 @@ Base URL: `http://<host>:8000`
 - `GET /v1/files/{file_id}`
   - Streams ROM file content for IDs present in `/v1/index`
   - `404` for unknown `file_id`
+  - `404` if the cached path is now missing, symlinked, or resolved outside the allowed content root
 - `GET /v1/assets/{asset_id}`
   - Streams asset file content for IDs present in `/v1/index`
   - `404` for unknown `asset_id`
+  - `404` if the cached path is now missing, symlinked, or resolved outside the allowed content root
 - `GET /v1/saves/{save_id}`
   - Streams save file content for `save_id` values present in the active in-memory `/v1/index` snapshot
   - `404` for unknown `save_id` (including traversal-like target strings, because lookup is ID-based only)
+  - `404` if the cached path is now missing, symlinked, or resolved outside the allowed content root
 - `GET /v1/save-bindings`
   - Returns a strict `{ "bindings": [...] }` catalog of deterministic save-creation bindings for managed titles
   - Bindings exist even when a title has no current remote save files
@@ -44,6 +51,7 @@ Base URL: `http://<host>:8000`
   - `roms/<system>/<title.ext>`
   - `firmware/<system>/<filename>`
   - `saves/<system>/<title_stem>/<kind>/<file...>`
+- Symlinked files or directories anywhere under `roms/`, `firmware/`, or `saves/` are invalid operator input and are rejected by indexing and file-serving paths.
 
 ## Index generation notes
 - ROMs are discovered from files in `roms/<system>/` matching the system's allowed extensions.

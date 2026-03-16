@@ -224,11 +224,18 @@ def _relative_unix(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+def _raise_if_symlink(path: Path, *, context: str) -> None:
+    if path.is_symlink():
+        raise ValueError(f"Symlinked content is not allowed for {context}: {path}")
+
+
 def _scan_firmware_specs(
     data_root: Path, system: str, required_filenames: tuple[str, ...], hash_cache: _HashCache
 ) -> tuple[tuple[FirmwareSpec, ...], tuple[str, ...]]:
     firmware_specs: list[FirmwareSpec] = []
     firmware_dir = data_root / FIRMWARE_ROOT_NAME / system
+    if firmware_dir.exists() or firmware_dir.is_symlink():
+        _raise_if_symlink(firmware_dir, context=f"firmware directory for {system}")
     if firmware_dir.exists() and not firmware_dir.is_dir():
         raise ValueError(f"Firmware path is not a directory: {firmware_dir}")
 
@@ -237,6 +244,7 @@ def _scan_firmware_specs(
     required_set = set(required_lookup.values())
     if firmware_dir.is_dir():
         for child in sorted(firmware_dir.iterdir(), key=lambda item: item.name.lower()):
+            _raise_if_symlink(child, context=f"firmware entry for {system}")
             if not child.is_file():
                 continue
             required_name = required_lookup.get(child.name.casefold())
@@ -265,8 +273,13 @@ def _scan_firmware_specs(
 def build_index(data_root: Path) -> IndexBundle:
     roms_root = data_root / ROMS_ROOT_NAME
     saves_root = data_root / SAVES_ROOT_NAME
-    if not roms_root.exists() and not saves_root.exists():
+    if not (roms_root.exists() or roms_root.is_symlink()) and not (saves_root.exists() or saves_root.is_symlink()):
         return IndexBundle(index=LibraryIndex(), file_paths={}, asset_paths={}, save_paths={})
+
+    if roms_root.exists() or roms_root.is_symlink():
+        _raise_if_symlink(roms_root, context="roms root")
+    if saves_root.exists() or saves_root.is_symlink():
+        _raise_if_symlink(saves_root, context="saves root")
 
     hash_cache = _HashCache.open(data_root)
     systems: list[SystemSpec] = []
@@ -279,8 +292,9 @@ def build_index(data_root: Path) -> IndexBundle:
     try:
         for system_name in sorted(SYSTEM_CATALOG):
             system_dir = roms_root / system_name
-            if not system_dir.exists():
+            if not system_dir.exists() and not system_dir.is_symlink():
                 continue
+            _raise_if_symlink(system_dir, context=f"system directory for {system_name}")
             if not system_dir.is_dir():
                 raise ValueError(f"System path is not a directory: {system_dir}")
 
@@ -297,6 +311,7 @@ def build_index(data_root: Path) -> IndexBundle:
             seen_title_names: set[str] = set()
 
             for rom_path in sorted(system_dir.iterdir(), key=lambda item: item.name.lower()):
+                _raise_if_symlink(rom_path, context=f"ROM entry for {system_name}")
                 if rom_path.is_dir():
                     raise ValueError(
                         f"Unexpected title directory in {system_dir}: {rom_path.name}. "

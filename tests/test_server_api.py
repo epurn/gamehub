@@ -68,6 +68,21 @@ def test_index_and_files_endpoints(api_client: TestClient) -> None:
     assert file_response.content == b"rom-bytes"
 
 
+def test_file_endpoint_rejects_cached_symlink_escape(api_client: TestClient, make_symlink) -> None:
+    index_response = api_client.get("/v1/index")
+    file_id = index_response.json()["titles"][0]["rom"]["file_id"]
+    rom_path = server_main.DATA_ROOT / "roms" / "NES" / "SuperMarioBros.nes"
+    escaped_path = server_main.DATA_ROOT.parent / "outside-rom.nes"
+    _write_file(escaped_path, b"secret-rom")
+    rom_path.unlink()
+    make_symlink(rom_path, escaped_path)
+
+    response = api_client.get(f"/v1/files/{file_id}")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"Unknown file_id: {file_id}"
+
+
 def test_index_endpoint_auto_refreshes_when_rom_and_firmware_are_added(api_client: TestClient) -> None:
     server_main.INDEX_REPO = IndexRepository(server_main.DATA_ROOT, poll_seconds=0, stable_seconds=0)
     first = api_client.get("/v1/index")
@@ -106,6 +121,21 @@ def test_save_endpoint_returns_file_and_404_for_unknown(api_client: TestClient) 
     missing_response = api_client.get("/v1/saves/save_missing")
     assert missing_response.status_code == 404
     assert missing_response.json()["detail"] == "Unknown save_id: save_missing"
+
+
+def test_save_endpoint_rejects_cached_symlink_escape(api_client: TestClient, make_symlink) -> None:
+    index_response = api_client.get("/v1/index")
+    save_id = index_response.json()["saves"][0]["save_id"]
+    save_path = server_main.DATA_ROOT / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.sav"
+    escaped_path = server_main.DATA_ROOT.parent / "outside-save.sav"
+    _write_file(escaped_path, b"secret-save")
+    save_path.unlink()
+    make_symlink(save_path, escaped_path)
+
+    response = api_client.get(f"/v1/saves/{save_id}")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"Unknown save_id: {save_id}"
 
 
 def test_save_endpoint_blocks_traversal_style_targets_with_id_lookup(api_client: TestClient) -> None:
@@ -535,6 +565,52 @@ def test_unknown_file_and_asset_ids_return_404(api_client: TestClient) -> None:
     assert asset_response.json()["detail"] == "Unknown asset_id: asset_missing"
 
 
+def test_asset_endpoint_rejects_cached_symlink_escape(workspace_tempdir, make_symlink) -> None:
+    with workspace_tempdir(prefix="gamehub-api-") as root:
+        asset_path = root / "assets" / "cover.png"
+        escaped_path = root.parent / "outside-asset.bin"
+        _write_file(asset_path, b"asset-bytes")
+        _write_file(escaped_path, b"secret-asset")
+        bundle = IndexBundle(
+            index=LibraryIndex(index_version=1, systems=(), titles=()),
+            file_paths={},
+            asset_paths={"asset_demo": asset_path},
+        )
+
+        class _Repo:
+            def load(self, force_refresh: bool = False, *, check_sources: bool = True) -> IndexBundle:
+                return bundle
+
+            def start_polling(self) -> None:
+                return None
+
+            def stop_polling(self) -> None:
+                return None
+
+            def resolve_asset_path(self, asset_id: str) -> Path | None:
+                path = bundle.asset_paths.get(asset_id)
+                if path is None:
+                    return None
+                return repo_module.validate_served_file_path(path, allowed_root=root.resolve())
+
+        original_data_root = server_main.DATA_ROOT
+        original_repo = server_main.INDEX_REPO
+        server_main.DATA_ROOT = root.resolve()
+        server_main.INDEX_REPO = _Repo()
+
+        asset_path.unlink()
+        make_symlink(asset_path, escaped_path)
+
+        with TestClient(app) as client:
+            response = client.get("/v1/assets/asset_demo")
+
+        server_main.DATA_ROOT = original_data_root
+        server_main.INDEX_REPO = original_repo
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Unknown asset_id: asset_demo"
+
+
 def test_firmware_endpoint_returns_file_and_404_for_missing(api_client: TestClient) -> None:
     ok_response = api_client.get("/v1/firmware/NES/dummy.bin")
     assert ok_response.status_code == 200
@@ -553,6 +629,19 @@ def test_firmware_endpoint_blocks_traversal(api_client: TestClient) -> None:
     traversal_system = api_client.get("/v1/firmware/..%5C..%5CWindows/dummy.bin")
     assert traversal_system.status_code == 404
     assert traversal_system.json()["detail"] == "Firmware file not found"
+
+
+def test_firmware_endpoint_rejects_symlink_escape(api_client: TestClient, make_symlink) -> None:
+    firmware_path = server_main.DATA_ROOT / "firmware" / "NES" / "dummy.bin"
+    escaped_path = server_main.DATA_ROOT.parent / "outside-firmware.bin"
+    _write_file(escaped_path, b"secret-firmware")
+    firmware_path.unlink()
+    make_symlink(firmware_path, escaped_path)
+
+    response = api_client.get("/v1/firmware/NES/dummy.bin")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Firmware file not found: NES/dummy.bin"
 
 
 def _empty_index_bundle() -> IndexBundle:
@@ -848,3 +937,36 @@ def test_warm_index_cache_logs_error_and_reraises(monkeypatch, caplog) -> None:
     assert start_logs
     assert error_logs
     assert error_logs[0].exc_info is not None
+
+
+def test_run_defaults_to_loopback_host(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(app_path: str, *, host: str, port: int, reload: bool) -> None:
+        captured.update({"app_path": app_path, "host": host, "port": port, "reload": reload})
+
+    monkeypatch.delenv("GAMEHUB_SERVER_LISTEN_HOST", raising=False)
+    monkeypatch.setattr(server_main.uvicorn, "run", fake_run)
+
+    server_main.run()
+
+    assert captured == {
+        "app_path": "gamehub_server.main:app",
+        "host": "127.0.0.1",
+        "port": 8000,
+        "reload": False,
+    }
+
+
+def test_run_honors_gamehub_server_listen_host(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(app_path: str, *, host: str, port: int, reload: bool) -> None:
+        captured.update({"app_path": app_path, "host": host, "port": port, "reload": reload})
+
+    monkeypatch.setenv("GAMEHUB_SERVER_LISTEN_HOST", "192.168.1.40")
+    monkeypatch.setattr(server_main.uvicorn, "run", fake_run)
+
+    server_main.run()
+
+    assert captured["host"] == "192.168.1.40"

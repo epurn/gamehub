@@ -123,28 +123,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build server deploy bundle
-        run: |
-          python - <<'PY'
-          import zipfile
-          from pathlib import Path
-
-          ref_name = "${{ github.ref_name }}"
-          bundle_name = f"gamehub-server-deploy-{ref_name}.zip"
-          dist = Path("dist")
-          dist.mkdir(parents=True, exist_ok=True)
-          bundle_path = dist / bundle_name
-
-          sources = [
-              Path("docker/compose.yaml"),
-              Path("docker/.env.template"),
-              Path("docs/deployment-server.md"),
-              Path("scripts/verify_server_deploy.ps1"),
-          ]
-          with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-              for source in sources:
-                  archive.write(source, arcname=source.as_posix())
-          print(bundle_path.as_posix())
-          PY
+        run: python scripts/build_server_deploy_bundle.py --ref-name "${{ github.ref_name }}" --output-dir dist
 
       - name: Upload server deploy bundle artifact
         uses: actions/upload-artifact@v4

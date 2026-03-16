@@ -29,11 +29,12 @@ This checklist assumes the candidate commit already passed the automated gates a
 
 Budget: 10 to 15 minutes.
 
-- [ ] Run `.\scripts\verify_server_deploy.ps1 -BaseUrl "http://<SERVER_IP>:8000"` against the release-candidate server.
+- [ ] Run `python3 scripts/verify_server_deploy.py --base-url "http://<SERVER_IP>:8000" --wait-seconds 30` against the release-candidate server.
 - [ ] Confirm `GET /health` returns `{"status":"ok"}`.
 - [ ] Confirm `GET /v1/index` succeeds.
 - [ ] Confirm `GET /v1/save-bindings` succeeds and includes bindings for the save-validation titles.
 - [ ] Confirm the server data root includes writable `saves/`.
+- [ ] Confirm the server data root includes no symlinks under `roms/`, `firmware/`, or `saves/`.
 
 Stop if any of the above fail.
 

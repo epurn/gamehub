@@ -2,7 +2,7 @@
 
 This is the single reference for the final pre-release test flow and publish flow.
 
-For a shorter 3 to 4 hour manual sanity pass after automation is green, use [release-manual-checklist-v1.5.1.md](./release-manual-checklist-v1.5.1.md).
+For a shorter 3 to 4 hour manual sanity pass after automation is green, use [release-manual-checklist-v1.6.0.md](./release-manual-checklist-v1.6.0.md).
 
 Use this in order:
 1. Windows validation
@@ -272,7 +272,10 @@ gamehub sync --dry-run --skip-steam
 5. Server deploy checks:
 ```bash
 docker compose -f docker/compose.yaml --env-file docker/.env config
-docker build -f docker/Dockerfile .
+docker build -f docker/Dockerfile -t gamehub-server-local .
+docker run -d --name gamehub-server-local -p 127.0.0.1:18000:8000 -v "$(pwd)/tests/fixtures/indexer_case:/data:ro" gamehub-server-local
+python3 scripts/verify_server_deploy.py --base-url "http://127.0.0.1:18000" --wait-seconds 30
+docker rm -f gamehub-server-local
 ```
 
 ## 4. Bazzite Real Sync Validation

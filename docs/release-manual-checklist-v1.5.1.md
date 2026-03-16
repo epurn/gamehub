@@ -47,9 +47,10 @@ Budget: 35 to 50 minutes.
 Budget: 20 to 30 minutes.
 
 - [ ] Server smoke:
-```powershell
-.\scripts\verify_server_deploy.ps1 -BaseUrl "http://<SERVER_IP>:8000"
+```bash
+python3 scripts/verify_server_deploy.py --base-url "http://<SERVER_IP>:8000" --wait-seconds 30
 ```
+- [ ] Confirm the release-candidate server data root includes no symlinks under `roms/`, `firmware/`, or `saves/`.
 - [ ] macOS client smoke:
 ```bash
 ./venv/bin/python -m gamehub_cli.main --help

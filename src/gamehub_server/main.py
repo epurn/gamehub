@@ -17,6 +17,7 @@ from .index_repository import (
     read_index_poll_seconds,
     read_index_refresh_seconds,
     read_index_stable_seconds,
+    validate_served_file_path,
 )
 from .indexer import FIRMWARE_ROOT_NAME
 from .logging_utils import get_server_logger
@@ -103,18 +104,16 @@ def get_index(request: Request, refresh: bool = Query(default=False)) -> Respons
 
 @app.get("/v1/files/{file_id}")
 def get_file(file_id: str) -> FileResponse:
-    bundle = INDEX_REPO.load(check_sources=False)
-    path = bundle.file_paths.get(file_id)
-    if path is None or not path.exists():
+    path = INDEX_REPO.resolve_file_path(file_id)
+    if path is None:
         raise HTTPException(status_code=404, detail=f"Unknown file_id: {file_id}")
     return FileResponse(path)
 
 
 @app.get("/v1/assets/{asset_id}")
 def get_asset(asset_id: str) -> FileResponse:
-    bundle = INDEX_REPO.load(check_sources=False)
-    path = bundle.asset_paths.get(asset_id)
-    if path is None or not path.exists():
+    path = INDEX_REPO.resolve_asset_path(asset_id)
+    if path is None:
         raise HTTPException(status_code=404, detail=f"Unknown asset_id: {asset_id}")
     return FileResponse(path)
 
@@ -147,22 +146,16 @@ def get_firmware(system: str, filename: str) -> FileResponse:
     if not _is_safe_segment(system) or not _is_safe_segment(filename):
         raise HTTPException(status_code=404, detail="Firmware file not found")
 
-    firmware_root = (DATA_ROOT / FIRMWARE_ROOT_NAME).resolve()
-    system_root = (firmware_root / system).resolve()
-    if not system_root.is_relative_to(firmware_root):
-        raise HTTPException(status_code=404, detail="Firmware file not found")
-
-    path = (system_root / filename).resolve()
-    if not path.is_relative_to(system_root):
-        raise HTTPException(status_code=404, detail="Firmware file not found")
-
-    if not path.exists() or not path.is_file():
+    firmware_root = DATA_ROOT / FIRMWARE_ROOT_NAME
+    path = validate_served_file_path(firmware_root / system / filename, allowed_root=firmware_root)
+    if path is None:
         raise HTTPException(status_code=404, detail=f"Firmware file not found: {system}/{filename}")
     return FileResponse(path)
 
 
 def run() -> None:
-    uvicorn.run("gamehub_server.main:app", host="0.0.0.0", port=8000, reload=False)
+    listen_host = os.environ.get("GAMEHUB_SERVER_LISTEN_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    uvicorn.run("gamehub_server.main:app", host=listen_host, port=8000, reload=False)
 
 
 if __name__ == "__main__":

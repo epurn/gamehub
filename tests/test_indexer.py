@@ -62,6 +62,16 @@ def test_build_index_rejects_nested_title_directories(workspace_tempdir) -> None
             build_index(root)
 
 
+def test_build_index_rejects_symlinked_rom_file(workspace_tempdir, make_symlink) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        target = root.parent / "outside-rom.nes"
+        _write_file(target, b"rom")
+        make_symlink(root / "roms" / "NES" / "SuperMarioBros.nes", target)
+
+        with pytest.raises(ValueError, match="Symlinked content is not allowed"):
+            build_index(root)
+
+
 def test_build_index_rejects_duplicate_title_stems(workspace_tempdir) -> None:
     with workspace_tempdir(prefix="gamehub-indexer-") as temp_dir:
         root = temp_dir
@@ -94,6 +104,17 @@ def test_build_index_requires_required_firmware_for_indexed_system(workspace_tem
         root = temp_dir
         _write_file(root / "roms" / "PS2" / "FinalFantasyX.iso")
         with pytest.raises(ValueError, match="Missing required firmware for PS2: scph10000.bin"):
+            build_index(root)
+
+
+def test_build_index_rejects_symlinked_firmware_file(workspace_tempdir, make_symlink) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "PS2" / "FinalFantasyX.iso", b"rom")
+        target = root.parent / "outside-firmware.bin"
+        _write_file(target, b"fw")
+        make_symlink(root / "firmware" / "PS2" / "scph10000.bin", target)
+
+        with pytest.raises(ValueError, match="Symlinked content is not allowed"):
             build_index(root)
 
 
@@ -299,6 +320,29 @@ def test_build_index_rejects_unknown_save_kind(workspace_tempdir) -> None:
         _write_file(root / "saves" / "NES" / "SuperMarioBros" / "state" / "slot1.state", b"save")
 
         with pytest.raises(ValueError, match="unknown save kind"):
+            build_index(root)
+
+
+def test_build_index_rejects_symlinked_save_file(workspace_tempdir, make_symlink) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "NES" / "SuperMarioBros.nes", b"rom")
+        target = root.parent / "outside-save.srm"
+        _write_file(target, b"save")
+        make_symlink(root / "saves" / "NES" / "SuperMarioBros" / "battery" / "slot1.srm", target)
+
+        with pytest.raises(ValueError, match="Symlinked content is not allowed"):
+            build_index(root)
+
+
+def test_build_index_rejects_symlinked_save_directory(workspace_tempdir, make_symlink) -> None:
+    with workspace_tempdir(prefix="gamehub-indexer-") as root:
+        _write_file(root / "roms" / "Wii" / "MarioGalaxy.iso", b"rom")
+        target_dir = root.parent / "outside-save-tree"
+        _write_file(target_dir / "profiles" / "slot1.bin", b"save")
+        (root / "saves" / "Wii" / "MarioGalaxy" / "per_game").mkdir(parents=True, exist_ok=True)
+        make_symlink(root / "saves" / "Wii" / "MarioGalaxy" / "per_game" / "profiles", target_dir / "profiles")
+
+        with pytest.raises(ValueError, match="Symlinked content is not allowed"):
             build_index(root)
 
 

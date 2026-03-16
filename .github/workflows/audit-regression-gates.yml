@@ -4,25 +4,37 @@ on:
   pull_request:
     paths:
       - "README.md"
+      - "docker/**"
       - "src/**"
       - "tests/**"
       - "docs/**"
       - "pyproject.toml"
       - "scripts/audit_repo_readiness.py"
       - "scripts/audit_secret_allowlist.toml"
+      - "scripts/build_server_deploy_bundle.py"
+      - "scripts/verify_server_deploy.py"
+      - "scripts/verify_server_deploy.ps1"
       - ".github/workflows/audit-regression-gates.yml"
+      - ".github/workflows/release-client.yml"
+      - ".github/workflows/release-server.yml"
   push:
     branches:
       - main
     paths:
       - "README.md"
+      - "docker/**"
       - "src/**"
       - "tests/**"
       - "docs/**"
       - "pyproject.toml"
       - "scripts/audit_repo_readiness.py"
       - "scripts/audit_secret_allowlist.toml"
+      - "scripts/build_server_deploy_bundle.py"
+      - "scripts/verify_server_deploy.py"
+      - "scripts/verify_server_deploy.ps1"
       - ".github/workflows/audit-regression-gates.yml"
+      - ".github/workflows/release-client.yml"
+      - ".github/workflows/release-server.yml"
   workflow_dispatch:
 
 concurrency:
@@ -104,3 +116,28 @@ jobs:
       - name: Dependency update report
         run: |
           python -m pip list --outdated --format=columns
+
+  server-container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build local server image
+        run: docker build -f docker/Dockerfile -t gamehub-server-smoke .
+
+      - name: Verify containerized server
+        run: |
+          docker run -d --name gamehub-server-smoke \
+            -p 127.0.0.1:18000:8000 \
+            -v "$PWD/tests/fixtures/indexer_case:/data:ro" \
+            gamehub-server-smoke
+          python3 scripts/verify_server_deploy.py --base-url http://127.0.0.1:18000 --wait-seconds 30
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker logs gamehub-server-smoke || true
+
+      - name: Clean up container
+        if: always()
+        run: docker rm -f gamehub-server-smoke || true
