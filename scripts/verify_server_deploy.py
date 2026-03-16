@@ -41,6 +41,9 @@ def _request_bytes(base_url: str, path: str, *, timeout: float) -> bytes:
         raise VerificationError(f"{path} returned HTTP {exc.code}") from exc
     except URLError as exc:
         raise VerificationError(f"{path} request failed: {exc.reason}") from exc
+    except OSError as exc:
+        reason = str(exc).strip() or exc.__class__.__name__
+        raise VerificationError(f"{path} request failed: {reason}") from exc
 
 
 def wait_for_health(base_url: str, *, timeout: float, wait_seconds: float) -> dict[str, Any]:
