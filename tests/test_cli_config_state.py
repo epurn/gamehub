@@ -635,6 +635,7 @@ def test_load_config_save_sync_defaults_disabled(monkeypatch, workspace_tempdir)
         loaded = load_config(config_path)
 
         assert loaded.save_sync == SaveSyncConfig()
+        assert loaded.save_sync.conflict_policy == "manual"
 
 
 def test_load_config_supports_save_sync_block(workspace_tempdir) -> None:
@@ -661,6 +662,27 @@ def test_load_config_supports_save_sync_block(workspace_tempdir) -> None:
         assert loaded.save_sync.systems == ("PS2", "WII")
 
 
+def test_load_config_defaults_save_sync_conflict_policy_to_manual_when_omitted(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-") as temp_root:
+        config_path = temp_root / "config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "[save_sync]",
+                    "enabled = true",
+                    'mode = "bidirectional"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_config(config_path)
+
+        assert loaded.save_sync.enabled is True
+        assert loaded.save_sync.mode == "bidirectional"
+        assert loaded.save_sync.conflict_policy == "manual"
+
+
 def test_load_config_normalizes_invalid_save_sync_values(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-config-") as temp_root:
         config_path = temp_root / "config.toml"
@@ -681,7 +703,7 @@ def test_load_config_normalizes_invalid_save_sync_values(workspace_tempdir) -> N
 
         assert loaded.save_sync.enabled is False
         assert loaded.save_sync.mode == "download"
-        assert loaded.save_sync.conflict_policy == "prefer_server"
+        assert loaded.save_sync.conflict_policy == "manual"
         assert loaded.save_sync.systems == ("NES",)
 
 

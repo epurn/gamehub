@@ -44,6 +44,20 @@ def local_file_updated_at(path: Path) -> str | None:
     return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
 
 
+def _resolve_conflict_policy_outcome(
+    conflict_policy: str,
+    *,
+    prefer_server: tuple[str, str],
+    prefer_local: tuple[str, str],
+    manual: tuple[str, str],
+) -> tuple[str, str]:
+    if conflict_policy == "prefer_server":
+        return prefer_server
+    if conflict_policy == "prefer_local":
+        return prefer_local
+    return manual
+
+
 def classify_save_action(
     *,
     save_sha256: str,
@@ -62,11 +76,12 @@ def classify_save_action(
 
     lineage_present = lineage_local_sha is not None or lineage_remote_sha is not None
     if not lineage_present:
-        if conflict_policy == "prefer_local":
-            return "upload_existing", "lineage-missing-prefer-local"
-        if conflict_policy == "prefer_server":
-            return "download", "lineage-missing-prefer-server"
-        return "conflict", "lineage-missing-manual"
+        return _resolve_conflict_policy_outcome(
+            conflict_policy,
+            prefer_server=("download", "lineage-missing-prefer-server"),
+            prefer_local=("upload_existing", "lineage-missing-prefer-local"),
+            manual=("conflict", "lineage-missing-manual"),
+        )
 
     local_changed = lineage_local_sha is not None and local_sha256 != lineage_local_sha
     remote_changed = lineage_remote_sha is not None and save_sha256 != lineage_remote_sha
@@ -76,13 +91,19 @@ def classify_save_action(
     if remote_changed and not local_changed:
         return "download", "remote-changed-local-unchanged"
     if local_changed and remote_changed:
-        if conflict_policy == "prefer_local":
-            return "upload_existing", "both-changed-prefer-local"
-        if conflict_policy == "prefer_server":
-            return "download", "both-changed-prefer-server"
-        return "conflict", "both-changed-manual"
+        return _resolve_conflict_policy_outcome(
+            conflict_policy,
+            prefer_server=("download", "both-changed-prefer-server"),
+            prefer_local=("upload_existing", "both-changed-prefer-local"),
+            manual=("conflict", "both-changed-manual"),
+        )
 
-    return "download", "lineage-ambiguous-default-download"
+    return _resolve_conflict_policy_outcome(
+        conflict_policy,
+        prefer_server=("download", "lineage-ambiguous-prefer-server"),
+        prefer_local=("upload_existing", "lineage-ambiguous-prefer-local"),
+        manual=("conflict", "lineage-ambiguous-manual"),
+    )
 
 
 def build_save_lineage_record(

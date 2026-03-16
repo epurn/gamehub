@@ -203,9 +203,15 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 ### Save sync dry-run and conflict interpretation
 - In `mode = "download"`, save planning is read-only: expected actions are `download` or `skip` only.
 - In `mode = "bidirectional"`, planner decisions may include `upload_existing`, `upload_new`, and `conflict` in addition to `download`/`skip` according to checksum lineage, binding discovery, and `conflict_policy`.
-- `conflict_policy = "prefer_server"` resolves conflict paths toward download decisions.
-- `conflict_policy = "prefer_local"` resolves conflict paths toward `upload_existing` decisions.
-- `conflict_policy = "manual"` preserves explicit `conflict` outcomes for operator review.
+- New or unspecified bidirectional configs default to `conflict_policy = "manual"`.
+- `conflict_policy = "manual"` preserves explicit `conflict` outcomes for operator review when both sides changed or lineage is incomplete/ambiguous.
+- `conflict_policy = "prefer_server"` is opt-in and resolves those conflict paths toward download decisions.
+- `conflict_policy = "prefer_local"` resolves those conflict paths toward `upload_existing` decisions.
+- Overwrite/conflict matrix:
+  - `download`: missing local saves may download, but any existing local drift is preserved as `skip`.
+  - `bidirectional + manual` (default): one-sided drift auto-converges, but both-side or ambiguous drift becomes `conflict`.
+  - `bidirectional + prefer_server`: one-sided drift auto-converges, and both-side or ambiguous drift downloads the server copy.
+  - `bidirectional + prefer_local`: one-sided drift auto-converges, and both-side or ambiguous drift uploads the local copy.
 - In `mode = "bidirectional"`, if managed post-exit upload is missed because the server is unreachable, GAMEHUB records `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` and keeps local timestamp observation in `save_lineage`.
 - On reconnect (planner and managed pre-launch), that marker enables deterministic UTC-second timestamp comparison (`local mtime` vs remote `updated_at`):
   - local newer -> `upload_existing` (`missed-upload-local-newer`)
@@ -225,6 +231,7 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - `download` mode stays read-only: missing local saves may still download, existing local drift becomes `skip(download-mode-local-drift)`, local-only first-time saves become `skip(download-mode-local-new)`, and the server is never mutated.
 - If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
 - If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
+- To create a reproducible indexed-save conflict for audit/testing: sync once in `bidirectional` mode to seed lineage, edit the same save locally and on the server, then run `gamehub sync --dry-run` or start a managed launch with `conflict_policy = "manual"`; the save should surface as `conflict` instead of auto-downloading.
 - `gamehub doctor saves` is a read-only audit for persisted save conflicts, save-binding ambiguity, and current non-benign save actions; `gamehub doctor all` includes the same save audit.
 - Phase 2 manual resolution is explicit and one-save-at-a-time:
   - `gamehub doctor saves --keep-local <save_id>` uploads the local save to the server and clears that save's unresolved conflict on success
