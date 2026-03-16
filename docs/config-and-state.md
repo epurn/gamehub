@@ -382,6 +382,7 @@ Save sync state semantics:
 - `offline_shortcut_titles` persists reconnect-recovery markers for managed launches that skipped metadata/save work while the server was unreachable.
 - `unresolved_save_conflicts` persists manual-resolution-required conflicts between runs.
 - `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` marks a managed launch-session upload miss caused by unreachable server; on reconnect in bidirectional mode, this enables deterministic timestamp comparison before fallback conflict logic.
+- Use `gamehub doctor saves` for a read-only view of persisted save conflicts, binding-root ambiguity, and current save drift without opening `state.json` manually.
 
 Bootstrap notes:
 - Fresh installs must run `gamehub init` before the first `gamehub sync`.

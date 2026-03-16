@@ -130,6 +130,7 @@ def test_typer_doctor_controllers_dispatches(monkeypatch) -> None:
     [
         (["doctor", "roms", "--config", "config.toml", "--verify"], "_run_doctor_roms_command"),
         (["doctor", "firmware", "--config", "config.toml"], "_run_doctor_firmware_command"),
+        (["doctor", "saves", "--config", "config.toml", "--verify"], "_run_doctor_saves_command"),
         (["doctor", "all", "--config", "config.toml", "--verify"], "_run_doctor_all_command"),
     ],
 )

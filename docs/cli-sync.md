@@ -38,6 +38,7 @@ macOS/Linux:
 ```bash
 ./venv/bin/python -m gamehub_cli.main doctor roms [--verify] [--verbose]
 ./venv/bin/python -m gamehub_cli.main doctor firmware [--verify] [--verbose]
+./venv/bin/python -m gamehub_cli.main doctor saves [--verify] [--verbose]
 ./venv/bin/python -m gamehub_cli.main doctor all [--verify] [--verbose]
 ```
 
@@ -45,6 +46,7 @@ Windows PowerShell:
 ```powershell
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor roms [--verify] [--verbose]
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor firmware [--verify] [--verbose]
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor saves [--verify] [--verbose]
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor all [--verify] [--verbose]
 ```
 
@@ -219,6 +221,7 @@ Save sync stays disabled by default unless `[save_sync].enabled = true` is set i
 - `download` mode stays read-only: missing local saves may still download, existing local drift becomes `skip(download-mode-local-drift)`, local-only first-time saves become `skip(download-mode-local-new)`, and the server is never mutated.
 - If learned-tree materialization is ambiguous (for example multiple valid Azahar profile prefixes), GAMEHUB records an explicit conflict and performs no save write.
 - If the remote save changed during the play session, GAMEHUB records a conflict and does not auto-overwrite either side.
+- `gamehub doctor saves` is a read-only audit for persisted save conflicts, save-binding ambiguity, and current non-benign save actions; `gamehub doctor all` includes the same save audit.
 Steam reconciliation is run on every non-dry sync (unless `--skip-steam`), even when there are no ROM/firmware downloads. This is what repairs missing Steam artwork/collections for already-synced games.
 Verbose sync output prints both `userdata_id` (short folder id) and derived `steamid64` so profile selection is easy to verify.
 

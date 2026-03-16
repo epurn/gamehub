@@ -9,7 +9,7 @@ from .controllers.convergence import run_controller_doctor
 from .shortcuts.shortcut_launch import run_shortcut_launch
 from .steam import build_context, discover_deck_steam_input_roots, discover_steam_id, discover_userdata_dir
 from .sync import run_init, run_sync
-from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor
+from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor, run_save_doctor
 
 
 def _resolve_existing_config_path(config_path: Path | None) -> Path:
@@ -102,6 +102,16 @@ def _run_doctor_firmware_command(
     return run_firmware_doctor(loaded, verify=verify, verbose=verbose)
 
 
+def _run_doctor_saves_command(
+    *,
+    config_path: Path | None,
+    verbose: bool,
+    verify: bool,
+) -> int:
+    loaded = load_config(config_path)
+    return run_save_doctor(loaded, verify=verify, verbose=verbose)
+
+
 def _run_doctor_all_command(
     *,
     config_path: Path | None,
@@ -118,9 +128,10 @@ def _run_doctor_all_command(
         steam_discovery_note=note,
     )
     snapshot = build_sync_diagnostics_snapshot(loaded, verify=verify, verbose=verbose)
+    save_code = run_save_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
     firmware_code = run_firmware_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
     roms_code = run_roms_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
-    return 1 if any(code != 0 for code in (controller_code, firmware_code, roms_code)) else 0
+    return 1 if any(code != 0 for code in (controller_code, save_code, firmware_code, roms_code)) else 0
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -276,6 +287,19 @@ def doctor_firmware(
     verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
 ) -> None:
     raise typer.Exit(code=_run_doctor_firmware_command(config_path=config, verbose=verbose, verify=verify))
+
+
+@doctor_app.command("saves")
+def doctor_saves(
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
+    verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
+) -> None:
+    raise typer.Exit(code=_run_doctor_saves_command(config_path=config, verbose=verbose, verify=verify))
 
 
 @doctor_app.command("all")

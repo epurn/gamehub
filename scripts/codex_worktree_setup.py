@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+_BRIDGE_FILENAME = "gamehub_codex_shared_deps.pth"
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
@@ -20,6 +22,13 @@ def _venv_python(repo_root: Path) -> Path:
 
 def _format_command(command: list[str]) -> str:
     return " ".join(command)
+
+
+def _venv_site_packages(venv_python: Path) -> Path:
+    venv_root = venv_python.parent.parent
+    if sys.platform == "win32":
+        return venv_root / "Lib" / "site-packages"
+    return venv_root / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
 
 
 def _run(command: list[str], *, cwd: Path, check_only: bool, description: str) -> None:
@@ -52,11 +61,90 @@ def _ensure_venv(repo_root: Path, *, check_only: bool) -> Path:
 
 def _install_dev_dependencies(repo_root: Path, *, venv_python: Path, check_only: bool) -> None:
     _run(
-        [str(venv_python), "-m", "pip", "--disable-pip-version-check", "install", "-e", ".[dev]"],
+        [
+            str(venv_python),
+            "-m",
+            "pip",
+            "--disable-pip-version-check",
+            "install",
+            "--no-build-isolation",
+            "-e",
+            ".[dev]",
+        ],
         cwd=repo_root,
         check_only=check_only,
         description="Installing editable project and dev dependencies",
     )
+
+
+def _git_worktree_paths(repo_root: Path) -> tuple[Path, ...]:
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return ()
+    paths: list[Path] = []
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            paths.append(Path(line.removeprefix("worktree ").strip()).resolve())
+    return tuple(paths)
+
+
+def _find_shared_venv_python(repo_root: Path) -> Path | None:
+    current_root = repo_root.resolve()
+    for worktree_root in _git_worktree_paths(repo_root):
+        if worktree_root == current_root:
+            continue
+        candidate = _venv_python(worktree_root)
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _write_shared_venv_bridge(
+    repo_root: Path,
+    *,
+    venv_python: Path,
+    shared_venv_python: Path,
+    check_only: bool,
+) -> None:
+    shared_site_packages = _venv_site_packages(shared_venv_python)
+    if not shared_site_packages.is_dir():
+        raise SystemExit(f"Shared dependency site-packages not found: {shared_site_packages}")
+    bridge_path = _venv_site_packages(venv_python) / _BRIDGE_FILENAME
+    bridge_payload = f"{shared_site_packages}\n{repo_root / 'src'}\n"
+    print(f"[codex-setup] Bridging dependencies from {shared_site_packages}")
+    print(f"[codex-setup] Writing shared dependency bridge: {bridge_path}")
+    if check_only:
+        return
+    bridge_path.parent.mkdir(parents=True, exist_ok=True)
+    bridge_path.write_text(bridge_payload, encoding="utf-8")
+
+
+def _install_or_bridge_dev_dependencies(repo_root: Path, *, venv_python: Path, check_only: bool) -> str:
+    try:
+        _install_dev_dependencies(repo_root, venv_python=venv_python, check_only=check_only)
+    except subprocess.CalledProcessError as exc:
+        shared_venv_python = _find_shared_venv_python(repo_root)
+        if shared_venv_python is None:
+            raise SystemExit(
+                "[codex-setup] Dev dependency install failed and no sibling GameHub worktree venv was found. "
+                "Connect to the network or provision another checkout venv first."
+            ) from exc
+        print(f"[codex-setup] Editable install failed; falling back to shared worktree venv at {shared_venv_python}")
+        _write_shared_venv_bridge(
+            repo_root,
+            venv_python=venv_python,
+            shared_venv_python=shared_venv_python,
+            check_only=check_only,
+        )
+        return "bridged"
+    return "installed"
 
 
 def main() -> int:
@@ -77,10 +165,12 @@ def main() -> int:
     print(f"[codex-setup] Host interpreter: {sys.executable}")
 
     venv_python = _ensure_venv(repo_root, check_only=args.check)
-    _install_dev_dependencies(repo_root, venv_python=venv_python, check_only=args.check)
+    install_mode = _install_or_bridge_dev_dependencies(repo_root, venv_python=venv_python, check_only=args.check)
 
     if args.check:
         print("[codex-setup] Check complete.")
+    elif install_mode == "bridged":
+        print("[codex-setup] Setup complete via shared dependency bridge.")
     else:
         print("[codex-setup] Setup complete.")
     return 0

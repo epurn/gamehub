@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gamehub_cli.common.config import ControllersConfig, GamehubConfig
+from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.main import _run_doctor_all_command
-from gamehub_cli.sync.diagnostics import SyncDiagnosticsSnapshot, run_firmware_doctor, run_roms_doctor
+from gamehub_cli.sync.diagnostics import SyncDiagnosticsSnapshot, run_firmware_doctor, run_roms_doctor, run_save_doctor
 from gamehub_cli.sync.orchestrator import run_init, run_sync
-from gamehub_cli.sync.planner import PlanAction, SyncPlan
-from gamehub_cli.sync.state import load_state
+from gamehub_cli.sync.planner import PlanAction, SavePlanAction, SyncPlan
+from gamehub_cli.sync.state import SyncState, load_state
 from gamehub_common.models import LibraryIndex
 
 
@@ -24,6 +24,7 @@ def _config(root: Path, *, launch_autoconfig: bool = False) -> GamehubConfig:
         sgdb_cache_dir=root / "cache",
         sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
         controllers=ControllersConfig(launch_autoconfig=launch_autoconfig),
+        save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="manual"),
     )
 
 
@@ -116,6 +117,7 @@ def test_run_sync_requires_bootstrap_version_even_with_existing_last_sync(monkey
 def test_run_roms_doctor_reports_content_actions_and_skipped_titles(capsys) -> None:
     config = _config(Path("gamehub"))
     snapshot = SyncDiagnosticsSnapshot(
+        state=SyncState(),
         index=_empty_index(),
         plan=SyncPlan(
             content_actions=[
@@ -146,6 +148,7 @@ def test_run_roms_doctor_reports_content_actions_and_skipped_titles(capsys) -> N
 def test_run_firmware_doctor_reports_blocked_systems(capsys) -> None:
     config = _config(Path("gamehub"))
     snapshot = SyncDiagnosticsSnapshot(
+        state=SyncState(),
         index=_empty_index(),
         plan=SyncPlan(
             firmware_actions=[
@@ -172,10 +175,89 @@ def test_run_firmware_doctor_reports_blocked_systems(capsys) -> None:
     assert "firmware-doctor\tsummary\tfirmware_actions=1\tblocked_systems=1" in output
 
 
+def test_run_save_doctor_reports_persisted_conflicts_and_interesting_actions(capsys) -> None:
+    config = _config(Path("gamehub"))
+    snapshot = SyncDiagnosticsSnapshot(
+        state=SyncState(
+            unresolved_save_conflicts={
+                "save_ps2_ffx_1": "both-changed-manual",
+                "savebind_deadbeefcafefeed": "save-binding-root-ambiguous",
+            }
+        ),
+        index=_empty_index(),
+        plan=SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_ps2_ffx_1",
+                    binding_id="savebind_deadbeefcafefeed",
+                    title_id="title_ps2_ffx",
+                    system="PS2",
+                    kind="memory_card",
+                    decision="conflict",
+                    reason="both-changed-manual",
+                    url="/v1/saves/save_ps2_ffx_1",
+                    destination=Path("saves/PS2/FFX.ps2"),
+                    canonical_suffix="FFX.ps2",
+                    expected_sha256="a" * 64,
+                    size_bytes=1024,
+                    remote_updated_at="2026-03-16T00:00:00+00:00",
+                ),
+                SavePlanAction(
+                    save_id="save_gbc_links_1",
+                    binding_id="savebind_1111111111111111",
+                    title_id="title_gbc_links",
+                    system="GBC",
+                    kind="battery",
+                    decision="skip",
+                    reason="download-mode-local-drift",
+                    url="/v1/saves/save_gbc_links_1",
+                    destination=Path("saves/GBC/Links.srm"),
+                    canonical_suffix="Links.srm",
+                    expected_sha256="b" * 64,
+                    size_bytes=2048,
+                    remote_updated_at="2026-03-16T00:00:00+00:00",
+                    local_sha256="c" * 64,
+                ),
+                SavePlanAction(
+                    save_id="save_nes_mario_1",
+                    binding_id="savebind_2222222222222222",
+                    title_id="title_nes_mario",
+                    system="NES",
+                    kind="battery",
+                    decision="skip",
+                    reason="already-synced",
+                    url="/v1/saves/save_nes_mario_1",
+                    destination=Path("saves/NES/Mario.srm"),
+                    canonical_suffix="Mario.srm",
+                    expected_sha256="d" * 64,
+                    size_bytes=512,
+                    remote_updated_at="2026-03-16T00:00:00+00:00",
+                    local_sha256="d" * 64,
+                ),
+            ]
+        ),
+    )
+
+    exit_code = run_save_doctor(config, verify=False, verbose=False, snapshot=snapshot)
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert "save-doctor\tstate_path=gamehub/state.json\tpersisted_conflicts=2\tinteresting_actions=2" in output
+    assert "save-doctor\tpersisted-conflict\tscope=save\tid=save_ps2_ffx_1\treason=both-changed-manual" in output
+    assert (
+        "save-doctor\tpersisted-conflict\tscope=binding\tid=savebind_deadbeefcafefeed\t"
+        "reason=save-binding-root-ambiguous" in output
+    )
+    assert "save-doctor\tstatus=drift\tdecision=conflict\tsystem=PS2" in output
+    assert "save-doctor\tstatus=drift\tdecision=skip\tsystem=GBC" in output
+    assert "save_nes_mario_1" not in output
+    assert "save-doctor\tsummary\tpersisted_conflicts=2\tinteresting_actions=2\ttotal_actions=3" in output
+
+
 def test_run_doctor_all_aggregates_controller_and_sync_audits(monkeypatch) -> None:
     config = _config(Path("gamehub"))
     order: list[str] = []
-    diagnostic_snapshot = SyncDiagnosticsSnapshot(index=_empty_index(), plan=SyncPlan())
+    diagnostic_snapshot = SyncDiagnosticsSnapshot(state=SyncState(), index=_empty_index(), plan=SyncPlan())
     monkeypatch.setattr("gamehub_cli.main.load_config", lambda config_path=None: config)
     monkeypatch.setattr("gamehub_cli.main._discover_controller_doctor_steam_roots", lambda loaded: ((), None))
     monkeypatch.setattr(
@@ -185,6 +267,10 @@ def test_run_doctor_all_aggregates_controller_and_sync_audits(monkeypatch) -> No
     monkeypatch.setattr(
         "gamehub_cli.main.build_sync_diagnostics_snapshot",
         lambda *args, **kwargs: order.append("snapshot") or diagnostic_snapshot,
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.main.run_save_doctor",
+        lambda loaded, verify, verbose, snapshot=None: order.append(f"saves:{snapshot is diagnostic_snapshot}") or 0,
     )
     monkeypatch.setattr(
         "gamehub_cli.main.run_firmware_doctor",
@@ -198,4 +284,4 @@ def test_run_doctor_all_aggregates_controller_and_sync_audits(monkeypatch) -> No
     exit_code = _run_doctor_all_command(config_path=None, verbose=False, verify=True)
 
     assert exit_code == 1
-    assert order == ["controllers", "snapshot", "firmware:True", "roms:True"]
+    assert order == ["controllers", "snapshot", "saves:True", "firmware:True", "roms:True"]
