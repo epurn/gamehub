@@ -37,7 +37,7 @@ Development-only broad bind examples:
 .\venv\Scripts\python.exe -m uvicorn gamehub_server.main:app --host 0.0.0.0 --port 8000
 ```
 
-Use `0.0.0.0` only when you intentionally want a development server reachable beyond the local host.
+Use `0.0.0.0` only when you intentionally want a development server reachable beyond the local host. Do not treat this direct-run shape as production; move to the hardened Compose deployment with [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md).
 
 ## Run CLI
 macOS/Linux:

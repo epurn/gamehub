@@ -15,10 +15,13 @@ Optional convenience:
   - `docker/compose.yaml`
   - `docker/.env.template`
   - [docs/deployment-server.md](deployment-server.md)
+  - [docs/dev-to-prod-server-migration.md](dev-to-prod-server-migration.md)
   - [docs/runbook.md](runbook.md)
   - `scripts/verify_server_deploy.py`
   - `scripts/verify_server_deploy.ps1`
   - The bundled `docker/.env.template` is pinned to the release tag from that zip
+
+If you are converting an existing development server into this production layout, run through [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md) before the first live cutover.
 
 ## 1) Create production env file
 Copy the template and adjust paths/port:
@@ -58,6 +61,7 @@ Required values in `docker/.env`:
 - Prefer a pinned release tag over `latest`.
 - If bidirectional save sync is enabled, confirm the host `saves/` tree is writable by Docker.
 - Remove or replace any symlinked files or directories under the server data root before startup.
+- If this host previously ran a dev server, complete [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md) so old broad-bind or direct-run settings do not leak into production.
 
 ## 3) Pull released server image
 ```bash

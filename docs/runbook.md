@@ -1,6 +1,7 @@
 # GAMEHUB Ops Runbook
 
 ## First Live Cutover
+- If this host previously ran a development server, complete [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md) before the live cutover.
 - Prefer a pinned release tag in `docker/.env` before the first real server rollout.
 - Keep `GAMEHUB_SERVER_BIND_ADDRESS=127.0.0.1` until you are ready to expose the service to a trusted LAN IP.
 - Confirm there are no symlinks anywhere under the server data root.

@@ -36,6 +36,7 @@ def test_build_server_deploy_bundle_includes_expected_files_and_pins_release_tag
             "docker/compose.yaml",
             "docker/.env.template",
             "docs/deployment-server.md",
+            "docs/dev-to-prod-server-migration.md",
             "docs/runbook.md",
             "scripts/verify_server_deploy.py",
             "scripts/verify_server_deploy.ps1",
@@ -66,12 +67,22 @@ def test_release_server_workflow_gates_publish_on_container_smoke() -> None:
 
 
 def test_deployment_docs_reference_portable_verifier_and_first_live_rules() -> None:
+    development = (ROOT / "docs" / "development.md").read_text(encoding="utf-8")
     deployment = (ROOT / "docs" / "deployment-server.md").read_text(encoding="utf-8")
+    migration = (ROOT / "docs" / "dev-to-prod-server-migration.md").read_text(encoding="utf-8")
     runbook = (ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
     release_process = (ROOT / "docs" / "release-process.md").read_text(encoding="utf-8")
+    release_manual = (ROOT / "docs" / "release-manual-checklist-v1.6.0.md").read_text(encoding="utf-8")
 
+    assert "dev-to-prod-server-migration.md" in development
     assert "scripts/verify_server_deploy.py" in deployment
     assert "GAMEHUB_SERVER_BIND_ADDRESS" in deployment
     assert "pinned release tag" in deployment
+    assert "GAMEHUB_SERVER_LISTEN_HOST" in migration
+    assert "GAMEHUB_IMAGE_TAG=latest" in migration
+    assert "verify_server_deploy.py" in migration
+    assert "dev-to-prod-server-migration.md" in deployment
+    assert "dev-to-prod-server-migration.md" in runbook
     assert "no symlinks" in runbook
     assert "scripts/verify_server_deploy.py" in release_process
+    assert "dev-to-prod-server-migration.md" in release_manual

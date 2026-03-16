@@ -23,6 +23,7 @@ Budget: 15 to 25 minutes.
   - `docker/compose.yaml`
   - `docker/.env.template`
   - [deployment-server.md](./deployment-server.md)
+  - [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md)
   - [runbook.md](./runbook.md)
   - `scripts/verify_server_deploy.py`
   - `scripts/verify_server_deploy.ps1`
@@ -79,6 +80,7 @@ Budget: 15 to 20 minutes.
 
 - [ ] Record the final pinned image tag, chosen bind address, and server host for the rollout notes.
 - [ ] Take a backup snapshot of the server data root before the live cutover.
+- [ ] If the rollout host previously ran a dev server, complete [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md) and retire the old direct-run or broad-bind entry point.
 - [ ] Confirm the release operator has [runbook.md](./runbook.md) available for upgrade, rollback, and outage triage.
 - [ ] Confirm the release operator understands that symlinks under the server data root are unsupported for indexed content.
 - [ ] If `save_sync.enabled = true` will be used, confirm the release operator knows the initial save mode and conflict policy for the first live sync.

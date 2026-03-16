@@ -24,6 +24,7 @@
 - There are no new `gamehub_common` schema changes and no `/v1` API contract changes in this release.
 - Existing server operators should review `docker/.env` after upgrading: the deploy template now defaults `GAMEHUB_SERVER_BIND_ADDRESS=127.0.0.1` and release bundles pin `GAMEHUB_IMAGE_TAG` to the tagged release instead of `latest`.
 - If other LAN devices need to reach the server directly, set `GAMEHUB_SERVER_BIND_ADDRESS` to the host's explicit LAN address before starting the container.
+- If you are converting a direct-run or broad-bind dev server into the production Compose deployment, use [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md) during the cutover.
 - Ensure the server data root contains no symlinks anywhere under `roms/`, `firmware/`, or `saves/`; indexed symlinked content is now rejected and cached symlink escapes are blocked at read time.
 - If save uploads are enabled, confirm `saves/` is writable and set `GAMEHUB_MAX_SAVE_UPLOAD_BYTES` explicitly if you need a server-side upload cap.
 - Managed shortcut commands remain `shortcut-launch`; there is no new shortcut-command migration in this release.

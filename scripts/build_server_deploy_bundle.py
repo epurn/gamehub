@@ -8,6 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 BUNDLE_SOURCES = (
     Path("docker/compose.yaml"),
     Path("docs/deployment-server.md"),
+    Path("docs/dev-to-prod-server-migration.md"),
     Path("docs/runbook.md"),
     Path("scripts/verify_server_deploy.py"),
     Path("scripts/verify_server_deploy.ps1"),
