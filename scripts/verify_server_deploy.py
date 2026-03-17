@@ -73,6 +73,8 @@ def verify_server(base_url: str, *, timeout: float, wait_seconds: float) -> None
     status_version = status_payload.get("status_version")
     if status_version is None:
         raise VerificationError("/v1/status did not return a status_version")
+    if status_version != 1:
+        raise VerificationError(f"/v1/status returned unexpected status_version={status_version!r}")
     server_version = status_payload.get("server_version")
     if not isinstance(server_version, str) or not server_version.strip():
         raise VerificationError("/v1/status did not return a server_version")
