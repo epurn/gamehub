@@ -2,7 +2,7 @@
 
 This is the single reference for the final pre-release test flow and publish flow.
 
-For a shorter 3 to 4 hour manual sanity pass after automation is green, use [release-manual-checklist-v1.6.0.md](./release-manual-checklist-v1.6.0.md).
+When the currently planned `v1.6.0` scope is frozen and automation is green, use [release-manual-checklist-v1.6.0.md](./release-manual-checklist-v1.6.0.md) for the shorter 3 to 4 hour manual sanity pass. If the next tagged release changes, copy/update that checklist first.
 
 Use this in order:
 1. Windows validation

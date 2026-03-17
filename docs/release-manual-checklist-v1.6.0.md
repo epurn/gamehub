@@ -1,16 +1,18 @@
-# v1.6.0 Manual Release Checklist
+# Draft Manual Release Checklist for v1.6.0
 
-Use this after the automated gates pass.
+Use this after the automated gates pass and after the `v1.6.0` release scope is frozen.
 
 Target time: about 2 to 3 hours.
 
-This minor release focuses on trusted-LAN home-server deployment readiness, release-pinned deploy artifacts, and cross-platform operator verification. It reuses the broader behavioral validation from [release-manual-checklist-v1.5.0.md](./release-manual-checklist-v1.5.0.md). If anything outside the deploy/readiness scope behaves differently, fall back to that full checklist before releasing.
+Keep compatible feature work batched under the current unreleased `v1.6.0` target instead of bumping versions for each in-progress feature. Before tagging, refresh this checklist and [release-notes-v1.6.0.md](./release-notes-v1.6.0.md) if the planned release scope expands.
+
+This draft assumes the current `v1.6.0` focus remains trusted-LAN home-server deployment readiness, release-pinned deploy artifacts, and cross-platform operator verification. It reuses the broader behavioral validation from [release-manual-checklist-v1.5.0.md](./release-manual-checklist-v1.5.0.md). If anything outside the deploy/readiness scope behaves differently, fall back to that full checklist before releasing.
 
 Full release flow still lives in [release-final-validation-playbook.md](./release-final-validation-playbook.md).
 
 ## Before manual testing
 
-- [ ] Rebuild the wheel and Windows EXE after the version bump.
+- [ ] Rebuild the wheel and Windows EXE from the final `v1.6.0` release-candidate commit.
 - [ ] Confirm rebuilt artifacts and server version metadata report `1.6.0`.
 - [ ] Confirm release notes and deploy references use `v1.6.0`.
 - [ ] Prepare a release-candidate server data root with representative ROM, firmware, and save data and confirm there are no symlinks under `roms/`, `firmware/`, or `saves/`.

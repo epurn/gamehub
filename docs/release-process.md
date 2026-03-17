@@ -6,6 +6,10 @@ Detailed end-to-end validation and publishing steps are in:
 ## Versioning
 - Use semantic versioning (`MAJOR.MINOR.PATCH`).
 - Tag format: `vX.Y.Z`.
+- `main` may carry the next unreleased target version before that tag exists.
+- Do not bump the target version for every feature merged during an unreleased cycle.
+- Keep compatible in-progress work batched under the current unreleased target until you intentionally freeze or split the release.
+- If the planned scope changes materially before tagging, refresh the draft release notes and manual checklist for that target version before publishing.
 
 ## Release Checklist
 1. Ensure tests pass:

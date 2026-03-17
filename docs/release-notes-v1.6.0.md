@@ -1,4 +1,8 @@
-# Release v1.6.0
+# Draft Release Notes for v1.6.0
+
+This file tracks the current unreleased `v1.6.0` target on `main`.
+
+Keep compatible additional feature work batched into `v1.6.0` until you intentionally freeze or split the release. Before tagging, refresh this draft so it matches the final shipped scope.
 
 ## Highlights
 - Trusted-LAN home-server deployment is now ready for a real `amd64` server rollout.
@@ -6,18 +10,18 @@
 - Indexing and file-serving now reject symlinked ROM, firmware, and save content, and cached file reads are revalidated before bytes are served.
 - The server deploy bundle is now release-pinned and ships a portable Python verifier, while CI and release flows now smoke-test the real container image against fixture data before publish.
 
-## Server
-- Docker image: `ghcr.io/epurn/gamehub-server:v1.6.0`
-- Deploy bundle zip: `gamehub-server-deploy-v1.6.0.zip`
-- Deployment notes:
+## Planned Server Artifacts
+- Expected Docker image: `ghcr.io/epurn/gamehub-server:v1.6.0`
+- Expected deploy bundle zip: `gamehub-server-deploy-v1.6.0.zip`
+- Planned deployment notes:
   - Pull: `docker pull ghcr.io/epurn/gamehub-server:v1.6.0`
   - Run with compose: set `GAMEHUB_SERVER_IMAGE=ghcr.io/epurn/gamehub-server`, `GAMEHUB_IMAGE_TAG=v1.6.0`, and choose `GAMEHUB_SERVER_BIND_ADDRESS` intentionally in `docker/.env`, then run `docker compose -f docker/compose.yaml --env-file docker/.env up -d`
   - Verify: run `python3 scripts/verify_server_deploy.py --base-url "http://<SERVER_IP>:8000" --wait-seconds 30`
 
-## Client
-- Client wheel (macOS/Linux):
+## Planned Client Artifacts
+- Expected client wheel (macOS/Linux):
   - `gamehub-1.6.0-py3-none-any.whl`
-- Windows EXE:
+- Expected Windows EXE:
   - `gamehub-windows-amd64.exe`
 
 ## Compatibility / Migration Notes
@@ -30,7 +34,7 @@
 - Managed shortcut commands remain `shortcut-launch`; there is no new shortcut-command migration in this release.
 
 ## Known Limitations
-- Deployment scope remains trusted-LAN only; there is still no built-in auth or TLS layer in this release.
+- For the current planned scope, deployment remains trusted-LAN only; there is still no built-in auth or TLS layer in this release.
 - Server image architecture remains `amd64` only.
 - Automatic save upload is launch-session scoped for GAMEHUB-managed shortcuts only; there is no background watcher service in this release.
 
