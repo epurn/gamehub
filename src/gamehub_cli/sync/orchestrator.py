@@ -18,6 +18,7 @@ from ..steam import SteamContext, SteamShortcutSpec, steam_id64_from_userdata_id
 from . import artwork_stage, save_stage, steam_stage, transfer_stage
 from . import index as sync_index
 from .planner import create_sync_plan
+from .save_conflicts import prune_persisted_save_conflicts
 from .server_status import require_server_compatibility
 from .state import (
     SyncState,
@@ -434,6 +435,7 @@ def run_sync(
             reopen_steam_after_update=not skip_steam_relaunch,
             reseed_profiles=reseed_profiles,
         )
+    prune_persisted_save_conflicts(state=state, plan=plan)
     mark_synced(state)
     mark_bootstrapped(state)
     save_state_atomic(config.state_path, state, keep_limit=config.backups.keep_limit)

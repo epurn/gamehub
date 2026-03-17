@@ -280,6 +280,49 @@ def test_run_save_doctor_reports_persisted_conflicts_and_interesting_actions(cap
     assert "save-doctor\tsummary\tpersisted_conflicts=2\tinteresting_actions=2\ttotal_actions=3" in output
 
 
+def test_run_save_doctor_suppresses_stale_persisted_conflicts(capsys) -> None:
+    config = _config(Path("gamehub"))
+    snapshot = SyncDiagnosticsSnapshot(
+        state=SyncState(
+            unresolved_save_conflicts={
+                "save_orphaned": "create-race-or-upload-failed",
+                "savebind_deadbeefcafefeed": "save-binding-root-ambiguous",
+            }
+        ),
+        index=_empty_index(),
+        plan=SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_n3ds_alpha_1",
+                    binding_id="savebind_deadbeefcafefeed",
+                    title_id="title_n3ds_alpha",
+                    system="N3DS",
+                    kind="per_game",
+                    decision="skip",
+                    reason="already-synced",
+                    url="/v1/saves/save_n3ds_alpha_1",
+                    destination=Path("saves/N3DS/alpha/main"),
+                    canonical_suffix="title/00040000/0011c500/data/00000001/main",
+                    expected_sha256="d" * 64,
+                    size_bytes=512,
+                    remote_updated_at="2026-03-16T00:00:00+00:00",
+                    local_sha256="d" * 64,
+                )
+            ]
+        ),
+    )
+
+    exit_code = run_save_doctor(config, verify=False, verbose=False, snapshot=snapshot)
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "save-doctor\tstate_path=gamehub/state.json\tpersisted_conflicts=0\tinteresting_actions=0" in output
+    assert "save_orphaned" not in output
+    assert "savebind_deadbeefcafefeed" not in output
+    assert "save_n3ds_alpha_1" not in output
+    assert "save-doctor\tsummary\tpersisted_conflicts=0\tinteresting_actions=0\ttotal_actions=1" in output
+
+
 def test_run_doctor_all_aggregates_controller_and_sync_audits(monkeypatch) -> None:
     config = _config(Path("gamehub"))
     order: list[str] = []

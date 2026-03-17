@@ -993,6 +993,8 @@ def run_shortcut_postexit_save_sync(
             continue
         learned_root = learn_binding_root(binding, learned_paths)
         if learned_root is None:
+            if state.save_binding_roots.pop(binding_id, None) is not None:
+                state_changed = True
             previous_reason = state.unresolved_save_conflicts.get(binding_id)
             state.unresolved_save_conflicts[binding_id] = "save-binding-root-ambiguous"
             state_changed = state_changed or previous_reason != "save-binding-root-ambiguous"
