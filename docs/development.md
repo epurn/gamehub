@@ -131,12 +131,33 @@ Typing note:
 - `mypy` targets `src/` and enforces strict function annotation rules (`disallow_untyped_defs`, `disallow_incomplete_defs`, `check_untyped_defs`).
 - `ignore_missing_imports = true` is enabled to avoid third-party stub churn.
 
-## Run audit regression slices (local)
-Use this before opening a PR that touches CLI portability, Steam integration, architecture boundaries, or config/env precedence logic.
+## Run CI quality gates (local)
+Use this before opening a PR that changes runtime code, tests, workflows, or contributor-facing docs.
 CI is split into:
-- `Audit Regression Gates` (quality/static + architecture + config/server slices + readiness audit, Linux).
+- `Audit Regression Gates` (repo-wide Ruff + `mypy src` + full `pytest . -p no:cacheprovider` + readiness/dependency audits, Linux).
 - `Targeted Regression Matrix` (emulator/firmware + controllers + steam + sync slices, Linux/Windows/macOS).
-To mirror CI exactly, run the emulator/controller/steam/sync slices on Windows, Linux, and macOS hosts.
+
+Baseline Linux-equivalent quality gate:
+
+macOS/Linux:
+```bash
+./venv/bin/python -m ruff format --check .
+./venv/bin/python -m ruff check .
+./venv/bin/python -m mypy src
+./venv/bin/python -m pytest -q -p no:cacheprovider .
+./venv/bin/python scripts/audit_repo_readiness.py
+```
+
+Windows PowerShell:
+```powershell
+.\venv\Scripts\python.exe -m ruff format --check .
+.\venv\Scripts\python.exe -m ruff check .
+.\venv\Scripts\python.exe -m mypy src
+.\venv\Scripts\python.exe -m pytest -q -p no:cacheprovider .
+.\venv\Scripts\python.exe scripts/audit_repo_readiness.py
+```
+
+Targeted regression matrix (run on the relevant host platforms to mirror CI cross-platform coverage):
 
 macOS/Linux shell: replace each `.\venv\Scripts\python.exe` below with `./venv/bin/python`.
 
