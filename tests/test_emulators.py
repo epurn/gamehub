@@ -2399,6 +2399,43 @@ def test_snapshot_binding_tree_ignores_global_dolphin_gc_files(monkeypatch, work
         assert tuple(snapshot) == ("USA/Card A/01-GP5E-MARIPA5.gci",)
 
 
+def test_snapshot_binding_tree_filters_n3ds_paths_to_requested_canonical_roots(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-root-") as temp_root:
+        target_root = temp_root / "Nintendo 3DS" / ("0" * 32) / ("1" * 32) / "title" / "00040000" / "0011c500" / "data"
+        other_root = temp_root / "Nintendo 3DS" / ("0" * 32) / ("1" * 32) / "title" / "00040000" / "000ec300" / "data"
+        target_main = target_root / "00000001" / "main"
+        other_main = other_root / "00000001" / "Save_0.bin"
+        target_main.parent.mkdir(parents=True, exist_ok=True)
+        other_main.parent.mkdir(parents=True, exist_ok=True)
+        target_main.write_bytes(b"alpha")
+        other_main.write_bytes(b"other")
+        binding = SaveBindingSpec(
+            binding_id="savebind_n3ds",
+            title_id="title_n3ds_alpha_sapphire",
+            system="N3DS",
+            kind="per_game",
+            server_rel_dir="saves/N3DS/Pokemon Alpha Sapphire/per_game",
+            local_root="azahar_sdmc",
+            strategy="learned_tree",
+            candidate_filenames=(),
+            learn_rule="azahar_title_data_tree",
+            portable=False,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.emulators.save_resolution.resolve_binding_local_root",
+            lambda *_args, **_kwargs: temp_root,
+        )
+
+        snapshot = snapshot_binding_tree(
+            binding,
+            canonical_roots=("title/00040000/0011c500/data",),
+        )
+
+        assert tuple(snapshot) == (
+            "Nintendo 3DS/00000000000000000000000000000000/11111111111111111111111111111111/title/00040000/0011c500/data/00000001/main",
+        )
+
+
 def test_resolve_system_save_root_uses_default_emulator(monkeypatch) -> None:
     with TemporaryDirectory(prefix="gamehub-save-root-") as temp_dir:
         temp_root = Path(temp_dir)

@@ -74,6 +74,7 @@ class ShortcutSaveSnapshot:
 class ShortcutTreeSnapshot:
     binding: SaveBindingSpec
     before: dict[str, str]
+    canonical_roots: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -276,6 +277,44 @@ def _iter_title_saves(index: LibraryIndex, title_id: str) -> tuple[SaveSpec, ...
             key=lambda item: (item.system, item.rel_path, item.save_id),
         )
     )
+
+
+def _canonical_root_for_indexed_save(binding: SaveBindingSpec, save: SaveSpec) -> str | None:
+    parts = tuple(part for part in PurePosixPath(canonical_suffix_for_save(save)).parts if part not in {"", "."})
+    if binding.learn_rule == "dolphin_gc_gci_tree":
+        if len(parts) < 3:
+            return None
+        return PurePosixPath(*parts[:2]).as_posix()
+    if binding.learn_rule == "dolphin_wii_title_tree":
+        if len(parts) < 4:
+            return None
+        return PurePosixPath(*parts[:3]).as_posix()
+    if binding.learn_rule == "azahar_title_data_tree":
+        if len(parts) < 5:
+            return None
+        return PurePosixPath(*parts[:4]).as_posix()
+    return None
+
+
+def _canonical_roots_by_binding(
+    *,
+    title_saves: tuple[SaveSpec, ...],
+    bindings_by_id: dict[str, SaveBindingSpec],
+) -> dict[str, tuple[str, ...]]:
+    roots_by_binding: dict[str, set[str]] = {}
+    for save in title_saves:
+        binding = bindings_by_id.get(save_binding_id_for_save(save))
+        if binding is None or binding.strategy != "learned_tree":
+            continue
+        canonical_root = _canonical_root_for_indexed_save(binding, save)
+        if canonical_root is None:
+            continue
+        roots_by_binding.setdefault(binding.binding_id, set()).add(canonical_root)
+    return {
+        binding_id: tuple(sorted(canonical_roots))
+        for binding_id, canonical_roots in roots_by_binding.items()
+        if canonical_roots
+    }
 
 
 def _upload_save_from_path(
@@ -756,6 +795,7 @@ def run_shortcut_prelaunch_save_sync(
         if binding.title_id == payload.title_id
     }
     remote_save_ids = {save.save_id for save in title_saves}
+    canonical_roots_by_binding = _canonical_roots_by_binding(title_saves=title_saves, bindings_by_id=binding_by_id)
     if save_bindings is not None and config.save_sync.mode == "bidirectional":
         for binding in save_bindings.bindings:
             if binding.title_id != payload.title_id:
@@ -763,7 +803,12 @@ def run_shortcut_prelaunch_save_sync(
             if binding.strategy == "learned_tree":
                 context.tree_snapshots[binding.binding_id] = ShortcutTreeSnapshot(
                     binding=binding,
-                    before=snapshot_binding_tree(binding, resolve_executable=resolve_executable),
+                    before=snapshot_binding_tree(
+                        binding,
+                        canonical_roots=canonical_roots_by_binding.get(binding.binding_id, ()),
+                        resolve_executable=resolve_executable,
+                    ),
+                    canonical_roots=canonical_roots_by_binding.get(binding.binding_id, ()),
                 )
                 continue
             exact_snapshot = _snapshot_exact_binding(
@@ -986,7 +1031,11 @@ def run_shortcut_postexit_save_sync(
 
     for binding_id, tree_snapshot in context.tree_snapshots.items():
         binding = tree_snapshot.binding
-        after = snapshot_binding_tree(binding, resolve_executable=resolve_executable)
+        after = snapshot_binding_tree(
+            binding,
+            canonical_roots=tree_snapshot.canonical_roots,
+            resolve_executable=resolve_executable,
+        )
         changed_paths = _changed_tree_paths(tree_snapshot.before, after)
         learned_paths = changed_paths if changed_paths else tuple(sorted(after))
         if not learned_paths:
