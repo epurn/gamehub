@@ -42,14 +42,18 @@ Use `0.0.0.0` only when you intentionally want a development server reachable be
 ## Run CLI
 macOS/Linux:
 ```bash
-./venv/bin/python -m gamehub_cli.main init --dry-run
-./venv/bin/python -m gamehub_cli.main sync --dry-run
+./venv/bin/python -m gamehub_cli.main config init --output ./config.toml
+./venv/bin/python -m gamehub_cli.main config verify --config ./config.toml
+./venv/bin/python -m gamehub_cli.main init --config ./config.toml --dry-run
+./venv/bin/python -m gamehub_cli.main sync --config ./config.toml --dry-run
 ```
 
 Windows PowerShell:
 ```powershell
-.\venv\Scripts\python.exe -m gamehub_cli.main init --dry-run
-.\venv\Scripts\python.exe -m gamehub_cli.main sync --dry-run
+.\venv\Scripts\python.exe -m gamehub_cli.main config init --output .\config.toml
+.\venv\Scripts\python.exe -m gamehub_cli.main config verify --config .\config.toml
+.\venv\Scripts\python.exe -m gamehub_cli.main init --config .\config.toml --dry-run
+.\venv\Scripts\python.exe -m gamehub_cli.main sync --config .\config.toml --dry-run
 ```
 
 ## CLI module boundaries

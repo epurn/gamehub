@@ -84,6 +84,10 @@ userdata_dir = "C:/Program Files (x86)/Steam/userdata"
 # steam_id = "7656119..."  # optional but recommended
 steam_exe = "C:/Program Files (x86)/Steam/steam.exe"
 ```
+   Verify it before the first sync:
+```powershell
+.\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe config verify --config .\config.windows.toml
+```
 10. Optional SGDB key (env-first):
 ```powershell
 $env:GAMEHUB_SGDB_API_KEY="<YOUR_KEY>"
@@ -184,6 +188,10 @@ userdata_dir = "/Users/<user>/Library/Application Support/Steam/userdata"
 steam_exe = "/Users/<user>/Applications/Steam.app"
 # steam_id = "7656119..."  # optional but recommended
 ```
+   Verify it before the first sync:
+```bash
+./venv/bin/python -m gamehub_cli.main config verify --config ./config.macos.toml
+```
 5. Optional SGDB key:
 ```bash
 export GAMEHUB_SGDB_API_KEY="<YOUR_KEY>"
@@ -277,6 +285,7 @@ docker run -d --name gamehub-server-local -p 127.0.0.1:18000:8000 -v "$(pwd)/tes
 python3 scripts/verify_server_deploy.py --base-url "http://127.0.0.1:18000" --wait-seconds 30
 docker rm -f gamehub-server-local
 ```
+Then run the configured-client smoke against that same target before sign-off: `config verify`, `doctor server`, and `doctor server --json` as documented in [deployment-server.md](./deployment-server.md).
 
 ## 4. Bazzite Real Sync Validation
 
@@ -303,6 +312,10 @@ userdata_dir = "/var/home/<user>/.var/app/com.valvesoftware.Steam/.local/share/S
 [linux]
 emulator_install_backend = "flatpak"
 flatpak_remote = "flathub"
+```
+   Verify it before the first sync:
+```bash
+gamehub config verify --config ./config.bazzite.toml
 ```
 3. Optional SGDB key:
 ```bash

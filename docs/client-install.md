@@ -46,11 +46,13 @@ python3 -m pip uninstall gamehub
 ### Smoke check
 ```bash
 gamehub --help
+gamehub config --help
 gamehub init --help
 gamehub sync --help
 ```
 
-Start from template [docs/templates/config.macos.template.toml](templates/config.macos.template.toml).
+Start from template [docs/templates/config.macos.template.toml](templates/config.macos.template.toml) and save it as `./config.macos.toml`.
+You can also generate a starter config with `gamehub config init`; either way, run `gamehub config verify` before `gamehub init`, `gamehub sync`, or `gamehub doctor`.
 
 ### macOS first-run install checklist
 1. Install native Steam manually first. GAMEHUB integrates with an existing `Steam.app` and never auto-installs Steam.
@@ -73,30 +75,35 @@ Start from template [docs/templates/config.macos.template.toml](templates/config
 5. Optional command backend placeholders:
    - `{package}`: canonical install token (`retroarch`, `dolphin`, `azahar`, `pcsx2`)
    - `{emulator}`: emulator name from the index/config
-6. Run bootstrap dry-run:
+6. Verify config:
 ```bash
-gamehub init --dry-run --verbose
+gamehub config verify --config ./config.macos.toml
 ```
-7. Run bootstrap:
+7. Run bootstrap dry-run:
 ```bash
-gamehub init
+gamehub init --config ./config.macos.toml --dry-run --verbose
 ```
-8. RetroArch macOS core provisioning defaults to:
+8. Run bootstrap:
+```bash
+gamehub init --config ./config.macos.toml
+```
+9. RetroArch macOS core provisioning defaults to:
    - cores: `~/Library/Application Support/RetroArch/cores`
    - info: `~/Library/Application Support/RetroArch/info`
    - Apple Silicon buildbot base: `https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/`
-9. RetroArch macOS save discovery still checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`, but config discovery prefers an existing native config file under `~/Library/Application Support/RetroArch/config/retroarch.cfg` before legacy root-level/document variants. GAMEHUB can materialize deterministic RetroArch save downloads there on first sync even before RetroArch has created the `saves/` tree. If your RetroArch config uses different locations, set `[macos].retroarch_cfg_path`, `[macos].retroarch_cores_dir`, `[macos].retroarch_info_dir`, or `[macos].retroarch_cores_base_url` explicitly and re-run sync.
-10. Managed macOS `N64` RetroArch launches now force the tested Apple Silicon fallback `video_driver = "glcore"` plus `mupen64plus-rdp-plugin = "angrylion"` and `mupen64plus-rsp-plugin = "hle"` before launch. When RetroArch already has `config/Mupen64Plus-Next/*.cfg` or existing core, folder, or per-game `.opt` overrides such as `config/Mupen64Plus-Next/Mupen64Plus-Next.opt`, GAMEHUB converges those files too so they cannot supersede the managed baseline. If GAMEHUB cannot resolve `retroarch.cfg` or cannot find `mupen64plus_next_libretro.dylib` in the configured macOS cores directory, it blocks that launch and prints an actionable warning instead of continuing into the known black-screen failure.
-11. Dolphin macOS runtime/save discovery prefers an existing `~/.local/share/dolphin-emu` root first and otherwise falls back to `~/Library/Application Support/Dolphin`. If your Dolphin user dir is elsewhere, set `[macos].dolphin_user_path` explicitly.
-12. Azahar macOS save/runtime discovery prefers existing native-style paths first: `~/.local/share/azahar-emu/sdmc` for saves and `~/.config/azahar-emu/qt-config.ini` for runtime config. If those do not exist, GAMEHUB falls back to `~/Library/Application Support/Azahar`.
-13. Managed macOS Azahar launches pin to `~/Applications/Azahar.app` when that bundle exists, and GAMEHUB opens the ROM as a document with that bundle before falling back to CLI-style launch. This matches the app's declared macOS document handling more closely than relying on app-name lookup or ROM `--args` alone.
-14. Minimal macOS smoke after the template is filled:
+10. RetroArch macOS save discovery still checks `~/Documents/RetroArch` first and falls back to `~/Library/Application Support/RetroArch`, but config discovery prefers an existing native config file under `~/Library/Application Support/RetroArch/config/retroarch.cfg` before legacy root-level/document variants. GAMEHUB can materialize deterministic RetroArch save downloads there on first sync even before RetroArch has created the `saves/` tree. If your RetroArch config uses different locations, set `[macos].retroarch_cfg_path`, `[macos].retroarch_cores_dir`, `[macos].retroarch_info_dir`, or `[macos].retroarch_cores_base_url` explicitly and re-run sync.
+11. Managed macOS `N64` RetroArch launches now force the tested Apple Silicon fallback `video_driver = "glcore"` plus `mupen64plus-rdp-plugin = "angrylion"` and `mupen64plus-rsp-plugin = "hle"` before launch. When RetroArch already has `config/Mupen64Plus-Next/*.cfg` or existing core, folder, or per-game `.opt` overrides such as `config/Mupen64Plus-Next/Mupen64Plus-Next.opt`, GAMEHUB converges those files too so they cannot supersede the managed baseline. If GAMEHUB cannot resolve `retroarch.cfg` or cannot find `mupen64plus_next_libretro.dylib` in the configured macOS cores directory, it blocks that launch and prints an actionable warning instead of continuing into the known black-screen failure.
+12. Dolphin macOS runtime/save discovery prefers an existing `~/.local/share/dolphin-emu` root first and otherwise falls back to `~/Library/Application Support/Dolphin`. If your Dolphin user dir is elsewhere, set `[macos].dolphin_user_path` explicitly.
+13. Azahar macOS save/runtime discovery prefers existing native-style paths first: `~/.local/share/azahar-emu/sdmc` for saves and `~/.config/azahar-emu/qt-config.ini` for runtime config. If those do not exist, GAMEHUB falls back to `~/Library/Application Support/Azahar`.
+14. Managed macOS Azahar launches pin to `~/Applications/Azahar.app` when that bundle exists, and GAMEHUB opens the ROM as a document with that bundle before falling back to CLI-style launch. This matches the app's declared macOS document handling more closely than relying on app-name lookup or ROM `--args` alone.
+15. Minimal macOS smoke after the template is filled:
 ```bash
+gamehub config verify --config ./config.macos.toml
 gamehub init --config ./config.macos.toml --dry-run --verbose
 gamehub sync --config ./config.macos.toml --dry-run --verbose --require-steam-closed
 gamehub sync --config ./config.macos.toml --verbose --require-steam-closed
 ```
-15. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code and run the macOS lane in [release-final-validation-playbook.md](release-final-validation-playbook.md).
+16. Release-validation note: before cutting a release, revalidate the pinned macOS official asset URLs in code and run the macOS lane in [release-final-validation-playbook.md](release-final-validation-playbook.md).
 
 ## Linux (distro-agnostic) via pip
 
@@ -138,6 +145,7 @@ python3 -m pip uninstall gamehub
 ### Smoke check
 ```bash
 gamehub --help
+gamehub config --help
 gamehub init --help
 gamehub sync --help
 ```
@@ -155,32 +163,36 @@ gamehub sync --help
    - `emulator_install_backend = "flatpak"` (good default for immutable Linux hosts)
    - `emulator_install_backend = "dnf"`, `"apt"`, or `"command"` as needed
 3. Optional: set `[linux]` path overrides (`retroarch_*`, `pcsx2_*`, `dolphin_user_path`) when your emulator profile paths are non-standard.
-4. Run bootstrap dry-run:
+4. Verify config:
+```bash
+gamehub config verify --config ./config.toml
+```
+5. Run bootstrap dry-run:
 ```bash
 gamehub init --dry-run --verbose
 ```
-5. Run bootstrap:
+6. Run bootstrap:
 ```bash
 gamehub init
 ```
-6. Run first non-`--skip-steam` sync from a desktop session so Steam can relaunch after config mutation.
-7. If you need to reset managed controller or Deck template defaults, run one reseed init:
+7. Run first non-`--skip-steam` sync from a desktop session so Steam can relaunch after config mutation.
+8. If you need to reset managed controller or Deck template defaults, run one reseed init:
 ```bash
 gamehub init --reseed-profiles
 ```
-8. If RetroArch games do not launch, set `[linux].retroarch_cfg_path` or `[linux].retroarch_cores_dir` explicitly and re-run sync.
-9. For Flatpak PCSX2, sync writes `PCSX2.ini` and mirrors BIOS into `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` by default (unless you set an explicit BIOS override). Verify with:
+9. If RetroArch games do not launch, set `[linux].retroarch_cfg_path` or `[linux].retroarch_cores_dir` explicitly and re-run sync.
+10. For Flatpak PCSX2, sync writes `PCSX2.ini` and mirrors BIOS into `~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios` by default (unless you set an explicit BIOS override). Verify with:
 ```bash
 grep -n "Bios" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ls ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/bios
 ```
-10. PCSX2 controller bindings and hotkeys are applied at launch via controller profiles when `launch_autoconfig` is enabled. After launching a PS2 title once via Steam, verify with:
+11. PCSX2 controller bindings and hotkeys are applied at launch via controller profiles when `launch_autoconfig` is enabled. After launching a PS2 title once via Steam, verify with:
 ```bash
 grep -nE "^\[Pad1\]|^\[Pad2\]|^Type =|^Cross =|^Start =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 grep -n "^OpenPauseMenu =" ~/.var/app/net.pcsx2.PCSX2/config/PCSX2/inis/PCSX2.ini
 ```
    - Use `--reseed-profiles` to overwrite the default profile files if you need to reset them.
-11. Dolphin runtime bootstrap (GC/Wii) writes display/confirm/background input flags in `Dolphin.ini`. Controller profiles apply input + hotkey config at launch. Flatpak example:
+12. Dolphin runtime bootstrap (GC/Wii) writes display/confirm/background input flags in `Dolphin.ini`. Controller profiles apply input + hotkey config at launch. Flatpak example:
 ```bash
 grep -nE "^\[Display\]|^Fullscreen =|^\[Interface\]|^(ConfirmStop|BackgroundInput) =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Config/Dolphin.ini
 ```
@@ -193,11 +205,11 @@ grep -n "^Device =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Confi
    - On Linux, controller profiles prefer evdev device roots (for example `evdev/0/Xbox Wireless Controller`) and fall back to `SDL/<n>/Gamepad` when evdev cannot be detected.
    - Dolphin Xbox profile defaults now include Wii quick actions `R1 -> A` and `R2 -> B`; GameCube keeps `R2` on the right trigger path.
    - Existing Dolphin input files are preserved once present; controller profile apply reconciles managed stop/exit hotkeys.
-12. RetroArch menu combo bootstrap sets `Start+Select` when a writable RetroArch config file is discovered. Verify with:
+13. RetroArch menu combo bootstrap sets `Start+Select` when a writable RetroArch config file is discovered. Verify with:
 ```bash
 grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg ~/.config/retroarch/retroarch.cfg 2>/dev/null
 ```
-13. N3DS Azahar runtime bootstrap sets `fullscreen=true` and `confirmClose=false` in `qt-config.ini`. Flatpak example:
+14. N3DS Azahar runtime bootstrap sets `fullscreen=true` and `confirmClose=false` in `qt-config.ini`. Flatpak example:
 ```bash
 grep -nE "^(fullscreen|confirmClose)=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
 ```
@@ -258,17 +270,20 @@ flatpak_remote = "flathub"
 ## Windows standalone EXE
 
 1. Download `gamehub-windows-amd64.exe` from GitHub Releases.
-2. Run from PowerShell:
+2. Create a real config file first with `gamehub config init` or a platform template, then verify it.
+3. Run from PowerShell:
 
 ```powershell
 .\gamehub-windows-amd64.exe --help
+.\gamehub-windows-amd64.exe config verify --config .\config.toml
 .\gamehub-windows-amd64.exe init --help
 .\gamehub-windows-amd64.exe init --config .\config.toml --dry-run
 .\gamehub-windows-amd64.exe sync --config .\config.toml --dry-run --skip-steam
 ```
 
 ## Notes
-- `gamehub init` is the required first-run bootstrap command on fresh installs.
+- `gamehub config init` or a platform template should create the real config file first, and `gamehub config verify` should succeed before `gamehub init`.
+- `gamehub init` is the required runtime bootstrap command on fresh installs after config exists.
 - `--skip-steam` is recommended for first validation runs.
 - `--skip-steam-relaunch` keeps Steam updates enabled but leaves Steam closed after sync.
 - For strict Steam update safety, include `--require-steam-closed`.

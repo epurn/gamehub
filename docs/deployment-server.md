@@ -102,6 +102,16 @@ Windows convenience path:
 
 If you changed the bind address or port, update the verification URL to match the deployed listener.
 
+Higher-level configured-client smoke:
+
+```bash
+gamehub config verify --config ./config.toml
+gamehub doctor server --config ./config.toml --server-url "http://127.0.0.1:8000"
+gamehub doctor server --config ./config.toml --server-url "http://127.0.0.1:8000" --json
+```
+
+Run those from a configured client machine after the portable verifier passes. `--json` mode suppresses retry chatter on stdout so the output remains machine-readable.
+
 ## Notes
 - Server distribution is GHCR image-based for releases (no separate server binary artifact on GitHub Releases).
 - Data volume is mounted read-write in container. Bidirectional save sync, including first-time save creation, requires the server to be able to create and update files under `/data/saves`.

@@ -21,8 +21,9 @@ Windows PowerShell:
 ```
 
 `config init` writes a starter config using the same resolution defaults documented above.
-- if a resolved config file already exists, `config init` updates that file in place using backup + temp-file + atomic replace
-- if no config file exists yet, `config init` writes `./config.toml`
+- whether creating or updating, `config init` writes through temp-file + fsync + atomic replace
+- if a resolved config file already exists, `config init` also backs it up first and prunes older backups with `[backups].keep_limit`
+- if no config file exists yet, `config init` writes `./config.toml` by default
 - platform templates under `docs/templates/` remain available when you want to start from a hand-edited example instead
 
 Sample templates:
@@ -33,6 +34,14 @@ Sample templates:
 - General Linux: [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
 
 Fresh installs should run `gamehub config init` and `gamehub config verify` before `gamehub init`, `gamehub sync`, or `gamehub doctor`.
+
+Recommended deployment smoke from a configured client:
+
+```bash
+gamehub config verify --config ./config.toml
+gamehub doctor server --config ./config.toml --server-url "http://<SERVER_IP>:8000"
+gamehub doctor server --config ./config.toml --server-url "http://<SERVER_IP>:8000" --json
+```
 
 Platform validation status is tracked in [platform-support.md](platform-support.md).
 

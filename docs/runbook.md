@@ -8,7 +8,9 @@
 - Take a backup snapshot of `docker/.env` and the host data root before the first cutover.
 - If bidirectional save sync will be used, confirm the host `saves/` tree is writable by Docker.
 - After `docker compose up -d`, run `python3 scripts/verify_server_deploy.py --base-url "http://127.0.0.1:8000" --wait-seconds 30`.
-- From a configured client machine, run `gamehub doctor server --server-url "http://127.0.0.1:8000"` for the higher-level client/server compatibility check.
+- From a configured client machine, run `gamehub config verify --config ./config.toml`.
+- Then run `gamehub doctor server --config ./config.toml --server-url "http://127.0.0.1:8000"` for the higher-level client/server compatibility check.
+- If automation needs machine-readable output, use `gamehub doctor server --config ./config.toml --server-url "http://127.0.0.1:8000" --json`.
 
 ## Backup
 Back up deployment configuration and data root with the snapshot helper.
@@ -75,7 +77,9 @@ docker compose -f docker/compose.yaml --env-file docker/.env logs gamehub-server
 4. Deployment bind and smoke checks:
    - verify `GAMEHUB_SERVER_BIND_ADDRESS` matches the intended host exposure
    - rerun `python3 scripts/verify_server_deploy.py --base-url "http://127.0.0.1:8000" --wait-seconds 30`
-   - rerun `gamehub doctor server --server-url "http://127.0.0.1:8000"` from a managed client when validating exact client/server version pairing
+   - rerun `gamehub config verify --config ./config.toml`
+   - rerun `gamehub doctor server --config ./config.toml --server-url "http://127.0.0.1:8000"` from a managed client when validating exact client/server version pairing
+   - use `--json` when you need clean machine-readable stdout from that doctor check
 5. API checks:
    - `GET /health`
    - `GET /v1/status`

@@ -63,6 +63,7 @@ Start from a template:
 - Linux: [`docs/templates/config.linux.template.toml`](docs/templates/config.linux.template.toml)
 - Bazzite: [`docs/templates/config.bazzite.template.toml`](docs/templates/config.bazzite.template.toml)
 - Steam Deck: [`docs/templates/config.steamdeck.template.toml`](docs/templates/config.steamdeck.template.toml)
+- Or generate/update a starter config interactively with `gamehub config init`.
 
 `gamehub init`, `gamehub sync`, and `gamehub doctor ...` fail fast if the resolved config path does not exist.
 
@@ -84,6 +85,8 @@ If your macOS Python.org install still reports certificate verification failures
 
 macOS/Linux first run + sync:
 ```bash
+gamehub config init
+gamehub config verify
 gamehub init --dry-run
 gamehub init
 gamehub sync --dry-run --require-steam-closed
@@ -93,6 +96,8 @@ gamehub sync --require-steam-closed --skip-steam-relaunch
 Windows install + first run:
 ```powershell
 Invoke-WebRequest https://github.com/epurn/gamehub/releases/latest/download/gamehub-windows-amd64.exe -OutFile .\gamehub-windows-amd64.exe
+.\gamehub-windows-amd64.exe config init
+.\gamehub-windows-amd64.exe config verify
 .\gamehub-windows-amd64.exe init --dry-run
 .\gamehub-windows-amd64.exe init
 .\gamehub-windows-amd64.exe sync --dry-run --require-steam-closed
@@ -163,7 +168,9 @@ cp docker/.env.template docker/.env
 docker compose -f docker/compose.yaml --env-file docker/.env pull gamehub-server
 docker compose -f docker/compose.yaml --env-file docker/.env up -d
 python3 scripts/verify_server_deploy.py --base-url "http://127.0.0.1:8000" --wait-seconds 30
-gamehub doctor server --server-url "http://127.0.0.1:8000"
+# From a configured client machine:
+gamehub config verify --config ./config.toml
+gamehub doctor server --config ./config.toml --server-url "http://127.0.0.1:8000"
 ```
 For real servers, prefer the GitHub Release deploy bundle; its bundled `docker/.env.template` is already pinned to that release tag.
 

@@ -60,6 +60,7 @@ git push origin vX.Y.Z
    - checksums file
 11. Run post-release smoke checks:
    - deploy server and run `scripts/verify_server_deploy.py`
+   - run configured-client `config verify`, `doctor server`, and `doctor server --json`
    - run client `--help` and `sync --dry-run`
 
 ## Secret Rotation

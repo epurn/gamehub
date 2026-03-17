@@ -16,6 +16,7 @@ Full release flow still lives in [release-final-validation-playbook.md](./releas
 - [ ] Confirm rebuilt artifacts and server version metadata report `1.6.0`.
 - [ ] Confirm release notes and deploy references use `v1.6.0`.
 - [ ] Prepare a release-candidate server data root with representative ROM, firmware, and save data and confirm there are no symlinks under `roms/`, `firmware/`, or `saves/`.
+- [ ] Prepare the explicit client config files you will use for smoke (`config.windows.toml`, `config.macos.toml`, `config.bazzite.toml`, or equivalent) so `config verify`, `sync`, and `doctor server` run against the intended release server instead of default lookup paths.
 
 ## 1. Deploy Bundle And Pinned Tag
 
@@ -27,6 +28,7 @@ Budget: 15 to 25 minutes.
   - [deployment-server.md](./deployment-server.md)
   - [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md)
   - [runbook.md](./runbook.md)
+  - `scripts/server_snapshot.py`
   - `scripts/verify_server_deploy.py`
   - `scripts/verify_server_deploy.ps1`
 - [ ] Confirm the bundled `docker/.env.template` pins `GAMEHUB_IMAGE_TAG=v1.6.0`.
@@ -46,6 +48,8 @@ python3 scripts/verify_server_deploy.py --base-url "http://<SERVER_IP>:8000" --w
 - [ ] Confirm `GET /health` returns `{"status":"ok"}`.
 - [ ] Confirm `GET /v1/index` succeeds and returns the expected representative titles.
 - [ ] Confirm the verifier fetches a sample file successfully when titles exist.
+- [ ] On one configured client machine, run `config verify` for the same config file you will use later for sync smoke and confirm it succeeds.
+- [ ] From that same configured client, run `doctor server` against the live server in both text and `--json` modes and confirm both report `ok=true`, matching `1.6.0` client/server versions, and no retry chatter prefixes the JSON output.
 - [ ] If save upload is enabled for this rollout, confirm `saves/` is writable inside the deployed data root.
 - [ ] If this server will be reached by other LAN devices, confirm a second machine can reach the chosen bind address and that the service is not exposed on unintended interfaces.
 
@@ -57,6 +61,7 @@ Budget: 45 to 60 minutes.
 
 - [ ] Windows packaged client:
 ```powershell
+.\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe config verify --config .\config.windows.toml
 .\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe sync --config .\config.windows.toml --dry-run --verbose --require-steam-closed
 .\dist\gamehub-windows-amd64\gamehub-windows-amd64.exe sync --config .\config.windows.toml --verbose --require-steam-closed
 .\venv\Scripts\python.exe scripts\validate_steam_shortcuts.py --config .\config.windows.toml
@@ -64,12 +69,14 @@ Budget: 45 to 60 minutes.
 - [ ] Confirm one managed Windows title launches successfully after the non-dry sync.
 - [ ] macOS smoke:
 ```bash
+./venv/bin/python -m gamehub_cli.main config verify --config ./config.macos.toml
 ./venv/bin/python -m gamehub_cli.main sync --config ./config.macos.toml --dry-run --verbose --require-steam-closed
 ./venv/bin/python -m gamehub_cli.main sync --config ./config.macos.toml --verbose --require-steam-closed
 ./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.macos.toml
 ```
 - [ ] Linux or Bazzite smoke:
 ```bash
+gamehub config verify --config ./config.bazzite.toml
 gamehub sync --config ./config.bazzite.toml --dry-run --verbose --require-steam-closed
 gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
 ./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.bazzite.toml
@@ -82,6 +89,10 @@ Budget: 15 to 20 minutes.
 
 - [ ] Record the final pinned image tag, chosen bind address, and server host for the rollout notes.
 - [ ] Take a backup snapshot of the server data root before the live cutover.
+- [ ] Recommended backup command:
+```bash
+python3 scripts/server_snapshot.py backup --env-file docker/.env --output-dir ./snapshots --apply
+```
 - [ ] If the rollout host previously ran a dev server, complete [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md) and retire the old direct-run or broad-bind entry point.
 - [ ] Confirm the release operator has [runbook.md](./runbook.md) available for upgrade, rollback, and outage triage.
 - [ ] Confirm the release operator understands that symlinks under the server data root are unsupported for indexed content.
@@ -94,6 +105,7 @@ Call `v1.6.0` ready only if all of these are true:
 - [ ] Rebuilt artifacts and metadata report `1.6.0`.
 - [ ] Deploy bundle contents and env pinning are correct.
 - [ ] Live server smoke passed with the portable verifier.
+- [ ] Configured-client `doctor server` text and JSON checks passed against the live server.
 - [ ] The selected bind-address exposure matches the intended rollout.
 - [ ] Windows, macOS, and Linux/Bazzite carry-forward smoke checks passed for the platforms available to test.
 - [ ] The first-live operator checklist is complete.

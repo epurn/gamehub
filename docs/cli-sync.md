@@ -76,6 +76,17 @@ Windows PowerShell:
 .\venv\Scripts\python.exe -m gamehub_cli.main doctor all [--verify] [--verbose]
 ```
 
+Server doctor command:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main doctor server [--config ./config.toml] [--server-url http://127.0.0.1:8000] [--json]
+```
+
+Windows PowerShell:
+```powershell
+.\venv\Scripts\python.exe -m gamehub_cli.main doctor server [--config .\config.toml] [--server-url http://127.0.0.1:8000] [--json]
+```
+
 Backup cleanup utility:
 macOS/Linux:
 ```bash
@@ -107,10 +118,20 @@ All user-facing CLI commands in this flow (`init`, `sync`, `doctor ...`) require
 - local GAMEHUB root: the platform default state root
 - controller autoconfig: `true`
 - save sync: `false`
+- both first-write and overwrite flows use temp-file + fsync + atomic replace
+- overwrites also create and prune timestamped backups based on `[backups].keep_limit`
 
 ## Config Verify
 - `--config <path>`: config TOML path override
 - `config verify` uses the same config resolution order as the rest of the CLI and fails fast for missing or invalid config state.
+
+## Server Doctor
+- `--config <path>`: config TOML path override (required to exist under normal CLI resolution)
+- `--server-url <url>`: override the configured server URL for this check
+- `--json`: reserve stdout for one final JSON object with `server_url`, `client_version`, `health`, `status`, `index`, `save_bindings`, `sample_file`, `errors`, and `ok`
+- in `--json` mode, retry chatter is suppressed so stdout remains valid machine-readable JSON
+- text mode prints tab-delimited summary lines for `/health`, `/v1/status`, `/v1/index`, `/v1/save-bindings`, and a sample `/v1/files/{file_id}` fetch when titles exist
+- run this from a configured client machine when validating live server reachability and exact client/server version parity
 
 ## Init Flags
 - `--dry-run`: inspect bootstrap actions only
