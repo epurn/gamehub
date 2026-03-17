@@ -18,6 +18,7 @@ from ..steam import SteamContext, SteamShortcutSpec, steam_id64_from_userdata_id
 from . import artwork_stage, save_stage, steam_stage, transfer_stage
 from . import index as sync_index
 from .planner import create_sync_plan
+from .server_status import require_server_compatibility
 from .state import (
     SyncState,
     has_bootstrap_marker,
@@ -213,6 +214,7 @@ def _transfer_timeout_seconds(verbose: bool) -> float:
 
 
 def _load_validated_index(config: GamehubConfig, *, transfer_timeout: float, verbose: bool) -> LibraryIndex:
+    require_server_compatibility(config, verbose=verbose, timeout_seconds=transfer_timeout)
     index_timeout = config.index_timeout_seconds if config.index_timeout_seconds is not None else transfer_timeout
     index_url = urljoin(config.server_url.rstrip("/") + "/", "v1/index")
     print(f"Fetching index: {index_url}")

@@ -12,6 +12,7 @@ from .steam import build_context, discover_deck_steam_input_roots, discover_stea
 from .sync import run_init, run_sync
 from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor, run_save_doctor
 from .sync.save_resolution import run_save_resolution
+from .sync.server_status import run_server_doctor
 
 
 def _resolve_existing_config_path(config_path: Path | None) -> Path:
@@ -170,6 +171,16 @@ def _run_doctor_all_command(
     firmware_code = run_firmware_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
     roms_code = run_roms_doctor(loaded, verify=verify, verbose=verbose, snapshot=snapshot)
     return 1 if any(code != 0 for code in (controller_code, save_code, firmware_code, roms_code)) else 0
+
+
+def _run_doctor_server_command(
+    *,
+    config_path: Path | None,
+    server_url: str | None,
+    json_output: bool,
+) -> int:
+    loaded = load_config(config_path)
+    return run_server_doctor(loaded, server_url=server_url, json_output=json_output)
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -365,6 +376,33 @@ def doctor_all(
     verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
 ) -> None:
     _exit_for_cli_command(lambda: _run_doctor_all_command(config_path=config, verbose=verbose, verify=verify))
+
+
+@doctor_app.command("server")
+def doctor_server(
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    ),
+    server_url: str | None = typer.Option(
+        None,
+        "--server-url",
+        help="Override the configured server URL for this doctor run.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit a JSON report instead of tab-delimited text.",
+    ),
+) -> None:
+    raise typer.Exit(
+        code=_run_doctor_server_command(
+            config_path=config,
+            server_url=server_url,
+            json_output=json_output,
+        )
+    )
 
 
 def _unique_paths(paths: list[Path]) -> tuple[Path, ...]:

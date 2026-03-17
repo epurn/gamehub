@@ -9,6 +9,14 @@ Direct-run note:
 ## Endpoints
 - `GET /health`
   - Returns `{ "status": "ok" }`
+- `GET /v1/status`
+  - Returns strict `ServerStatus` JSON (`status_version=1`)
+  - Includes `server_version`, top-level `status`, index counts/refresh metadata, and save-upload limits
+  - `status` is:
+    - `ok` when the server has a healthy active snapshot
+    - `degraded` when the server kept serving the last good snapshot after a refresh failure
+    - `starting` before the first snapshot exists
+  - `last_error` is a sanitized operator summary only; it does not include traceback text or absolute host paths
 - `GET /v1/index`
   - Returns strict `LibraryIndex` JSON (`index_version=1`)
   - Returns gzip-encoded JSON when the client advertises `Accept-Encoding: gzip`
@@ -72,6 +80,7 @@ Direct-run note:
 
 ## Index refresh policy
 - The server keeps the latest index snapshot in memory and serves `/v1/index`, `/v1/files/{file_id}`, `/v1/assets/{asset_id}`, and `/v1/saves/{save_id}` from that cached snapshot.
+- `GET /v1/status` reports metadata for that active snapshot without forcing a rebuild.
 - The server automatically detects files added/removed/updated under:
   - `roms/<system>/`
   - `firmware/<system>/`
@@ -85,6 +94,7 @@ Direct-run note:
 - Automatic rebuilds wait until a detected change remains unchanged for `GAMEHUB_INDEX_STABLE_SECONDS` seconds (default `2`) before replacing the cached snapshot.
 - `GET /v1/index` also checks for pending changes, but it keeps serving the last good cached snapshot until the changed files have stayed stable long enough to rebuild safely.
 - If an automatic rebuild fails after a previous snapshot already exists, the server keeps serving the last good cached snapshot and retries later.
+- When that happens, `/v1/status` reports `status="degraded"` plus the last refresh reason and a sanitized error summary.
 - When a rebuild changes the indexed contents, the server logs a summary plus per-file lines for added, updated, and removed ROM, firmware, and save entries.
 - `GAMEHUB_INDEX_REFRESH_SECONDS` is optional TTL-based refresh on top of change detection:
   - `0` (default): no TTL-based rebuilds

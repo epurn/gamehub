@@ -50,6 +50,11 @@ def _serve(routes: dict[str, tuple[int, bytes, str]], *, reset_health_requests: 
 def test_verify_server_deploy_succeeds_for_health_index_and_file() -> None:
     routes = {
         "/health": (200, json.dumps({"status": "ok"}).encode("utf-8"), "application/json"),
+        "/v1/status": (
+            200,
+            json.dumps({"status_version": 1, "server_version": "1.6.0", "status": "ok"}).encode("utf-8"),
+            "application/json",
+        ),
         "/v1/index": (
             200,
             json.dumps(
@@ -74,6 +79,7 @@ def test_verify_server_deploy_succeeds_for_health_index_and_file() -> None:
 
     assert completed.returncode == 0
     assert "PASS /health" in completed.stdout
+    assert "PASS /v1/status" in completed.stdout
     assert "PASS /v1/index" in completed.stdout
     assert "PASS /v1/files/file_demo" in completed.stdout
 
@@ -81,6 +87,11 @@ def test_verify_server_deploy_succeeds_for_health_index_and_file() -> None:
 def test_verify_server_deploy_retries_transient_health_connection_reset() -> None:
     routes = {
         "/health": (200, json.dumps({"status": "ok"}).encode("utf-8"), "application/json"),
+        "/v1/status": (
+            200,
+            json.dumps({"status_version": 1, "server_version": "1.6.0", "status": "ok"}).encode("utf-8"),
+            "application/json",
+        ),
         "/v1/index": (
             200,
             json.dumps(
@@ -110,6 +121,11 @@ def test_verify_server_deploy_retries_transient_health_connection_reset() -> Non
 def test_verify_server_deploy_fails_when_index_payload_is_invalid() -> None:
     routes = {
         "/health": (200, json.dumps({"status": "ok"}).encode("utf-8"), "application/json"),
+        "/v1/status": (
+            200,
+            json.dumps({"status_version": 1, "server_version": "1.6.0", "status": "ok"}).encode("utf-8"),
+            "application/json",
+        ),
         "/v1/index": (200, json.dumps({"titles": []}).encode("utf-8"), "application/json"),
     }
 
@@ -124,3 +140,22 @@ def test_verify_server_deploy_fails_when_index_payload_is_invalid() -> None:
 
     assert completed.returncode == 1
     assert "/v1/index did not return an index_version" in completed.stderr
+
+
+def test_verify_server_deploy_fails_when_status_payload_is_invalid() -> None:
+    routes = {
+        "/health": (200, json.dumps({"status": "ok"}).encode("utf-8"), "application/json"),
+        "/v1/status": (200, json.dumps({"status": "ok"}).encode("utf-8"), "application/json"),
+    }
+
+    with _serve(routes) as base_url:
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT), "--base-url", base_url],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+    assert completed.returncode == 1
+    assert "/v1/status did not return a status_version" in completed.stderr

@@ -52,6 +52,71 @@ def test_health_endpoint(api_client: TestClient) -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_status_endpoint_reports_index_counts_and_upload_limits(api_client: TestClient) -> None:
+    response = api_client.get("/v1/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status_version"] == 1
+    assert payload["server_version"] == server_main.__version__
+    assert payload["status"] == "ok"
+    assert payload["index"]["systems"] == 1
+    assert payload["index"]["titles"] == 1
+    assert payload["index"]["saves"] == 1
+    assert payload["index"]["refresh_pending"] is False
+    assert payload["index"]["last_error"] is None
+    assert payload["save_upload"]["max_upload_bytes"] == server_main.MAX_SAVE_UPLOAD_BYTES
+    assert payload["save_upload"]["backup_keep_limit"] == server_main.BACKUP_KEEP_LIMIT
+
+
+def test_status_endpoint_reports_refresh_pending_after_source_change(api_client: TestClient) -> None:
+    server_main.INDEX_REPO = IndexRepository(server_main.DATA_ROOT, poll_seconds=0, stable_seconds=60)
+    server_main.INDEX_REPO.load(force_refresh=True)
+    _write_file(server_main.DATA_ROOT / "roms" / "NES" / "MegaMan2.nes", b"rom-2")
+
+    index_response = api_client.get("/v1/index")
+    status_response = api_client.get("/v1/status")
+
+    assert index_response.status_code == 200
+    assert len(index_response.json()["titles"]) == 1
+    assert status_response.status_code == 200
+    payload = status_response.json()
+    assert payload["status"] == "ok"
+    assert payload["index"]["refresh_pending"] is True
+    assert payload["index"]["pending_since"] is not None
+    assert payload["index"]["titles"] == 1
+
+
+def test_status_endpoint_reports_degraded_cached_snapshot_after_failed_rebuild(
+    api_client: TestClient, monkeypatch
+) -> None:
+    server_main.INDEX_REPO = IndexRepository(server_main.DATA_ROOT, poll_seconds=0, stable_seconds=0)
+    server_main.INDEX_REPO.load(force_refresh=True)
+    _write_file(server_main.DATA_ROOT / "roms" / "NES" / "MegaMan2.nes", b"rom-2")
+    monkeypatch.setattr(
+        repo_module,
+        "build_index",
+        lambda _root: (_ for _ in ()).throw(
+            ValueError(f"System path is not a directory: {server_main.DATA_ROOT / 'roms' / 'NES'}")
+        ),
+    )
+
+    bundle = server_main.INDEX_REPO.load(force_refresh=False, check_sources=True)
+    status_response = api_client.get("/v1/status")
+    index_response = api_client.get("/v1/index")
+
+    assert len(bundle.index.titles) == 1
+    assert status_response.status_code == 200
+    payload = status_response.json()
+    assert payload["status"] == "degraded"
+    assert payload["index"]["last_failure_at"] is not None
+    assert payload["index"]["last_error"].startswith("ValueError: System path is not a directory:")
+    assert str(server_main.DATA_ROOT) not in payload["index"]["last_error"]
+    assert "<data-root>/roms/NES" in payload["index"]["last_error"]
+    assert index_response.status_code == 200
+    assert len(index_response.json()["titles"]) == 1
+
+
 def test_index_and_files_endpoints(api_client: TestClient) -> None:
     index_response = api_client.get("/v1/index")
     assert index_response.status_code == 200

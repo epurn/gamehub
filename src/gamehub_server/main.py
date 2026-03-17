@@ -90,6 +90,15 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/v1/status")
+def get_status() -> dict[str, object]:
+    return INDEX_REPO.server_status(
+        server_version=__version__,
+        max_upload_bytes=MAX_SAVE_UPLOAD_BYTES,
+        backup_keep_limit=BACKUP_KEEP_LIMIT,
+    ).model_dump(mode="json")
+
+
 @app.get("/v1/index")
 def get_index(request: Request, refresh: bool = Query(default=False)) -> Response:
     accept_encoding = request.headers.get("accept-encoding", "")

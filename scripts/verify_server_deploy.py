@@ -69,6 +69,20 @@ def verify_server(base_url: str, *, timeout: float, wait_seconds: float) -> None
     wait_for_health(normalized_base_url, timeout=timeout, wait_seconds=wait_seconds)
     print("PASS /health")
 
+    status_payload = _request_json(normalized_base_url, "/v1/status", timeout=timeout)
+    status_version = status_payload.get("status_version")
+    if status_version is None:
+        raise VerificationError("/v1/status did not return a status_version")
+    server_version = status_payload.get("server_version")
+    if not isinstance(server_version, str) or not server_version.strip():
+        raise VerificationError("/v1/status did not return a server_version")
+    status = status_payload.get("status")
+    if not isinstance(status, str) or not status.strip():
+        raise VerificationError("/v1/status did not return a status")
+    if status != "ok":
+        raise VerificationError(f"/v1/status reported status={status}")
+    print(f"PASS /v1/status (status_version={status_version}, server_version={server_version}, status={status})")
+
     index_payload = _request_json(normalized_base_url, "/v1/index", timeout=timeout)
     index_version = index_payload.get("index_version")
     if index_version is None:

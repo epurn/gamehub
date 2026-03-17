@@ -120,6 +120,56 @@ def fetch_index_with_retries(
     )
 
 
+def fetch_health_with_retries(
+    *,
+    server_url: str,
+    timeout_seconds: float,
+    attempts: int,
+    retry_backoff_seconds: float,
+    verbose: bool,
+    http_client_module: ModuleType | None = None,
+    sleep_func: Callable[[float], None] | None = None,
+    reporter: Callable[[str], None] | None = None,
+) -> dict:
+    health_url = urljoin(server_url.rstrip("/") + "/", "health")
+    return _fetch_json_with_retries(
+        url=health_url,
+        timeout_seconds=timeout_seconds,
+        attempts=attempts,
+        retry_backoff_seconds=retry_backoff_seconds,
+        verbose=verbose,
+        request_label="health",
+        http_client_module=http_client_module,
+        sleep_func=sleep_func,
+        reporter=reporter,
+    )
+
+
+def fetch_status_with_retries(
+    *,
+    server_url: str,
+    timeout_seconds: float,
+    attempts: int,
+    retry_backoff_seconds: float,
+    verbose: bool,
+    http_client_module: ModuleType | None = None,
+    sleep_func: Callable[[float], None] | None = None,
+    reporter: Callable[[str], None] | None = None,
+) -> dict:
+    status_url = urljoin(server_url.rstrip("/") + "/", "v1/status")
+    return _fetch_json_with_retries(
+        url=status_url,
+        timeout_seconds=timeout_seconds,
+        attempts=attempts,
+        retry_backoff_seconds=retry_backoff_seconds,
+        verbose=verbose,
+        request_label="server status",
+        http_client_module=http_client_module,
+        sleep_func=sleep_func,
+        reporter=reporter,
+    )
+
+
 def fetch_save_bindings_with_retries(
     *,
     bindings_url: str,
@@ -150,15 +200,13 @@ def probe_server_health(
     timeout_seconds: float,
     http_client_module: ModuleType | None = None,
 ) -> bool:
-    health_url = urljoin(server_url.rstrip("/") + "/", "health")
     try:
-        _fetch_json_with_retries(
-            url=health_url,
+        fetch_health_with_retries(
+            server_url=server_url,
             timeout_seconds=timeout_seconds,
             attempts=1,
             retry_backoff_seconds=0.0,
             verbose=False,
-            request_label="health",
             http_client_module=http_client_module,
             sleep_func=None,
             reporter=None,

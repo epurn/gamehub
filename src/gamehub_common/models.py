@@ -150,6 +150,34 @@ class SaveBindingCatalog(StrictBaseModel):
     bindings: tuple[SaveBindingSpec, ...] = ()
 
 
+class ServerIndexStatus(StrictBaseModel):
+    systems: int = Field(ge=0)
+    titles: int = Field(ge=0)
+    saves: int = Field(ge=0)
+    poll_seconds: float = Field(ge=0)
+    stable_seconds: float = Field(ge=0)
+    refresh_seconds: float = Field(ge=0)
+    refresh_pending: bool
+    pending_since: datetime | None = None
+    last_refresh_reason: str | None = None
+    last_successful_refresh_at: datetime | None = None
+    last_failure_at: datetime | None = None
+    last_error: str | None = None
+
+
+class ServerSaveUploadStatus(StrictBaseModel):
+    max_upload_bytes: int = Field(ge=1)
+    backup_keep_limit: int = Field(ge=1)
+
+
+class ServerStatus(StrictBaseModel):
+    status_version: Literal[1] = 1
+    server_version: str = Field(min_length=1)
+    status: Literal["ok", "degraded", "starting"]
+    index: ServerIndexStatus
+    save_upload: ServerSaveUploadStatus
+
+
 class LibraryIndex(StrictBaseModel):
     index_version: Literal[1] = 1
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
