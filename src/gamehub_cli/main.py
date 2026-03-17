@@ -277,7 +277,9 @@ def _run_doctor_server_command(
     server_url: str | None,
     json_output: bool,
 ) -> int:
-    loaded = load_config(config_path)
+    loaded = _load_existing_config(config_path)
+    if server_url is not None and not server_url.strip():
+        raise ValueError("Server URL must not be empty")
     return run_server_doctor(loaded, server_url=server_url, json_output=json_output)
 
 
@@ -593,8 +595,8 @@ def doctor_server(
         help="Emit a JSON report instead of tab-delimited text.",
     ),
 ) -> None:
-    raise typer.Exit(
-        code=_run_doctor_server_command(
+    _exit_for_cli_command(
+        lambda: _run_doctor_server_command(
             config_path=config,
             server_url=server_url,
             json_output=json_output,

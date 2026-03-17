@@ -111,6 +111,52 @@ def test_run_server_doctor_json_succeeds(monkeypatch, capsys) -> None:
     assert payload["sample_file"] == {"checked": True, "file_id": "file_demo"}
 
 
+def test_run_server_doctor_json_suppresses_retry_chatter(monkeypatch, capsys) -> None:
+    def _health_with_retry_chatter(**kwargs) -> dict[str, object]:
+        reporter = kwargs.get("reporter")
+        if reporter is not None:
+            reporter("Warning: health fetch attempt 1/3 failed (ConnectError). Retrying in 1.5s...")
+        return {"status": "ok"}
+
+    def _status_with_retry_chatter(**kwargs) -> ServerStatus:
+        reporter = kwargs.get("reporter")
+        if reporter is not None:
+            reporter("Warning: server status fetch attempt 1/3 failed (ConnectError). Retrying in 1.5s...")
+        return _status()
+
+    def _index_with_retry_chatter(**kwargs) -> dict[str, object]:
+        reporter = kwargs.get("reporter")
+        if reporter is not None:
+            reporter("Warning: index fetch attempt 1/3 failed (ConnectError). Retrying in 1.5s...")
+        return _index_payload()
+
+    def _bindings_with_retry_chatter(**kwargs) -> dict[str, object]:
+        reporter = kwargs.get("reporter")
+        if reporter is not None:
+            reporter("Warning: save bindings fetch attempt 1/3 failed (ConnectError). Retrying in 1.5s...")
+        return {"bindings": []}
+
+    monkeypatch.setattr(
+        "gamehub_cli.sync.server_status.sync_index.fetch_health_with_retries", _health_with_retry_chatter
+    )
+    monkeypatch.setattr("gamehub_cli.sync.server_status.fetch_server_status", _status_with_retry_chatter)
+    monkeypatch.setattr("gamehub_cli.sync.server_status.sync_index.fetch_index_with_retries", _index_with_retry_chatter)
+    monkeypatch.setattr(
+        "gamehub_cli.sync.server_status.sync_index.fetch_save_bindings_with_retries",
+        _bindings_with_retry_chatter,
+    )
+    monkeypatch.setattr("gamehub_cli.sync.server_status.fetch_sample_file_bytes", lambda **kwargs: b"rom-bytes")
+
+    exit_code = run_server_doctor(_config(), json_output=True)
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert exit_code == 0
+    assert "Warning:" not in output
+    assert payload["ok"] is True
+    assert payload["status"]["server_version"] == __version__
+
+
 def test_run_server_doctor_reports_version_mismatch(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         "gamehub_cli.sync.server_status.sync_index.fetch_health_with_retries", lambda **kwargs: {"status": "ok"}

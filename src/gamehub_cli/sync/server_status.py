@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
@@ -61,6 +62,7 @@ def fetch_server_status(
     attempts: int,
     retry_backoff_seconds: float,
     verbose: bool,
+    reporter: Callable[[str], None] | None = print,
 ) -> ServerStatus:
     try:
         payload = sync_index.fetch_status_with_retries(
@@ -71,7 +73,7 @@ def fetch_server_status(
             verbose=verbose,
             http_client_module=sync_index.httpx,
             sleep_func=time.sleep,
-            reporter=print,
+            reporter=reporter,
         )
         return ServerStatus.model_validate(payload)
     except ServerStatusError:
@@ -139,6 +141,7 @@ def run_server_doctor(
 ) -> int:
     resolved_server_url = _normalized_server_url(server_url if server_url is not None else config.server_url)
     timeout_seconds = metadata_timeout_seconds(config, verbose=False)
+    retry_reporter = None if json_output else print
     errors: list[str] = []
     health_payload: dict[str, object] | None = None
     status_payload: ServerStatus | None = None
@@ -155,7 +158,7 @@ def run_server_doctor(
             verbose=False,
             http_client_module=sync_index.httpx,
             sleep_func=time.sleep,
-            reporter=print,
+            reporter=retry_reporter,
         )
         if health_payload.get("status") != "ok":
             errors.append(f"Health check returned unexpected payload: {health_payload}")
@@ -169,6 +172,7 @@ def run_server_doctor(
             attempts=config.index_fetch_attempts,
             retry_backoff_seconds=config.index_retry_backoff_seconds,
             verbose=False,
+            reporter=retry_reporter,
         )
         if status_payload.status != "ok":
             errors.append(f"Server reported status={status_payload.status}")
@@ -188,7 +192,7 @@ def run_server_doctor(
             verbose=False,
             http_client_module=sync_index.httpx,
             sleep_func=time.sleep,
-            reporter=print,
+            reporter=retry_reporter,
         )
         index_payload = LibraryIndex.model_validate(raw_index)
     except Exception as exc:
@@ -203,7 +207,7 @@ def run_server_doctor(
             verbose=False,
             http_client_module=sync_index.httpx,
             sleep_func=time.sleep,
-            reporter=print,
+            reporter=retry_reporter,
         )
         bindings_payload = SaveBindingCatalog.model_validate(raw_bindings)
     except Exception as exc:

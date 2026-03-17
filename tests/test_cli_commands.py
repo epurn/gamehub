@@ -302,6 +302,7 @@ def test_typer_rejects_legacy_doctor_flag_syntax() -> None:
     [
         ["sync", "--dry-run"],
         ["doctor", "roms"],
+        ["doctor", "server"],
     ],
 )
 def test_typer_requires_existing_config_for_user_facing_commands(command_path: list[str]) -> None:
@@ -314,3 +315,20 @@ def test_typer_requires_existing_config_for_user_facing_commands(command_path: l
     assert "Config file not found" in result.output
     assert str(missing_config) in result.output
     assert "docs/templates" in result.output
+
+
+def test_typer_doctor_server_normalizes_validation_errors() -> None:
+    assert cli_main.app is not None
+
+    with _RUNNER.isolated_filesystem():
+        config_path = Path("config.toml")
+        config_path.write_text('[server]\nurl = "http://srv:8000"\n', encoding="utf-8")
+
+        result = _RUNNER.invoke(
+            cli_main.app,
+            ["doctor", "server", "--config", str(config_path), "--server-url", ""],
+        )
+
+    assert result.exit_code != 0
+    assert "Server URL must not be empty" in result.output
+    assert "Traceback" not in result.output

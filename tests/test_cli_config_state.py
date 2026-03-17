@@ -234,6 +234,46 @@ def test_config_init_overwrite_creates_backup_and_atomic_replace(monkeypatch, wo
         assert not list(config_path.parent.glob("*.tmp"))
 
 
+def test_config_init_first_write_uses_atomic_replace(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-init-new-") as temp_root:
+        config_path = temp_root / "config.toml"
+        replace_calls: list[tuple[Path, Path]] = []
+        original_replace_file = config_flow.replace_file
+        monkeypatch.setattr(
+            "gamehub_cli.config_flow.detect_steam_defaults", lambda: config_flow.SteamDetection(None, None)
+        )
+
+        def _record_replace_file(source: Path, destination: Path) -> None:
+            replace_calls.append((source, destination))
+            original_replace_file(source, destination)
+
+        monkeypatch.setattr("gamehub_cli.config_flow.replace_file", _record_replace_file)
+
+        exit_code = run_config_init(
+            output_path=config_path,
+            server_url="http://new.invalid:9000",
+            gamehub_dir=Path("/new/gamehub"),
+            steam_userdata_dir=None,
+            steam_id=None,
+            controller_launch_autoconfig=False,
+            save_sync_enabled=False,
+            save_sync_mode=None,
+            save_sync_conflict_policy=None,
+            interactive=False,
+        )
+
+        assert exit_code == 0
+        assert replace_calls
+        source, destination = replace_calls[0]
+        assert destination == config_path
+        assert source.suffix == ".tmp"
+        assert not list(config_path.parent.glob("*.tmp"))
+        assert not list(config_path.parent.glob("config.toml.*.bak"))
+        rendered = config_path.read_text(encoding="utf-8")
+        assert 'url = "http://new.invalid:9000"' in rendered
+        assert 'gamehub_dir = "/new/gamehub"' in rendered
+
+
 def test_config_verify_reports_actionable_errors(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-config-verify-") as temp_root:
         missing_config = temp_root / "missing.toml"

@@ -196,15 +196,11 @@ def render_config_text(
 
 
 def _write_new_config(path: Path, text: str) -> None:
+    _replace_config_from_temp(path, text)
+
+
+def _replace_config_from_temp(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
-        handle.flush()
-        os.fsync(handle.fileno())
-
-
-def _overwrite_config_atomic(path: Path, text: str, *, keep_limit: int) -> tuple[Path | None, tuple[Path, ...]]:
-    backup_result = backup_existing_file(path, keep_limit=keep_limit)
     temp_handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent, suffix=".tmp")
     try:
         with temp_handle as handle:
@@ -214,6 +210,11 @@ def _overwrite_config_atomic(path: Path, text: str, *, keep_limit: int) -> tuple
         replace_file(Path(temp_handle.name), path)
     finally:
         Path(temp_handle.name).unlink(missing_ok=True)
+
+
+def _overwrite_config_atomic(path: Path, text: str, *, keep_limit: int) -> tuple[Path | None, tuple[Path, ...]]:
+    backup_result = backup_existing_file(path, keep_limit=keep_limit)
+    _replace_config_from_temp(path, text)
     return backup_result.created_path, backup_result.pruned_paths
 
 
