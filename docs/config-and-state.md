@@ -6,6 +6,25 @@ Config resolution order:
 2. `./config.toml` in current working directory (if present)
 3. `~/.gamehub/config.toml`
 
+Preferred bootstrap flow:
+
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main config init
+./venv/bin/python -m gamehub_cli.main config verify
+```
+
+Windows PowerShell:
+```powershell
+.\venv\Scripts\python.exe -m gamehub_cli.main config init
+.\venv\Scripts\python.exe -m gamehub_cli.main config verify
+```
+
+`config init` writes a starter config using the same resolution defaults documented above.
+- if a resolved config file already exists, `config init` updates that file in place using backup + temp-file + atomic replace
+- if no config file exists yet, `config init` writes `./config.toml`
+- platform templates under `docs/templates/` remain available when you want to start from a hand-edited example instead
+
 Sample templates:
 - Windows (verified): [docs/templates/config.windows.template.toml](templates/config.windows.template.toml)
 - macOS (Apple Silicon supported): [docs/templates/config.macos.template.toml](templates/config.macos.template.toml)
@@ -13,7 +32,7 @@ Sample templates:
 - Steam Deck (verified): [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 - General Linux: [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
 
-Fresh installs must have a real config file in place before running `gamehub init`, `gamehub sync`, or `gamehub doctor`.
+Fresh installs should run `gamehub config init` and `gamehub config verify` before `gamehub init`, `gamehub sync`, or `gamehub doctor`.
 
 Platform validation status is tracked in [platform-support.md](platform-support.md).
 

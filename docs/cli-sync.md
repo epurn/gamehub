@@ -1,5 +1,27 @@
 # CLI Flow
 
+Config init command:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main config init [flags]
+```
+
+Windows PowerShell:
+```powershell
+.\venv\Scripts\python.exe -m gamehub_cli.main config init [flags]
+```
+
+Config verify command:
+macOS/Linux:
+```bash
+./venv/bin/python -m gamehub_cli.main config verify [--config ./config.toml]
+```
+
+Windows PowerShell:
+```powershell
+.\venv\Scripts\python.exe -m gamehub_cli.main config verify [--config .\config.toml]
+```
+
 Init command:
 macOS/Linux:
 ```bash
@@ -65,8 +87,30 @@ Windows PowerShell:
 .\venv\Scripts\python.exe scripts/cleanup_backups.py [--config .\config.toml] [--root <path>] [--server-data-root <path>] [--keep 3] [--apply]
 ```
 
-Fresh installs must run `gamehub init` before the first `gamehub sync`.
-All user-facing CLI commands in this flow (`init`, `sync`, `doctor ...`) require a real config file; when the resolved path is missing, GAMEHUB fails fast and points back to `docs/templates/`.
+Fresh installs should run `gamehub config init`, then `gamehub config verify`, then `gamehub init` before the first `gamehub sync`.
+All user-facing CLI commands in this flow (`init`, `sync`, `doctor ...`) require a real config file; when the resolved path is missing, GAMEHUB fails fast and points to `gamehub config init` plus the platform templates under `docs/templates/`.
+
+## Config Init Flags
+- `--output <path>`: config output path override
+- `--server-url <url>`: server URL to write into config
+- `--gamehub-dir <path>`: local GAMEHUB library root
+- `--steam-userdata <path>`: optional Steam userdata override
+- `--steam-id <id>`: optional Steam profile id or SteamID64
+- `--controller-autoconfig` / `--no-controller-autoconfig`: default controller autoconfig value
+- `--save-sync` / `--no-save-sync`: default save-sync enabled value
+- `--save-sync-mode <download|bidirectional>`: save-sync mode when enabled
+- `--conflict-policy <manual|prefer_server|prefer_local>`: conflict policy for bidirectional save sync
+
+`config init` is interactive on a TTY by default. In non-interactive contexts it uses the same defaults it would have prompted with:
+- output path: existing resolved config path when present, otherwise `./config.toml`
+- server URL: `http://127.0.0.1:8000`
+- local GAMEHUB root: the platform default state root
+- controller autoconfig: `true`
+- save sync: `false`
+
+## Config Verify
+- `--config <path>`: config TOML path override
+- `config verify` uses the same config resolution order as the rest of the CLI and fails fast for missing or invalid config state.
 
 ## Init Flags
 - `--dry-run`: inspect bootstrap actions only
@@ -82,6 +126,7 @@ All user-facing CLI commands in this flow (`init`, `sync`, `doctor ...`) require
 - `--skip-steam-relaunch`: apply Steam updates but do not relaunch Steam at end
 - `--require-steam-closed`: fail if Steam cannot be closed before config writes
 - `--reseed-profiles`: force-overwrite managed profile/template files during sync (even when bytes already match)
+- `--json-summary`: reserve stdout for one final JSON object with `ok`, `dry_run`, `server_url`, `plan`, `downloads`, `save_sync`, `steam`, `warnings`, and `errors`
 - Save sync remains config-driven in this phase (`[save_sync]` in `config.toml`); no additional CLI flags are required.
 - `--config <path>`: TOML config path override (required to exist)
 
@@ -200,6 +245,35 @@ Steam close behavior:
 13. Save `state.json`
 
 Save sync stays disabled by default unless `[save_sync].enabled = true` is set in config.
+
+## Scheduled Sync Examples
+Windows Task Scheduler action:
+```powershell
+.\venv\Scripts\python.exe -m gamehub_cli.main sync --config .\config.toml --json-summary
+```
+
+macOS LaunchAgent `ProgramArguments` example:
+```xml
+<array>
+  <string>/absolute/path/to/repo/venv/bin/python</string>
+  <string>-m</string>
+  <string>gamehub_cli.main</string>
+  <string>sync</string>
+  <string>--config</string>
+  <string>/absolute/path/to/repo/config.toml</string>
+  <string>--json-summary</string>
+</array>
+```
+
+Linux systemd user service `ExecStart` example:
+```ini
+ExecStart=/absolute/path/to/repo/venv/bin/python -m gamehub_cli.main sync --config /absolute/path/to/repo/config.toml --json-summary
+```
+
+Automation guidance:
+- use the process exit code for success/failure gating
+- parse the final JSON object from stdout for plan/download/save/steam summary details
+- keep stderr/stdout logs from the scheduler itself when you need the surrounding operator context
 
 ### Save sync dry-run and conflict interpretation
 - In `mode = "download"`, save planning is read-only: expected actions are `download` or `skip` only.

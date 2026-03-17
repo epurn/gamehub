@@ -11,14 +11,10 @@
 - From a configured client machine, run `gamehub doctor server --server-url "http://127.0.0.1:8000"` for the higher-level client/server compatibility check.
 
 ## Backup
-Back up deployment configuration and data root.
+Back up deployment configuration and data root with the snapshot helper.
 
-```powershell
-# Example paths; adjust for your environment.
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-New-Item -ItemType Directory -Force -Path ".\backups\$stamp" | Out-Null
-Copy-Item docker/.env ".\backups\$stamp\.env" -Force
-Copy-Item -Recurse -Force $env:GAMEHUB_DATA_HOST_PATH ".\backups\$stamp\data"
+```bash
+python3 scripts/server_snapshot.py backup --env-file docker/.env --output-dir ./snapshots --apply
 ```
 
 ## Restore
@@ -26,9 +22,11 @@ Copy-Item -Recurse -Force $env:GAMEHUB_DATA_HOST_PATH ".\backups\$stamp\data"
 # Stop server first.
 docker compose -f docker/compose.yaml --env-file docker/.env down
 
-# Restore data + env from backup location.
-Copy-Item ".\backups\<stamp>\.env" "docker/.env" -Force
-Copy-Item -Recurse -Force ".\backups\<stamp>\data\*" $env:GAMEHUB_DATA_HOST_PATH
+# Preview the restore plan first.
+python scripts/server_snapshot.py restore .\snapshots\<snapshot-name>
+
+# Restore data + env from snapshot.
+python scripts/server_snapshot.py restore .\snapshots\<snapshot-name> --apply
 
 # Start again.
 docker compose -f docker/compose.yaml --env-file docker/.env up -d

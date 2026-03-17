@@ -1,32 +1,37 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 import typer
 
-from .common.config import GamehubConfig, default_config_path, load_config
+from .common.config import GamehubConfig, load_config
+from .config_flow import resolve_existing_config_path, run_config_init, run_config_verify
 from .controllers.convergence import run_controller_doctor
 from .shortcuts.shortcut_launch import run_shortcut_launch
-from .steam import build_context, discover_deck_steam_input_roots, discover_steam_id, discover_userdata_dir
+from .steam import (
+    build_context,
+    discover_deck_steam_input_roots,
+    discover_steam_id,
+    discover_userdata_dir,
+)
 from .sync import run_init, run_sync
-from .sync.diagnostics import build_sync_diagnostics_snapshot, run_firmware_doctor, run_roms_doctor, run_save_doctor
+from .sync.diagnostics import (
+    build_sync_diagnostics_snapshot,
+    run_firmware_doctor,
+    run_roms_doctor,
+    run_save_doctor,
+)
+from .sync.orchestrator import SyncRunReport, run_sync_report
 from .sync.save_resolution import run_save_resolution
 from .sync.server_status import run_server_doctor
 
 
-def _resolve_existing_config_path(config_path: Path | None) -> Path:
-    resolved = config_path or default_config_path()
-    if resolved.exists():
-        return resolved
-    raise ValueError(
-        f"Config file not found: {resolved}. "
-        "Create one from a platform template under docs/templates/ before running init, sync, or doctor."
-    )
-
-
 def _load_existing_config(config_path: Path | None) -> GamehubConfig:
-    return load_config(_resolve_existing_config_path(config_path))
+    return load_config(resolve_existing_config_path(config_path))
 
 
 def _exit_for_cli_command(command: Callable[[], int]) -> None:
@@ -63,10 +68,22 @@ def _run_sync_command(
     skip_steam: bool,
     skip_steam_relaunch: bool,
     reseed_profiles: bool,
+    json_summary: bool,
 ) -> int:
-    loaded = _load_existing_config(config_path)
-    return run_sync(
-        config=loaded,
+    if not json_summary:
+        loaded = _load_existing_config(config_path)
+        return run_sync(
+            config=loaded,
+            dry_run=dry_run,
+            verbose=verbose,
+            verify=verify,
+            require_steam_closed=require_steam_closed,
+            skip_steam=skip_steam,
+            skip_steam_relaunch=skip_steam_relaunch,
+            reseed_profiles=reseed_profiles,
+        )
+    return _run_sync_json_summary_command(
+        config_path=config_path,
         dry_run=dry_run,
         verbose=verbose,
         verify=verify,
@@ -75,6 +92,87 @@ def _run_sync_command(
         skip_steam_relaunch=skip_steam_relaunch,
         reseed_profiles=reseed_profiles,
     )
+
+
+def _print_json_payload(payload: dict[str, object]) -> None:
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _minimal_sync_json_report(*, dry_run: bool, skip_steam: bool) -> SyncRunReport:
+    del skip_steam
+    return SyncRunReport(
+        ok=False,
+        dry_run=dry_run,
+        server_url=None,
+        warnings=[],
+        errors=[],
+    )
+
+
+def _merge_sync_output_warnings(report: SyncRunReport, raw_output: str, *, skip_steam: bool) -> None:
+    for raw_line in raw_output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if not (
+            line.startswith("Warning:")
+            or "skipping Steam updates" in line
+            or line.startswith("Steam userdata directory not found")
+            or line.startswith("No Steam ID found in userdata")
+        ):
+            continue
+        if line not in report.warnings:
+            report.warnings.append(line)
+        if "skipping Steam updates" in line:
+            report.steam.applied = False
+            report.steam.skipped = True
+            if report.steam.reason is None:
+                report.steam.reason = "steam-updates-skipped"
+        if line.startswith("Steam userdata directory not found") or line.startswith("No Steam ID found in userdata"):
+            report.steam.applied = False
+            report.steam.skipped = True
+            if report.steam.reason is None:
+                report.steam.reason = "steam-context-unavailable"
+    if skip_steam and "Skipping Steam lifecycle and config updates (--skip-steam)" not in report.warnings:
+        report.warnings.append("Skipping Steam lifecycle and config updates (--skip-steam)")
+
+
+def _run_sync_json_summary_command(
+    *,
+    config_path: Path | None,
+    dry_run: bool,
+    verbose: bool,
+    verify: bool,
+    require_steam_closed: bool,
+    skip_steam: bool,
+    skip_steam_relaunch: bool,
+    reseed_profiles: bool,
+) -> int:
+    try:
+        loaded = _load_existing_config(config_path)
+    except Exception as exc:  # noqa: BLE001
+        report = _minimal_sync_json_report(dry_run=dry_run, skip_steam=skip_steam)
+        message = str(exc).strip() or exc.__class__.__name__
+        report.errors.append(message)
+        _print_json_payload(report.to_dict())
+        return 1
+
+    buffer = StringIO()
+    with redirect_stdout(buffer):
+        report = run_sync_report(
+            loaded,
+            dry_run=dry_run,
+            verbose=verbose,
+            verify=verify,
+            require_steam_closed=require_steam_closed,
+            skip_steam=skip_steam,
+            skip_steam_relaunch=skip_steam_relaunch,
+            reseed_profiles=reseed_profiles,
+            capture_errors=True,
+        )
+    _merge_sync_output_warnings(report, buffer.getvalue(), skip_steam=skip_steam)
+    _print_json_payload(report.to_dict())
+    return 0 if report.ok else 1
 
 
 def _run_doctor_controllers_command(
@@ -183,9 +281,40 @@ def _run_doctor_server_command(
     return run_server_doctor(loaded, server_url=server_url, json_output=json_output)
 
 
+def _run_config_init_command(
+    *,
+    output_path: Path | None,
+    server_url: str | None,
+    gamehub_dir: Path | None,
+    steam_userdata_dir: Path | None,
+    steam_id: str | None,
+    controller_launch_autoconfig: bool | None,
+    save_sync_enabled: bool | None,
+    save_sync_mode: str | None,
+    save_sync_conflict_policy: str | None,
+) -> int:
+    return run_config_init(
+        output_path=output_path,
+        server_url=server_url,
+        gamehub_dir=gamehub_dir,
+        steam_userdata_dir=steam_userdata_dir,
+        steam_id=steam_id,
+        controller_launch_autoconfig=controller_launch_autoconfig,
+        save_sync_enabled=save_sync_enabled,
+        save_sync_mode=save_sync_mode,
+        save_sync_conflict_policy=save_sync_conflict_policy,
+    )
+
+
+def _run_config_verify_command(*, config_path: Path | None) -> int:
+    return run_config_verify(config_path=config_path)
+
+
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 doctor_app = typer.Typer(add_completion=False, no_args_is_help=True)
+config_app = typer.Typer(add_completion=False, no_args_is_help=True)
 app.add_typer(doctor_app, name="doctor")
+app.add_typer(config_app, name="config")
 
 
 @app.callback()
@@ -249,6 +378,11 @@ def sync(
         "--reseed-profiles",
         help="Overwrite managed profile/template files during sync",
     ),
+    json_summary: bool = typer.Option(
+        False,
+        "--json-summary",
+        help="Emit a final JSON summary instead of human-readable sync output.",
+    ),
 ) -> None:
     _exit_for_cli_command(
         lambda: _run_sync_command(
@@ -260,6 +394,7 @@ def sync(
             skip_steam=skip_steam,
             skip_steam_relaunch=skip_steam_relaunch,
             reseed_profiles=reseed_profiles,
+            json_summary=json_summary,
         )
     )
 
@@ -287,6 +422,68 @@ def shortcut_launch(
             config_path=config,
         )
     )
+
+
+@config_app.command("init")
+def config_init(
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Config TOML output path (defaults to an existing resolved config path, otherwise ./config.toml)",
+    ),
+    server_url: str | None = typer.Option(None, "--server-url", help="Server URL to write into config."),
+    gamehub_dir: Path | None = typer.Option(None, "--gamehub-dir", help="Local GAMEHUB library root."),
+    steam_userdata: Path | None = typer.Option(
+        None,
+        "--steam-userdata",
+        help="Optional Steam userdata path to write into config.",
+    ),
+    steam_id: str | None = typer.Option(None, "--steam-id", help="Optional Steam profile id or SteamID64."),
+    controller_autoconfig: bool | None = typer.Option(
+        None,
+        "--controller-autoconfig/--no-controller-autoconfig",
+        help="Default controller autoconfig setting for generated config.",
+    ),
+    save_sync: bool | None = typer.Option(
+        None,
+        "--save-sync/--no-save-sync",
+        help="Default save-sync enabled setting for generated config.",
+    ),
+    save_sync_mode: str | None = typer.Option(
+        None,
+        "--save-sync-mode",
+        help="Save-sync mode for generated config (download or bidirectional).",
+    ),
+    conflict_policy: str | None = typer.Option(
+        None,
+        "--conflict-policy",
+        help="Conflict policy for bidirectional save sync (manual, prefer_server, prefer_local).",
+    ),
+) -> None:
+    _exit_for_cli_command(
+        lambda: _run_config_init_command(
+            output_path=output,
+            server_url=server_url,
+            gamehub_dir=gamehub_dir,
+            steam_userdata_dir=steam_userdata,
+            steam_id=steam_id,
+            controller_launch_autoconfig=controller_autoconfig,
+            save_sync_enabled=save_sync,
+            save_sync_mode=save_sync_mode,
+            save_sync_conflict_policy=conflict_policy,
+        )
+    )
+
+
+@config_app.command("verify")
+def config_verify(
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config TOML (default lookup: ./config.toml then ~/.gamehub/config.toml)",
+    ),
+) -> None:
+    _exit_for_cli_command(lambda: _run_config_verify_command(config_path=config))
 
 
 @doctor_app.command("controllers")

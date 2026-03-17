@@ -10,6 +10,7 @@ BUNDLE_SOURCES = (
     Path("docs/deployment-server.md"),
     Path("docs/dev-to-prod-server-migration.md"),
     Path("docs/runbook.md"),
+    Path("scripts/server_snapshot.py"),
     Path("scripts/verify_server_deploy.py"),
     Path("scripts/verify_server_deploy.ps1"),
 )

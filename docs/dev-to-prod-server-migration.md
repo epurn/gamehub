@@ -18,10 +18,14 @@ Common starting points:
 
 ## 2) Take a pre-cutover snapshot
 - Stop the development server before copying data for the production host.
-- Back up the full server data root.
-- Back up the current server environment/configuration:
-  - `docker/.env` or compose overrides for Docker-based dev servers
-  - service/unit files or exported environment values for direct-run dev servers
+- Preferred: run the snapshot helper from the deploy bundle or repo root:
+
+```bash
+python3 scripts/server_snapshot.py backup --env-file docker/.env --output-dir ./snapshots --apply
+```
+
+- The snapshot captures the full server data root plus `docker/.env`, `image-tag.txt`, and `manifest.json`.
+- If you are migrating from a non-Compose direct-run setup, still back up the equivalent service/unit files or exported environment values separately.
 - Keep the snapshot until the production server passes verification and the first real client sync.
 
 ## 3) Validate production data invariants
