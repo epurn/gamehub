@@ -85,29 +85,23 @@ jobs:
               raise SystemExit(1)
           PY
 
-      - name: Config precedence slice
-        run: python -m pytest -q -p no:cacheprovider tests/test_cli_config_state.py
-
-      - name: Server refresh cache slice
-        run: python -m pytest -q -p no:cacheprovider tests/test_server_api.py
-
-      - name: Architecture guard slice
-        run: python -m pytest -q -p no:cacheprovider tests/test_architecture.py
-
       - name: Local readiness audit
         run: python scripts/audit_repo_readiness.py
 
-      - name: Ruff format check (src)
+      - name: Ruff format check (repo)
         run: |
-          python -m ruff format --check src
+          python -m ruff format --check .
 
-      - name: Ruff lint (src)
+      - name: Ruff lint (repo)
         run: |
-          python -m ruff check src
+          python -m ruff check .
 
       - name: Mypy (src)
         run: |
           python -m mypy src
+
+      - name: Full pytest suite
+        run: python -m pytest -q -p no:cacheprovider .
 
       - name: Dependency vulnerability audit
         run: |
