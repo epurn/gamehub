@@ -17,6 +17,7 @@ Optional convenience:
   - [docs/deployment-server.md](deployment-server.md)
   - [docs/dev-to-prod-server-migration.md](dev-to-prod-server-migration.md)
   - [docs/runbook.md](runbook.md)
+  - `scripts/server_snapshot.py`
   - `scripts/verify_server_deploy.py`
   - `scripts/verify_server_deploy.ps1`
   - The bundled `docker/.env.template` is pinned to the release tag from that zip
@@ -62,6 +63,14 @@ Required values in `docker/.env`:
 - If bidirectional save sync is enabled, confirm the host `saves/` tree is writable by Docker.
 - Remove or replace any symlinked files or directories under the server data root before startup.
 - If this host previously ran a dev server, complete [dev-to-prod-server-migration.md](./dev-to-prod-server-migration.md) so old broad-bind or direct-run settings do not leak into production.
+
+Canonical snapshot command:
+
+```bash
+python3 scripts/server_snapshot.py backup --env-file docker/.env --output-dir ./snapshots --apply
+```
+
+The snapshot directory contains `docker/.env`, the full data root, `image-tag.txt`, and `manifest.json`.
 
 ## 3) Pull released server image
 ```bash

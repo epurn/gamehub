@@ -60,6 +60,31 @@ def test_typer_sync_command_dispatches(monkeypatch) -> None:
         "skip_steam": True,
         "skip_steam_relaunch": True,
         "reseed_profiles": True,
+        "json_summary": False,
+    }
+
+
+def test_typer_sync_command_dispatches_json_summary(monkeypatch) -> None:
+    assert cli_main.app is not None
+    captured: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.main._run_sync_command", lambda **kwargs: captured.update(kwargs) or 0)
+
+    result = _RUNNER.invoke(
+        cli_main.app,
+        ["sync", "--config", "config.toml", "--json-summary"],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "config_path": Path("config.toml"),
+        "dry_run": False,
+        "verbose": False,
+        "verify": False,
+        "require_steam_closed": False,
+        "skip_steam": False,
+        "skip_steam_relaunch": False,
+        "reseed_profiles": False,
+        "json_summary": True,
     }
 
 
@@ -102,6 +127,60 @@ def test_typer_shortcut_launch_rejects_removed_audit_flag() -> None:
 
     assert result.exit_code != 0
     assert "No such option" in result.output
+
+
+def test_typer_config_init_dispatches(monkeypatch) -> None:
+    assert cli_main.app is not None
+    captured: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.main._run_config_init_command", lambda **kwargs: captured.update(kwargs) or 0)
+
+    result = _RUNNER.invoke(
+        cli_main.app,
+        [
+            "config",
+            "init",
+            "--output",
+            "config.toml",
+            "--server-url",
+            "http://srv:8000",
+            "--gamehub-dir",
+            "GameHub",
+            "--steam-userdata",
+            "userdata",
+            "--steam-id",
+            "76561198000000001",
+            "--no-controller-autoconfig",
+            "--save-sync",
+            "--save-sync-mode",
+            "bidirectional",
+            "--conflict-policy",
+            "prefer_server",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "output_path": Path("config.toml"),
+        "server_url": "http://srv:8000",
+        "gamehub_dir": Path("GameHub"),
+        "steam_userdata_dir": Path("userdata"),
+        "steam_id": "76561198000000001",
+        "controller_launch_autoconfig": False,
+        "save_sync_enabled": True,
+        "save_sync_mode": "bidirectional",
+        "save_sync_conflict_policy": "prefer_server",
+    }
+
+
+def test_typer_config_verify_dispatches(monkeypatch) -> None:
+    assert cli_main.app is not None
+    captured: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.main._run_config_verify_command", lambda **kwargs: captured.update(kwargs) or 0)
+
+    result = _RUNNER.invoke(cli_main.app, ["config", "verify", "--config", "config.toml"])
+
+    assert result.exit_code == 0
+    assert captured == {"config_path": Path("config.toml")}
 
 
 def test_typer_doctor_controllers_dispatches(monkeypatch) -> None:

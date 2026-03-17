@@ -38,11 +38,24 @@ def test_build_server_deploy_bundle_includes_expected_files_and_pins_release_tag
             "docs/deployment-server.md",
             "docs/dev-to-prod-server-migration.md",
             "docs/runbook.md",
+            "scripts/server_snapshot.py",
             "scripts/verify_server_deploy.py",
             "scripts/verify_server_deploy.ps1",
         }
         assert "GAMEHUB_IMAGE_TAG=v9.9.9" in env_text
         assert "GAMEHUB_SERVER_BIND_ADDRESS=127.0.0.1" in env_text
+
+
+def test_build_server_deploy_bundle_includes_server_snapshot_helper_when_shipped(workspace_tempdir) -> None:
+    with workspace_tempdir(prefix="gamehub-bundle-") as temp_dir:
+        module = runpy.run_path(str(ROOT / "scripts" / "build_server_deploy_bundle.py"))
+        build_bundle = module["build_bundle"]
+        bundle_path = build_bundle(ref_name="v1.7.0", output_dir=temp_dir)
+
+        with zipfile.ZipFile(bundle_path) as archive:
+            names = set(archive.namelist())
+
+        assert "scripts/server_snapshot.py" in names
 
 
 def test_release_client_workflow_uses_bundle_script() -> None:
@@ -76,13 +89,16 @@ def test_deployment_docs_reference_portable_verifier_and_first_live_rules() -> N
 
     assert "dev-to-prod-server-migration.md" in development
     assert "scripts/verify_server_deploy.py" in deployment
+    assert "scripts/server_snapshot.py" in deployment
     assert "GAMEHUB_SERVER_BIND_ADDRESS" in deployment
     assert "pinned release tag" in deployment
     assert "GAMEHUB_SERVER_LISTEN_HOST" in migration
     assert "GAMEHUB_IMAGE_TAG=latest" in migration
     assert "verify_server_deploy.py" in migration
+    assert "server_snapshot.py backup" in migration
     assert "dev-to-prod-server-migration.md" in deployment
     assert "dev-to-prod-server-migration.md" in runbook
     assert "no symlinks" in runbook
+    assert "server_snapshot.py restore" in runbook
     assert "scripts/verify_server_deploy.py" in release_process
     assert "dev-to-prod-server-migration.md" in release_manual

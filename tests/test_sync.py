@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import gamehub_cli.main as cli_main
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, MacOSConfig, SaveSyncConfig
 from gamehub_cli.common.shortcut_payload import parse_shortcut_payload
 from gamehub_cli.sync.orchestrator import (
@@ -118,6 +120,180 @@ def test_run_sync_fails_fast_when_server_version_mismatches(monkeypatch) -> None
             require_steam_closed=False,
             skip_steam=True,
         )
+
+
+def test_run_sync_json_summary_dry_run_success(monkeypatch, capsys, workspace_tempdir) -> None:
+    from gamehub_cli.sync import save_stage
+
+    with workspace_tempdir("gamehub-sync-json-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "library" / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork-cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
+        index = LibraryIndex(
+            index_version=1,
+            systems=(),
+            titles=(
+                TitleEntry(
+                    title_id="title_demo",
+                    system="NES",
+                    title_name="Demo",
+                    title_rel_dir="NES/Demo.nes",
+                    emulator="retroarch",
+                    launch_template='"{emulator}" "{rom}"',
+                    rom=RomSpec(
+                        file_id="file_demo",
+                        rel_path="roms/NES/Demo.nes",
+                        sha256="a" * 64,
+                        size_bytes=3,
+                        extension=".nes",
+                    ),
+                    assets=(),
+                ),
+            ),
+        )
+
+        monkeypatch.setattr("gamehub_cli.main._load_existing_config", lambda _path: config)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._load_validated_index", lambda *args, **kwargs: index)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._load_validated_save_bindings", lambda *args, **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_runtime", lambda *args, **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._print_plan", lambda plan: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._resolve_steam_context", lambda config: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._build_artwork_assignments", lambda **kwargs: {})
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.deploy_firmware_to_emulators", lambda **kwargs: None)
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._converge_bootstrap_controller_state",
+            lambda *args, **kwargs: None,
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator.save_stage.apply_save_stage",
+            lambda **kwargs: save_stage.SaveStageResult(
+                planned=0,
+                downloaded=0,
+                uploaded=0,
+                conflicts=0,
+                skipped=0,
+            ),
+        )
+
+        exit_code = cli_main._run_sync_command(
+            config_path=None,
+            dry_run=True,
+            verbose=False,
+            verify=False,
+            require_steam_closed=False,
+            skip_steam=False,
+            skip_steam_relaunch=False,
+            reseed_profiles=False,
+            json_summary=True,
+        )
+
+        payload = json.loads(capsys.readouterr().out)
+        assert exit_code == 0
+        assert payload["ok"] is True
+        assert payload["dry_run"] is True
+        assert payload["server_url"] == "http://localhost:8000"
+        assert payload["plan"]["total_actions"] == 1
+        assert payload["plan"]["counts_by_kind"] == {"rom": 1}
+        assert payload["downloads"]["firmware_planned"] == 0
+        assert payload["downloads"]["content_planned"] == 1
+        assert payload["downloads"]["completed"] == 0
+        assert payload["save_sync"] == {
+            "enabled": False,
+            "planned": 0,
+            "downloaded": 0,
+            "uploaded": 0,
+            "conflicts": 0,
+            "skipped": 0,
+        }
+        assert payload["errors"] == []
+        assert "Steam updates were not applied because no Steam target was resolved." in payload["warnings"]
+
+
+def test_run_sync_json_summary_failure_preserves_nonzero_exit(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        "gamehub_cli.main._load_existing_config",
+        lambda _path: (_ for _ in ()).throw(ValueError("Config file not found: missing-config.toml")),
+    )
+
+    exit_code = cli_main._run_sync_command(
+        config_path=Path("missing-config.toml"),
+        dry_run=False,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=False,
+        skip_steam_relaunch=False,
+        reseed_profiles=False,
+        json_summary=True,
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["errors"] == ["Config file not found: missing-config.toml"]
+    assert set(payload) == {
+        "ok",
+        "dry_run",
+        "server_url",
+        "plan",
+        "downloads",
+        "save_sync",
+        "steam",
+        "warnings",
+        "errors",
+    }
+
+
+def test_run_sync_without_json_summary_keeps_human_output(monkeypatch, capsys) -> None:
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path("state.json"),
+        steam_userdata_dir=None,
+        steam_id=None,
+        steam_exe=None,
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork-cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+
+    monkeypatch.setattr("gamehub_cli.main._load_existing_config", lambda _path: config)
+
+    def _fake_run_sync(**kwargs) -> int:
+        del kwargs
+        print("Sync completed human path")
+        return 0
+
+    monkeypatch.setattr("gamehub_cli.main.run_sync", _fake_run_sync)
+
+    exit_code = cli_main._run_sync_command(
+        config_path=None,
+        dry_run=False,
+        verbose=False,
+        verify=False,
+        require_steam_closed=False,
+        skip_steam=False,
+        skip_steam_relaunch=False,
+        reseed_profiles=False,
+        json_summary=False,
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert output.strip() == "Sync completed human path"
+    assert not output.lstrip().startswith("{")
 
 
 def test_apply_downloads_runs_firmware_before_content(monkeypatch) -> None:
