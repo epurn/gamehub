@@ -145,7 +145,7 @@ def test_verify_server_deploy_fails_when_index_payload_is_invalid() -> None:
 def test_verify_server_deploy_fails_when_status_payload_is_invalid() -> None:
     routes = {
         "/health": (200, json.dumps({"status": "ok"}).encode("utf-8"), "application/json"),
-        "/v1/status": (200, json.dumps({"status": "ok"}).encode("utf-8"), "application/json"),
+        "/v1/status": (200, json.dumps({"status_version": 2, "status": "ok"}).encode("utf-8"), "application/json"),
     }
 
     with _serve(routes) as base_url:
@@ -158,4 +158,4 @@ def test_verify_server_deploy_fails_when_status_payload_is_invalid() -> None:
         )
 
     assert completed.returncode == 1
-    assert "/v1/status did not return a status_version" in completed.stderr
+    assert "/v1/status returned unexpected status_version=2" in completed.stderr
