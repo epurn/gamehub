@@ -537,7 +537,6 @@ def test_state_round_trip_with_atomic_save(workspace_tempdir) -> None:
         state = SyncState(
             downloaded_checksums={"file_1": "a" * 64},
             firmware_checksums={"PSX/scph5501.bin": "b" * 64},
-            tombstones=["title_old"],
             last_sync="2026-02-14T18:00:00+00:00",
             bootstrap_version=1,
         )
@@ -575,6 +574,31 @@ def test_load_state_defaults_bootstrap_version_when_missing(workspace_tempdir) -
         loaded = load_state(state_path)
 
         assert loaded.bootstrap_version is None
+
+
+def test_load_state_ignores_legacy_tombstones(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-state-") as temp_root:
+        state_path = temp_root / "state.json"
+        state_path.write_text(
+            "\n".join(
+                [
+                    "{",
+                    '  "downloaded_checksums": {},',
+                    '  "firmware_checksums": {},',
+                    '  "tombstones": ["title_old"],',
+                    '  "last_sync": "2026-02-14T18:00:00+00:00",',
+                    '  "bootstrap_version": 1',
+                    "}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        loaded = load_state(state_path)
+
+        assert "tombstones" not in loaded.to_dict()
+        assert loaded.last_sync == "2026-02-14T18:00:00+00:00"
 
 
 def test_load_config_supports_roms_dir(workspace_tempdir) -> None:
@@ -820,7 +844,6 @@ def test_state_round_trip_persists_save_sync_lineage(workspace_tempdir) -> None:
             },
             offline_shortcut_titles={"title_gbc_pokemon": "2026-02-14T18:05:00+00:00"},
             unresolved_save_conflicts={"save_2": "both-changed-manual"},
-            tombstones=["title_old"],
             last_sync="2026-02-14T18:00:00+00:00",
             bootstrap_version=1,
         )

@@ -375,12 +375,12 @@ N3DS Azahar defaults:
   - `save_binding_roots` (`binding_id` -> learned `canonical_root` + client-local `materialized_root`)
   - `offline_shortcut_titles` (`title_id` -> UTC timestamp marker for managed launches that lost metadata/server reachability)
   - `unresolved_save_conflicts` (`save_id` -> last unresolved deterministic conflict reason)
-  - `tombstones`
   - `last_sync` (UTC timestamp)
   - `bootstrap_version` (local bootstrap marker written by `gamehub init`; current value `1`)
 
 Save sync state semantics:
 - Missing save keys in older `state.json` files load as empty defaults for backward compatibility.
+- Older `state.json` files may still contain the legacy `tombstones` key; GAMEHUB ignores it on load and omits it on the next write.
 - `save_checksums` tracks last-known local checksum by `save_id` for deterministic planner comparisons.
 - `save_lineage` captures last-synced local/remote checksum snapshots and timestamps.
 - `save_binding_roots` persists learned deterministic tree roots for `per_game` save materialization across clients and later runs.

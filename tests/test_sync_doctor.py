@@ -97,7 +97,6 @@ def test_run_sync_requires_bootstrap_version_even_with_existing_last_sync(monkey
                 "{\n"
                 '  "downloaded_checksums": {},\n'
                 '  "firmware_checksums": {},\n'
-                '  "tombstones": [],\n'
                 '  "last_sync": "2026-02-14T18:00:00+00:00"\n'
                 "}\n"
             ),
