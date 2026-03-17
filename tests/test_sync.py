@@ -573,7 +573,7 @@ def test_apply_steam_updates_deck_repairs_steam_input_overrides(monkeypatch) -> 
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context, keep_limit=3: [])
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
-        lambda context, index, shortcut_result, overwrite_existing=False: type(
+        lambda context, index, shortcut_result, overwrite_existing=False, keep_limit=3: type(
             "TemplateSyncResult",
             (),
             {"targets": 1, "written": 1, "unchanged": 0, "systems_applied": ("Wii",)},
@@ -659,7 +659,7 @@ def test_apply_steam_updates_deck_always_repairs_steam_input_overrides(monkeypat
     monkeypatch.setattr("gamehub_cli.sync.steam_stage.backup_steam_configs", lambda context, keep_limit=3: [])
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
-        lambda context, index, shortcut_result, overwrite_existing=False: type(
+        lambda context, index, shortcut_result, overwrite_existing=False, keep_limit=3: type(
             "TemplateSyncResult",
             (),
             {"targets": 1, "written": 0, "unchanged": 1, "systems_applied": ("Wii",)},
@@ -743,7 +743,7 @@ def test_apply_steam_updates_deck_runs_template_sync_pass(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
-        lambda context, index, shortcut_result, overwrite_existing=False: (
+        lambda context, index, shortcut_result, overwrite_existing=False, keep_limit=3: (
             overwrite_flags.append(overwrite_existing)
             or order.append("template-sync")
             or type(
@@ -814,7 +814,7 @@ def test_apply_steam_updates_deck_template_sync_overwrites_when_reseed_enabled(m
     )
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
-        lambda context, index, shortcut_result, overwrite_existing=False: (
+        lambda context, index, shortcut_result, overwrite_existing=False, keep_limit=3: (
             overwrite_flags.append(overwrite_existing)
             or type(
                 "TemplateSyncResult",
@@ -884,7 +884,7 @@ def test_apply_steam_updates_deck_always_runs_template_sync(monkeypatch) -> None
     template_sync_called: list[str] = []
     monkeypatch.setattr(
         "gamehub_cli.sync.steam_stage.apply_deck_steam_input_templates",
-        lambda context, index, shortcut_result, overwrite_existing=False: (
+        lambda context, index, shortcut_result, overwrite_existing=False, keep_limit=3: (
             template_sync_called.append("called")
             or type(
                 "TemplateSyncResult", (), {"targets": 1, "written": 0, "unchanged": 1, "systems_applied": ("Wii",)}

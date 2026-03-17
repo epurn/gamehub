@@ -884,6 +884,7 @@ def apply_steam_updates(
             index,
             shortcut_result,
             overwrite_existing=reseed_profiles,
+            keep_limit=config.backups.keep_limit,
         )
         systems = ",".join(template_sync.systems_applied) if template_sync.systems_applied else "-"
         print(

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import vdf
 
 from gamehub_common.models import TitleEntry
 
+from ...common.fsops import DEFAULT_BACKUP_KEEP_LIMIT, backup_existing_file
 from ..io import _atomic_write_text
 from ..shortcuts import _canonical_unsigned_app_id
 from ..types import ShortcutSyncResult
@@ -14,6 +16,7 @@ from .seeds import template_selection_name_for_system
 
 _DECK_TEMPLATE_CONFIGSET_FILENAME = "configset_controller_neptune.vdf"
 _DECK_TEMPLATE_CONFIGSET_GLOB = "configset_*.vdf"
+logger = logging.getLogger(__name__)
 
 
 def template_reference_for_title(title: TitleEntry) -> str:
@@ -62,11 +65,20 @@ def _configset_entry_keys(title_name: str, app_id: str | None) -> tuple[str, ...
     return tuple(sorted(keys, key=_configset_key_sort_key))
 
 
+def _backup_existing_configset(path: Path, *, keep_limit: int) -> None:
+    backup_result = backup_existing_file(path, keep_limit=keep_limit)
+    if backup_result.created_path is not None:
+        logger.info("steam input configset backup created path=%s backup=%s", path, backup_result.created_path)
+    for pruned_path in backup_result.pruned_paths:
+        logger.info("steam input configset backup pruned path=%s pruned_backup=%s", path, pruned_path)
+
+
 def sync_deck_template_selection_configset(
     *,
     configset_path: Path,
     managed_titles: list[TitleEntry],
     shortcut_result: ShortcutSyncResult,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
 ) -> None:
     try:
         if configset_path.exists():
@@ -109,6 +121,8 @@ def sync_deck_template_selection_configset(
     if not changed:
         return
     try:
+        if configset_path.exists():
+            _backup_existing_configset(configset_path, keep_limit=keep_limit)
         _atomic_write_text(configset_path, str(vdf.dumps(payload, pretty=True)))
     except OSError as exc:
         raise RuntimeError(
@@ -144,10 +158,12 @@ def sync_deck_template_selection_configsets(
     root: Path,
     managed_titles: list[TitleEntry],
     shortcut_result: ShortcutSyncResult,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
 ) -> None:
     for configset_path in _iter_target_configset_paths(root):
         sync_deck_template_selection_configset(
             configset_path=configset_path,
             managed_titles=managed_titles,
             shortcut_result=shortcut_result,
+            keep_limit=keep_limit,
         )
