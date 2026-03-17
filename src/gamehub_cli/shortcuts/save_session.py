@@ -38,9 +38,10 @@ from ..firmware.runtime_retroarch import (
     configure_retroarch_runtime,
 )
 from ..firmware.targets import default_pcsx2_ini_path, retroarch_cfg_candidates_for_config
-from ..sync.index import fetch_index_with_retries, fetch_save_bindings_with_retries, probe_server_health
+from ..sync.index import fetch_index_with_retries, fetch_save_bindings_with_retries
 from ..sync.planner import resolve_missed_upload_timestamp_decision, resolve_save_action
 from ..sync.save_stage import reconcile_upload_conflict, record_uploaded_save
+from ..sync.server_status import require_server_compatibility
 from ..sync.state import MISSED_POSTEXIT_UPLOAD_REASON
 from ..sync.transfer import SaveUploadConflictError, stream_to_destination_atomic, upload_file_to_server
 from .runtime import warn_shortcut_runtime
@@ -200,13 +201,16 @@ def _shortcut_metadata_timeout_seconds(config: GamehubConfig) -> float:
 def _shortcut_server_reachable(config: GamehubConfig) -> bool:
     try:
         return bool(
-            probe_server_health(
-                server_url=config.server_url,
+            require_server_compatibility(
+                config,
+                verbose=False,
                 timeout_seconds=_SHORTCUT_HEALTHCHECK_TIMEOUT_SECONDS,
+                attempts=_SHORTCUT_METADATA_FETCH_ATTEMPTS,
+                retry_backoff_seconds=_SHORTCUT_METADATA_RETRY_BACKOFF_SECONDS,
             )
         )
     except Exception as exc:  # noqa: BLE001
-        raise _ShortcutMetadataError(f"save sync server reachability probe failed ({exc})") from exc
+        raise _ShortcutMetadataError(f"save sync server status check failed ({exc})") from exc
 
 
 def _shortcut_server_reachable_or_warn(config: GamehubConfig) -> bool:

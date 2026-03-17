@@ -11,6 +11,7 @@ import gamehub_cli.emulators.save_resolution as save_resolution_module
 import gamehub_cli.shortcuts.save_session as launch_module
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.common.shortcut_payload import ShortcutLaunchPayload
+from gamehub_cli.sync.server_status import ServerCompatibilityError
 from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON
 from gamehub_cli.sync.transfer import SaveUploadConflictError
 from gamehub_common.ids import make_save_binding_id, make_save_id
@@ -25,6 +26,22 @@ launch_module._ShortcutExactBindingSnapshot = launch_module.ShortcutExactBinding
 launch_module._ensure_managed_memory_card_paths = launch_module.ensure_managed_memory_card_paths
 launch_module._run_shortcut_prelaunch_save_sync = launch_module.run_shortcut_prelaunch_save_sync
 launch_module._run_shortcut_postexit_save_sync = launch_module.run_shortcut_postexit_save_sync
+
+
+def test_shortcut_server_reachable_or_warn_skips_on_version_mismatch(monkeypatch) -> None:
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "gamehub_cli.shortcuts.save_session.require_server_compatibility",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ServerCompatibilityError("Server version mismatch: client=1.6.0 server=1.6.1")
+        ),
+    )
+    monkeypatch.setattr("gamehub_cli.shortcuts.save_session.warn_shortcut_runtime", warnings.append)
+
+    reachable = launch_module._shortcut_server_reachable_or_warn(_config())
+
+    assert reachable is False
+    assert warnings == ["save sync server status check failed (Server version mismatch: client=1.6.0 server=1.6.1)"]
 
 
 def test_ensure_managed_memory_card_paths_prefers_payload_retroarch_cfg_on_windows(

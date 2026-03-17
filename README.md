@@ -161,6 +161,7 @@ cp docker/.env.template docker/.env
 docker compose -f docker/compose.yaml --env-file docker/.env pull gamehub-server
 docker compose -f docker/compose.yaml --env-file docker/.env up -d
 python3 scripts/verify_server_deploy.py --base-url "http://127.0.0.1:8000" --wait-seconds 30
+gamehub doctor server --server-url "http://127.0.0.1:8000"
 ```
 For real servers, prefer the GitHub Release deploy bundle; its bundled `docker/.env.template` is already pinned to that release tag.
 

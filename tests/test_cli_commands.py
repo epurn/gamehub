@@ -191,6 +191,24 @@ def test_typer_doctor_saves_resolution_dispatches(monkeypatch) -> None:
     }
 
 
+def test_typer_doctor_server_dispatches(monkeypatch) -> None:
+    assert cli_main.app is not None
+    captured: dict[str, object] = {}
+    monkeypatch.setattr("gamehub_cli.main._run_doctor_server_command", lambda **kwargs: captured.update(kwargs) or 0)
+
+    result = _RUNNER.invoke(
+        cli_main.app,
+        ["doctor", "server", "--config", "config.toml", "--server-url", "http://srv:8000", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "config_path": Path("config.toml"),
+        "server_url": "http://srv:8000",
+        "json_output": True,
+    }
+
+
 def test_typer_rejects_legacy_doctor_flag_syntax() -> None:
     assert cli_main.app is not None
 

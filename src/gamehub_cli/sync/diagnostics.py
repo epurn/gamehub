@@ -9,6 +9,7 @@ from gamehub_common.models import LibraryIndex
 from ..common.config import GamehubConfig
 from . import index as sync_index
 from .planner import PlanAction, SavePlanAction, SyncPlan, create_sync_plan
+from .server_status import require_server_compatibility
 from .state import SyncState, load_state
 
 
@@ -32,6 +33,7 @@ def build_sync_diagnostics_snapshot(
     print("Loading local sync state...")
     state = load_state(config.state_path)
     transfer_timeout = _transfer_timeout_seconds(verbose)
+    require_server_compatibility(config, verbose=verbose, timeout_seconds=transfer_timeout)
     index_timeout = config.index_timeout_seconds if config.index_timeout_seconds is not None else transfer_timeout
     index_url = urljoin(config.server_url.rstrip("/") + "/", "v1/index")
     print(f"Fetching index: {index_url}")

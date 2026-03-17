@@ -19,6 +19,7 @@ from ..emulators.save_resolution import resolve_local_save_destination
 from . import index as sync_index
 from .planner import SavePlanAction, SyncPlan, create_sync_plan
 from .save_stage import _record_converged_save, reconcile_upload_conflict, record_uploaded_save
+from .server_status import require_server_compatibility
 from .state import SyncState, load_state, save_state_atomic
 from .transfer import SaveUploadConflictError, stream_to_destination_atomic, upload_file_to_server
 
@@ -120,6 +121,7 @@ def _load_resolution_context(
     timeout_seconds = (
         config.index_timeout_seconds if config.index_timeout_seconds is not None else _transfer_timeout_seconds(verbose)
     )
+    require_server_compatibility(config, verbose=verbose, timeout_seconds=timeout_seconds)
     index = _load_validated_index(config, timeout_seconds=timeout_seconds, verbose=verbose)
     save_bindings = _load_validated_save_bindings(config, timeout_seconds=timeout_seconds, verbose=verbose)
     plan = create_sync_plan(index=index, config=config, state=state, verify=verify, save_bindings=save_bindings)

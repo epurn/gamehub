@@ -4,8 +4,11 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.sync.save_resolution import run_save_resolution
+from gamehub_cli.sync.server_status import ServerCompatibilityError
 from gamehub_cli.sync.state import SyncState, save_state_atomic
 from gamehub_common.ids import make_save_binding_id, sha256_file
 
@@ -66,6 +69,11 @@ def _bindings_payload() -> dict[str, object]:
             }
         ]
     }
+
+
+@pytest.fixture(autouse=True)
+def _default_server_compatibility(monkeypatch) -> None:
+    monkeypatch.setattr("gamehub_cli.sync.save_resolution.require_server_compatibility", lambda *args, **kwargs: None)
 
 
 def test_run_save_resolution_keep_server_dry_run_does_not_mutate_state(monkeypatch, workspace_tempdir, capsys) -> None:
@@ -269,3 +277,28 @@ def test_run_save_resolution_rejects_non_actionable_save(monkeypatch, workspace_
             assert "does not currently require operator resolution" in str(exc)
         else:
             raise AssertionError("expected ValueError")
+
+
+def test_run_save_resolution_fails_fast_on_server_version_mismatch(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-save-resolution-") as temp_root:
+        config = _config(temp_root)
+        monkeypatch.setattr(
+            "gamehub_cli.sync.save_resolution.require_server_compatibility",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                ServerCompatibilityError("Server version mismatch: client=1.6.0 server=1.6.1")
+            ),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.sync.save_resolution.sync_index.fetch_index_with_retries",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("index fetch should not run")),
+        )
+
+        with pytest.raises(ServerCompatibilityError, match="Server version mismatch"):
+            run_save_resolution(
+                config,
+                save_id="save_ps2_ffx_1",
+                choice="keep-server",
+                dry_run=True,
+                verbose=False,
+                verify=False,
+            )

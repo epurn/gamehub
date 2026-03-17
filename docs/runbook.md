@@ -8,6 +8,7 @@
 - Take a backup snapshot of `docker/.env` and the host data root before the first cutover.
 - If bidirectional save sync will be used, confirm the host `saves/` tree is writable by Docker.
 - After `docker compose up -d`, run `python3 scripts/verify_server_deploy.py --base-url "http://127.0.0.1:8000" --wait-seconds 30`.
+- From a configured client machine, run `gamehub doctor server --server-url "http://127.0.0.1:8000"` for the higher-level client/server compatibility check.
 
 ## Backup
 Back up deployment configuration and data root.
@@ -76,8 +77,10 @@ docker compose -f docker/compose.yaml --env-file docker/.env logs gamehub-server
 4. Deployment bind and smoke checks:
    - verify `GAMEHUB_SERVER_BIND_ADDRESS` matches the intended host exposure
    - rerun `python3 scripts/verify_server_deploy.py --base-url "http://127.0.0.1:8000" --wait-seconds 30`
+   - rerun `gamehub doctor server --server-url "http://127.0.0.1:8000"` from a managed client when validating exact client/server version pairing
 5. API checks:
    - `GET /health`
+   - `GET /v1/status`
    - `GET /v1/index`
    - `GET /v1/index?refresh=1` (manual cache refresh check)
    - `GET /v1/save-bindings` when validating save-sync issues

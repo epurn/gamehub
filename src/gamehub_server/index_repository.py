@@ -6,10 +6,20 @@ import os
 import stat
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
-from gamehub_common.models import FirmwareSpec, LibraryIndex, SaveBindingSpec, SaveSpec, TitleEntry
+from gamehub_common.models import (
+    FirmwareSpec,
+    LibraryIndex,
+    SaveBindingSpec,
+    SaveSpec,
+    ServerIndexStatus,
+    ServerSaveUploadStatus,
+    ServerStatus,
+    TitleEntry,
+)
 
 from .indexer import FIRMWARE_ROOT_NAME, ROMS_ROOT_NAME, IndexBundle, build_index
 from .logging_utils import get_server_logger
@@ -18,6 +28,25 @@ from .save_index import SAVES_ROOT_NAME
 logger = get_server_logger(__name__)
 DEFAULT_INDEX_POLL_SECONDS = 1.0
 DEFAULT_INDEX_STABLE_SECONDS = 2.0
+
+
+def _timestamp_now_utc() -> datetime:
+    return datetime.now(UTC)
+
+
+def _sanitize_status_error(error: Exception, *, data_root: Path) -> str:
+    detail = str(error).strip()
+    if detail:
+        text = f"{error.__class__.__name__}: {detail}"
+    else:
+        text = error.__class__.__name__
+    for candidate in {str(data_root), str(data_root.resolve())}:
+        if candidate:
+            text = text.replace(candidate, "<data-root>")
+    collapsed = " ".join(text.split())
+    if len(collapsed) > 240:
+        return collapsed[:237].rstrip() + "..."
+    return collapsed
 
 
 def _path_has_symlink_component(path: Path, *, allowed_root: Path) -> bool:
@@ -298,10 +327,15 @@ class IndexRepository:
         self._source_signature: str | None = None
         self._pending_source_signature: str | None = None
         self._pending_since: float | None = None
+        self._pending_since_wall: datetime | None = None
         self._loaded_at: float | None = None
         self._refresh_seconds = max(0.0, float(refresh_seconds))
         self._poll_seconds = max(0.0, float(poll_seconds))
         self._stable_seconds = max(0.0, float(stable_seconds))
+        self._last_refresh_reason: str | None = None
+        self._last_successful_refresh_at: datetime | None = None
+        self._last_failure_at: datetime | None = None
+        self._last_error: str | None = None
         self._lock = threading.Lock()
         self._poll_stop_event = threading.Event()
         self._poll_thread: threading.Thread | None = None
@@ -322,10 +356,12 @@ class IndexRepository:
         if source_signature == self._source_signature:
             self._pending_source_signature = None
             self._pending_since = None
+            self._pending_since_wall = None
             return False
         if self._pending_source_signature != source_signature:
             self._pending_source_signature = source_signature
             self._pending_since = observed_at
+            self._pending_since_wall = _timestamp_now_utc()
             logger.info(
                 "index refresh pending reason=source_change stable_seconds=%.3f data_root=%s",
                 self._stable_seconds,
@@ -334,17 +370,21 @@ class IndexRepository:
             return self._stable_seconds <= 0
         if self._pending_since is None:
             self._pending_since = observed_at
+            self._pending_since_wall = _timestamp_now_utc()
             return self._stable_seconds <= 0
         return (observed_at - self._pending_since) >= self._stable_seconds
 
     def _rebuild_locked(self, *, source_signature: str | None, reason: str, raise_on_error: bool) -> bool:
         previous_cache = self._cache
         started_at = time.monotonic()
+        self._last_refresh_reason = reason
         logger.info("index refresh started reason=%s data_root=%s", reason, self._data_root)
         try:
             cache = build_index(self._data_root)
-        except Exception:
+        except Exception as exc:
             elapsed_seconds = time.monotonic() - started_at
+            self._last_failure_at = _timestamp_now_utc()
+            self._last_error = _sanitize_status_error(exc, data_root=self._data_root)
             if raise_on_error or self._cache is None:
                 logger.exception("index refresh failed reason=%s elapsed_seconds=%.3f", reason, elapsed_seconds)
                 raise
@@ -352,6 +392,7 @@ class IndexRepository:
             if source_signature is not None and source_signature != self._source_signature:
                 self._pending_source_signature = source_signature
                 self._pending_since = time.monotonic()
+                self._pending_since_wall = _timestamp_now_utc()
             elif self._refresh_seconds > 0:
                 self._loaded_at = time.monotonic()
             logger.exception(
@@ -369,7 +410,10 @@ class IndexRepository:
         self._source_signature = source_signature
         self._pending_source_signature = None
         self._pending_since = None
+        self._pending_since_wall = None
         self._loaded_at = time.monotonic()
+        self._last_successful_refresh_at = _timestamp_now_utc()
+        self._last_error = None
         _log_index_changes(previous_cache, self._cache, reason=reason)
         elapsed_seconds = self._loaded_at - started_at
         logger.info(
@@ -496,6 +540,45 @@ class IndexRepository:
         if thread is threading.current_thread():
             return
         thread.join(timeout=max(1.0, self._poll_seconds + 1.0))
+
+    def server_status(
+        self,
+        *,
+        server_version: str,
+        max_upload_bytes: int,
+        backup_keep_limit: int,
+    ) -> ServerStatus:
+        with self._lock:
+            cache = self._cache
+            index_status = ServerIndexStatus(
+                systems=len(cache.index.systems) if cache is not None else 0,
+                titles=len(cache.index.titles) if cache is not None else 0,
+                saves=len(cache.index.saves) if cache is not None else 0,
+                poll_seconds=self._poll_seconds,
+                stable_seconds=self._stable_seconds,
+                refresh_seconds=self._refresh_seconds,
+                refresh_pending=self._pending_source_signature is not None,
+                pending_since=self._pending_since_wall,
+                last_refresh_reason=self._last_refresh_reason,
+                last_successful_refresh_at=self._last_successful_refresh_at,
+                last_failure_at=self._last_failure_at,
+                last_error=self._last_error,
+            )
+            if cache is None:
+                status: Literal["ok", "degraded", "starting"] = "starting"
+            elif self._last_error is not None:
+                status = "degraded"
+            else:
+                status = "ok"
+            return ServerStatus(
+                server_version=server_version,
+                status=status,
+                index=index_status,
+                save_upload=ServerSaveUploadStatus(
+                    max_upload_bytes=max_upload_bytes,
+                    backup_keep_limit=backup_keep_limit,
+                ),
+            )
 
 
 def read_non_negative_float_env(name: str, default: float) -> float:

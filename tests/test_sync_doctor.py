@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from gamehub_cli.common.config import ControllersConfig, GamehubConfig, SaveSyncConfig
 from gamehub_cli.main import _run_doctor_all_command
 from gamehub_cli.sync.diagnostics import SyncDiagnosticsSnapshot, run_firmware_doctor, run_roms_doctor, run_save_doctor
 from gamehub_cli.sync.orchestrator import run_init, run_sync
 from gamehub_cli.sync.planner import PlanAction, SavePlanAction, SyncPlan
+from gamehub_cli.sync.server_status import ServerCompatibilityError
 from gamehub_cli.sync.state import SyncState, load_state
 from gamehub_common.models import LibraryIndex
 
@@ -30,6 +33,12 @@ def _config(root: Path, *, launch_autoconfig: bool = False) -> GamehubConfig:
 
 def _empty_index() -> LibraryIndex:
     return LibraryIndex(index_version=1, systems=(), titles=())
+
+
+@pytest.fixture(autouse=True)
+def _default_server_compatibility(monkeypatch) -> None:
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator.require_server_compatibility", lambda *args, **kwargs: None)
+    monkeypatch.setattr("gamehub_cli.sync.diagnostics.require_server_compatibility", lambda *args, **kwargs: None)
 
 
 def test_run_init_writes_bootstrap_version_without_last_sync(monkeypatch, workspace_tempdir) -> None:
@@ -112,6 +121,23 @@ def test_run_sync_requires_bootstrap_version_even_with_existing_last_sync(monkey
         assert exit_code == 1
         assert saved.bootstrap_version is None
         assert saved.last_sync == "2026-02-14T18:00:00+00:00"
+
+
+def test_run_save_doctor_fails_fast_on_server_version_mismatch(monkeypatch) -> None:
+    config = _config(Path("gamehub"))
+    monkeypatch.setattr(
+        "gamehub_cli.sync.diagnostics.require_server_compatibility",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ServerCompatibilityError("Server version mismatch: client=1.6.0 server=1.6.1")
+        ),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.diagnostics.sync_index.fetch_index_with_retries",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("index fetch should not run")),
+    )
+
+    with pytest.raises(ServerCompatibilityError, match="Server version mismatch"):
+        run_save_doctor(config, verify=False, verbose=False)
 
 
 def test_run_roms_doctor_reports_content_actions_and_skipped_titles(capsys) -> None:

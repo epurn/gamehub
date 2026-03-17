@@ -19,6 +19,7 @@ from gamehub_cli.sync.orchestrator import (
     run_sync,
 )
 from gamehub_cli.sync.planner import PlanAction, SavePlanAction, SyncPlan
+from gamehub_cli.sync.server_status import ServerCompatibilityError, ServerStatusError
 from gamehub_cli.sync.state import MISSED_POSTEXIT_UPLOAD_REASON, SyncState
 from gamehub_cli.sync.steam_stage import _build_shortcut_specs_and_payloads, _normalize_wrapper_candidate
 from gamehub_cli.sync.steam_stage import (
@@ -43,6 +44,80 @@ def _normalize_path_tokens(values: list[str]) -> list[str]:
 @pytest.fixture(autouse=True)
 def _default_initialized_sync_state(monkeypatch) -> None:
     monkeypatch.setattr("gamehub_cli.sync.orchestrator.load_state", lambda _path: SyncState(bootstrap_version=1))
+    monkeypatch.setattr("gamehub_cli.sync.orchestrator.require_server_compatibility", lambda *args, **kwargs: None)
+
+
+def test_run_init_fails_fast_when_server_status_is_invalid(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-init-status-invalid-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=None,
+            steam_id=None,
+            steam_exe=None,
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator.require_server_compatibility",
+            lambda *args, **kwargs: (_ for _ in ()).throw(ServerStatusError("Server status check failed (HTTP 404)")),
+        )
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._fetch_index_with_retries",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("index fetch should not run")),
+        )
+
+        with pytest.raises(ServerStatusError, match="Server status check failed"):
+            from gamehub_cli.sync.orchestrator import run_init
+
+            run_init(
+                config=config,
+                dry_run=False,
+                verbose=False,
+                reseed_profiles=False,
+            )
+
+        assert not config.state_path.exists()
+
+
+def test_run_sync_fails_fast_when_server_version_mismatches(monkeypatch) -> None:
+    config = GamehubConfig(
+        server_url="http://localhost:8000",
+        library_dir=Path("library"),
+        firmware_dir=Path("firmware"),
+        state_path=Path(".pytest_tmp_local/state-test-version-mismatch.json"),
+        steam_userdata_dir=Path("userdata"),
+        steam_id=None,
+        steam_exe=Path("steam.exe"),
+        sgdb_api_key=None,
+        sgdb_cache_dir=Path("artwork_cache"),
+        sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+        controllers=ControllersConfig(launch_autoconfig=False),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.orchestrator.require_server_compatibility",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ServerCompatibilityError("Server version mismatch: client=1.6.0 server=1.6.1")
+        ),
+    )
+    monkeypatch.setattr(
+        "gamehub_cli.sync.orchestrator._fetch_index_with_retries",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("index fetch should not run")),
+    )
+
+    with pytest.raises(ServerCompatibilityError, match="Server version mismatch"):
+        run_sync(
+            config=config,
+            dry_run=True,
+            verbose=False,
+            verify=False,
+            require_steam_closed=False,
+            skip_steam=True,
+        )
 
 
 def test_apply_downloads_runs_firmware_before_content(monkeypatch) -> None:
