@@ -198,3 +198,22 @@ def test_typer_rejects_legacy_doctor_flag_syntax() -> None:
 
     assert result.exit_code != 0
     assert "No such option" in result.output
+
+
+@pytest.mark.parametrize(
+    "command_path",
+    [
+        ["sync", "--dry-run"],
+        ["doctor", "roms"],
+    ],
+)
+def test_typer_requires_existing_config_for_user_facing_commands(command_path: list[str]) -> None:
+    assert cli_main.app is not None
+    missing_config = Path("missing-config.toml")
+
+    result = _RUNNER.invoke(cli_main.app, [*command_path, "--config", str(missing_config)])
+
+    assert result.exit_code != 0
+    assert "Config file not found" in result.output
+    assert str(missing_config) in result.output
+    assert "docs/templates" in result.output

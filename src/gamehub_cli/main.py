@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import typer
@@ -17,11 +18,22 @@ def _resolve_existing_config_path(config_path: Path | None) -> Path:
     resolved = config_path or default_config_path()
     if resolved.exists():
         return resolved
-    raise ValueError(f"Config file not found: {resolved}. Create a config file before running 'gamehub init'.")
+    raise ValueError(
+        f"Config file not found: {resolved}. "
+        "Create one from a platform template under docs/templates/ before running init, sync, or doctor."
+    )
 
 
 def _load_existing_config(config_path: Path | None) -> GamehubConfig:
     return load_config(_resolve_existing_config_path(config_path))
+
+
+def _exit_for_cli_command(command: Callable[[], int]) -> None:
+    try:
+        code = command()
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    raise typer.Exit(code=code)
 
 
 def _run_init_command(
@@ -51,7 +63,7 @@ def _run_sync_command(
     skip_steam_relaunch: bool,
     reseed_profiles: bool,
 ) -> int:
-    loaded = load_config(config_path)
+    loaded = _load_existing_config(config_path)
     return run_sync(
         config=loaded,
         dry_run=dry_run,
@@ -72,7 +84,7 @@ def _run_doctor_controllers_command(
 ) -> int:
     if force and not apply:
         raise ValueError("--force requires --apply.")
-    loaded = load_config(config_path)
+    loaded = _load_existing_config(config_path)
     roots, note = _discover_controller_doctor_steam_roots(loaded)
     return run_controller_doctor(
         loaded,
@@ -89,7 +101,7 @@ def _run_doctor_roms_command(
     verbose: bool,
     verify: bool,
 ) -> int:
-    loaded = load_config(config_path)
+    loaded = _load_existing_config(config_path)
     return run_roms_doctor(loaded, verify=verify, verbose=verbose)
 
 
@@ -99,7 +111,7 @@ def _run_doctor_firmware_command(
     verbose: bool,
     verify: bool,
 ) -> int:
-    loaded = load_config(config_path)
+    loaded = _load_existing_config(config_path)
     return run_firmware_doctor(loaded, verify=verify, verbose=verbose)
 
 
@@ -112,7 +124,7 @@ def _run_doctor_saves_command(
     keep_local_save_id: str | None,
     keep_server_save_id: str | None,
 ) -> int:
-    loaded = load_config(config_path)
+    loaded = _load_existing_config(config_path)
     if keep_local_save_id is not None and keep_server_save_id is not None:
         raise ValueError("Choose only one of --keep-local or --keep-server.")
     if keep_local_save_id is not None:
@@ -144,7 +156,7 @@ def _run_doctor_all_command(
     verbose: bool,
     verify: bool,
 ) -> int:
-    loaded = load_config(config_path)
+    loaded = _load_existing_config(config_path)
     roots, note = _discover_controller_doctor_steam_roots(loaded)
     controller_code = run_controller_doctor(
         loaded,
@@ -186,16 +198,14 @@ def init(
         help="Overwrite managed profile/template files during init",
     ),
 ) -> None:
-    try:
-        code = _run_init_command(
+    _exit_for_cli_command(
+        lambda: _run_init_command(
             config_path=config,
             dry_run=dry_run,
             verbose=verbose,
             reseed_profiles=reseed_profiles,
         )
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    raise typer.Exit(code=code)
+    )
 
 
 @app.command()
@@ -229,8 +239,8 @@ def sync(
         help="Overwrite managed profile/template files during sync",
     ),
 ) -> None:
-    raise typer.Exit(
-        code=_run_sync_command(
+    _exit_for_cli_command(
+        lambda: _run_sync_command(
             config_path=config,
             dry_run=dry_run,
             verbose=verbose,
@@ -282,11 +292,7 @@ def doctor_controllers(
         help="With --apply, archive and clean up unmanaged profile files as well.",
     ),
 ) -> None:
-    try:
-        code = _run_doctor_controllers_command(config_path=config, apply=apply, force=force)
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    raise typer.Exit(code=code)
+    _exit_for_cli_command(lambda: _run_doctor_controllers_command(config_path=config, apply=apply, force=force))
 
 
 @doctor_app.command("roms")
@@ -299,7 +305,7 @@ def doctor_roms(
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
     verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
 ) -> None:
-    raise typer.Exit(code=_run_doctor_roms_command(config_path=config, verbose=verbose, verify=verify))
+    _exit_for_cli_command(lambda: _run_doctor_roms_command(config_path=config, verbose=verbose, verify=verify))
 
 
 @doctor_app.command("firmware")
@@ -312,7 +318,7 @@ def doctor_firmware(
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
     verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
 ) -> None:
-    raise typer.Exit(code=_run_doctor_firmware_command(config_path=config, verbose=verbose, verify=verify))
+    _exit_for_cli_command(lambda: _run_doctor_firmware_command(config_path=config, verbose=verbose, verify=verify))
 
 
 @doctor_app.command("saves")
@@ -336,8 +342,8 @@ def doctor_saves(
         help="Resolve one indexed save by downloading the server copy locally",
     ),
 ) -> None:
-    try:
-        code = _run_doctor_saves_command(
+    _exit_for_cli_command(
+        lambda: _run_doctor_saves_command(
             config_path=config,
             verbose=verbose,
             verify=verify,
@@ -345,9 +351,7 @@ def doctor_saves(
             keep_local_save_id=keep_local,
             keep_server_save_id=keep_server,
         )
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    raise typer.Exit(code=code)
+    )
 
 
 @doctor_app.command("all")
@@ -360,7 +364,7 @@ def doctor_all(
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose logging"),
     verify: bool = typer.Option(False, "--verify", help="Re-hash local files before diffing"),
 ) -> None:
-    raise typer.Exit(code=_run_doctor_all_command(config_path=config, verbose=verbose, verify=verify))
+    _exit_for_cli_command(lambda: _run_doctor_all_command(config_path=config, verbose=verbose, verify=verify))
 
 
 def _unique_paths(paths: list[Path]) -> tuple[Path, ...]:

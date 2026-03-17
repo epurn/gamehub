@@ -66,12 +66,13 @@ Windows PowerShell:
 ```
 
 Fresh installs must run `gamehub init` before the first `gamehub sync`.
+All user-facing CLI commands in this flow (`init`, `sync`, `doctor ...`) require a real config file; when the resolved path is missing, GAMEHUB fails fast and points back to `docs/templates/`.
 
 ## Init Flags
 - `--dry-run`: inspect bootstrap actions only
 - `--verbose`: longer network timeout and extra output context
 - `--reseed-profiles`: force-overwrite managed profile/template files during init (even when bytes already match)
-- `--config <path>`: TOML config path override (required to exist for `init`)
+- `--config <path>`: TOML config path override (required to exist)
 
 ## Sync Flags
 - `--dry-run`: build and print plan only
@@ -82,7 +83,7 @@ Fresh installs must run `gamehub init` before the first `gamehub sync`.
 - `--require-steam-closed`: fail if Steam cannot be closed before config writes
 - `--reseed-profiles`: force-overwrite managed profile/template files during sync (even when bytes already match)
 - Save sync remains config-driven in this phase (`[save_sync]` in `config.toml`); no additional CLI flags are required.
-- `--config <path>`: TOML config path override
+- `--config <path>`: TOML config path override (required to exist)
 
 Steam close behavior:
 - non-dry sync attempts to close Steam first
