@@ -786,15 +786,48 @@ def discover_local_exact_save_candidates(
     return tuple(sorted(candidates, key=lambda item: (item.system, item.title_id, item.canonical_suffix, item.save_id)))
 
 
+def _canonical_root_for_learned_path(binding: SaveBindingSpec, rel_path: str) -> str | None:
+    parts = tuple(part for part in PurePosixPath(rel_path).parts if part not in {"", "."})
+    if binding.learn_rule == "dolphin_gc_gci_tree":
+        if len(parts) < 3 or parts[0] not in _DOLPHIN_GC_REGIONS or parts[1] not in _DOLPHIN_GC_CARDS:
+            return None
+        return PurePosixPath(*parts[:2]).as_posix()
+    if binding.learn_rule == "dolphin_wii_title_tree":
+        if (
+            len(parts) < 4
+            or parts[0] != "title"
+            or not _is_hex_segment(parts[1], 8)
+            or not _is_hex_segment(parts[2], 8)
+        ):
+            return None
+        return PurePosixPath(*parts[:3]).as_posix()
+    if binding.learn_rule == "azahar_title_data_tree":
+        if (
+            len(parts) < 8
+            or parts[0] != "Nintendo 3DS"
+            or not _is_hex_segment(parts[1], 32)
+            or not _is_hex_segment(parts[2], 32)
+            or parts[3] != "title"
+            or not _is_hex_segment(parts[4], 8)
+            or not _is_hex_segment(parts[5], 8)
+            or parts[6] != "data"
+        ):
+            return None
+        return PurePosixPath(*parts[3:7]).as_posix()
+    return None
+
+
 def snapshot_binding_tree(
     binding: SaveBindingSpec,
     *,
+    canonical_roots: tuple[str, ...] = (),
     resolve_executable: Callable[[str], str] = resolve_emulator_executable,
 ) -> dict[str, str]:
     root = resolve_binding_local_root(binding, resolve_executable=resolve_executable)
     if root is None:
         return {}
     snapshot: dict[str, str] = {}
+    allowed_canonical_roots = set(canonical_roots)
     for path in sorted(root.rglob("*"), key=lambda item: item.as_posix().casefold()):
         if not path.is_file():
             continue
@@ -803,6 +836,10 @@ def snapshot_binding_tree(
         rel_path = path.relative_to(root).as_posix()
         if not _matches_learned_tree_path(binding, rel_path):
             continue
+        if allowed_canonical_roots:
+            canonical_root = _canonical_root_for_learned_path(binding, rel_path)
+            if canonical_root is None or canonical_root not in allowed_canonical_roots:
+                continue
         snapshot[rel_path] = sha256_file(path)
     return snapshot
 

@@ -375,20 +375,22 @@ N3DS Azahar defaults:
   - `save_binding_roots` (`binding_id` -> learned `canonical_root` + client-local `materialized_root`)
   - `offline_shortcut_titles` (`title_id` -> UTC timestamp marker for managed launches that lost metadata/server reachability)
   - `unresolved_save_conflicts` (`save_id` -> last unresolved deterministic conflict reason)
-  - `tombstones`
   - `last_sync` (UTC timestamp)
   - `bootstrap_version` (local bootstrap marker written by `gamehub init`; current value `1`)
 
 Save sync state semantics:
 - Missing save keys in older `state.json` files load as empty defaults for backward compatibility.
+- Older `state.json` files may still contain the legacy `tombstones` key; GAMEHUB ignores it on load and omits it on the next write.
 - `save_checksums` tracks last-known local checksum by `save_id` for deterministic planner comparisons.
 - `save_lineage` captures last-synced local/remote checksum snapshots and timestamps.
 - `save_binding_roots` persists learned deterministic tree roots for `per_game` save materialization across clients and later runs.
 - `offline_shortcut_titles` persists reconnect-recovery markers for managed launches that skipped metadata/save work while the server was unreachable.
 - `unresolved_save_conflicts` persists manual-resolution-required conflicts between runs.
 - `unresolved_save_conflicts[save_id] = "postexit-upload-missed-server-unreachable"` marks a managed launch-session upload miss caused by unreachable server; on reconnect in bidirectional mode, this enables deterministic timestamp comparison before fallback conflict logic.
-- Use `gamehub doctor saves` for a read-only view of persisted save conflicts, binding-root ambiguity, and current save drift without opening `state.json` manually.
+- Use `gamehub doctor saves` for a read-only view of actionable persisted save conflicts, actionable binding-root ambiguity, and current save drift without opening `state.json` manually.
+- Read-only doctor output suppresses stale launch-session markers when the current live save plan proves they are already synced or no longer live.
 - Use `gamehub doctor saves --keep-local <save_id>` or `--keep-server <save_id>` for explicit single-save resolution; successful resolution updates lineage/checksum state and removes that save's unresolved marker.
+- Non-dry `gamehub sync` prunes resolved or orphaned launch-session markers from `unresolved_save_conflicts`, refreshes lineage/checksum state for already-synced saves it clears, and leaves unresolved manual conflicts in place.
 - Binding-root ambiguity markers (`savebind_*`) remain manual in this phase and are not cleared by the save-resolution flags.
 
 Bootstrap notes:

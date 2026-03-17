@@ -3493,6 +3493,122 @@ def test_run_sync_dry_run_plans_upload_for_missed_unreachable_local_newer(monkey
         assert received["dry_run"] is True
 
 
+def test_run_sync_prunes_stale_persisted_conflicts_before_saving_state(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-sync-save-conflict-cleanup-") as temp_root:
+        config = GamehubConfig(
+            server_url="http://localhost:8000",
+            library_dir=temp_root / "library",
+            firmware_dir=temp_root / "firmware",
+            state_path=temp_root / "state.json",
+            steam_userdata_dir=Path("userdata"),
+            steam_id=None,
+            steam_exe=Path("steam.exe"),
+            sgdb_api_key=None,
+            sgdb_cache_dir=temp_root / "artwork_cache",
+            sgdb_enabled_kinds=("grid", "hero", "logo", "icon"),
+            controllers=ControllersConfig(launch_autoconfig=False),
+            save_sync=SaveSyncConfig(enabled=True, mode="bidirectional", conflict_policy="manual"),
+        )
+        resolved_path = temp_root / "saves" / "resolved.sav"
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+        resolved_path.write_bytes(b"resolved")
+        state = SyncState(
+            save_binding_roots={
+                "savebind_binding": {
+                    "canonical_root": "title/00040000/0011c500/data",
+                    "materialized_root": "Nintendo 3DS/example/title/00040000/0011c500/data",
+                }
+            },
+            unresolved_save_conflicts={
+                "save_orphaned": "create-race-or-upload-failed",
+                "save_resolved": "create-race-or-upload-failed",
+                "savebind_binding": "save-binding-root-ambiguous",
+                "save_manual": "both-changed-manual",
+            },
+            bootstrap_version=1,
+        )
+        plan = SyncPlan(
+            save_actions=[
+                SavePlanAction(
+                    save_id="save_resolved",
+                    binding_id="savebind_binding",
+                    title_id="title_n3ds_alpha",
+                    system="N3DS",
+                    kind="per_game",
+                    decision="skip",
+                    reason="already-synced",
+                    url="/v1/saves/save_resolved",
+                    destination=resolved_path,
+                    canonical_suffix="title/00040000/0011c500/data/00000001/main",
+                    expected_sha256="a" * 64,
+                    size_bytes=len(b"resolved"),
+                    remote_updated_at="2026-03-16T00:00:00+00:00",
+                    local_sha256="a" * 64,
+                ),
+                SavePlanAction(
+                    save_id="save_manual",
+                    binding_id="savebind_manual",
+                    title_id="title_manual",
+                    system="PS2",
+                    kind="memory_card",
+                    decision="conflict",
+                    reason="both-changed-manual",
+                    url="/v1/saves/save_manual",
+                    destination=temp_root / "manual.ps2",
+                    canonical_suffix="manual.ps2",
+                    expected_sha256="b" * 64,
+                    size_bytes=1024,
+                    remote_updated_at="2026-03-16T00:00:00+00:00",
+                    local_sha256="c" * 64,
+                ),
+            ]
+        )
+        saved_states: list[dict[str, object]] = []
+
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.load_state", lambda _path: state)
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._load_validated_index",
+            lambda *args, **kwargs: LibraryIndex(index_version=1, systems=(), titles=(), saves=()),
+        )
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._load_validated_save_bindings", lambda *args, **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._bootstrap_runtime", lambda *args, **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.deploy_firmware_to_emulators", lambda *args, **kwargs: None)
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator._converge_bootstrap_controller_state",
+            lambda *args, **kwargs: None,
+        )
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator.create_sync_plan", lambda **kwargs: plan)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._print_plan", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._build_artwork_assignments", lambda **kwargs: {})
+        monkeypatch.setattr("gamehub_cli.sync.orchestrator._apply_downloads", lambda *args, **kwargs: None)
+        monkeypatch.setattr("gamehub_cli.sync.save_stage.apply_save_stage", lambda **kwargs: None)
+        monkeypatch.setattr(
+            "gamehub_cli.sync.orchestrator.save_state_atomic",
+            lambda _path, live_state, keep_limit=3: saved_states.append(live_state.to_dict()),
+        )
+
+        exit_code = run_sync(
+            config=config,
+            dry_run=False,
+            verbose=False,
+            verify=False,
+            require_steam_closed=False,
+            skip_steam=True,
+        )
+
+        assert exit_code == 0
+        assert state.unresolved_save_conflicts == {"save_manual": "both-changed-manual"}
+        assert state.save_binding_roots == {
+            "savebind_binding": {
+                "canonical_root": "title/00040000/0011c500/data",
+                "materialized_root": "Nintendo 3DS/example/title/00040000/0011c500/data",
+            }
+        }
+        assert state.save_checksums["save_resolved"] == "a" * 64
+        assert state.save_lineage["save_resolved"]["remote_sha256"] == "a" * 64
+        assert saved_states[-1]["unresolved_save_conflicts"] == {"save_manual": "both-changed-manual"}
+
+
 def test_run_sync_save_stage_failure_skips_state_write(monkeypatch) -> None:
     class FakeResponse:
         def raise_for_status(self) -> None:

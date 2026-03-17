@@ -25,7 +25,6 @@ class SyncState:
     save_binding_roots: dict[str, SaveBindingRootRecord] = field(default_factory=dict)
     offline_shortcut_titles: dict[str, str] = field(default_factory=dict)
     unresolved_save_conflicts: dict[str, str] = field(default_factory=dict)
-    tombstones: list[str] = field(default_factory=list)
     last_sync: str | None = None
     bootstrap_version: int | None = None
 
@@ -47,7 +46,6 @@ class SyncState:
             },
             offline_shortcut_titles=dict(data.get("offline_shortcut_titles", {})),
             unresolved_save_conflicts=dict(data.get("unresolved_save_conflicts", {})),
-            tombstones=list(data.get("tombstones", [])),
             last_sync=data.get("last_sync"),
             bootstrap_version=data.get("bootstrap_version"),
         )
@@ -61,7 +59,6 @@ class SyncState:
             "save_binding_roots": self.save_binding_roots,
             "offline_shortcut_titles": self.offline_shortcut_titles,
             "unresolved_save_conflicts": self.unresolved_save_conflicts,
-            "tombstones": self.tombstones,
             "last_sync": self.last_sync,
             "bootstrap_version": self.bootstrap_version,
         }

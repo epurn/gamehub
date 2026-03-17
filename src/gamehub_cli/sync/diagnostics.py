@@ -4,11 +4,12 @@ import time
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
-from gamehub_common.models import LibraryIndex
+from gamehub_common.models import LibraryIndex, SaveBindingCatalog
 
 from ..common.config import GamehubConfig
 from . import index as sync_index
 from .planner import PlanAction, SavePlanAction, SyncPlan, create_sync_plan
+from .save_conflicts import PersistedConflictRecord, classify_persisted_save_conflicts
 from .server_status import require_server_compatibility
 from .state import SyncState, load_state
 
@@ -48,8 +49,32 @@ def build_sync_diagnostics_snapshot(
         reporter=print,
     )
     index = LibraryIndex.model_validate(raw_index)
-    plan = create_sync_plan(index=index, config=config, state=state, verify=verify)
+    save_bindings = _load_validated_save_bindings(config, timeout_seconds=index_timeout, verbose=verbose)
+    plan = create_sync_plan(index=index, config=config, state=state, verify=verify, save_bindings=save_bindings)
     return SyncDiagnosticsSnapshot(state=state, index=index, plan=plan)
+
+
+def _load_validated_save_bindings(
+    config: GamehubConfig,
+    *,
+    timeout_seconds: float,
+    verbose: bool,
+) -> SaveBindingCatalog | None:
+    if not config.save_sync.enabled:
+        return None
+    bindings_url = urljoin(config.server_url.rstrip("/") + "/", "v1/save-bindings")
+    print(f"Fetching save bindings: {bindings_url}")
+    raw_bindings = sync_index.fetch_save_bindings_with_retries(
+        bindings_url=bindings_url,
+        timeout_seconds=timeout_seconds,
+        attempts=config.index_fetch_attempts,
+        retry_backoff_seconds=config.index_retry_backoff_seconds,
+        verbose=verbose,
+        http_client_module=sync_index.httpx,
+        sleep_func=time.sleep,
+        reporter=print,
+    )
+    return SaveBindingCatalog.model_validate(raw_bindings)
 
 
 def _sorted_actions(actions: list[PlanAction]) -> list[PlanAction]:
@@ -97,6 +122,13 @@ def _conflict_scope(conflict_id: str, reason: str) -> str:
     if reason == "save-binding-root-ambiguous" or conflict_id.startswith("savebind_"):
         return "binding"
     return "save"
+
+
+def _print_persisted_conflicts(prefix: str, conflicts: tuple[PersistedConflictRecord, ...]) -> None:
+    for conflict in conflicts:
+        print(
+            f"{prefix}\tpersisted-conflict\tscope={conflict.scope}\tid={conflict.conflict_id}\treason={conflict.reason}"
+        )
 
 
 def _print_save_actions(prefix: str, actions: list[SavePlanAction]) -> None:
@@ -165,24 +197,21 @@ def run_save_doctor(
     state = active_snapshot.state
     plan = active_snapshot.plan
     interesting_actions = [action for action in plan.save_actions if _is_save_action_interesting(action)]
+    persisted_conflicts = classify_persisted_save_conflicts(state=state, plan=plan).actionable_conflicts
 
     print(
         "save-doctor\t"
         f"state_path={config.state_path}\t"
-        f"persisted_conflicts={len(state.unresolved_save_conflicts)}\t"
+        f"persisted_conflicts={len(persisted_conflicts)}\t"
         f"interesting_actions={len(interesting_actions)}\t"
         f"total_actions={len(plan.save_actions)}"
     )
-    for conflict_id, reason in sorted(state.unresolved_save_conflicts.items()):
-        print(
-            f"save-doctor\tpersisted-conflict\tscope={_conflict_scope(conflict_id, reason)}\t"
-            f"id={conflict_id}\treason={reason}"
-        )
+    _print_persisted_conflicts("save-doctor", persisted_conflicts)
     _print_save_actions("save-doctor", interesting_actions)
     print(
         "save-doctor\tsummary\t"
-        f"persisted_conflicts={len(state.unresolved_save_conflicts)}\t"
+        f"persisted_conflicts={len(persisted_conflicts)}\t"
         f"interesting_actions={len(interesting_actions)}\t"
         f"total_actions={len(plan.save_actions)}"
     )
-    return 1 if state.unresolved_save_conflicts or interesting_actions else 0
+    return 1 if persisted_conflicts or interesting_actions else 0
