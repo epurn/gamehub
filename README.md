@@ -64,6 +64,8 @@ Start from a template:
 - Bazzite: [`docs/templates/config.bazzite.template.toml`](docs/templates/config.bazzite.template.toml)
 - Steam Deck: [`docs/templates/config.steamdeck.template.toml`](docs/templates/config.steamdeck.template.toml)
 
+`gamehub init`, `gamehub sync`, and `gamehub doctor ...` fail fast if the resolved config path does not exist.
+
 macOS and Linux use the same universal release wheel; Windows ships a standalone EXE.
 
 macOS/Linux install from latest release wheel:

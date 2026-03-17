@@ -13,7 +13,7 @@ Sample templates:
 - Steam Deck (verified): [docs/templates/config.steamdeck.template.toml](templates/config.steamdeck.template.toml)
 - General Linux: [docs/templates/config.linux.template.toml](templates/config.linux.template.toml)
 
-Fresh installs must have a real config file in place before running `gamehub init`.
+Fresh installs must have a real config file in place before running `gamehub init`, `gamehub sync`, or `gamehub doctor`.
 
 Platform validation status is tracked in [platform-support.md](platform-support.md).
 

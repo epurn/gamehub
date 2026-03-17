@@ -258,7 +258,7 @@ def test_run_doctor_all_aggregates_controller_and_sync_audits(monkeypatch) -> No
     config = _config(Path("gamehub"))
     order: list[str] = []
     diagnostic_snapshot = SyncDiagnosticsSnapshot(state=SyncState(), index=_empty_index(), plan=SyncPlan())
-    monkeypatch.setattr("gamehub_cli.main.load_config", lambda config_path=None: config)
+    monkeypatch.setattr("gamehub_cli.main._load_existing_config", lambda config_path=None: config)
     monkeypatch.setattr("gamehub_cli.main._discover_controller_doctor_steam_roots", lambda loaded: ((), None))
     monkeypatch.setattr(
         "gamehub_cli.main.run_controller_doctor",
