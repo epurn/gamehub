@@ -10,7 +10,7 @@ from ..common.config_edit import parse_qsettings_pairs, read_qsettings_key, upse
 from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID, macos_azahar_qt_config_candidates
 from ..firmware.pcsx2_ini import read_ini_lines
 from .apply_ini import write_controller_config_lines_atomic
-from .profiles import PROFILE_KBM, load_profile_file
+from .profiles import AZAHAR_ESC_QUIT_SHORTCUT_KEYS, PROFILE_KBM, load_profile_file
 from .sdl_guid import (
     _azahar_detect_sdl_identity,
     _azahar_normalize_sdl_port,
@@ -42,6 +42,7 @@ _AZAHAR_MANAGED_BUTTON_KEYS = {
     "c_stick",
 }
 _AZAHAR_POINTER_KEY_MARKERS = ("touch", "mouse", "pointer")
+_AZAHAR_MANAGED_SHORTCUT_KEYS = {key for key, _value in AZAHAR_ESC_QUIT_SHORTCUT_KEYS}
 _AZAHAR_SDL_BUTTON_TOKEN_RE = re.compile(r"^b(?P<button>\d+)$")
 _AZAHAR_SDL_AXIS_TOKEN_RE = re.compile(r"^a(?P<axis>\d+)$")
 _AZAHAR_SDL_HAT_TOKEN_RE = re.compile(r"^h(?P<hat>\d+)\.(?P<direction>\d+)$")
@@ -276,8 +277,9 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
             existing = read_qsettings_key(lines, key)
             desired = value
             managed_button_key = _is_managed_azahar_button_key(key)
+            managed_shortcut_key = key in _AZAHAR_MANAGED_SHORTCUT_KEYS
             is_default_key = _is_azahar_profile_default_key(key)
-            if controller_mode and existing is not None and not managed_button_key:
+            if controller_mode and existing is not None and not managed_button_key and not managed_shortcut_key:
                 continue
             if controller_mode and key.startswith("profiles\\1\\"):
                 profile_key = _azahar_profile_key_name(key)

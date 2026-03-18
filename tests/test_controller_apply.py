@@ -1384,7 +1384,9 @@ def test_apply_controller_profile_dolphin_emits_device_mode_only_in_verbose_flow
         assert any("controller-autoconfig\tdolphin_device_selected=" in line for line in audit_lines)
 
 
-def test_apply_controller_profile_azahar_preserves_pointer_and_non_sdl_entries(monkeypatch, workspace_tempdir) -> None:
+def test_apply_controller_profile_azahar_preserves_pointer_keys_when_quit_shortcut_is_escape(
+    monkeypatch, workspace_tempdir
+) -> None:
     with workspace_tempdir("gamehub-controller-apply-") as temp_root:
         config = _config(temp_root)
         seed_default_profiles(config)
@@ -1394,6 +1396,8 @@ def test_apply_controller_profile_azahar_preserves_pointer_and_non_sdl_entries(m
             "\n".join(
                 [
                     "profile=0",
+                    r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Ctrl+Q",
+                    r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=true",
                     r'profiles\1\button_a="button:0,engine:sdl,guid:ABC123,port:0"',
                     r'profiles\1\touch_from_button_a="button:8,engine:keyboard"',
                     r'profiles\1\touch_device="engine:mouse,index:0"',
@@ -1414,6 +1418,8 @@ def test_apply_controller_profile_azahar_preserves_pointer_and_non_sdl_entries(m
         text = qt_config.read_text(encoding="utf-8")
 
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
+        assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc" in text
+        assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=false" in text
         assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in text
         assert r'profiles\1\touch_device="engine:mouse,index:0"' in text
 

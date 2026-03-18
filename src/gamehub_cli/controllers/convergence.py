@@ -26,6 +26,7 @@ from .managed_metadata import (
     write_managed_metadata_entry,
 )
 from .profiles import (
+    AZAHAR_ESC_QUIT_SHORTCUT_KEYS,
     DEFAULT_PROFILE_TEXTS,
     PROFILE_KBM,
     PROFILE_XBOX_1P,
@@ -238,7 +239,11 @@ def build_controller_convergence_plan(
                 AssistedQSettingsTarget(
                     name="azahar-runtime",
                     destination=path,
-                    keys={"profile": "0", r"profile\default": "true"},
+                    keys={
+                        "profile": "0",
+                        r"profile\default": "true",
+                        **dict(AZAHAR_ESC_QUIT_SHORTCUT_KEYS),
+                    },
                     source_template="runtime://azahar/safe-controller-state",
                 )
             )

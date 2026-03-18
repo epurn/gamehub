@@ -216,13 +216,25 @@ def test_controller_convergence_apply_repairs_assisted_ini_with_backup(monkeypat
         assert f"controller config saved path={pcsx2_ini}" in caplog.text
 
 
-def test_controller_convergence_apply_repairs_assisted_qsettings_with_backup(
+def test_controller_convergence_apply_repairs_azahar_quit_shortcut_with_backup(
     monkeypatch, workspace_tempdir, caplog
 ) -> None:
     with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
         config = _config(temp_root)
         qt_config = temp_root / "azahar" / "qt-config.ini"
-        original_text = "profile=9\nprofile\\default=false\n"
+        original_text = (
+            "profile=9\n"
+            r"profile\default=false"
+            "\n"
+            r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Ctrl+Q"
+            "\n"
+            r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=true"
+            "\n"
+            r'profiles\1\touch_from_button_a="button:8,engine:keyboard"'
+            "\n"
+            r'profiles\1\touch_device="engine:mouse,index:0"'
+            "\n"
+        )
         qt_config.parent.mkdir(parents=True, exist_ok=True)
         qt_config.write_text(original_text, encoding="utf-8")
         monkeypatch.setattr("gamehub_cli.controllers.convergence.azahar_target_config_paths", lambda: [qt_config])
@@ -240,6 +252,10 @@ def test_controller_convergence_apply_repairs_assisted_qsettings_with_backup(
         updated_text = qt_config.read_text(encoding="utf-8")
         assert "profile=0" in updated_text
         assert "profile\\default=true" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=false" in updated_text
+        assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in updated_text
+        assert r'profiles\1\touch_device="engine:mouse,index:0"' in updated_text
         assert f"controller config backup created path={qt_config}" in caplog.text
         assert f"controller config saved path={qt_config}" in caplog.text
 

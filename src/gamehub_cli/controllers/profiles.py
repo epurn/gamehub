@@ -16,6 +16,10 @@ PROFILE_KBM = "kbm"
 PROFILE_XBOX_1P = "xbox_1p"
 PROFILE_XBOX_2P = "xbox_2p"
 VALID_PROFILES = (PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P)
+AZAHAR_ESC_QUIT_SHORTCUT_KEYS: tuple[tuple[str, str], ...] = (
+    (r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq", "Esc"),
+    (r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default", "false"),
+)
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +80,10 @@ def _build_ini_text(sections: dict[str, dict[str, str]]) -> str:
         for key, value in values.items():
             lines.append(f"{key} = {value}")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _azahar_quit_shortcut_qt_config_text() -> str:
+    return "".join(f"{key}={value}\n" for key, value in AZAHAR_ESC_QUIT_SHORTCUT_KEYS)
 
 
 def _pcsx2_keyboard_pad_bindings(pad_number: int) -> dict[str, str]:
@@ -508,7 +516,7 @@ _AZAHAR_KBM_QT_CONFIG = (
     r'profiles\1\c_stick="down:code$083$1engine$0keyboard,left:code$065$1engine$0keyboard,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:code$068$1engine$0keyboard,up:code$087$1engine$0keyboard"'
     "\n"
     r"profiles\1\c_stick\default=false"
-    "\n"
+    "\n" + _azahar_quit_shortcut_qt_config_text()
 )
 
 
@@ -585,7 +593,7 @@ def _azahar_sdl_qt_config(*, port: int) -> str:
         rf'profiles\1\c_stick="down:axis$03$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5,engine:analog_from_button,left:axis$02$1direction$0-$1engine$0sdl$1port$0{port}$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$02$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5,up:axis$03$1direction$0-$1engine$0sdl$1port$0{port}$1threshold$00-0.5"'
         "\n"
         r"profiles\1\c_stick\default=false"
-        "\n"
+        "\n" + _azahar_quit_shortcut_qt_config_text()
     )
 
 

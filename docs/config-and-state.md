@@ -382,6 +382,7 @@ N3DS Azahar defaults:
   - Linux Flatpak: `~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini`
 - On macOS, GAMEHUB prefers an existing native-style Azahar save root `~/.local/share/azahar-emu/sdmc` before falling back to `~/Library/Application Support/Azahar/sdmc`.
 - GAMEHUB sets `fullscreen=true` and `confirmClose=false` so fullscreen launch and controller-driven exit flows do not block on confirmation.
+- Managed Azahar profiles and assisted `qt-config.ini` convergence also set `Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc` with `Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=false` so managed sessions use the repo-wide `Esc` quit/menu convention instead of the inherited `Ctrl+Q` shortcut.
 - Azahar controller bindings are applied at launch via controller profiles. GUID normalization is always detect-based.
 - On macOS, controller-mode apply derives Azahar's managed SDL button map from the bundled SDL controller database when a matching controller identity is available, including hat-based D-pad bindings and trigger axis correction for Bluetooth Xbox pads.
 - GUID discovery order (Linux Flatpak config paths): probe Azahar Flatpak runtime first; if unavailable, preserve existing GUID and otherwise keep port-only mappings (host GUID is not injected into Flatpak configs).
