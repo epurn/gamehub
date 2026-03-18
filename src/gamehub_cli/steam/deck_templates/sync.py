@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from gamehub_common.models import LibraryIndex
 
+from ...common.fsops import DEFAULT_BACKUP_KEEP_LIMIT, backup_existing_file
 from ..io import _atomic_write_bytes
 from ..shortcuts import _canonical_unsigned_app_id
 from ..types import ShortcutSyncResult, SteamContext
@@ -18,6 +20,7 @@ from .seeds import (
 )
 
 _STEAM_INPUT_ROOT_MARKER = ("steamapps", "common", "steam controller configs")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,14 @@ class TemplateSyncResult:
     written: int
     unchanged: int
     systems_applied: tuple[str, ...]
+
+
+def _backup_existing_template_target(path: Path, *, keep_limit: int) -> None:
+    backup_result = backup_existing_file(path, keep_limit=keep_limit)
+    if backup_result.created_path is not None:
+        logger.info("steam input template backup created path=%s backup=%s", path, backup_result.created_path)
+    for pruned_path in backup_result.pruned_paths:
+        logger.info("steam input template backup pruned path=%s pruned_backup=%s", path, pruned_path)
 
 
 def _steam_root_for_deck_template_root(root: Path) -> Path | None:
@@ -63,6 +74,7 @@ def apply_deck_steam_input_templates(
     shortcut_result: ShortcutSyncResult,
     *,
     overwrite_existing: bool = False,
+    keep_limit: int = DEFAULT_BACKUP_KEEP_LIMIT,
 ) -> TemplateSyncResult:
     managed_title_ids = set(shortcut_result.app_ids_by_title)
     if not managed_title_ids:
@@ -107,6 +119,7 @@ def apply_deck_steam_input_templates(
                 if target_path.exists():
                     if not overwrite_existing:
                         continue
+                    _backup_existing_template_target(target_path, keep_limit=keep_limit)
                 _atomic_write_bytes(target_path, payload)
                 title_changed = True
         if app_id is not None:
@@ -118,6 +131,7 @@ def apply_deck_steam_input_templates(
                     if override_path.exists():
                         if not overwrite_existing:
                             continue
+                        _backup_existing_template_target(override_path, keep_limit=keep_limit)
                     _atomic_write_bytes(override_path, payload)
                     title_changed = True
         if title_changed:
@@ -130,6 +144,7 @@ def apply_deck_steam_input_templates(
             root=root,
             managed_titles=managed_titles,
             shortcut_result=shortcut_result,
+            keep_limit=keep_limit,
         )
 
     return TemplateSyncResult(

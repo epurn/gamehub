@@ -196,5 +196,5 @@ More detail: [docs/deployment-server.md](docs/deployment-server.md), [docs/runbo
 - Server API: [docs/server-api.md](docs/server-api.md)
 - Operational runbook: [docs/runbook.md](docs/runbook.md)
 - Release + pre-public audit flow: [docs/release-process.md](docs/release-process.md)
-- Current released notes: [docs/release-notes-v1.5.0.md](docs/release-notes-v1.5.0.md)
+- Current released notes: [docs/release-notes-v1.5.1.md](docs/release-notes-v1.5.1.md)
 - Draft next release notes (`v1.6.0`): [docs/release-notes-v1.6.0.md](docs/release-notes-v1.6.0.md)
