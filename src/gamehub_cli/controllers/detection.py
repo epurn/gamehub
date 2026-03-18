@@ -235,7 +235,14 @@ def _detect_macos_xbox_controllers(*, max_devices: int) -> list[XboxController]:
     except Exception:
         return []
     controllers: list[XboxController] = []
-    for device in devices:
+    ordered_devices = sorted(
+        devices,
+        key=lambda device: (
+            int(getattr(device, "slot", 0)),
+            str(getattr(device, "name", "")).casefold(),
+        ),
+    )
+    for device in ordered_devices:
         if not _is_supported_macos_controller(device):
             continue
         controllers.append(

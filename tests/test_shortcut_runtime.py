@@ -132,15 +132,18 @@ def test_run_target_with_optional_exit_hook_uses_azahar_windows_exit_hook(monkey
 
     monkeypatch.setattr(runtime_module.sys, "platform", "win32")
     monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
+    monkeypatch.setattr(runtime_module, "detect_xbox_controllers", lambda max_devices=4: [])
     monkeypatch.setattr(
         runtime_module,
         "_run_windows_azahar_target_with_exit_hook",
-        lambda payload: hook_calls.append(payload.emulator) or 11,
+        lambda payload, on_process_started=None: hook_calls.append(payload.emulator) or 11,
     )
     monkeypatch.setattr(
         runtime_module,
         "_run_target",
-        lambda payload: (_ for _ in ()).throw(AssertionError("direct launch should not be used")),
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(
+            AssertionError("direct launch should not be used")
+        ),
     )
 
     exit_code = runtime_module._run_target_with_optional_exit_hook(
@@ -156,15 +159,18 @@ def test_run_target_with_optional_exit_hook_uses_azahar_macos_exit_hook(monkeypa
 
     monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
     monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "true")
+    monkeypatch.setattr(runtime_module, "detect_xbox_controllers", lambda max_devices=4: [])
     monkeypatch.setattr(
         runtime_module,
         "_run_macos_azahar_target_with_exit_hook",
-        lambda payload: hook_calls.append(payload.emulator) or 12,
+        lambda payload, on_process_started=None: hook_calls.append(payload.emulator) or 12,
     )
     monkeypatch.setattr(
         runtime_module,
         "_run_target",
-        lambda payload: (_ for _ in ()).throw(AssertionError("managed launch should not be used")),
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(
+            AssertionError("managed launch should not be used")
+        ),
     )
 
     exit_code = runtime_module._run_target_with_optional_exit_hook(
@@ -301,12 +307,13 @@ def test_run_target_with_optional_exit_hook_can_disable_dolphin_linux_exit_hook(
 def test_run_target_with_optional_exit_hook_can_disable_azahar_macos_exit_hook(monkeypatch) -> None:
     monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
     monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "false")
+    monkeypatch.setattr(runtime_module, "detect_xbox_controllers", lambda max_devices=4: [])
     monkeypatch.setattr(
         runtime_module,
         "_run_macos_azahar_target_with_exit_hook",
-        lambda payload: (_ for _ in ()).throw(AssertionError("hook should be disabled")),
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(AssertionError("hook should be disabled")),
     )
-    monkeypatch.setattr(runtime_module, "_run_target", lambda payload: 13)
+    monkeypatch.setattr(runtime_module, "_run_target", lambda payload, on_process_started=None: 13)
 
     exit_code = runtime_module._run_target_with_optional_exit_hook(
         _payload(
@@ -319,6 +326,136 @@ def test_run_target_with_optional_exit_hook_can_disable_azahar_macos_exit_hook(m
     )
 
     assert exit_code == 13
+
+
+def test_run_target_with_optional_azahar_mouse_bridge_starts_for_supported_xbox_controller(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class _Process:
+        pass
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "win32")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "false")
+    monkeypatch.setattr(
+        runtime_module,
+        "detect_xbox_controllers",
+        lambda max_devices=4: [XboxController(slot=2, name="XInput/2", subtype=7)],
+    )
+    monkeypatch.setattr(
+        runtime_module.azahar_exit_hook,
+        "_start_azahar_mouse_bridge",
+        lambda process, *, controller, app_id=None: observed.update(
+            {"process": process, "controller": controller, "app_id": app_id}
+        ),
+    )
+
+    def _fake_run_target(payload, on_process_started=None):
+        process = _Process()
+        observed["payload_emulator"] = payload.emulator
+        assert on_process_started is not None
+        on_process_started(process)
+        return 21
+
+    monkeypatch.setattr(runtime_module, "_run_target", _fake_run_target)
+
+    exit_code = runtime_module._run_target_with_optional_exit_hook(
+        _payload(emulator="azahar", target_exe="C:/Emu/Azahar.exe", target_args=("-f", "rom.3ds"))
+    )
+
+    assert exit_code == 21
+    assert observed["payload_emulator"] == "azahar"
+    assert observed["controller"] == XboxController(slot=2, name="XInput/2", subtype=7)
+    assert observed["app_id"] is None
+    assert isinstance(observed["process"], _Process)
+
+
+def test_run_target_with_optional_azahar_mouse_bridge_fails_open_when_backend_unavailable(monkeypatch) -> None:
+    warnings: list[str] = []
+
+    class _Process:
+        pass
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "linux")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "false")
+    monkeypatch.setattr(
+        runtime_module,
+        "detect_xbox_controllers",
+        lambda max_devices=4: [XboxController(slot=0, name="Xbox Wireless Controller", subtype=None)],
+    )
+    monkeypatch.setattr(runtime_module, "warn_shortcut_runtime", lambda message: warnings.append(message))
+
+    def _raise_unavailable(process, *, controller, app_id=None):
+        del process, controller, app_id
+        raise runtime_module.azahar_exit_hook.AzaharMouseBridgeUnavailable("Linux Azahar mouse bridge is disabled")
+
+    monkeypatch.setattr(runtime_module.azahar_exit_hook, "_start_azahar_mouse_bridge", _raise_unavailable)
+
+    def _fake_run_target(payload, on_process_started=None):
+        assert on_process_started is not None
+        on_process_started(_Process())
+        return 7
+
+    monkeypatch.setattr(runtime_module, "_run_target", _fake_run_target)
+
+    exit_code = runtime_module._run_target_with_optional_exit_hook(
+        _payload(
+            emulator="azahar",
+            target_exe="flatpak",
+            target_args=("run", "--device=all", "org.azahar_emu.Azahar", "-f", "--", "@@", "rom.3ds", "@@"),
+        )
+    )
+
+    assert exit_code == 7
+    assert warnings == [
+        "Azahar mouse bridge unavailable (error=Linux Azahar mouse bridge is disabled); continuing without synthetic mouse input"
+    ]
+
+
+def test_run_target_with_optional_azahar_mouse_bridge_coexists_with_exit_hook(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class _Process:
+        pass
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "win32")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
+    monkeypatch.setattr(
+        runtime_module,
+        "detect_xbox_controllers",
+        lambda max_devices=4: [XboxController(slot=0, name="XInput/0", subtype=3)],
+    )
+    monkeypatch.setattr(
+        runtime_module.azahar_exit_hook,
+        "_start_azahar_mouse_bridge",
+        lambda process, *, controller, app_id=None: observed.update(
+            {"process": process, "controller": controller, "app_id": app_id}
+        ),
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_windows_azahar_target_with_exit_hook",
+        lambda payload, on_process_started=None: (
+            observed.update({"runner": payload.emulator, "callback_present": on_process_started is not None}),
+            on_process_started(_Process()) if on_process_started is not None else None,
+            31,
+        )[-1],
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_target",
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(AssertionError("direct launch should not run")),
+    )
+
+    exit_code = runtime_module._run_target_with_optional_exit_hook(
+        _payload(emulator="azahar", target_exe="C:/Emu/Azahar.exe", target_args=("-f", "rom.3ds"))
+    )
+
+    assert exit_code == 31
+    assert observed["runner"] == "azahar"
+    assert observed["callback_present"] is True
+    assert observed["controller"] == XboxController(slot=0, name="XInput/0", subtype=3)
+    assert observed["app_id"] is None
+    assert isinstance(observed["process"], _Process)
 
 
 def test_run_target_macos_uses_bundle_safe_open_command(monkeypatch) -> None:

@@ -10,13 +10,14 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Callable
 
 from ..common.config import GamehubConfig
-from ..common.platform_paths import DOLPHIN_FLATPAK_APP_ID
+from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID, DOLPHIN_FLATPAK_APP_ID
 from ..common.shortcut_payload import ShortcutLaunchPayload, unquote_executable
 from ..controllers import azahar_exit_hook
 from ..controllers.apply import apply_controller_profile, apply_named_controller_profile
-from ..controllers.detection import detect_xbox_controllers, is_steam_deck_linux
+from ..controllers.detection import XboxController, detect_xbox_controllers, is_steam_deck_linux
 from ..controllers.profiles import PROFILE_KBM, profile_name_for_controller_count
 from ..controllers.sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
 
@@ -26,6 +27,7 @@ _DOLPHIN_EXIT_BUTTON_START_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_START"
 _DOLPHIN_EXIT_JS_DEVICE_ENV = "GAMEHUB_DOLPHIN_EXIT_JS_DEVICE"
 _AZAHAR_WINDOWS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK"
 _AZAHAR_MACOS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_MACOS_EXIT_HOOK"
+_AZAHAR_MOUSE_BRIDGE_MAX_DEVICES = 4
 _XINPUT_GAMEPAD_START = 0x0010
 _XINPUT_GAMEPAD_BACK = 0x0020
 _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
@@ -248,17 +250,30 @@ def _run_linux_dolphin_target_with_exit_hook(payload: ShortcutLaunchPayload) -> 
     return exit_code
 
 
-def _run_windows_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> int:
+_ProcessStartedCallback = Callable[[subprocess.Popen[bytes]], None]
+
+
+def _run_windows_azahar_target_with_exit_hook(
+    payload: ShortcutLaunchPayload,
+    *,
+    on_process_started: _ProcessStartedCallback | None = None,
+) -> int:
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
     cwd = _resolve_launch_cwd(payload)
     process = _spawn_shortcut_process(command, cwd=cwd)
+    if on_process_started is not None:
+        on_process_started(process)
     watcher = threading.Thread(target=_monitor_windows_azahar_exit_combo, args=(process,), daemon=True)
     watcher.start()
     return _wait_for_shortcut_process(process, command=command)
 
 
-def _run_macos_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> int:
+def _run_macos_azahar_target_with_exit_hook(
+    payload: ShortcutLaunchPayload,
+    *,
+    on_process_started: _ProcessStartedCallback | None = None,
+) -> int:
     raw_app_bundle = payload.macos_open_app
     if raw_app_bundle is None:
         raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
@@ -274,6 +289,8 @@ def _run_macos_azahar_target_with_exit_hook(payload: ShortcutLaunchPayload) -> i
     process_name = Path(unquote_executable(payload.target_exe)).name
     prelaunch_pids = azahar_exit_hook._discover_process_ids_by_name(process_name)
     process = _spawn_shortcut_process(command, cwd=None)
+    if on_process_started is not None:
+        on_process_started(process)
     select_button, start_button = azahar_exit_hook._resolve_select_and_start_buttons()
     controller_port = azahar_exit_hook._resolve_port_from_config()
     bundle_id = azahar_exit_hook._resolve_macos_bundle_identifier(app_bundle)
@@ -397,7 +414,11 @@ def _wait_for_shortcut_process(process: subprocess.Popen[bytes], *, command: lis
     return exit_code
 
 
-def _run_macos_bundle_target(payload: ShortcutLaunchPayload) -> int:
+def _run_macos_bundle_target(
+    payload: ShortcutLaunchPayload,
+    *,
+    on_process_started: _ProcessStartedCallback | None = None,
+) -> int:
     raw_app_bundle = payload.macos_open_app
     if raw_app_bundle is None:
         raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
@@ -412,6 +433,8 @@ def _run_macos_bundle_target(payload: ShortcutLaunchPayload) -> int:
     if payload.macos_open_args:
         command.extend(["--args", *payload.macos_open_args])
     process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
+    if on_process_started is not None:
+        on_process_started(process)
     return _wait_for_shortcut_process(process, command=command)
 
 
@@ -431,7 +454,11 @@ def _split_macos_azahar_launch_args(payload: ShortcutLaunchPayload) -> tuple[lis
     return documents, passthrough_args
 
 
-def _run_macos_azahar_target_as_document(payload: ShortcutLaunchPayload) -> int:
+def _run_macos_azahar_target_as_document(
+    payload: ShortcutLaunchPayload,
+    *,
+    on_process_started: _ProcessStartedCallback | None = None,
+) -> int:
     raw_app_bundle = payload.macos_open_app
     if raw_app_bundle is None:
         raise ShortcutLaunchError("launch failed (error=missing macOS app bundle target)")
@@ -445,10 +472,16 @@ def _run_macos_azahar_target_as_document(payload: ShortcutLaunchPayload) -> int:
     if passthrough_args:
         command.extend(["--args", *passthrough_args])
     process = _spawn_shortcut_process(command, cwd=None)
+    if on_process_started is not None:
+        on_process_started(process)
     return _wait_for_shortcut_process(process, command=command)
 
 
-def _run_macos_azahar_target_direct(payload: ShortcutLaunchPayload) -> int:
+def _run_macos_azahar_target_direct(
+    payload: ShortcutLaunchPayload,
+    *,
+    on_process_started: _ProcessStartedCallback | None = None,
+) -> int:
     executable = unquote_executable(payload.target_exe)
     if not executable:
         raise ShortcutLaunchError("launch failed (error=missing Azahar executable target)")
@@ -458,36 +491,100 @@ def _run_macos_azahar_target_direct(payload: ShortcutLaunchPayload) -> int:
         cwd = str(candidate.parent)
     command = [executable, *payload.target_args]
     process = _spawn_shortcut_process(command, cwd=cwd)
+    if on_process_started is not None:
+        on_process_started(process)
     return _wait_for_shortcut_process(process, command=command)
 
 
-def _run_target(payload: ShortcutLaunchPayload) -> int:
+def _run_target(
+    payload: ShortcutLaunchPayload,
+    *,
+    on_process_started: _ProcessStartedCallback | None = None,
+) -> int:
     if sys.platform == "darwin" and payload.macos_open_app:
         if "azahar" in payload.emulator:
             try:
-                return _run_macos_azahar_target_as_document(payload)
+                return _run_macos_azahar_target_as_document(payload, on_process_started=on_process_started)
             except Exception as exc:
                 warn_shortcut_runtime(f"Azahar document launch failed (error={exc}); falling back to direct launch")
             try:
-                return _run_macos_azahar_target_direct(payload)
+                return _run_macos_azahar_target_direct(payload, on_process_started=on_process_started)
             except Exception as exc:
                 warn_shortcut_runtime(f"Azahar direct launch failed (error={exc}); falling back to bundle launch")
-        return _run_macos_bundle_target(payload)
+        return _run_macos_bundle_target(payload, on_process_started=on_process_started)
     executable = unquote_executable(payload.target_exe)
     command = [executable, *payload.target_args]
     process = _spawn_shortcut_process(command, cwd=_resolve_launch_cwd(payload))
+    if on_process_started is not None:
+        on_process_started(process)
     return _wait_for_shortcut_process(process, command=command)
+
+
+def _payload_targets_azahar_exit_hook_wrapper(payload: ShortcutLaunchPayload) -> bool:
+    if "azahar" not in payload.emulator.casefold():
+        return False
+    args_folded = {arg.casefold() for arg in payload.target_args}
+    return "gamehub_cli.controllers.azahar_exit_hook" in args_folded
+
+
+def _detect_azahar_mouse_bridge_controller(payload: ShortcutLaunchPayload) -> XboxController | None:
+    if "azahar" not in payload.emulator.casefold():
+        return None
+    if _payload_targets_azahar_exit_hook_wrapper(payload):
+        return None
+    try:
+        controllers = detect_xbox_controllers(max_devices=_AZAHAR_MOUSE_BRIDGE_MAX_DEVICES)
+    except Exception as exc:
+        warn_shortcut_runtime(
+            f"Azahar mouse bridge controller detection failed (error={exc}); continuing without synthetic mouse input"
+        )
+        return None
+    if not controllers:
+        return None
+    return controllers[0]
+
+
+def _azahar_mouse_bridge_app_id(payload: ShortcutLaunchPayload) -> str | None:
+    if _payload_targets_flatpak_app(payload, app_id=AZAHAR_FLATPAK_APP_ID):
+        return AZAHAR_FLATPAK_APP_ID
+    return None
+
+
+def _run_with_optional_azahar_mouse_bridge(
+    payload: ShortcutLaunchPayload,
+    *,
+    runner: Callable[..., int],
+) -> int:
+    controller = _detect_azahar_mouse_bridge_controller(payload)
+    if controller is None:
+        return runner(payload)
+
+    def _on_process_started(process: subprocess.Popen[bytes]) -> None:
+        try:
+            azahar_exit_hook._start_azahar_mouse_bridge(
+                process,
+                controller=controller,
+                app_id=_azahar_mouse_bridge_app_id(payload),
+            )
+        except azahar_exit_hook.AzaharMouseBridgeUnavailable as exc:
+            warn_shortcut_runtime(
+                f"Azahar mouse bridge unavailable (error={exc}); continuing without synthetic mouse input"
+            )
+        except Exception as exc:
+            warn_shortcut_runtime(f"Azahar mouse bridge failed (error={exc}); continuing without synthetic mouse input")
+
+    return runner(payload, on_process_started=_on_process_started)
 
 
 def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:
     if _should_use_windows_azahar_exit_hook(payload):
         try:
-            return _run_windows_azahar_target_with_exit_hook(payload)
+            return _run_with_optional_azahar_mouse_bridge(payload, runner=_run_windows_azahar_target_with_exit_hook)
         except Exception as exc:
             warn_shortcut_runtime(f"Azahar exit hook failed (error={exc}); falling back to direct launch")
     if _should_use_macos_azahar_exit_hook(payload):
         try:
-            return _run_macos_azahar_target_with_exit_hook(payload)
+            return _run_with_optional_azahar_mouse_bridge(payload, runner=_run_macos_azahar_target_with_exit_hook)
         except Exception as exc:
             warn_shortcut_runtime(f"Azahar macOS exit hook failed (error={exc}); falling back to managed launch")
     if _should_use_linux_dolphin_exit_hook(payload):
@@ -495,6 +592,8 @@ def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:
             return _run_linux_dolphin_target_with_exit_hook(payload)
         except Exception as exc:
             warn_shortcut_runtime(f"Dolphin exit hook failed (error={exc}); falling back to direct launch")
+    if "azahar" in payload.emulator.casefold():
+        return _run_with_optional_azahar_mouse_bridge(payload, runner=_run_target)
     return _run_target(payload)
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import math
 import os
 import plistlib
 import re
@@ -11,10 +12,12 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Protocol
 
 from ..common.platform_paths import macos_azahar_qt_config_candidates
+from .detection import XboxController, detect_xbox_controllers
 from .sdl_guid import _lookup_macos_embedded_sdl_mapping_for_port, _SDLControllerMapping
 
 _JS_EVENT_FORMAT = "IhBB"
@@ -36,12 +39,18 @@ _MACOS_OSASCRIPT_EXECUTABLE = "/usr/bin/osascript"
 _MACOS_OBJC_LIBRARY = "/usr/lib/libobjc.A.dylib"
 _MACOS_FOUNDATION_FRAMEWORK = "/System/Library/Frameworks/Foundation.framework/Foundation"
 _MACOS_GAMECONTROLLER_FRAMEWORK = "/System/Library/Frameworks/GameController.framework/GameController"
+_MACOS_COREGRAPHICS_FRAMEWORK = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+_MACOS_COREFOUNDATION_FRAMEWORK = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
 _MACOS_HIDUTIL_POLL_SECONDS = 0.1
 _MACOS_XBOX_PLUGIN_NAME = "XboxOneHIDServicePlugin"
 _MACOS_EVENT_TYPE_KEYBOARD = 3
 _MACOS_CONSUMER_USAGE_PAGE = 12
 _MACOS_XBOX_START_USAGE = 516
 _MACOS_XBOX_SELECT_USAGE = 521
+_MACOS_EVENT_TAP_HID = 0
+_MACOS_EVENT_LEFT_MOUSE_DOWN = 1
+_MACOS_EVENT_LEFT_MOUSE_UP = 2
+_MACOS_MOUSE_BUTTON_LEFT = 0
 _MACOS_GC_FIELD_TO_SELECTOR = {
     "a": "buttonA",
     "b": "buttonB",
@@ -56,6 +65,122 @@ _MACOS_GC_FIELD_TO_SELECTOR = {
     "rightstick": "rightThumbstickButton",
 }
 _MACOS_SDL_BUTTON_FIELD_RE = re.compile(r"^b(?P<button>\d+)$")
+_AZAHAR_MOUSE_BRIDGE_POLL_SECONDS = 0.02
+_AZAHAR_MOUSE_BRIDGE_AXIS_DEADZONE = 0.2
+_AZAHAR_MOUSE_BRIDGE_MAX_MOUSE_DELTA = 24
+_AZAHAR_MOUSE_BRIDGE_TRIGGER_THRESHOLD = 0.5
+_AZAHAR_MOUSE_BRIDGE_MAX_DEVICES = 4
+_XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
+_WIN_MOUSEEVENTF_MOVE = 0x0001
+_WIN_MOUSEEVENTF_LEFTDOWN = 0x0002
+_WIN_MOUSEEVENTF_LEFTUP = 0x0004
+
+
+class AzaharMouseBridgeUnavailable(RuntimeError):
+    """Raised when the Azahar mouse bridge backend cannot be started."""
+
+
+@dataclass(frozen=True)
+class _AzaharMouseBridgeState:
+    stick_x: float
+    stick_y: float
+    primary_down: bool
+
+
+class _CGPoint(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+
+class _AzaharMouseEmitter(Protocol):
+    def move_relative(self, dx: int, dy: int) -> None: ...
+
+    def press_left(self) -> None: ...
+
+    def release_left(self) -> None: ...
+
+
+class _WindowsMouseEmitter:
+    def __init__(self) -> None:
+        windll = getattr(ctypes, "windll", None)
+        user32 = getattr(windll, "user32", None) if windll is not None else None
+        mouse_event = getattr(user32, "mouse_event", None)
+        if mouse_event is None:
+            raise AzaharMouseBridgeUnavailable("Windows mouse bridge backend unavailable")
+        self._mouse_event = mouse_event
+
+    def move_relative(self, dx: int, dy: int) -> None:
+        if dx == 0 and dy == 0:
+            return
+        self._mouse_event(_WIN_MOUSEEVENTF_MOVE, dx, dy, 0, 0)
+
+    def press_left(self) -> None:
+        self._mouse_event(_WIN_MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+
+    def release_left(self) -> None:
+        self._mouse_event(_WIN_MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+
+
+class _MacOSMouseEmitter:
+    def __init__(self) -> None:
+        if sys.platform != "darwin":
+            raise AzaharMouseBridgeUnavailable("macOS mouse bridge backend unavailable")
+        try:
+            self._coregraphics = ctypes.cdll.LoadLibrary(_MACOS_COREGRAPHICS_FRAMEWORK)
+            self._corefoundation = ctypes.cdll.LoadLibrary(_MACOS_COREFOUNDATION_FRAMEWORK)
+        except OSError as exc:
+            raise AzaharMouseBridgeUnavailable("macOS mouse bridge backend unavailable") from exc
+        self._configure_runtime()
+
+    def _configure_runtime(self) -> None:
+        self._coregraphics.CGEventCreate.argtypes = [ctypes.c_void_p]
+        self._coregraphics.CGEventCreate.restype = ctypes.c_void_p
+        self._coregraphics.CGEventGetLocation.argtypes = [ctypes.c_void_p]
+        self._coregraphics.CGEventGetLocation.restype = _CGPoint
+        self._coregraphics.CGWarpMouseCursorPosition.argtypes = [_CGPoint]
+        self._coregraphics.CGWarpMouseCursorPosition.restype = ctypes.c_int
+        self._coregraphics.CGEventCreateMouseEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, _CGPoint, ctypes.c_uint]
+        self._coregraphics.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        self._coregraphics.CGEventPost.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+        self._coregraphics.CGEventPost.restype = None
+        self._corefoundation.CFRelease.argtypes = [ctypes.c_void_p]
+        self._corefoundation.CFRelease.restype = None
+
+    def _current_position(self) -> _CGPoint:
+        event = self._coregraphics.CGEventCreate(None)
+        if not event:
+            return _CGPoint(0.0, 0.0)
+        try:
+            location = self._coregraphics.CGEventGetLocation(event)
+            return _CGPoint(float(location.x), float(location.y))
+        finally:
+            self._corefoundation.CFRelease(event)
+
+    def move_relative(self, dx: int, dy: int) -> None:
+        if dx == 0 and dy == 0:
+            return
+        current = self._current_position()
+        self._coregraphics.CGWarpMouseCursorPosition(_CGPoint(current.x + dx, current.y + dy))
+
+    def _post_mouse_event(self, event_type: int) -> None:
+        current = self._current_position()
+        event = self._coregraphics.CGEventCreateMouseEvent(
+            None,
+            event_type,
+            current,
+            _MACOS_MOUSE_BUTTON_LEFT,
+        )
+        if not event:
+            return
+        try:
+            self._coregraphics.CGEventPost(_MACOS_EVENT_TAP_HID, event)
+        finally:
+            self._corefoundation.CFRelease(event)
+
+    def press_left(self) -> None:
+        self._post_mouse_event(_MACOS_EVENT_LEFT_MOUSE_DOWN)
+
+    def release_left(self) -> None:
+        self._post_mouse_event(_MACOS_EVENT_LEFT_MOUSE_UP)
 
 
 def _azahar_qt_config_candidates() -> list[Path]:
@@ -76,6 +201,107 @@ def _int_env_optional(name: str) -> int | None:
         return int(raw.strip())
     except (TypeError, ValueError):
         return None
+
+
+class _XInputGamepad(ctypes.Structure):
+    _fields_ = [
+        ("wButtons", ctypes.c_ushort),
+        ("bLeftTrigger", ctypes.c_ubyte),
+        ("bRightTrigger", ctypes.c_ubyte),
+        ("sThumbLX", ctypes.c_short),
+        ("sThumbLY", ctypes.c_short),
+        ("sThumbRX", ctypes.c_short),
+        ("sThumbRY", ctypes.c_short),
+    ]
+
+
+class _XInputState(ctypes.Structure):
+    _fields_ = [("dwPacketNumber", ctypes.c_ulong), ("Gamepad", _XInputGamepad)]
+
+
+def _warn_azahar_runtime(message: str) -> None:
+    rendered = f"Warning: {message}"
+    try:
+        sys.stderr.write(f"{rendered}\n")
+        sys.stderr.flush()
+    except (BrokenPipeError, OSError, ValueError):
+        pass
+
+
+def _load_windows_xinput() -> ctypes.CDLL | None:
+    if not sys.platform.startswith("win"):
+        return None
+    win_dll_loader = getattr(ctypes, "WinDLL", None)
+    if win_dll_loader is None:
+        return None
+    for dll_name in _XINPUT_DLLS:
+        try:
+            lib = win_dll_loader(dll_name)
+        except OSError:
+            continue
+        try:
+            lib.XInputGetState.argtypes = [ctypes.c_uint, ctypes.POINTER(_XInputState)]
+            lib.XInputGetState.restype = ctypes.c_uint
+        except AttributeError:
+            continue
+        return lib
+    return None
+
+
+def _normalize_signed_axis(value: int) -> float:
+    if value >= 0:
+        normalized = value / 32767.0
+    else:
+        normalized = value / 32768.0
+    return max(-1.0, min(1.0, normalized))
+
+
+def _mouse_bridge_axis_delta(value: float) -> int:
+    clamped = max(-1.0, min(1.0, float(value)))
+    magnitude = abs(clamped)
+    if magnitude <= _AZAHAR_MOUSE_BRIDGE_AXIS_DEADZONE:
+        return 0
+    scaled = (magnitude - _AZAHAR_MOUSE_BRIDGE_AXIS_DEADZONE) / (1.0 - _AZAHAR_MOUSE_BRIDGE_AXIS_DEADZONE)
+    if scaled <= 0.0:
+        return 0
+    delta = max(1, int(round(scaled * _AZAHAR_MOUSE_BRIDGE_MAX_MOUSE_DELTA)))
+    return int(math.copysign(delta, clamped))
+
+
+def _apply_azahar_mouse_bridge_state(
+    state: _AzaharMouseBridgeState,
+    *,
+    primary_down: bool,
+    emitter: _AzaharMouseEmitter,
+) -> bool:
+    dx = _mouse_bridge_axis_delta(state.stick_x)
+    dy = -_mouse_bridge_axis_delta(state.stick_y)
+    if dx or dy:
+        emitter.move_relative(dx, dy)
+    if state.primary_down and not primary_down:
+        emitter.press_left()
+        return True
+    if primary_down and not state.primary_down:
+        emitter.release_left()
+        return False
+    return primary_down
+
+
+def _poll_windows_mouse_bridge_state(
+    lib: ctypes.CDLL,
+    *,
+    controller_slot: int,
+) -> _AzaharMouseBridgeState | None:
+    state = _XInputState()
+    if lib.XInputGetState(controller_slot, ctypes.byref(state)) != 0:
+        return None
+    gamepad = state.Gamepad
+    trigger_value = float(int(gamepad.bRightTrigger)) / 255.0
+    return _AzaharMouseBridgeState(
+        stick_x=_normalize_signed_axis(int(gamepad.sThumbRX)),
+        stick_y=_normalize_signed_axis(int(gamepad.sThumbRY)),
+        primary_down=trigger_value >= _AZAHAR_MOUSE_BRIDGE_TRIGGER_THRESHOLD,
+    )
 
 
 def _discover_js_devices() -> list[str]:
@@ -277,6 +503,81 @@ def _macos_gc_button_pressed(
     if not button:
         return False
     return bool(_objc_msg_send(objc, button, "isPressed", restype=ctypes.c_bool))
+
+
+def _macos_gc_float_value(
+    objc: ctypes.CDLL,
+    receiver: ctypes.c_void_p,
+    selector: str,
+) -> float | None:
+    if not receiver:
+        return None
+    responds = _objc_msg_send(
+        objc,
+        receiver,
+        "respondsToSelector:",
+        restype=ctypes.c_bool,
+        argtypes=(ctypes.c_void_p,),
+        args=(_objc_selector(objc, selector),),
+    )
+    if not responds:
+        return None
+    return float(_objc_msg_send(objc, receiver, selector, restype=ctypes.c_float))
+
+
+def _poll_macos_mouse_bridge_state(*, controller_slot: int) -> _AzaharMouseBridgeState | None:
+    objc = _load_macos_gamecontroller_runtime()
+    if objc is None:
+        return None
+    pool_class = _objc_class(objc, "NSAutoreleasePool")
+    pool = _objc_msg_send(objc, pool_class, "new") if pool_class else None
+    try:
+        controller_class = _objc_class(objc, "GCController")
+        if not controller_class:
+            return None
+        _objc_msg_send(
+            objc,
+            controller_class,
+            "setShouldMonitorBackgroundEvents:",
+            restype=None,
+            argtypes=(ctypes.c_bool,),
+            args=(True,),
+        )
+        controllers = _objc_msg_send(objc, controller_class, "controllers")
+        if not controllers:
+            return None
+        count = int(_objc_msg_send(objc, controllers, "count", restype=ctypes.c_ulong))
+        if controller_slot < 0 or controller_slot >= count:
+            return None
+        controller = _objc_msg_send(
+            objc,
+            controllers,
+            "objectAtIndex:",
+            argtypes=(ctypes.c_ulong,),
+            args=(controller_slot,),
+        )
+        if not controller:
+            return None
+        gamepad = _objc_msg_send(objc, controller, "extendedGamepad")
+        if not gamepad:
+            return None
+        right_thumbstick = _objc_msg_send(objc, gamepad, "rightThumbstick")
+        if not right_thumbstick:
+            return None
+        x_axis = _objc_msg_send(objc, right_thumbstick, "xAxis")
+        y_axis = _objc_msg_send(objc, right_thumbstick, "yAxis")
+        right_trigger = _objc_msg_send(objc, gamepad, "rightTrigger")
+        stick_x = _macos_gc_float_value(objc, x_axis, "value") or 0.0
+        stick_y = _macos_gc_float_value(objc, y_axis, "value") or 0.0
+        trigger_value = _macos_gc_float_value(objc, right_trigger, "value") or 0.0
+        return _AzaharMouseBridgeState(
+            stick_x=stick_x,
+            stick_y=stick_y,
+            primary_down=trigger_value >= _AZAHAR_MOUSE_BRIDGE_TRIGGER_THRESHOLD,
+        )
+    finally:
+        if pool:
+            _objc_msg_send(objc, pool, "drain", restype=None)
 
 
 def _macos_controller_combo_pressed(
@@ -668,6 +969,97 @@ def _wait_for_session_exit(process: subprocess.Popen[bytes], app_id: str) -> int
     return code
 
 
+def _linux_mouse_bridge_unavailable_reason() -> str:
+    session_type = os.environ.get("XDG_SESSION_TYPE", "").strip().casefold()
+    if not session_type:
+        if os.environ.get("WAYLAND_DISPLAY"):
+            session_type = "wayland"
+        elif os.environ.get("DISPLAY"):
+            session_type = "x11"
+    if session_type == "wayland":
+        return "Linux Azahar mouse bridge is disabled on Wayland sessions"
+    if session_type == "x11":
+        return "Linux Azahar mouse bridge is disabled until an X11 backend is validated"
+    return "Linux Azahar mouse bridge is disabled on this session backend"
+
+
+def _create_azahar_mouse_bridge_poller(
+    controller: XboxController,
+) -> tuple[Callable[[], _AzaharMouseBridgeState | None], _AzaharMouseEmitter]:
+    if sys.platform.startswith("win"):
+        lib = _load_windows_xinput()
+        if lib is None:
+            raise AzaharMouseBridgeUnavailable("Windows XInput backend unavailable")
+        return (
+            lambda: _poll_windows_mouse_bridge_state(lib, controller_slot=controller.slot),
+            _WindowsMouseEmitter(),
+        )
+    if sys.platform == "darwin":
+        return (
+            lambda: _poll_macos_mouse_bridge_state(controller_slot=controller.slot),
+            _MacOSMouseEmitter(),
+        )
+    if sys.platform.startswith("linux"):
+        raise AzaharMouseBridgeUnavailable(_linux_mouse_bridge_unavailable_reason())
+    raise AzaharMouseBridgeUnavailable(f"Azahar mouse bridge unsupported on platform {sys.platform}")
+
+
+def _azahar_mouse_bridge_session_active(
+    process: subprocess.Popen[bytes],
+    *,
+    app_id: str | None,
+) -> bool:
+    if app_id:
+        return _session_active(process, app_id)
+    return process.poll() is None
+
+
+def _monitor_azahar_mouse_bridge(
+    process: subprocess.Popen[bytes],
+    *,
+    poll_state: Callable[[], _AzaharMouseBridgeState | None],
+    emitter: _AzaharMouseEmitter,
+    app_id: str | None,
+) -> None:
+    primary_down = False
+    try:
+        while _azahar_mouse_bridge_session_active(process, app_id=app_id):
+            state = poll_state()
+            if state is not None:
+                primary_down = _apply_azahar_mouse_bridge_state(state, primary_down=primary_down, emitter=emitter)
+            time.sleep(_AZAHAR_MOUSE_BRIDGE_POLL_SECONDS)
+    finally:
+        if primary_down:
+            try:
+                emitter.release_left()
+            except Exception:
+                pass
+
+
+def _start_azahar_mouse_bridge(
+    process: subprocess.Popen[bytes],
+    *,
+    controller: XboxController,
+    app_id: str | None = None,
+) -> threading.Thread:
+    poll_state, emitter = _create_azahar_mouse_bridge_poller(controller)
+    watcher = threading.Thread(
+        target=_monitor_azahar_mouse_bridge,
+        args=(process,),
+        kwargs={"poll_state": poll_state, "emitter": emitter, "app_id": app_id},
+        daemon=True,
+    )
+    watcher.start()
+    return watcher
+
+
+def _detect_azahar_mouse_bridge_controller() -> XboxController | None:
+    controllers = detect_xbox_controllers(max_devices=_AZAHAR_MOUSE_BRIDGE_MAX_DEVICES)
+    if not controllers:
+        return None
+    return controllers[0]
+
+
 def _launch_azahar_flatpak(*, rom: str, app_id: str) -> int:
     command = [
         "flatpak",
@@ -682,6 +1074,22 @@ def _launch_azahar_flatpak(*, rom: str, app_id: str) -> int:
         "@@",
     ]
     process = subprocess.Popen(command, stdin=subprocess.DEVNULL)
+    try:
+        controller = _detect_azahar_mouse_bridge_controller()
+    except Exception as exc:
+        _warn_azahar_runtime(
+            f"Azahar mouse bridge controller detection failed (error={exc}); continuing without synthetic mouse input"
+        )
+        controller = None
+    if controller is not None:
+        try:
+            _start_azahar_mouse_bridge(process, controller=controller, app_id=app_id)
+        except AzaharMouseBridgeUnavailable as exc:
+            _warn_azahar_runtime(
+                f"Azahar mouse bridge unavailable (error={exc}); continuing without synthetic mouse input"
+            )
+        except Exception as exc:
+            _warn_azahar_runtime(f"Azahar mouse bridge failed (error={exc}); continuing without synthetic mouse input")
     select_button, start_button = _resolve_select_and_start_buttons()
     js_devices = _discover_js_devices()
     watcher = threading.Thread(

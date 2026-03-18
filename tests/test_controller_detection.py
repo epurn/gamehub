@@ -178,6 +178,44 @@ def test_detect_xbox_controllers_macos_uses_sdl_probe(monkeypatch) -> None:
     ]
 
 
+def test_detect_xbox_controllers_returns_stable_slot_order_for_azahar_mouse_bridge(monkeypatch) -> None:
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_detection,
+        "_discover_host_sdl_joysticks",
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=3,
+                name="Xbox Wireless Controller",
+                guid="3" * 32,
+                is_game_controller=True,
+                vendor_id=0x045E,
+            ),
+            SimpleNamespace(
+                slot=1,
+                name="Xbox Wireless Controller",
+                guid="1" * 32,
+                is_game_controller=True,
+                vendor_id=0x045E,
+            ),
+            SimpleNamespace(
+                slot=2,
+                name="Xbox Wireless Controller",
+                guid="2" * 32,
+                is_game_controller=True,
+                vendor_id=0x045E,
+            ),
+        ],
+    )
+
+    devices = detect_xbox_controllers(max_devices=2)
+
+    assert devices == [
+        XboxController(slot=1, name="Xbox Wireless Controller", subtype=None, guid="1" * 32, vendor_id=0x045E),
+        XboxController(slot=2, name="Xbox Wireless Controller", subtype=None, guid="2" * 32, vendor_id=0x045E),
+    ]
+
+
 def test_detect_xbox_controllers_macos_accepts_generic_name_with_microsoft_vendor(monkeypatch) -> None:
     monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
     monkeypatch.setattr(

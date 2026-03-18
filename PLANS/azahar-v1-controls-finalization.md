@@ -56,10 +56,10 @@
 - Type: CLI
 - Goal: make managed Azahar quit behavior consistent with GAMEHUB's `Esc` exit/menu convention.
 - Acceptance Criteria (deterministic):
-  - [ ] Managed Azahar default profile/runtime state includes an `Esc` quit binding in the Azahar QSettings surface GAMEHUB owns.
-  - [ ] Assisted Azahar convergence repairs existing managed `qt-config.ini` files to the same `Esc` quit binding using backup + atomic replace + logging.
-  - [ ] Existing pointer/touch keys remain preservation-first and are not cleared or remapped while converging the quit shortcut.
-  - [ ] Existing `Start+Select` wrapper exit behavior is unchanged.
+  - [x] Managed Azahar default profile/runtime state includes an `Esc` quit binding in the Azahar QSettings surface GAMEHUB owns.
+  - [x] Assisted Azahar convergence repairs existing managed `qt-config.ini` files to the same `Esc` quit binding using backup + atomic replace + logging.
+  - [x] Existing pointer/touch keys remain preservation-first and are not cleared or remapped while converging the quit shortcut.
+  - [x] Existing `Start+Select` wrapper exit behavior is unchanged.
 - Non-Goals:
   - mouse simulation
   - upstream Azahar shortcut refactors beyond the managed key GAMEHUB owns

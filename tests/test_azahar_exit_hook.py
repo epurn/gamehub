@@ -72,6 +72,40 @@ def test_handle_ev_key_event_ignores_other_keys() -> None:
     assert pressed == set()
 
 
+def test_azahar_mouse_bridge_translates_right_stick_and_r2() -> None:
+    events: list[tuple[object, ...]] = []
+
+    class _Emitter:
+        def move_relative(self, dx: int, dy: int) -> None:
+            events.append(("move", dx, dy))
+
+        def press_left(self) -> None:
+            events.append(("down",))
+
+        def release_left(self) -> None:
+            events.append(("up",))
+
+    emitter = _Emitter()
+    primary_down = azahar_exit_hook._apply_azahar_mouse_bridge_state(
+        azahar_exit_hook._AzaharMouseBridgeState(stick_x=1.0, stick_y=1.0, primary_down=True),
+        primary_down=False,
+        emitter=emitter,
+    )
+    primary_down = azahar_exit_hook._apply_azahar_mouse_bridge_state(
+        azahar_exit_hook._AzaharMouseBridgeState(stick_x=0.0, stick_y=0.0, primary_down=True),
+        primary_down=primary_down,
+        emitter=emitter,
+    )
+    primary_down = azahar_exit_hook._apply_azahar_mouse_bridge_state(
+        azahar_exit_hook._AzaharMouseBridgeState(stick_x=0.0, stick_y=0.0, primary_down=False),
+        primary_down=primary_down,
+        emitter=emitter,
+    )
+
+    assert primary_down is False
+    assert events == [("move", 24, -24), ("down",), ("up",)]
+
+
 def test_resolve_select_and_start_buttons_prefers_qt_config_when_env_unset(monkeypatch) -> None:
     monkeypatch.delenv("GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT", raising=False)
     monkeypatch.delenv("GAMEHUB_AZAHAR_EXIT_BUTTON_START", raising=False)
