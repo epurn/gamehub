@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+import gamehub_cli.config_flow as config_flow
 import gamehub_cli.main as cli_main
 
 _RUNNER = CliRunner()
@@ -181,6 +182,35 @@ def test_typer_config_verify_dispatches(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert captured == {"config_path": Path("config.toml")}
+
+
+def test_typer_config_init_normalizes_validation_errors(monkeypatch) -> None:
+    assert cli_main.app is not None
+    monkeypatch.setattr(
+        "gamehub_cli.config_flow.detect_steam_defaults",
+        lambda: config_flow.SteamDetection(None, None),
+    )
+
+    with _RUNNER.isolated_filesystem():
+        result = _RUNNER.invoke(
+            cli_main.app,
+            [
+                "config",
+                "init",
+                "--output",
+                "config.toml",
+                "--server-url",
+                "",
+                "--gamehub-dir",
+                "GameHub",
+                "--no-controller-autoconfig",
+                "--no-save-sync",
+            ],
+        )
+
+    assert result.exit_code != 0
+    assert "Server URL must not be empty" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_typer_doctor_controllers_dispatches(monkeypatch) -> None:
