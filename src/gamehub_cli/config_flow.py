@@ -233,6 +233,8 @@ def run_config_init(
 ) -> int:
     defaults = build_config_init_defaults(output_path)
     prompt_mode = _interactive_enabled(interactive)
+    if server_url is not None and not server_url.strip():
+        raise ValueError("Server URL must not be empty")
 
     resolved_output = Path(
         _prompt_text(

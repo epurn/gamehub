@@ -274,6 +274,30 @@ def test_config_init_first_write_uses_atomic_replace(monkeypatch, workspace_temp
         assert 'gamehub_dir = "/new/gamehub"' in rendered
 
 
+def test_config_init_rejects_empty_server_url_override(monkeypatch, workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-cli-config-init-invalid-") as temp_root:
+        config_path = temp_root / "config.toml"
+        monkeypatch.setattr(
+            "gamehub_cli.config_flow.detect_steam_defaults", lambda: config_flow.SteamDetection(None, None)
+        )
+
+        with pytest.raises(ValueError, match="Server URL must not be empty"):
+            run_config_init(
+                output_path=config_path,
+                server_url="",
+                gamehub_dir=Path("/new/gamehub"),
+                steam_userdata_dir=None,
+                steam_id=None,
+                controller_launch_autoconfig=False,
+                save_sync_enabled=False,
+                save_sync_mode=None,
+                save_sync_conflict_policy=None,
+                interactive=False,
+            )
+
+        assert not config_path.exists()
+
+
 def test_config_verify_reports_actionable_errors(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-cli-config-verify-") as temp_root:
         missing_config = temp_root / "missing.toml"
