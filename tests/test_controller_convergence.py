@@ -260,6 +260,52 @@ def test_controller_convergence_apply_repairs_azahar_quit_shortcut_with_backup(
         assert f"controller config saved path={qt_config}" in caplog.text
 
 
+def test_controller_convergence_apply_repairs_azahar_stick_deadzones_with_backup(
+    monkeypatch, workspace_tempdir, caplog
+) -> None:
+    with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
+        config = _config(temp_root)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        original_text = (
+            "profile=0\n"
+            r"profile\default=true"
+            "\n"
+            r'profiles\1\circle_pad="axis_x:0,axis_y:1,engine:sdl,port:0"'
+            "\n"
+            r"profiles\1\circle_pad\default=false"
+            "\n"
+            r'profiles\1\c_stick="axis_x:2,axis_y:3,engine:sdl,port:0"'
+            "\n"
+            r"profiles\1\c_stick\default=false"
+            "\n"
+            r'profiles\1\touch_from_button_a="button:8,engine:keyboard"'
+            "\n"
+            r'profiles\1\touch_device="engine:mouse,index:0"'
+            "\n"
+        )
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text(original_text, encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.controllers.convergence.azahar_target_config_paths", lambda: [qt_config])
+
+        plan = build_controller_convergence_plan(config, emulator_families={"azahar"})
+        with caplog.at_level(logging.INFO):
+            repaired = apply_controller_convergence_plan(plan, apply=True, force_managed=False)
+        finding = next(item for item in repaired.findings if item.target_path == qt_config)
+        backups = sorted(qt_config.parent.glob("qt-config.ini.*.bak"))
+
+        assert finding.status == ControllerTargetStatus.REPAIRED
+        assert finding.repaired is True
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == original_text
+        updated_text = qt_config.read_text(encoding="utf-8")
+        assert r'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:0.100000,engine:sdl,port:0"' in updated_text
+        assert r'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:0.100000,engine:sdl,port:0"' in updated_text
+        assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in updated_text
+        assert r'profiles\1\touch_device="engine:mouse,index:0"' in updated_text
+        assert f"controller config backup created path={qt_config}" in caplog.text
+        assert f"controller config saved path={qt_config}" in caplog.text
+
+
 def test_controller_convergence_does_not_overwrite_unmanaged_profile_without_marker(
     monkeypatch, workspace_tempdir
 ) -> None:

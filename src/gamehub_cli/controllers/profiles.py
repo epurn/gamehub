@@ -20,6 +20,11 @@ AZAHAR_ESC_QUIT_SHORTCUT_KEYS: tuple[tuple[str, str], ...] = (
     (r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq", "Esc"),
     (r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default", "false"),
 )
+AZAHAR_STICK_DEADZONE = "0.100000"
+_AZAHAR_SDL_STICK_AXES: tuple[tuple[str, int, int], ...] = (
+    (r"profiles\1\circle_pad", 0, 1),
+    (r"profiles\1\c_stick", 2, 3),
+)
 logger = logging.getLogger(__name__)
 
 
@@ -84,6 +89,22 @@ def _build_ini_text(sections: dict[str, dict[str, str]]) -> str:
 
 def _azahar_quit_shortcut_qt_config_text() -> str:
     return "".join(f"{key}={value}\n" for key, value in AZAHAR_ESC_QUIT_SHORTCUT_KEYS)
+
+
+def azahar_sdl_stick_binding(*, axis_x: int, axis_y: int, port: int) -> str:
+    return f'"axis_x:{axis_x},axis_y:{axis_y},deadzone:{AZAHAR_STICK_DEADZONE},engine:sdl,port:{port}"'
+
+
+def azahar_sdl_stick_qsettings(*, port: int) -> tuple[tuple[str, str], ...]:
+    pairs: list[tuple[str, str]] = []
+    for key, axis_x, axis_y in _AZAHAR_SDL_STICK_AXES:
+        pairs.append((key, azahar_sdl_stick_binding(axis_x=axis_x, axis_y=axis_y, port=port)))
+        pairs.append((f"{key}\\default", "false"))
+    return tuple(pairs)
+
+
+def _azahar_sdl_stick_qt_config_text(*, port: int) -> str:
+    return "".join(f"{key}={value}\n" for key, value in azahar_sdl_stick_qsettings(port=port))
 
 
 def _pcsx2_keyboard_pad_bindings(pad_number: int) -> dict[str, str]:
@@ -585,15 +606,7 @@ def _azahar_sdl_qt_config(*, port: int) -> str:
         rf'profiles\1\button_right="button:14,engine:sdl,port:{port}"'
         "\n"
         r"profiles\1\button_right\default=false"
-        "\n"
-        rf'profiles\1\circle_pad="down:axis$01$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5,engine:analog_from_button,left:axis$00$1direction$0-$1engine$0sdl$1port$0{port}$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$00$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5,up:axis$01$1direction$0-$1engine$0sdl$1port$0{port}$1threshold$00-0.5"'
-        "\n"
-        r"profiles\1\circle_pad\default=false"
-        "\n"
-        rf'profiles\1\c_stick="down:axis$03$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5,engine:analog_from_button,left:axis$02$1direction$0-$1engine$0sdl$1port$0{port}$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$02$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5,up:axis$03$1direction$0-$1engine$0sdl$1port$0{port}$1threshold$00-0.5"'
-        "\n"
-        r"profiles\1\c_stick\default=false"
-        "\n" + _azahar_quit_shortcut_qt_config_text()
+        "\n" + _azahar_sdl_stick_qt_config_text(port=port) + _azahar_quit_shortcut_qt_config_text()
     )
 
 

@@ -532,6 +532,8 @@ def _detect_azahar_mouse_bridge_controller(payload: ShortcutLaunchPayload) -> Xb
         return None
     if _payload_targets_azahar_exit_hook_wrapper(payload):
         return None
+    if azahar_exit_hook._azahar_mouse_bridge_disabled_reason() is not None:
+        return None
     try:
         controllers = detect_xbox_controllers(max_devices=_AZAHAR_MOUSE_BRIDGE_MAX_DEVICES)
     except Exception as exc:

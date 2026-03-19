@@ -394,7 +394,13 @@ Linux path notes:
   - listens for strict `Select+Start` and terminates Azahar when pressed:
     - joystick path (`/dev/input/js*`) using configured Azahar button indices
     - evdev fallback (`/dev/input/event*`) using `BTN_SELECT` + `BTN_START`
+  - on non-Steam-Deck Linux hosts such as Bazzite, also attempts a fail-open launch-time Xbox mouse bridge:
+    - right stick emits relative mouse movement
+    - `R2` holds left click
+    - requires a readable matching `/dev/input/event*` controller device and writable `/dev/uinput`
+    - can be disabled by setting `GAMEHUB_AZAHAR_MOUSE_BRIDGE=false`
   - can be disabled by setting `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=false` (falls back to direct flatpak launch)
+- Steam Deck hosts intentionally keep the existing built-in-controller path and do not start the Linux Azahar mouse bridge, even when the bridge is enabled elsewhere on Linux.
 - Linux Flatpak Dolphin launches wrapped by `shortcut-launch` include a fail-open `Select+Start` exit hook by default:
   - monitors `/dev/input/js*` (configurable button indices) and `/dev/input/event*` (`BTN_SELECT` + `BTN_START`)
   - on combo press, issues `flatpak kill org.DolphinEmu.dolphin-emu`

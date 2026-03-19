@@ -10,7 +10,7 @@ from ..common.config_edit import parse_qsettings_pairs, read_qsettings_key, upse
 from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID, macos_azahar_qt_config_candidates
 from ..firmware.pcsx2_ini import read_ini_lines
 from .apply_ini import write_controller_config_lines_atomic
-from .profiles import AZAHAR_ESC_QUIT_SHORTCUT_KEYS, PROFILE_KBM, load_profile_file
+from .profiles import AZAHAR_ESC_QUIT_SHORTCUT_KEYS, PROFILE_KBM, azahar_sdl_stick_binding, load_profile_file
 from .sdl_guid import (
     _azahar_detect_sdl_identity,
     _azahar_normalize_sdl_port,
@@ -43,6 +43,7 @@ _AZAHAR_MANAGED_BUTTON_KEYS = {
 }
 _AZAHAR_POINTER_KEY_MARKERS = ("touch", "mouse", "pointer")
 _AZAHAR_MANAGED_SHORTCUT_KEYS = {key for key, _value in AZAHAR_ESC_QUIT_SHORTCUT_KEYS}
+_AZAHAR_MANAGED_STICK_KEYS = {"circle_pad", "c_stick"}
 _AZAHAR_SDL_BUTTON_TOKEN_RE = re.compile(r"^b(?P<button>\d+)$")
 _AZAHAR_SDL_AXIS_TOKEN_RE = re.compile(r"^a(?P<axis>\d+)$")
 _AZAHAR_SDL_HAT_TOKEN_RE = re.compile(r"^h(?P<hat>\d+)\.(?P<direction>\d+)$")
@@ -161,6 +162,13 @@ def _is_pointer_related_azahar_key(key: str) -> bool:
     return any(marker in lowered for marker in _AZAHAR_POINTER_KEY_MARKERS)
 
 
+def _is_managed_azahar_stick_key(key: str) -> bool:
+    profile_key = _azahar_profile_key_name(key)
+    if profile_key is None:
+        return False
+    return profile_key in _AZAHAR_MANAGED_STICK_KEYS
+
+
 def _azahar_macos_sdl_button_value(control: str, *, port: int) -> str | None:
     normalized = control.strip().casefold()
     button_match = _AZAHAR_SDL_BUTTON_TOKEN_RE.match(normalized)
@@ -185,14 +193,7 @@ def _azahar_macos_sdl_analog_value(*, axis_x: str, axis_y: str, port: int) -> st
         return None
     axis_x_index = int(axis_x_match.group("axis"))
     axis_y_index = int(axis_y_match.group("axis"))
-    return (
-        f'"down:axis$0{axis_y_index}$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5,'
-        "engine:analog_from_button,"
-        f"left:axis$0{axis_x_index}$1direction$0-$1engine$0sdl$1port$0{port}$1threshold$00-0.5,"
-        "modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,"
-        f"right:axis$0{axis_x_index}$1direction$0+$1engine$0sdl$1port$0{port}$1threshold$00.5,"
-        f'up:axis$0{axis_y_index}$1direction$0-$1engine$0sdl$1port$0{port}$1threshold$00-0.5"'
-    )
+    return azahar_sdl_stick_binding(axis_x=axis_x_index, axis_y=axis_y_index, port=port)
 
 
 def _azahar_macos_binding_overrides(
@@ -278,6 +279,7 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
             desired = value
             managed_button_key = _is_managed_azahar_button_key(key)
             managed_shortcut_key = key in _AZAHAR_MANAGED_SHORTCUT_KEYS
+            managed_stick_key = _is_managed_azahar_stick_key(key)
             is_default_key = _is_azahar_profile_default_key(key)
             if controller_mode and existing is not None and not managed_button_key and not managed_shortcut_key:
                 continue
@@ -294,7 +296,8 @@ def apply_azahar_profile(config: GamehubConfig, profile_name: str) -> list[Path]
                 if existing is not None and _is_pointer_related_azahar_key(key):
                     continue
                 if (
-                    not is_default_key
+                    not managed_stick_key
+                    and not is_default_key
                     and existing is not None
                     and ("engine:sdl" in existing.casefold() or "engine$0sdl" in existing.casefold())
                     and (profile_key is None or profile_key not in macos_binding_overrides)

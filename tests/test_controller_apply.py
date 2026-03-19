@@ -559,8 +559,14 @@ def test_apply_controller_profile_azahar_linux_injects_runtime_guid(monkeypatch,
         text = qt_config.read_text(encoding="utf-8")
 
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:030018dc5e040000130b000000006800,port:0"' in text
-        assert r"profiles\1\circle_pad=" in text
-        assert "guid$0030018dc5e040000130b000000006800" in text
+        assert (
+            r'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:0.100000,engine:sdl,guid:030018dc5e040000130b000000006800,port:0"'
+            in text
+        )
+        assert (
+            r'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:0.100000,engine:sdl,guid:030018dc5e040000130b000000006800,port:0"'
+            in text
+        )
         zl_line = _line_for_key(text, "button_zl")
         zr_line = _line_for_key(text, "button_zr")
         assert zl_line is not None
@@ -1054,11 +1060,11 @@ def test_apply_azahar_profile_macos_uses_embedded_sdl_mapping(monkeypatch, works
             in text
         )
         assert (
-            r'profiles\1\circle_pad="down:axis$01$1direction$0+$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00.5,engine:analog_from_button,left:axis$00$1direction$0-$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$00$1direction$0+$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00.5,up:axis$01$1direction$0-$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00-0.5"'
+            r'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:0.100000,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"'
             in text
         )
         assert (
-            r'profiles\1\c_stick="down:axis$04$1direction$0+$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00.5,engine:analog_from_button,left:axis$03$1direction$0-$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00-0.5,modifier:code$068$1engine$0keyboard,modifier_scale:0.500000,right:axis$03$1direction$0+$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00.5,up:axis$04$1direction$0-$1engine$0sdl$1guid$0050000005e040000130b0000ff870001$1port$00$1threshold$00-0.5"'
+            r'profiles\1\c_stick="axis_x:3,axis_y:4,deadzone:0.100000,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"'
             in text
         )
 
@@ -1420,6 +1426,50 @@ def test_apply_controller_profile_azahar_preserves_pointer_keys_when_quit_shortc
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
         assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc" in text
         assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=false" in text
+        assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in text
+        assert r'profiles\1\touch_device="engine:mouse,index:0"' in text
+
+
+def test_apply_controller_profile_azahar_preserves_pointer_keys_while_setting_stick_deadzones(
+    monkeypatch, workspace_tempdir
+) -> None:
+    with workspace_tempdir("gamehub-controller-apply-") as temp_root:
+        config = _config(temp_root)
+        seed_default_profiles(config)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text(
+            "\n".join(
+                [
+                    "profile=0",
+                    r'profiles\1\circle_pad="axis_x:0,axis_y:1,engine:sdl,port:0"',
+                    r'profiles\1\c_stick="axis_x:2,axis_y:3,engine:sdl,port:0"',
+                    r'profiles\1\touch_from_button_a="button:8,engine:keyboard"',
+                    r'profiles\1\touch_device="engine:mouse,index:0"',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar.sys.platform", "linux")
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._azahar_target_config_paths", lambda: [qt_config])
+        monkeypatch.setattr("gamehub_cli.controllers.apply_azahar._is_azahar_flatpak_config_path", lambda path: False)
+        monkeypatch.setattr(
+            "gamehub_cli.controllers.apply_azahar._discover_host_sdl_guid",
+            lambda port=0: "040018dc5e040000130b000000006800",
+        )
+
+        apply_named_controller_profile(config, emulator_name="azahar", profile_name="xbox_1p")
+        text = qt_config.read_text(encoding="utf-8")
+
+        assert (
+            r'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:0.100000,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"'
+            in text
+        )
+        assert (
+            r'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:0.100000,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"'
+            in text
+        )
         assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in text
         assert r'profiles\1\touch_device="engine:mouse,index:0"' in text
 

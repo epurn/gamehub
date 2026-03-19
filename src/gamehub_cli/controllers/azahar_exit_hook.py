@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from ..common.platform_paths import macos_azahar_qt_config_candidates
-from .detection import XboxController, detect_xbox_controllers
+from .detection import XboxController, detect_xbox_controllers, is_steam_deck_linux
 from .sdl_guid import _lookup_macos_embedded_sdl_mapping_for_port, _SDLControllerMapping
 
 _JS_EVENT_FORMAT = "IhBB"
@@ -29,11 +29,20 @@ _INPUT_EVENT_SIZE = struct.calcsize(_INPUT_EVENT_FORMAT)
 _EV_KEY = 0x01
 _BTN_SELECT = 0x13A
 _BTN_START = 0x13B
+_BTN_TR2 = 0x139
 _BUTTON_PATTERN_TEMPLATE = r'^profiles\\\d+\\button_{name}="button:(\d+),'
 _PORT_PATTERN_TEMPLATE = r'^profiles\\\d+\\button_{name}="[^"]*port:(\d+)'
 _SELECT_BUTTON_ENV = "GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT"
 _START_BUTTON_ENV = "GAMEHUB_AZAHAR_EXIT_BUTTON_START"
 _JS_DEVICE_ENV = "GAMEHUB_AZAHAR_EXIT_JS_DEVICE"
+_AZAHAR_MOUSE_BRIDGE_ENV = "GAMEHUB_AZAHAR_MOUSE_BRIDGE"
+_AZAHAR_MOUSE_BRIDGE_EVENT_DEVICE_ENV = "GAMEHUB_AZAHAR_MOUSE_BRIDGE_EVENT_DEVICE"
+_PROC_INPUT_DEVICES_PATH = Path("/proc/bus/input/devices")
+_INPUT_DEVICE_NAME_RE = re.compile(r'^N:\s+Name="(?P<name>.*)"$')
+_INPUT_DEVICE_HANDLERS_RE = re.compile(r"^H:\s+Handlers=(?P<handlers>.+)$")
+_INPUT_EVENT_HANDLER_RE = re.compile(r"\bevent(?P<index>\d+)\b")
+_INPUT_JS_HANDLER_RE = re.compile(r"\bjs(?P<index>\d+)\b")
+_INPUT_JS_BASENAME_RE = re.compile(r"^js(?P<index>\d+)$")
 _MACOS_HIDUTIL_EXECUTABLE = "/usr/bin/hidutil"
 _MACOS_OSASCRIPT_EXECUTABLE = "/usr/bin/osascript"
 _MACOS_OBJC_LIBRARY = "/usr/lib/libobjc.A.dylib"
@@ -87,6 +96,13 @@ class _AzaharMouseBridgeState:
     primary_down: bool
 
 
+@dataclass(frozen=True)
+class _LinuxInputDeviceRecord:
+    name: str
+    js_indices: tuple[int, ...]
+    event_indices: tuple[int, ...]
+
+
 class _CGPoint(ctypes.Structure):
     _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
 
@@ -97,6 +113,8 @@ class _AzaharMouseEmitter(Protocol):
     def press_left(self) -> None: ...
 
     def release_left(self) -> None: ...
+
+    def close(self) -> None: ...
 
 
 class _WindowsMouseEmitter:
@@ -118,6 +136,9 @@ class _WindowsMouseEmitter:
 
     def release_left(self) -> None:
         self._mouse_event(_WIN_MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+
+    def close(self) -> None:
+        return None
 
 
 class _MacOSMouseEmitter:
@@ -182,6 +203,130 @@ class _MacOSMouseEmitter:
     def release_left(self) -> None:
         self._post_mouse_event(_MACOS_EVENT_LEFT_MOUSE_UP)
 
+    def close(self) -> None:
+        return None
+
+
+class _LinuxMouseEmitter:
+    def __init__(self, evdev_module: object) -> None:
+        ecodes = getattr(evdev_module, "ecodes", None)
+        uinput_type = getattr(evdev_module, "UInput", None)
+        if ecodes is None or uinput_type is None:
+            raise AzaharMouseBridgeUnavailable("evdev unavailable")
+        capabilities = {
+            ecodes.EV_REL: [ecodes.REL_X, ecodes.REL_Y],
+            ecodes.EV_KEY: [ecodes.BTN_LEFT],
+        }
+        try:
+            self._uinput = uinput_type(capabilities, name="GAMEHUB Azahar Mouse")
+        except FileNotFoundError as exc:
+            raise AzaharMouseBridgeUnavailable("/dev/uinput unavailable") from exc
+        except PermissionError as exc:
+            raise AzaharMouseBridgeUnavailable("permission denied opening /dev/uinput") from exc
+        except OSError as exc:
+            raise AzaharMouseBridgeUnavailable("virtual mouse creation failed") from exc
+        self._ecodes = ecodes
+
+    def move_relative(self, dx: int, dy: int) -> None:
+        if dx == 0 and dy == 0:
+            return
+        self._uinput.write(self._ecodes.EV_REL, self._ecodes.REL_X, dx)
+        self._uinput.write(self._ecodes.EV_REL, self._ecodes.REL_Y, dy)
+        self._uinput.syn()
+
+    def press_left(self) -> None:
+        self._uinput.write(self._ecodes.EV_KEY, self._ecodes.BTN_LEFT, 1)
+        self._uinput.syn()
+
+    def release_left(self) -> None:
+        self._uinput.write(self._ecodes.EV_KEY, self._ecodes.BTN_LEFT, 0)
+        self._uinput.syn()
+
+    def close(self) -> None:
+        close = getattr(self._uinput, "close", None)
+        if callable(close):
+            close()
+
+
+class _LinuxMouseBridgePoller:
+    def __init__(self, device: object, *, evdev_module: object) -> None:
+        ecodes = getattr(evdev_module, "ecodes", None)
+        if ecodes is None:
+            raise AzaharMouseBridgeUnavailable("evdev unavailable")
+        self._device = device
+        self._ecodes = ecodes
+        set_blocking = getattr(device, "set_blocking", None)
+        if callable(set_blocking):
+            set_blocking(False)
+
+        capabilities = getattr(device, "capabilities")(absinfo=True)
+        abs_capabilities = _linux_abs_capability_map(capabilities.get(ecodes.EV_ABS, []))
+        key_capabilities = _linux_key_capability_set(capabilities.get(ecodes.EV_KEY, []))
+        self._stick_x_info = abs_capabilities.get(ecodes.ABS_RX)
+        self._stick_y_info = abs_capabilities.get(ecodes.ABS_RY)
+        if self._stick_x_info is None or self._stick_y_info is None:
+            raise AzaharMouseBridgeUnavailable("missing right-stick axes")
+
+        self._trigger_info = abs_capabilities.get(ecodes.ABS_RZ)
+        self._digital_trigger_supported = ecodes.BTN_TR2 in key_capabilities
+        if self._trigger_info is None and not self._digital_trigger_supported:
+            raise AzaharMouseBridgeUnavailable("missing trigger input")
+
+        self._stick_x_value = _linux_abs_default_value(self._stick_x_info)
+        self._stick_y_value = _linux_abs_default_value(self._stick_y_info)
+        self._trigger_value = _linux_abs_default_value(self._trigger_info) if self._trigger_info is not None else 0
+        self._digital_trigger_down = False
+
+    def __call__(self) -> _AzaharMouseBridgeState | None:
+        read = getattr(self._device, "read", None)
+        if read is None:
+            return None
+        try:
+            events = list(read())
+        except BlockingIOError:
+            events = []
+        except OSError:
+            return None
+
+        for event in events:
+            event_type = getattr(event, "type", None)
+            code = getattr(event, "code", None)
+            value = getattr(event, "value", None)
+            if not isinstance(event_type, int) or not isinstance(code, int):
+                continue
+            if event_type == self._ecodes.EV_ABS and isinstance(value, int):
+                if code == self._ecodes.ABS_RX:
+                    self._stick_x_value = value
+                elif code == self._ecodes.ABS_RY:
+                    self._stick_y_value = value
+                elif self._trigger_info is not None and code == self._ecodes.ABS_RZ:
+                    self._trigger_value = value
+            elif (
+                self._trigger_info is None
+                and self._digital_trigger_supported
+                and event_type == self._ecodes.EV_KEY
+                and code == self._ecodes.BTN_TR2
+                and isinstance(value, int)
+            ):
+                self._digital_trigger_down = value != 0
+
+        primary_down = self._digital_trigger_down
+        if self._trigger_info is not None:
+            primary_down = (
+                _normalize_linux_trigger(self._trigger_value, self._trigger_info)
+                >= _AZAHAR_MOUSE_BRIDGE_TRIGGER_THRESHOLD
+            )
+        return _AzaharMouseBridgeState(
+            stick_x=_normalize_linux_axis(self._stick_x_value, self._stick_x_info),
+            stick_y=_normalize_linux_axis(self._stick_y_value, self._stick_y_info),
+            primary_down=primary_down,
+        )
+
+    def close(self) -> None:
+        close = getattr(self._device, "close", None)
+        if callable(close):
+            close()
+
 
 def _azahar_qt_config_candidates() -> list[Path]:
     home = Path.home()
@@ -201,6 +346,201 @@ def _int_env_optional(name: str) -> int | None:
         return int(raw.strip())
     except (TypeError, ValueError):
         return None
+
+
+def _env_enabled(name: str, *, default: bool = True) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().casefold()
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    return default
+
+
+def _azahar_mouse_bridge_disabled_reason() -> str | None:
+    if not _env_enabled(_AZAHAR_MOUSE_BRIDGE_ENV, default=True):
+        return f"disabled by {_AZAHAR_MOUSE_BRIDGE_ENV}"
+    if sys.platform.startswith("linux") and is_steam_deck_linux():
+        return "Linux Azahar mouse bridge is disabled on Steam Deck hosts"
+    return None
+
+
+def _linux_input_device_records(raw: str) -> list[_LinuxInputDeviceRecord]:
+    records: list[_LinuxInputDeviceRecord] = []
+    current_name: str | None = None
+    current_handlers: str | None = None
+
+    def _flush_entry() -> None:
+        if not current_name or not current_handlers:
+            return
+        js_indices = tuple(
+            sorted(int(match.group("index")) for match in _INPUT_JS_HANDLER_RE.finditer(current_handlers))
+        )
+        event_indices = tuple(
+            sorted(int(match.group("index")) for match in _INPUT_EVENT_HANDLER_RE.finditer(current_handlers))
+        )
+        records.append(
+            _LinuxInputDeviceRecord(
+                name=current_name,
+                js_indices=js_indices,
+                event_indices=event_indices,
+            )
+        )
+
+    for line in [*raw.splitlines(), ""]:
+        stripped = line.strip()
+        if not stripped:
+            _flush_entry()
+            current_name = None
+            current_handlers = None
+            continue
+        name_match = _INPUT_DEVICE_NAME_RE.match(stripped)
+        if name_match is not None:
+            current_name = name_match.group("name")
+            continue
+        handlers_match = _INPUT_DEVICE_HANDLERS_RE.match(stripped)
+        if handlers_match is not None:
+            current_handlers = handlers_match.group("handlers")
+    return records
+
+
+def _read_linux_input_device_records() -> list[_LinuxInputDeviceRecord]:
+    try:
+        raw = _PROC_INPUT_DEVICES_PATH.read_text(encoding="utf-8", errors="ignore")
+    except OSError as exc:
+        raise AzaharMouseBridgeUnavailable("unable to inspect /proc/bus/input/devices") from exc
+    return _linux_input_device_records(raw)
+
+
+def _js_device_index(path_value: str) -> int | None:
+    basename = Path(path_value).name
+    match = _INPUT_JS_BASENAME_RE.match(basename)
+    if match is None:
+        return None
+    return int(match.group("index"))
+
+
+def _linux_record_for_controller(
+    records: list[_LinuxInputDeviceRecord],
+    *,
+    controller: XboxController,
+    js_device_hint: str | None,
+) -> _LinuxInputDeviceRecord | None:
+    normalized_name = controller.name.casefold()
+    if js_device_hint:
+        js_index = _js_device_index(js_device_hint)
+        if js_index is not None:
+            hint_matches = [record for record in records if js_index in record.js_indices]
+            exact_hint = [record for record in hint_matches if record.name.casefold() == normalized_name]
+            if exact_hint:
+                return exact_hint[0]
+            if hint_matches:
+                return hint_matches[0]
+    exact_matches = [
+        record
+        for record in records
+        if controller.slot in record.js_indices and record.name.casefold() == normalized_name
+    ]
+    if exact_matches:
+        return exact_matches[0]
+    return None
+
+
+def _linux_event_device_path_for_controller(controller: XboxController) -> str:
+    override_path = os.environ.get(_AZAHAR_MOUSE_BRIDGE_EVENT_DEVICE_ENV)
+    if override_path:
+        return override_path
+    records = _read_linux_input_device_records()
+    record = _linux_record_for_controller(records, controller=controller, js_device_hint=os.environ.get(_JS_DEVICE_ENV))
+    if record is None or not record.event_indices:
+        raise AzaharMouseBridgeUnavailable("no matching event device")
+    return str(Path("/dev/input") / f"event{record.event_indices[0]}")
+
+
+def _linux_abs_capability_map(entries: object) -> dict[int, object]:
+    if not isinstance(entries, list):
+        return {}
+    capabilities: dict[int, object] = {}
+    for entry in entries:
+        if isinstance(entry, tuple) and len(entry) >= 2 and isinstance(entry[0], int):
+            capabilities[entry[0]] = entry[1]
+        elif isinstance(entry, int):
+            capabilities[entry] = None
+    return capabilities
+
+
+def _linux_key_capability_set(entries: object) -> set[int]:
+    if not isinstance(entries, list):
+        return set()
+    keys: set[int] = set()
+    for entry in entries:
+        if isinstance(entry, tuple) and entry and isinstance(entry[0], int):
+            keys.add(entry[0])
+        elif isinstance(entry, int):
+            keys.add(entry)
+    return keys
+
+
+def _linux_abs_bounds(absinfo: object) -> tuple[int, int] | None:
+    if absinfo is None:
+        return None
+    minimum = getattr(absinfo, "min", None)
+    maximum = getattr(absinfo, "max", None)
+    if isinstance(minimum, int) and isinstance(maximum, int) and maximum > minimum:
+        return minimum, maximum
+    if (
+        isinstance(absinfo, tuple)
+        and len(absinfo) >= 3
+        and isinstance(absinfo[1], int)
+        and isinstance(absinfo[2], int)
+        and absinfo[2] > absinfo[1]
+    ):
+        return absinfo[1], absinfo[2]
+    return None
+
+
+def _linux_abs_default_value(absinfo: object) -> int:
+    value = getattr(absinfo, "value", None)
+    if isinstance(value, int):
+        return value
+    if isinstance(absinfo, tuple) and absinfo and isinstance(absinfo[0], int):
+        return absinfo[0]
+    bounds = _linux_abs_bounds(absinfo)
+    if bounds is None:
+        return 0
+    minimum, maximum = bounds
+    return int(round((minimum + maximum) / 2.0))
+
+
+def _normalize_linux_axis(value: int, absinfo: object) -> float:
+    bounds = _linux_abs_bounds(absinfo)
+    if bounds is None:
+        return 0.0
+    minimum, maximum = bounds
+    center = (minimum + maximum) / 2.0
+    half_range = max((maximum - minimum) / 2.0, 1.0)
+    normalized = (value - center) / half_range
+    return max(-1.0, min(1.0, normalized))
+
+
+def _normalize_linux_trigger(value: int, absinfo: object) -> float:
+    bounds = _linux_abs_bounds(absinfo)
+    if bounds is None:
+        return 0.0
+    minimum, maximum = bounds
+    normalized = (value - minimum) / max(maximum - minimum, 1)
+    return max(0.0, min(1.0, normalized))
+
+
+def _load_linux_evdev() -> object:
+    try:
+        import evdev
+    except ImportError as exc:
+        raise AzaharMouseBridgeUnavailable("evdev unavailable") from exc
+    return evdev
 
 
 class _XInputGamepad(ctypes.Structure):
@@ -969,23 +1309,12 @@ def _wait_for_session_exit(process: subprocess.Popen[bytes], app_id: str) -> int
     return code
 
 
-def _linux_mouse_bridge_unavailable_reason() -> str:
-    session_type = os.environ.get("XDG_SESSION_TYPE", "").strip().casefold()
-    if not session_type:
-        if os.environ.get("WAYLAND_DISPLAY"):
-            session_type = "wayland"
-        elif os.environ.get("DISPLAY"):
-            session_type = "x11"
-    if session_type == "wayland":
-        return "Linux Azahar mouse bridge is disabled on Wayland sessions"
-    if session_type == "x11":
-        return "Linux Azahar mouse bridge is disabled until an X11 backend is validated"
-    return "Linux Azahar mouse bridge is disabled on this session backend"
-
-
 def _create_azahar_mouse_bridge_poller(
     controller: XboxController,
 ) -> tuple[Callable[[], _AzaharMouseBridgeState | None], _AzaharMouseEmitter]:
+    disabled_reason = _azahar_mouse_bridge_disabled_reason()
+    if disabled_reason is not None:
+        raise AzaharMouseBridgeUnavailable(disabled_reason)
     if sys.platform.startswith("win"):
         lib = _load_windows_xinput()
         if lib is None:
@@ -1000,7 +1329,32 @@ def _create_azahar_mouse_bridge_poller(
             _MacOSMouseEmitter(),
         )
     if sys.platform.startswith("linux"):
-        raise AzaharMouseBridgeUnavailable(_linux_mouse_bridge_unavailable_reason())
+        evdev_module = _load_linux_evdev()
+        event_device_path = _linux_event_device_path_for_controller(controller)
+        input_device_type = getattr(evdev_module, "InputDevice", None)
+        if input_device_type is None:
+            raise AzaharMouseBridgeUnavailable("evdev unavailable")
+        try:
+            device = input_device_type(event_device_path)
+        except FileNotFoundError as exc:
+            raise AzaharMouseBridgeUnavailable("no matching event device") from exc
+        except PermissionError as exc:
+            raise AzaharMouseBridgeUnavailable(f"permission denied reading {event_device_path}") from exc
+        except OSError as exc:
+            raise AzaharMouseBridgeUnavailable(f"unable to read event device {event_device_path}") from exc
+        try:
+            poller = _LinuxMouseBridgePoller(device, evdev_module=evdev_module)
+        except Exception:
+            close = getattr(device, "close", None)
+            if callable(close):
+                close()
+            raise
+        try:
+            emitter = _LinuxMouseEmitter(evdev_module)
+        except Exception:
+            poller.close()
+            raise
+        return poller, emitter
     raise AzaharMouseBridgeUnavailable(f"Azahar mouse bridge unsupported on platform {sys.platform}")
 
 
@@ -1034,6 +1388,16 @@ def _monitor_azahar_mouse_bridge(
                 emitter.release_left()
             except Exception:
                 pass
+        close_poller = getattr(poll_state, "close", None)
+        if callable(close_poller):
+            try:
+                close_poller()
+            except Exception:
+                pass
+        try:
+            emitter.close()
+        except Exception:
+            pass
 
 
 def _start_azahar_mouse_bridge(
@@ -1054,6 +1418,8 @@ def _start_azahar_mouse_bridge(
 
 
 def _detect_azahar_mouse_bridge_controller() -> XboxController | None:
+    if _azahar_mouse_bridge_disabled_reason() is not None:
+        return None
     controllers = detect_xbox_controllers(max_devices=_AZAHAR_MOUSE_BRIDGE_MAX_DEVICES)
     if not controllers:
         return None
