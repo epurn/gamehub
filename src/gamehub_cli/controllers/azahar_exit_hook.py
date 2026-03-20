@@ -12,9 +12,14 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
 
 from ..common.platform_paths import macos_azahar_qt_config_candidates
+from .macos_gamecontroller import (
+    load_macos_gamecontroller_runtime,
+    macos_gc_button_pressed,
+    objc_class,
+    objc_msg_send,
+)
 from .sdl_guid import _lookup_macos_embedded_sdl_mapping_for_port, _SDLControllerMapping
 
 _JS_EVENT_FORMAT = "IhBB"
@@ -33,9 +38,6 @@ _START_BUTTON_ENV = "GAMEHUB_AZAHAR_EXIT_BUTTON_START"
 _JS_DEVICE_ENV = "GAMEHUB_AZAHAR_EXIT_JS_DEVICE"
 _MACOS_HIDUTIL_EXECUTABLE = "/usr/bin/hidutil"
 _MACOS_OSASCRIPT_EXECUTABLE = "/usr/bin/osascript"
-_MACOS_OBJC_LIBRARY = "/usr/lib/libobjc.A.dylib"
-_MACOS_FOUNDATION_FRAMEWORK = "/System/Library/Frameworks/Foundation.framework/Foundation"
-_MACOS_GAMECONTROLLER_FRAMEWORK = "/System/Library/Frameworks/GameController.framework/GameController"
 _MACOS_HIDUTIL_POLL_SECONDS = 0.1
 _MACOS_XBOX_PLUGIN_NAME = "XboxOneHIDServicePlugin"
 _MACOS_EVENT_TYPE_KEYBOARD = 3
@@ -76,6 +78,15 @@ def _int_env_optional(name: str) -> int | None:
         return int(raw.strip())
     except (TypeError, ValueError):
         return None
+
+
+def _warn_azahar_runtime(message: str) -> None:
+    rendered = f"Warning: {message}"
+    try:
+        sys.stderr.write(f"{rendered}\n")
+        sys.stderr.flush()
+    except (BrokenPipeError, OSError, ValueError):
+        pass
 
 
 def _discover_js_devices() -> list[str]:
@@ -218,83 +229,22 @@ def _resolve_macos_button_selectors(
     return select_selector, start_selector
 
 
-def _load_macos_gamecontroller_runtime() -> ctypes.CDLL | None:
-    if sys.platform != "darwin":
-        return None
-    try:
-        ctypes.cdll.LoadLibrary(_MACOS_FOUNDATION_FRAMEWORK)
-        ctypes.cdll.LoadLibrary(_MACOS_GAMECONTROLLER_FRAMEWORK)
-        objc = ctypes.cdll.LoadLibrary(_MACOS_OBJC_LIBRARY)
-    except OSError:
-        return None
-    objc.objc_getClass.argtypes = [ctypes.c_char_p]
-    objc.objc_getClass.restype = ctypes.c_void_p
-    objc.sel_registerName.argtypes = [ctypes.c_char_p]
-    objc.sel_registerName.restype = ctypes.c_void_p
-    return objc
-
-
-def _objc_selector(objc: ctypes.CDLL, name: str) -> ctypes.c_void_p:
-    return ctypes.c_void_p(objc.sel_registerName(name.encode("utf-8")))
-
-
-def _objc_class(objc: ctypes.CDLL, name: str) -> ctypes.c_void_p:
-    return ctypes.c_void_p(objc.objc_getClass(name.encode("utf-8")))
-
-
-def _objc_msg_send(
-    objc: ctypes.CDLL,
-    receiver: ctypes.c_void_p,
-    selector: str,
-    *,
-    restype: Any = ctypes.c_void_p,
-    argtypes: tuple[Any, ...] = (),
-    args: tuple[Any, ...] = (),
-) -> Any:
-    objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p, *argtypes]
-    objc.objc_msgSend.restype = restype
-    return objc.objc_msgSend(receiver, _objc_selector(objc, selector), *args)
-
-
-def _macos_gc_button_pressed(
-    objc: ctypes.CDLL,
-    gamepad: ctypes.c_void_p,
-    selector: str,
-) -> bool:
-    if not gamepad:
-        return False
-    responds = _objc_msg_send(
-        objc,
-        gamepad,
-        "respondsToSelector:",
-        restype=ctypes.c_bool,
-        argtypes=(ctypes.c_void_p,),
-        args=(_objc_selector(objc, selector),),
-    )
-    if not responds:
-        return False
-    button = _objc_msg_send(objc, gamepad, selector)
-    if not button:
-        return False
-    return bool(_objc_msg_send(objc, button, "isPressed", restype=ctypes.c_bool))
-
-
 def _macos_controller_combo_pressed(
     *,
     controller_port: int,
     select_selector: str,
     start_selector: str,
 ) -> bool | None:
-    objc = _load_macos_gamecontroller_runtime()
+    objc = load_macos_gamecontroller_runtime()
     if objc is None:
         return None
-    pool_class = _objc_class(objc, "NSAutoreleasePool")
-    pool = _objc_msg_send(objc, pool_class, "new") if pool_class else None
+    pool_class = objc_class(objc, "NSAutoreleasePool")
+    pool = objc_msg_send(objc, pool_class, "new") if pool_class else None
     try:
-        controller_class = _objc_class(objc, "GCController")
+        controller_class = objc_class(objc, "GCController")
         if not controller_class:
             return None
-        _objc_msg_send(
+        objc_msg_send(
             objc,
             controller_class,
             "setShouldMonitorBackgroundEvents:",
@@ -302,13 +252,13 @@ def _macos_controller_combo_pressed(
             argtypes=(ctypes.c_bool,),
             args=(True,),
         )
-        controllers = _objc_msg_send(objc, controller_class, "controllers")
+        controllers = objc_msg_send(objc, controller_class, "controllers")
         if not controllers:
             return None
-        count = int(_objc_msg_send(objc, controllers, "count", restype=ctypes.c_ulong))
+        count = int(objc_msg_send(objc, controllers, "count", restype=ctypes.c_ulong))
         if controller_port < 0 or controller_port >= count:
             return None
-        controller = _objc_msg_send(
+        controller = objc_msg_send(
             objc,
             controllers,
             "objectAtIndex:",
@@ -317,17 +267,17 @@ def _macos_controller_combo_pressed(
         )
         if not controller:
             return None
-        gamepad = _objc_msg_send(objc, controller, "extendedGamepad")
+        gamepad = objc_msg_send(objc, controller, "extendedGamepad")
         if not gamepad:
             return None
-        return _macos_gc_button_pressed(objc, gamepad, select_selector) and _macos_gc_button_pressed(
+        return macos_gc_button_pressed(objc, gamepad, select_selector) and macos_gc_button_pressed(
             objc,
             gamepad,
             start_selector,
         )
     finally:
         if pool:
-            _objc_msg_send(objc, pool, "drain", restype=None)
+            objc_msg_send(objc, pool, "drain", restype=None)
 
 
 def _capture_macos_xbox_event_log() -> tuple[int | None, list[dict[str, object]]] | None:

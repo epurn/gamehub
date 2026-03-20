@@ -72,6 +72,56 @@ def test_handle_ev_key_event_ignores_other_keys() -> None:
     assert pressed == set()
 
 
+def test_launch_azahar_flatpak_skips_removed_mouse_bridge_and_starts_combo_monitor(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class _Process:
+        def poll(self):
+            return 0
+
+    class _Thread:
+        def __init__(self, *, target=None, args=(), kwargs=None, daemon=None):
+            observed["thread_target"] = target
+            observed["thread_args"] = args
+            observed["thread_kwargs"] = kwargs or {}
+            observed["thread_daemon"] = daemon
+
+        def start(self) -> None:
+            observed["thread_started"] = True
+
+    monkeypatch.setattr(azahar_exit_hook.sys, "platform", "linux")
+    monkeypatch.setattr(
+        azahar_exit_hook.subprocess,
+        "Popen",
+        lambda command, stdin=None: observed.update({"command": command, "stdin": stdin}) or _Process(),
+    )
+    monkeypatch.setattr(azahar_exit_hook, "_resolve_select_and_start_buttons", lambda: (4, 6))
+    monkeypatch.setattr(azahar_exit_hook, "_discover_js_devices", lambda: ["/dev/input/js0"])
+    monkeypatch.setattr(azahar_exit_hook, "_wait_for_session_exit", lambda process, app_id: 0)
+    monkeypatch.setattr(azahar_exit_hook.threading, "Thread", _Thread)
+
+    exit_code = azahar_exit_hook._launch_azahar_flatpak(
+        rom="/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds",
+        app_id="org.azahar_emu.Azahar",
+    )
+
+    assert exit_code == 0
+    assert observed["command"] == [
+        "flatpak",
+        "run",
+        "--device=all",
+        "--file-forwarding",
+        "org.azahar_emu.Azahar",
+        "-f",
+        "--",
+        "@@",
+        "/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds",
+        "@@",
+    ]
+    assert observed["thread_target"] is azahar_exit_hook._monitor_combo_and_terminate
+    assert observed["thread_started"] is True
+
+
 def test_resolve_select_and_start_buttons_prefers_qt_config_when_env_unset(monkeypatch) -> None:
     monkeypatch.delenv("GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT", raising=False)
     monkeypatch.delenv("GAMEHUB_AZAHAR_EXIT_BUTTON_START", raising=False)

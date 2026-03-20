@@ -135,12 +135,14 @@ def test_run_target_with_optional_exit_hook_uses_azahar_windows_exit_hook(monkey
     monkeypatch.setattr(
         runtime_module,
         "_run_windows_azahar_target_with_exit_hook",
-        lambda payload: hook_calls.append(payload.emulator) or 11,
+        lambda payload, on_process_started=None: hook_calls.append(payload.emulator) or 11,
     )
     monkeypatch.setattr(
         runtime_module,
         "_run_target",
-        lambda payload: (_ for _ in ()).throw(AssertionError("direct launch should not be used")),
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(
+            AssertionError("direct launch should not be used")
+        ),
     )
 
     exit_code = runtime_module._run_target_with_optional_exit_hook(
@@ -159,12 +161,14 @@ def test_run_target_with_optional_exit_hook_uses_azahar_macos_exit_hook(monkeypa
     monkeypatch.setattr(
         runtime_module,
         "_run_macos_azahar_target_with_exit_hook",
-        lambda payload: hook_calls.append(payload.emulator) or 12,
+        lambda payload, on_process_started=None: hook_calls.append(payload.emulator) or 12,
     )
     monkeypatch.setattr(
         runtime_module,
         "_run_target",
-        lambda payload: (_ for _ in ()).throw(AssertionError("managed launch should not be used")),
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(
+            AssertionError("managed launch should not be used")
+        ),
     )
 
     exit_code = runtime_module._run_target_with_optional_exit_hook(
@@ -304,9 +308,9 @@ def test_run_target_with_optional_exit_hook_can_disable_azahar_macos_exit_hook(m
     monkeypatch.setattr(
         runtime_module,
         "_run_macos_azahar_target_with_exit_hook",
-        lambda payload: (_ for _ in ()).throw(AssertionError("hook should be disabled")),
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(AssertionError("hook should be disabled")),
     )
-    monkeypatch.setattr(runtime_module, "_run_target", lambda payload: 13)
+    monkeypatch.setattr(runtime_module, "_run_target", lambda payload, on_process_started=None: 13)
 
     exit_code = runtime_module._run_target_with_optional_exit_hook(
         _payload(
@@ -319,6 +323,94 @@ def test_run_target_with_optional_exit_hook_can_disable_azahar_macos_exit_hook(m
     )
 
     assert exit_code == 13
+
+
+def test_run_target_with_windows_azahar_exit_hook_does_not_start_removed_mouse_bridge(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "win32")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_windows_azahar_target_with_exit_hook",
+        lambda payload, on_process_started=None: (
+            observed.update({"emulator": payload.emulator, "callback_present": on_process_started is not None}) or 21
+        ),
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_target",
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(
+            AssertionError("direct launch should not be used")
+        ),
+    )
+
+    exit_code = runtime_module._run_target_with_optional_exit_hook(
+        _payload(emulator="azahar", target_exe="C:/Emu/Azahar.exe", target_args=("-f", "rom.3ds"))
+    )
+
+    assert exit_code == 21
+    assert observed == {"emulator": "azahar", "callback_present": False}
+
+
+def test_run_target_with_macos_azahar_exit_hook_does_not_start_removed_mouse_bridge(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "true")
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_macos_azahar_target_with_exit_hook",
+        lambda payload, on_process_started=None: (
+            observed.update({"emulator": payload.emulator, "callback_present": on_process_started is not None}) or 22
+        ),
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_target",
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(
+            AssertionError("managed launch should not be used")
+        ),
+    )
+
+    exit_code = runtime_module._run_target_with_optional_exit_hook(
+        _payload(
+            emulator="azahar",
+            target_exe="/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
+            target_args=("-f", "rom.3ds"),
+            macos_open_app="/Users/tester/Applications/Azahar.app",
+            macos_open_args=("-f", "rom.3ds"),
+        )
+    )
+
+    assert exit_code == 22
+    assert observed == {"emulator": "azahar", "callback_present": False}
+
+
+def test_run_target_azahar_direct_launch_does_not_start_removed_mouse_bridge(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(runtime_module.sys, "platform", "linux")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "false")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "false")
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_target",
+        lambda payload, on_process_started=None: (
+            observed.update({"emulator": payload.emulator, "callback_present": on_process_started is not None}) or 17
+        ),
+    )
+
+    exit_code = runtime_module._run_target_with_optional_exit_hook(
+        _payload(
+            emulator="azahar",
+            target_exe="flatpak",
+            target_args=("run", "--device=all", "org.azahar_emu.Azahar", "-f", "--", "@@", "rom.3ds", "@@"),
+        )
+    )
+
+    assert exit_code == 17
+    assert observed == {"emulator": "azahar", "callback_present": False}
 
 
 def test_run_target_macos_uses_bundle_safe_open_command(monkeypatch) -> None:

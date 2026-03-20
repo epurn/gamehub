@@ -209,9 +209,9 @@ grep -n "^Device =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Confi
 ```bash
 grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg ~/.config/retroarch/retroarch.cfg 2>/dev/null
 ```
-14. N3DS Azahar runtime bootstrap sets `fullscreen=true` and `confirmClose=false` in `qt-config.ini`. Flatpak example:
+14. N3DS Azahar managed config convergence sets `fullscreen=true`, `confirmClose=false`, `Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Esc`, and clears `Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq` in `qt-config.ini`. Flatpak example:
 ```bash
-grep -nE "^(fullscreen|confirmClose)=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
+grep -nE "^(fullscreen|confirmClose|Shortcuts\\\\Main%20Window\\\\Exit%20(Azahar|Fullscreen)\\\\KeySeq)=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
 ```
    - Linux Flatpak GUID handling:
      - runtime GUID probe is preferred
@@ -248,6 +248,10 @@ export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
 # export GAMEHUB_AZAHAR_EXIT_JS_DEVICE=/dev/input/js0
 ```
    - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK` changes the Steam launch command emitted by sync. The Windows-only `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK` controls the `shortcut-launch` runtime hook instead.
+   - Quick Bazzite verification:
+     - connect an external Xbox controller
+     - launch one Azahar title from Steam
+     - verify `Start+Select` still exits cleanly
 15. N3DS Steam Input templates on Steam Deck:
    - GAMEHUB auto-syncs managed per-title Steam Input templates for `N3DS` shortcuts during non-dry sync.
    - Use `gamehub sync --reseed-profiles` to refresh managed Deck template seeds when needed.
@@ -307,6 +311,13 @@ flatpak_remote = "flathub"
   - `kbm`
   - `xbox_1p`
   - `xbox_2p`
+- Managed Azahar profiles own the Qt quit shortcut `Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Esc`, keep the legacy `Exit Citra` alias aligned for older configs, and clear `Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq`; existing managed `qt-config.ini` files are repaired to the same values during controller convergence, while the separate `Start+Select` exit-hook wrapper behavior remains unchanged.
+- Managed Azahar controller profiles also seed stick deadzones in the owned `qt-config.ini` bindings, so the default managed path does not rely on zero-deadzone analog input.
+
+### Azahar control verification
+1. Run a non-dry `gamehub sync`, then launch one managed `Azahar` title from Steam.
+2. Verify `Esc` quits the managed Azahar session, and verify `Start+Select` still exits cleanly on hosts where the Azahar exit hook is enabled.
+3. On Steam Deck, verify the managed `Esc`/`Start+Select` path only.
 
 ### Windows value-capture checkpoint
 Before customizing Windows mappings, inspect your current emulator config values and keep them for rollback/diff:

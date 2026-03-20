@@ -57,7 +57,7 @@ def test_detect_xbox_controllers_linux_reads_proc_file(monkeypatch, workspace_te
         proc_path = temp_root / "input-devices.txt"
         proc_path.write_text(raw, encoding="utf-8")
         monkeypatch.setattr(controller_detection.sys, "platform", "linux")
-        monkeypatch.setattr(controller_detection, "_PROC_INPUT_DEVICES_PATH", proc_path)
+        monkeypatch.setattr(controller_detection.linux_input_devices, "_PROC_INPUT_DEVICES_PATH", proc_path)
 
         monkeypatch.setattr(controller_detection, "_is_steam_deck_linux", lambda: False)
         devices = detect_xbox_controllers(max_devices=2)
@@ -145,7 +145,7 @@ def test_detect_xbox_controllers_windows_uses_xinput_slots_and_subtypes(monkeypa
     fake_dll.XInputGetCapabilities = _Callable(fake_get_capabilities)
 
     monkeypatch.setattr(controller_detection.sys, "platform", "win32")
-    monkeypatch.setattr(controller_detection, "_load_xinput_dll", lambda: fake_dll)
+    monkeypatch.setattr(controller_detection.xinput, "load_xinput", lambda: fake_dll)
 
     devices = detect_xbox_controllers(max_devices=2)
 
@@ -175,6 +175,44 @@ def test_detect_xbox_controllers_macos_uses_sdl_probe(monkeypatch) -> None:
     assert observed["max_devices"] is None
     assert devices == [
         XboxController(slot=3, name="XInput Controller", subtype=None, guid="d" * 32),
+    ]
+
+
+def test_detect_xbox_controllers_returns_stable_slot_order(monkeypatch) -> None:
+    monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        controller_detection,
+        "_discover_host_sdl_joysticks",
+        lambda *, max_devices=None: [
+            SimpleNamespace(
+                slot=3,
+                name="Xbox Wireless Controller",
+                guid="3" * 32,
+                is_game_controller=True,
+                vendor_id=0x045E,
+            ),
+            SimpleNamespace(
+                slot=1,
+                name="Xbox Wireless Controller",
+                guid="1" * 32,
+                is_game_controller=True,
+                vendor_id=0x045E,
+            ),
+            SimpleNamespace(
+                slot=2,
+                name="Xbox Wireless Controller",
+                guid="2" * 32,
+                is_game_controller=True,
+                vendor_id=0x045E,
+            ),
+        ],
+    )
+
+    devices = detect_xbox_controllers(max_devices=2)
+
+    assert devices == [
+        XboxController(slot=1, name="Xbox Wireless Controller", subtype=None, guid="1" * 32, vendor_id=0x045E),
+        XboxController(slot=2, name="Xbox Wireless Controller", subtype=None, guid="2" * 32, vendor_id=0x045E),
     ]
 
 

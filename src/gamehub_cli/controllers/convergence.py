@@ -30,6 +30,8 @@ from .profiles import (
     PROFILE_KBM,
     PROFILE_XBOX_1P,
     PROFILE_XBOX_2P,
+    azahar_managed_shortcut_qsettings,
+    azahar_sdl_stick_qsettings,
     resolve_profiles_root,
     write_profile_text_atomic,
 )
@@ -238,7 +240,12 @@ def build_controller_convergence_plan(
                 AssistedQSettingsTarget(
                     name="azahar-runtime",
                     destination=path,
-                    keys={"profile": "0", r"profile\default": "true"},
+                    keys={
+                        "profile": "0",
+                        r"profile\default": "true",
+                        **dict(azahar_managed_shortcut_qsettings()),
+                        **dict(azahar_sdl_stick_qsettings(port=0)),
+                    },
                     source_template="runtime://azahar/safe-controller-state",
                 )
             )

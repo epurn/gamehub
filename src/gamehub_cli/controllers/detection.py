@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import ctypes
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, cast
 
+from . import linux_input_devices, xinput
 from .sdl_guid import _discover_host_sdl_joysticks
 
-_PROC_INPUT_DEVICES_PATH = Path("/proc/bus/input/devices")
-_INPUT_DEVICE_NAME_RE = re.compile(r'^N:\s+Name="(?P<name>.*)"$')
-_INPUT_DEVICE_HANDLERS_RE = re.compile(r"^H:\s+Handlers=(?P<handlers>.+)$")
-_INPUT_JS_HANDLER_RE = re.compile(r"\bjs(?P<index>\d+)\b")
 _STEAMOS_RELEASE_PATH = Path("/etc/os-release")
 _DMI_BOARD_VENDOR_PATH = Path("/sys/devices/virtual/dmi/id/board_vendor")
 _LINUX_NON_GAMEPAD_NAME_MARKERS = (
@@ -24,9 +18,6 @@ _LINUX_NON_GAMEPAD_NAME_MARKERS = (
     "imu",
 )
 
-_ERROR_SUCCESS = 0
-_XINPUT_FLAG_GAMEPAD = 0x00000001
-_XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
 _MICROSOFT_VENDOR_ID = 0x045E
 
 
@@ -76,34 +67,18 @@ def _is_supported_linux_controller_name(name: str, *, include_steam_deck: bool) 
     )
 
 
-def _linux_parse_xbox_devices(raw: str, *, max_devices: int, include_steam_deck: bool = False) -> list[XboxController]:
+def _linux_xbox_controllers_from_records(
+    records: list[linux_input_devices.LinuxInputDeviceRecord],
+    *,
+    max_devices: int,
+    include_steam_deck: bool = False,
+) -> list[XboxController]:
     by_js_index: dict[int, str] = {}
-    current_name: str | None = None
-    current_handlers: str | None = None
-
-    def _flush_entry() -> None:
-        if not current_name or not current_handlers:
-            return
-        if not _is_supported_linux_controller_name(current_name, include_steam_deck=include_steam_deck):
-            return
-        for match in _INPUT_JS_HANDLER_RE.finditer(current_handlers):
-            js_index = int(match.group("index"))
-            by_js_index.setdefault(js_index, current_name)
-
-    for line in [*raw.splitlines(), ""]:
-        stripped = line.strip()
-        if not stripped:
-            _flush_entry()
-            current_name = None
-            current_handlers = None
+    for record in records:
+        if not _is_supported_linux_controller_name(record.name, include_steam_deck=include_steam_deck):
             continue
-        name_match = _INPUT_DEVICE_NAME_RE.match(stripped)
-        if name_match:
-            current_name = name_match.group("name")
-            continue
-        handlers_match = _INPUT_DEVICE_HANDLERS_RE.match(stripped)
-        if handlers_match:
-            current_handlers = handlers_match.group("handlers")
+        for js_index in record.js_indices:
+            by_js_index.setdefault(js_index, record.name)
 
     controllers: list[XboxController] = []
     for js_index in sorted(by_js_index):
@@ -113,79 +88,32 @@ def _linux_parse_xbox_devices(raw: str, *, max_devices: int, include_steam_deck:
     return controllers
 
 
+def _linux_parse_xbox_devices(raw: str, *, max_devices: int, include_steam_deck: bool = False) -> list[XboxController]:
+    records = linux_input_devices.parse_linux_input_device_records(raw)
+    return _linux_xbox_controllers_from_records(records, max_devices=max_devices, include_steam_deck=include_steam_deck)
+
+
 def _detect_linux_xbox_controllers(*, max_devices: int) -> list[XboxController]:
     try:
-        raw = _PROC_INPUT_DEVICES_PATH.read_text(encoding="utf-8", errors="ignore")
+        records = linux_input_devices.read_linux_input_device_records()
     except OSError:
         return []
-    return _linux_parse_xbox_devices(raw, max_devices=max_devices, include_steam_deck=_is_steam_deck_linux())
-
-
-class _XInputGamepad(ctypes.Structure):
-    _fields_ = [
-        ("wButtons", ctypes.c_ushort),
-        ("bLeftTrigger", ctypes.c_ubyte),
-        ("bRightTrigger", ctypes.c_ubyte),
-        ("sThumbLX", ctypes.c_short),
-        ("sThumbLY", ctypes.c_short),
-        ("sThumbRX", ctypes.c_short),
-        ("sThumbRY", ctypes.c_short),
-    ]
-
-
-class _XInputState(ctypes.Structure):
-    _fields_ = [("dwPacketNumber", ctypes.c_ulong), ("Gamepad", _XInputGamepad)]
-
-
-class _XInputCapabilities(ctypes.Structure):
-    _fields_ = [
-        ("Type", ctypes.c_ubyte),
-        ("SubType", ctypes.c_ubyte),
-        ("Flags", ctypes.c_ushort),
-        ("Gamepad", _XInputGamepad),
-        ("VibrationLeftMotorSpeed", ctypes.c_ushort),
-        ("VibrationRightMotorSpeed", ctypes.c_ushort),
-    ]
-
-
-def _load_xinput_dll() -> ctypes.CDLL | None:
-    win_dll_loader = cast(Callable[[str], ctypes.CDLL] | None, getattr(ctypes, "WinDLL", None))
-    if win_dll_loader is None:
-        return None
-    for dll_name in _XINPUT_DLLS:
-        try:
-            return win_dll_loader(dll_name)
-        except OSError:
-            continue
-    return None
+    return _linux_xbox_controllers_from_records(
+        records, max_devices=max_devices, include_steam_deck=_is_steam_deck_linux()
+    )
 
 
 def _detect_windows_xbox_controllers(*, max_devices: int) -> list[XboxController]:
-    dll = _load_xinput_dll()
-    if dll is None:
+    lib = xinput.load_xinput()
+    if lib is None:
         return []
-
-    get_state = dll.XInputGetState
-    get_state.argtypes = [ctypes.c_ulong, ctypes.POINTER(_XInputState)]
-    get_state.restype = ctypes.c_ulong
-
-    get_capabilities = getattr(dll, "XInputGetCapabilities", None)
-    if get_capabilities is not None:
-        get_capabilities.argtypes = [ctypes.c_ulong, ctypes.c_ulong, ctypes.POINTER(_XInputCapabilities)]
-        get_capabilities.restype = ctypes.c_ulong
 
     controllers: list[XboxController] = []
     for slot in range(4):
-        state = _XInputState()
-        result = int(get_state(slot, ctypes.pointer(state)))
-        if result != _ERROR_SUCCESS:
+        state = xinput.read_xinput_state(lib, slot=slot)
+        if state is None:
             continue
-        subtype: int | None = None
-        if get_capabilities is not None:
-            caps = _XInputCapabilities()
-            caps_result = int(get_capabilities(slot, _XINPUT_FLAG_GAMEPAD, ctypes.pointer(caps)))
-            if caps_result == _ERROR_SUCCESS:
-                subtype = int(caps.SubType)
+        subtype = xinput.read_xinput_subtype(lib, slot=slot)
         controllers.append(XboxController(slot=slot, name=f"XInput/{slot}", subtype=subtype))
         if len(controllers) >= max_devices:
             break
@@ -235,7 +163,14 @@ def _detect_macos_xbox_controllers(*, max_devices: int) -> list[XboxController]:
     except Exception:
         return []
     controllers: list[XboxController] = []
-    for device in devices:
+    ordered_devices = sorted(
+        devices,
+        key=lambda device: (
+            int(getattr(device, "slot", 0)),
+            str(getattr(device, "name", "")).casefold(),
+        ),
+    )
+    for device in ordered_devices:
         if not _is_supported_macos_controller(device):
             continue
         controllers.append(

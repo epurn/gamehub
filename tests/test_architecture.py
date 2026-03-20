@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import ast
+import tomllib
 from pathlib import Path
 
 CORE = {"sync", "steam", "emulators", "firmware", "controllers", "common", "shortcuts"}
 CLI_SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "gamehub_cli"
 SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
+REPO_ROOT = Path(__file__).resolve().parents[1]
 TOP_PACKAGES = {"gamehub_cli", "gamehub_server", "gamehub_common"}
 
 ALLOWED_DEPENDENCIES: dict[str, set[str]] = {
@@ -205,3 +207,12 @@ def test_top_level_package_dependencies_follow_allowed_directions() -> None:
 def test_runtime_code_does_not_bypass_architecture_with_repo_local_dynamic_imports() -> None:
     violations = _repo_local_dynamic_imports()
     assert not violations, f"Repo-local dynamic imports detected: {violations}"
+
+
+def test_gamehub_install_has_no_azahar_mouse_bridge_optional_dependency() -> None:
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dependencies = pyproject["project"]["dependencies"]
+    optional_dependencies = pyproject["project"]["optional-dependencies"]
+
+    assert all(not dependency.startswith("evdev>=") for dependency in dependencies)
+    assert "linux-input" not in optional_dependencies

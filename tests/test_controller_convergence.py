@@ -16,6 +16,7 @@ from gamehub_cli.controllers.convergence import (
     format_runtime_selection_rules,
 )
 from gamehub_cli.controllers.profiles import (
+    AZAHAR_STICK_DEADZONE,
     PROFILE_KBM,
     PROFILE_XBOX_1P,
     PROFILE_XBOX_2P,
@@ -216,13 +217,29 @@ def test_controller_convergence_apply_repairs_assisted_ini_with_backup(monkeypat
         assert f"controller config saved path={pcsx2_ini}" in caplog.text
 
 
-def test_controller_convergence_apply_repairs_assisted_qsettings_with_backup(
+def test_controller_convergence_apply_repairs_azahar_quit_shortcut_with_backup(
     monkeypatch, workspace_tempdir, caplog
 ) -> None:
     with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
         config = _config(temp_root)
         qt_config = temp_root / "azahar" / "qt-config.ini"
-        original_text = "profile=9\nprofile\\default=false\n"
+        original_text = (
+            "profile=9\n"
+            r"profile\default=false"
+            "\n"
+            r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Ctrl+Q"
+            "\n"
+            r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq\default=true"
+            "\n"
+            r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq=Esc"
+            "\n"
+            r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq\default=true"
+            "\n"
+            r'profiles\1\touch_from_button_a="button:8,engine:keyboard"'
+            "\n"
+            r'profiles\1\touch_device="engine:mouse,index:0"'
+            "\n"
+        )
         qt_config.parent.mkdir(parents=True, exist_ok=True)
         qt_config.write_text(original_text, encoding="utf-8")
         monkeypatch.setattr("gamehub_cli.controllers.convergence.azahar_target_config_paths", lambda: [qt_config])
@@ -240,6 +257,66 @@ def test_controller_convergence_apply_repairs_assisted_qsettings_with_backup(
         updated_text = qt_config.read_text(encoding="utf-8")
         assert "profile=0" in updated_text
         assert "profile\\default=true" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Esc" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq\default=false" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=false" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq=" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq\default=false" in updated_text
+        assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in updated_text
+        assert r'profiles\1\touch_device="engine:mouse,index:0"' in updated_text
+        assert f"controller config backup created path={qt_config}" in caplog.text
+        assert f"controller config saved path={qt_config}" in caplog.text
+
+
+def test_controller_convergence_apply_repairs_azahar_stick_deadzones_with_backup(
+    monkeypatch, workspace_tempdir, caplog
+) -> None:
+    with workspace_tempdir("gamehub-controller-convergence-") as temp_root:
+        config = _config(temp_root)
+        qt_config = temp_root / "azahar" / "qt-config.ini"
+        original_text = (
+            "profile=0\n"
+            r"profile\default=true"
+            "\n"
+            r'profiles\1\circle_pad="axis_x:0,axis_y:1,engine:sdl,port:0"'
+            "\n"
+            r"profiles\1\circle_pad\default=false"
+            "\n"
+            r'profiles\1\c_stick="axis_x:2,axis_y:3,engine:sdl,port:0"'
+            "\n"
+            r"profiles\1\c_stick\default=false"
+            "\n"
+            r'profiles\1\touch_from_button_a="button:8,engine:keyboard"'
+            "\n"
+            r'profiles\1\touch_device="engine:mouse,index:0"'
+            "\n"
+        )
+        qt_config.parent.mkdir(parents=True, exist_ok=True)
+        qt_config.write_text(original_text, encoding="utf-8")
+        monkeypatch.setattr("gamehub_cli.controllers.convergence.azahar_target_config_paths", lambda: [qt_config])
+
+        plan = build_controller_convergence_plan(config, emulator_families={"azahar"})
+        with caplog.at_level(logging.INFO):
+            repaired = apply_controller_convergence_plan(plan, apply=True, force_managed=False)
+        finding = next(item for item in repaired.findings if item.target_path == qt_config)
+        backups = sorted(qt_config.parent.glob("qt-config.ini.*.bak"))
+
+        assert finding.status == ControllerTargetStatus.REPAIRED
+        assert finding.repaired is True
+        assert backups
+        assert backups[-1].read_text(encoding="utf-8") == original_text
+        updated_text = qt_config.read_text(encoding="utf-8")
+        assert (
+            rf'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:{AZAHAR_STICK_DEADZONE},engine:sdl,port:0"'
+            in updated_text
+        )
+        assert (
+            rf'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:{AZAHAR_STICK_DEADZONE},engine:sdl,port:0"'
+            in updated_text
+        )
+        assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in updated_text
+        assert r'profiles\1\touch_device="engine:mouse,index:0"' in updated_text
         assert f"controller config backup created path={qt_config}" in caplog.text
         assert f"controller config saved path={qt_config}" in caplog.text
 

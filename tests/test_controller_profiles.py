@@ -120,6 +120,45 @@ def test_seed_default_profiles_linux_uses_platform_neutral_dolphin_defaults(monk
         assert "Device = SteamDeck/0/Steam Deck" not in dolphin_wii_xbox_1p
 
 
+def test_seed_default_profiles_azahar_sets_quit_shortcut_to_escape(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+        config = _config(temp_root)
+
+        seed_default_profiles(config)
+        root = resolve_profiles_root(config)
+
+        for profile_name in (PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P):
+            azahar_profile = (root / "azahar" / profile_name / "qt-config.ini").read_text(encoding="utf-8")
+            assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Esc" in azahar_profile
+            assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq\default=false" in azahar_profile
+            assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc" in azahar_profile
+            assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=false" in azahar_profile
+            assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq=" in azahar_profile
+            assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq\default=false" in azahar_profile
+
+
+def test_seed_default_profiles_azahar_sets_stick_deadzone_defaults(workspace_tempdir) -> None:
+    with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
+        config = _config(temp_root)
+
+        seed_default_profiles(config)
+        root = resolve_profiles_root(config)
+
+        for profile_name in (PROFILE_XBOX_1P, PROFILE_XBOX_2P):
+            azahar_profile = (root / "azahar" / profile_name / "qt-config.ini").read_text(encoding="utf-8")
+            assert (
+                rf'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:{controller_profiles.AZAHAR_STICK_DEADZONE},engine:sdl,port:0"'
+                in azahar_profile
+            )
+            assert (
+                rf'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:{controller_profiles.AZAHAR_STICK_DEADZONE},engine:sdl,port:0"'
+                in azahar_profile
+            )
+
+        kbm_profile = (root / "azahar" / PROFILE_KBM / "qt-config.ini").read_text(encoding="utf-8")
+        assert "deadzone:" not in kbm_profile
+
+
 def test_seed_default_profiles_skips_custom_profiles_dir(workspace_tempdir) -> None:
     with workspace_tempdir("gamehub-controller-profiles-") as temp_root:
         config = GamehubConfig(
