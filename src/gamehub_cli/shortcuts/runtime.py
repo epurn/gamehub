@@ -15,7 +15,8 @@ from typing import Callable
 from ..common.config import GamehubConfig
 from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID, DOLPHIN_FLATPAK_APP_ID
 from ..common.shortcut_payload import ShortcutLaunchPayload, unquote_executable
-from ..controllers import azahar_exit_hook
+from ..controllers import azahar_exit_hook, azahar_mouse_bridge
+from ..controllers import xinput as controller_xinput
 from ..controllers.apply import apply_controller_profile, apply_named_controller_profile
 from ..controllers.detection import XboxController, detect_xbox_controllers, is_steam_deck_linux
 from ..controllers.profiles import PROFILE_KBM, profile_name_for_controller_count
@@ -27,10 +28,8 @@ _DOLPHIN_EXIT_BUTTON_START_ENV = "GAMEHUB_DOLPHIN_EXIT_BUTTON_START"
 _DOLPHIN_EXIT_JS_DEVICE_ENV = "GAMEHUB_DOLPHIN_EXIT_JS_DEVICE"
 _AZAHAR_WINDOWS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK"
 _AZAHAR_MACOS_EXIT_HOOK_ENV = "GAMEHUB_AZAHAR_MACOS_EXIT_HOOK"
-_AZAHAR_MOUSE_BRIDGE_MAX_DEVICES = 4
 _XINPUT_GAMEPAD_START = 0x0010
 _XINPUT_GAMEPAD_BACK = 0x0020
-_XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
 _WM_CLOSE = 0x0010
 _MACOS_OPEN_EXECUTABLE = "/usr/bin/open"
 _AZAHAR_MACOS_DOCUMENT_EXTENSIONS = {".3dsx", ".cci", ".cxi", ".cia", ".3ds", ".elf", ".axf"}
@@ -62,22 +61,6 @@ def warn_shortcut_runtime(message: str) -> None:
 
 class ShortcutLaunchError(RuntimeError):
     """Raised when the managed shortcut target cannot be spawned."""
-
-
-class _XInputGamepad(ctypes.Structure):
-    _fields_ = [
-        ("wButtons", ctypes.c_ushort),
-        ("bLeftTrigger", ctypes.c_ubyte),
-        ("bRightTrigger", ctypes.c_ubyte),
-        ("sThumbLX", ctypes.c_short),
-        ("sThumbLY", ctypes.c_short),
-        ("sThumbRX", ctypes.c_short),
-        ("sThumbRY", ctypes.c_short),
-    ]
-
-
-class _XInputState(ctypes.Structure):
-    _fields_ = [("dwPacketNumber", ctypes.c_ulong), ("Gamepad", _XInputGamepad)]
 
 
 def _env_enabled(name: str, *, default: bool = True) -> bool:
@@ -116,29 +99,12 @@ def _discover_js_devices(env_name: str) -> list[str]:
     return devices
 
 
-def _load_xinput() -> ctypes.CDLL | None:
-    if not sys.platform.startswith("win"):
-        return None
-    for dll_name in _XINPUT_DLLS:
-        try:
-            lib = ctypes.WinDLL(dll_name)
-        except OSError:
-            continue
-        try:
-            lib.XInputGetState.argtypes = [ctypes.c_uint, ctypes.POINTER(_XInputState)]
-            lib.XInputGetState.restype = ctypes.c_uint
-        except AttributeError:
-            continue
-        return lib
-    return None
-
-
 def _xinput_combo_pressed(lib: ctypes.CDLL) -> bool:
     for index in range(4):
-        state = _XInputState()
-        if lib.XInputGetState(index, ctypes.byref(state)) != 0:
+        state = controller_xinput.read_xinput_state(lib, slot=index)
+        if state is None:
             continue
-        buttons = int(state.Gamepad.wButtons)
+        buttons = state.buttons
         if (buttons & _XINPUT_GAMEPAD_START) and (buttons & _XINPUT_GAMEPAD_BACK):
             return True
     return False
@@ -169,7 +135,7 @@ def _send_windows_close_by_pid(pid: int) -> bool:
 
 
 def _monitor_windows_azahar_exit_combo(process: subprocess.Popen[bytes]) -> None:
-    lib = _load_xinput()
+    lib = controller_xinput.load_xinput()
     if lib is None:
         return
     while process.poll() is None:
@@ -532,18 +498,15 @@ def _detect_azahar_mouse_bridge_controller(payload: ShortcutLaunchPayload) -> Xb
         return None
     if _payload_targets_azahar_exit_hook_wrapper(payload):
         return None
-    if azahar_exit_hook._azahar_mouse_bridge_disabled_reason() is not None:
+    if azahar_mouse_bridge.azahar_mouse_bridge_disabled_reason() is not None:
         return None
     try:
-        controllers = detect_xbox_controllers(max_devices=_AZAHAR_MOUSE_BRIDGE_MAX_DEVICES)
+        return azahar_mouse_bridge.detect_azahar_mouse_bridge_controller()
     except Exception as exc:
         warn_shortcut_runtime(
             f"Azahar mouse bridge controller detection failed (error={exc}); continuing without synthetic mouse input"
         )
         return None
-    if not controllers:
-        return None
-    return controllers[0]
 
 
 def _azahar_mouse_bridge_app_id(payload: ShortcutLaunchPayload) -> str | None:
@@ -563,12 +526,12 @@ def _run_with_optional_azahar_mouse_bridge(
 
     def _on_process_started(process: subprocess.Popen[bytes]) -> None:
         try:
-            azahar_exit_hook._start_azahar_mouse_bridge(
+            azahar_mouse_bridge.start_azahar_mouse_bridge(
                 process,
                 controller=controller,
                 app_id=_azahar_mouse_bridge_app_id(payload),
             )
-        except azahar_exit_hook.AzaharMouseBridgeUnavailable as exc:
+        except azahar_mouse_bridge.AzaharMouseBridgeUnavailable as exc:
             warn_shortcut_runtime(
                 f"Azahar mouse bridge unavailable (error={exc}); continuing without synthetic mouse input"
             )

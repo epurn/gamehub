@@ -132,7 +132,7 @@ def test_run_target_with_optional_exit_hook_uses_azahar_windows_exit_hook(monkey
 
     monkeypatch.setattr(runtime_module.sys, "platform", "win32")
     monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
-    monkeypatch.setattr(runtime_module, "detect_xbox_controllers", lambda max_devices=4: [])
+    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "detect_azahar_mouse_bridge_controller", lambda: None)
     monkeypatch.setattr(
         runtime_module,
         "_run_windows_azahar_target_with_exit_hook",
@@ -159,7 +159,7 @@ def test_run_target_with_optional_exit_hook_uses_azahar_macos_exit_hook(monkeypa
 
     monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
     monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "true")
-    monkeypatch.setattr(runtime_module, "detect_xbox_controllers", lambda max_devices=4: [])
+    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "detect_azahar_mouse_bridge_controller", lambda: None)
     monkeypatch.setattr(
         runtime_module,
         "_run_macos_azahar_target_with_exit_hook",
@@ -307,7 +307,7 @@ def test_run_target_with_optional_exit_hook_can_disable_dolphin_linux_exit_hook(
 def test_run_target_with_optional_exit_hook_can_disable_azahar_macos_exit_hook(monkeypatch) -> None:
     monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
     monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "false")
-    monkeypatch.setattr(runtime_module, "detect_xbox_controllers", lambda max_devices=4: [])
+    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "detect_azahar_mouse_bridge_controller", lambda: None)
     monkeypatch.setattr(
         runtime_module,
         "_run_macos_azahar_target_with_exit_hook",
@@ -337,13 +337,13 @@ def test_run_target_with_optional_azahar_mouse_bridge_starts_for_supported_xbox_
     monkeypatch.setattr(runtime_module.sys, "platform", "win32")
     monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "false")
     monkeypatch.setattr(
-        runtime_module,
-        "detect_xbox_controllers",
-        lambda max_devices=4: [XboxController(slot=2, name="XInput/2", subtype=7)],
+        runtime_module.azahar_mouse_bridge,
+        "detect_azahar_mouse_bridge_controller",
+        lambda: XboxController(slot=2, name="XInput/2", subtype=7),
     )
     monkeypatch.setattr(
-        runtime_module.azahar_exit_hook,
-        "_start_azahar_mouse_bridge",
+        runtime_module.azahar_mouse_bridge,
+        "start_azahar_mouse_bridge",
         lambda process, *, controller, app_id=None: observed.update(
             {"process": process, "controller": controller, "app_id": app_id}
         ),
@@ -378,17 +378,17 @@ def test_run_target_with_optional_azahar_mouse_bridge_fails_open_when_backend_un
     monkeypatch.setattr(runtime_module.sys, "platform", "linux")
     monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "false")
     monkeypatch.setattr(
-        runtime_module,
-        "detect_xbox_controllers",
-        lambda max_devices=4: [XboxController(slot=0, name="Xbox Wireless Controller", subtype=None)],
+        runtime_module.azahar_mouse_bridge,
+        "detect_azahar_mouse_bridge_controller",
+        lambda: XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
     )
     monkeypatch.setattr(runtime_module, "warn_shortcut_runtime", lambda message: warnings.append(message))
 
     def _raise_unavailable(process, *, controller, app_id=None):
         del process, controller, app_id
-        raise runtime_module.azahar_exit_hook.AzaharMouseBridgeUnavailable("Linux Azahar mouse bridge is disabled")
+        raise runtime_module.azahar_mouse_bridge.AzaharMouseBridgeUnavailable("Linux Azahar mouse bridge is disabled")
 
-    monkeypatch.setattr(runtime_module.azahar_exit_hook, "_start_azahar_mouse_bridge", _raise_unavailable)
+    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "start_azahar_mouse_bridge", _raise_unavailable)
 
     def _fake_run_target(payload, on_process_started=None):
         assert on_process_started is not None
@@ -418,15 +418,15 @@ def test_run_target_with_optional_azahar_mouse_bridge_starts_for_non_deck_linux_
         pass
 
     monkeypatch.setattr(runtime_module.sys, "platform", "linux")
-    monkeypatch.setattr(runtime_module.azahar_exit_hook, "_azahar_mouse_bridge_disabled_reason", lambda: None)
+    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "azahar_mouse_bridge_disabled_reason", lambda: None)
     monkeypatch.setattr(
-        runtime_module,
-        "detect_xbox_controllers",
-        lambda max_devices=4: [XboxController(slot=0, name="Xbox Wireless Controller", subtype=None)],
+        runtime_module.azahar_mouse_bridge,
+        "detect_azahar_mouse_bridge_controller",
+        lambda: XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
     )
     monkeypatch.setattr(
-        runtime_module.azahar_exit_hook,
-        "_start_azahar_mouse_bridge",
+        runtime_module.azahar_mouse_bridge,
+        "start_azahar_mouse_bridge",
         lambda process, *, controller, app_id=None: observed.update(
             {"process": process, "controller": controller, "app_id": app_id}
         ),
@@ -458,15 +458,15 @@ def test_run_target_with_optional_azahar_mouse_bridge_starts_for_non_deck_linux_
 
 def test_run_target_with_optional_azahar_mouse_bridge_skips_wrapper_owned_linux_bridge(monkeypatch) -> None:
     monkeypatch.setattr(runtime_module.sys, "platform", "linux")
-    monkeypatch.setattr(runtime_module.azahar_exit_hook, "_azahar_mouse_bridge_disabled_reason", lambda: None)
+    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "azahar_mouse_bridge_disabled_reason", lambda: None)
     monkeypatch.setattr(
-        runtime_module,
-        "detect_xbox_controllers",
-        lambda max_devices=4: (_ for _ in ()).throw(AssertionError("wrapper-owned bridge should skip detection")),
+        runtime_module.azahar_mouse_bridge,
+        "detect_azahar_mouse_bridge_controller",
+        lambda: (_ for _ in ()).throw(AssertionError("wrapper-owned bridge should skip detection")),
     )
     monkeypatch.setattr(
-        runtime_module.azahar_exit_hook,
-        "_start_azahar_mouse_bridge",
+        runtime_module.azahar_mouse_bridge,
+        "start_azahar_mouse_bridge",
         lambda process, *, controller, app_id=None: (_ for _ in ()).throw(
             AssertionError("wrapper-owned bridge should skip startup")
         ),
@@ -487,18 +487,18 @@ def test_run_target_with_optional_azahar_mouse_bridge_skips_wrapper_owned_linux_
 def test_run_target_with_optional_azahar_mouse_bridge_never_starts_on_steam_deck_linux(monkeypatch) -> None:
     monkeypatch.setattr(runtime_module.sys, "platform", "linux")
     monkeypatch.setattr(
-        runtime_module.azahar_exit_hook,
-        "_azahar_mouse_bridge_disabled_reason",
+        runtime_module.azahar_mouse_bridge,
+        "azahar_mouse_bridge_disabled_reason",
         lambda: "Linux Azahar mouse bridge is disabled on Steam Deck hosts",
     )
     monkeypatch.setattr(
-        runtime_module,
-        "detect_xbox_controllers",
-        lambda max_devices=4: (_ for _ in ()).throw(AssertionError("Steam Deck path should skip bridge detection")),
+        runtime_module.azahar_mouse_bridge,
+        "detect_azahar_mouse_bridge_controller",
+        lambda: (_ for _ in ()).throw(AssertionError("Steam Deck path should skip bridge detection")),
     )
     monkeypatch.setattr(
-        runtime_module.azahar_exit_hook,
-        "_start_azahar_mouse_bridge",
+        runtime_module.azahar_mouse_bridge,
+        "start_azahar_mouse_bridge",
         lambda process, *, controller, app_id=None: (_ for _ in ()).throw(
             AssertionError("Steam Deck path should not start the bridge")
         ),
@@ -525,13 +525,13 @@ def test_run_target_with_optional_azahar_mouse_bridge_coexists_with_exit_hook(mo
     monkeypatch.setattr(runtime_module.sys, "platform", "win32")
     monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
     monkeypatch.setattr(
-        runtime_module,
-        "detect_xbox_controllers",
-        lambda max_devices=4: [XboxController(slot=0, name="XInput/0", subtype=3)],
+        runtime_module.azahar_mouse_bridge,
+        "detect_azahar_mouse_bridge_controller",
+        lambda: XboxController(slot=0, name="XInput/0", subtype=3),
     )
     monkeypatch.setattr(
-        runtime_module.azahar_exit_hook,
-        "_start_azahar_mouse_bridge",
+        runtime_module.azahar_mouse_bridge,
+        "start_azahar_mouse_bridge",
         lambda process, *, controller, app_id=None: observed.update(
             {"process": process, "controller": controller, "app_id": app_id}
         ),

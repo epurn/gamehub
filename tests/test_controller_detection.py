@@ -57,7 +57,7 @@ def test_detect_xbox_controllers_linux_reads_proc_file(monkeypatch, workspace_te
         proc_path = temp_root / "input-devices.txt"
         proc_path.write_text(raw, encoding="utf-8")
         monkeypatch.setattr(controller_detection.sys, "platform", "linux")
-        monkeypatch.setattr(controller_detection, "_PROC_INPUT_DEVICES_PATH", proc_path)
+        monkeypatch.setattr(controller_detection.linux_input_devices, "_PROC_INPUT_DEVICES_PATH", proc_path)
 
         monkeypatch.setattr(controller_detection, "_is_steam_deck_linux", lambda: False)
         devices = detect_xbox_controllers(max_devices=2)
@@ -145,7 +145,7 @@ def test_detect_xbox_controllers_windows_uses_xinput_slots_and_subtypes(monkeypa
     fake_dll.XInputGetCapabilities = _Callable(fake_get_capabilities)
 
     monkeypatch.setattr(controller_detection.sys, "platform", "win32")
-    monkeypatch.setattr(controller_detection, "_load_xinput_dll", lambda: fake_dll)
+    monkeypatch.setattr(controller_detection.xinput, "load_xinput", lambda: fake_dll)
 
     devices = detect_xbox_controllers(max_devices=2)
 
