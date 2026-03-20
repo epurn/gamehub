@@ -209,9 +209,9 @@ grep -n "^Device =" ~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu/Confi
 ```bash
 grep -n "^input_menu_toggle_gamepad_combo =" ~/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg ~/.config/retroarch/retroarch.cfg 2>/dev/null
 ```
-14. N3DS Azahar runtime bootstrap sets `fullscreen=true`, `confirmClose=false`, and the managed quit shortcut `Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc` in `qt-config.ini`. Flatpak example:
+14. N3DS Azahar managed config convergence sets `fullscreen=true`, `confirmClose=false`, `Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Esc`, and clears `Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq` in `qt-config.ini`. Flatpak example:
 ```bash
-grep -nE "^(fullscreen|confirmClose|Shortcuts\\\\Main%20Window\\\\Exit%20Citra\\\\KeySeq)=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
+grep -nE "^(fullscreen|confirmClose|Shortcuts\\\\Main%20Window\\\\Exit%20(Azahar|Fullscreen)\\\\KeySeq)=" ~/.var/app/org.azahar_emu.Azahar/config/azahar-emu/qt-config.ini
 ```
    - Linux Flatpak GUID handling:
      - runtime GUID probe is preferred
@@ -311,7 +311,7 @@ flatpak_remote = "flathub"
   - `kbm`
   - `xbox_1p`
   - `xbox_2p`
-- Managed Azahar profiles own the Qt quit shortcut `Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc`; existing managed `qt-config.ini` files are repaired to the same value during controller convergence, while the separate `Start+Select` exit-hook wrapper behavior remains unchanged.
+- Managed Azahar profiles own the Qt quit shortcut `Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Esc`, keep the legacy `Exit Citra` alias aligned for older configs, and clear `Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq`; existing managed `qt-config.ini` files are repaired to the same values during controller convergence, while the separate `Start+Select` exit-hook wrapper behavior remains unchanged.
 - Managed Azahar controller profiles also seed stick deadzones in the owned `qt-config.ini` bindings, so the default managed path does not rely on zero-deadzone analog input.
 
 ### Azahar control verification

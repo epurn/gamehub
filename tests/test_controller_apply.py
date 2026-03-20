@@ -560,11 +560,11 @@ def test_apply_controller_profile_azahar_linux_injects_runtime_guid(monkeypatch,
 
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:030018dc5e040000130b000000006800,port:0"' in text
         assert (
-            r'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:0.100000,engine:sdl,guid:030018dc5e040000130b000000006800,port:0"'
+            rf'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:{controller_profiles.AZAHAR_STICK_DEADZONE},engine:sdl,guid:030018dc5e040000130b000000006800,port:0"'
             in text
         )
         assert (
-            r'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:0.100000,engine:sdl,guid:030018dc5e040000130b000000006800,port:0"'
+            rf'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:{controller_profiles.AZAHAR_STICK_DEADZONE},engine:sdl,guid:030018dc5e040000130b000000006800,port:0"'
             in text
         )
         zl_line = _line_for_key(text, "button_zl")
@@ -1060,11 +1060,11 @@ def test_apply_azahar_profile_macos_uses_embedded_sdl_mapping(monkeypatch, works
             in text
         )
         assert (
-            r'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:0.100000,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"'
+            rf'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:{controller_profiles.AZAHAR_STICK_DEADZONE},engine:sdl,guid:050000005e040000130b0000ff870001,port:0"'
             in text
         )
         assert (
-            r'profiles\1\c_stick="axis_x:3,axis_y:4,deadzone:0.100000,engine:sdl,guid:050000005e040000130b0000ff870001,port:0"'
+            rf'profiles\1\c_stick="axis_x:3,axis_y:4,deadzone:{controller_profiles.AZAHAR_STICK_DEADZONE},engine:sdl,guid:050000005e040000130b0000ff870001,port:0"'
             in text
         )
 
@@ -1402,8 +1402,10 @@ def test_apply_controller_profile_azahar_preserves_pointer_keys_when_quit_shortc
             "\n".join(
                 [
                     "profile=0",
-                    r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Ctrl+Q",
-                    r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=true",
+                    r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Ctrl+Q",
+                    r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq\default=true",
+                    r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq=Esc",
+                    r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq\default=true",
                     r'profiles\1\button_a="button:0,engine:sdl,guid:ABC123,port:0"',
                     r'profiles\1\touch_from_button_a="button:8,engine:keyboard"',
                     r'profiles\1\touch_device="engine:mouse,index:0"',
@@ -1424,8 +1426,12 @@ def test_apply_controller_profile_azahar_preserves_pointer_keys_when_quit_shortc
         text = qt_config.read_text(encoding="utf-8")
 
         assert r'profiles\1\button_a="button:0,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"' in text
+        assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Esc" in text
+        assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq\default=false" in text
         assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc" in text
         assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=false" in text
+        assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq=" in text
+        assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq\default=false" in text
         assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in text
         assert r'profiles\1\touch_device="engine:mouse,index:0"' in text
 
@@ -1463,11 +1469,11 @@ def test_apply_controller_profile_azahar_preserves_pointer_keys_while_setting_st
         text = qt_config.read_text(encoding="utf-8")
 
         assert (
-            r'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:0.100000,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"'
+            rf'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:{controller_profiles.AZAHAR_STICK_DEADZONE},engine:sdl,guid:040018dc5e040000130b000000006800,port:0"'
             in text
         )
         assert (
-            r'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:0.100000,engine:sdl,guid:040018dc5e040000130b000000006800,port:0"'
+            rf'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:{controller_profiles.AZAHAR_STICK_DEADZONE},engine:sdl,guid:040018dc5e040000130b000000006800,port:0"'
             in text
         )
         assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in text

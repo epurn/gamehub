@@ -16,6 +16,7 @@ from gamehub_cli.controllers.convergence import (
     format_runtime_selection_rules,
 )
 from gamehub_cli.controllers.profiles import (
+    AZAHAR_STICK_DEADZONE,
     PROFILE_KBM,
     PROFILE_XBOX_1P,
     PROFILE_XBOX_2P,
@@ -226,9 +227,13 @@ def test_controller_convergence_apply_repairs_azahar_quit_shortcut_with_backup(
             "profile=9\n"
             r"profile\default=false"
             "\n"
-            r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Ctrl+Q"
+            r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Ctrl+Q"
             "\n"
-            r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=true"
+            r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq\default=true"
+            "\n"
+            r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq=Esc"
+            "\n"
+            r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq\default=true"
             "\n"
             r'profiles\1\touch_from_button_a="button:8,engine:keyboard"'
             "\n"
@@ -252,8 +257,12 @@ def test_controller_convergence_apply_repairs_azahar_quit_shortcut_with_backup(
         updated_text = qt_config.read_text(encoding="utf-8")
         assert "profile=0" in updated_text
         assert "profile\\default=true" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Esc" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq\default=false" in updated_text
         assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc" in updated_text
         assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=false" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq=" in updated_text
+        assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq\default=false" in updated_text
         assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in updated_text
         assert r'profiles\1\touch_device="engine:mouse,index:0"' in updated_text
         assert f"controller config backup created path={qt_config}" in caplog.text
@@ -298,8 +307,14 @@ def test_controller_convergence_apply_repairs_azahar_stick_deadzones_with_backup
         assert backups
         assert backups[-1].read_text(encoding="utf-8") == original_text
         updated_text = qt_config.read_text(encoding="utf-8")
-        assert r'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:0.100000,engine:sdl,port:0"' in updated_text
-        assert r'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:0.100000,engine:sdl,port:0"' in updated_text
+        assert (
+            rf'profiles\1\circle_pad="axis_x:0,axis_y:1,deadzone:{AZAHAR_STICK_DEADZONE},engine:sdl,port:0"'
+            in updated_text
+        )
+        assert (
+            rf'profiles\1\c_stick="axis_x:2,axis_y:3,deadzone:{AZAHAR_STICK_DEADZONE},engine:sdl,port:0"'
+            in updated_text
+        )
         assert r'profiles\1\touch_from_button_a="button:8,engine:keyboard"' in updated_text
         assert r'profiles\1\touch_device="engine:mouse,index:0"' in updated_text
         assert f"controller config backup created path={qt_config}" in caplog.text

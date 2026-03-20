@@ -10,7 +10,12 @@ from ..common.config_edit import parse_qsettings_pairs, read_qsettings_key, upse
 from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID, macos_azahar_qt_config_candidates
 from ..firmware.pcsx2_ini import read_ini_lines
 from .apply_ini import write_controller_config_lines_atomic
-from .profiles import AZAHAR_ESC_QUIT_SHORTCUT_KEYS, PROFILE_KBM, azahar_sdl_stick_binding, load_profile_file
+from .profiles import (
+    PROFILE_KBM,
+    azahar_managed_shortcut_qsettings,
+    azahar_sdl_stick_binding,
+    load_profile_file,
+)
 from .sdl_guid import (
     _azahar_detect_sdl_identity,
     _azahar_normalize_sdl_port,
@@ -42,7 +47,7 @@ _AZAHAR_MANAGED_BUTTON_KEYS = {
     "c_stick",
 }
 _AZAHAR_POINTER_KEY_MARKERS = ("touch", "mouse", "pointer")
-_AZAHAR_MANAGED_SHORTCUT_KEYS = {key for key, _value in AZAHAR_ESC_QUIT_SHORTCUT_KEYS}
+_AZAHAR_MANAGED_SHORTCUT_KEYS = {key for key, _value in azahar_managed_shortcut_qsettings()}
 _AZAHAR_MANAGED_STICK_KEYS = {"circle_pad", "c_stick"}
 _AZAHAR_SDL_BUTTON_TOKEN_RE = re.compile(r"^b(?P<button>\d+)$")
 _AZAHAR_SDL_AXIS_TOKEN_RE = re.compile(r"^a(?P<axis>\d+)$")

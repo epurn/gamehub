@@ -26,11 +26,11 @@ from .managed_metadata import (
     write_managed_metadata_entry,
 )
 from .profiles import (
-    AZAHAR_ESC_QUIT_SHORTCUT_KEYS,
     DEFAULT_PROFILE_TEXTS,
     PROFILE_KBM,
     PROFILE_XBOX_1P,
     PROFILE_XBOX_2P,
+    azahar_managed_shortcut_qsettings,
     azahar_sdl_stick_qsettings,
     resolve_profiles_root,
     write_profile_text_atomic,
@@ -243,7 +243,7 @@ def build_controller_convergence_plan(
                     keys={
                         "profile": "0",
                         r"profile\default": "true",
-                        **dict(AZAHAR_ESC_QUIT_SHORTCUT_KEYS),
+                        **dict(azahar_managed_shortcut_qsettings()),
                         **dict(azahar_sdl_stick_qsettings(port=0)),
                     },
                     source_template="runtime://azahar/safe-controller-state",

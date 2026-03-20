@@ -129,8 +129,12 @@ def test_seed_default_profiles_azahar_sets_quit_shortcut_to_escape(workspace_tem
 
         for profile_name in (PROFILE_KBM, PROFILE_XBOX_1P, PROFILE_XBOX_2P):
             azahar_profile = (root / "azahar" / profile_name / "qt-config.ini").read_text(encoding="utf-8")
+            assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq=Esc" in azahar_profile
+            assert r"Shortcuts\Main%20Window\Exit%20Azahar\KeySeq\default=false" in azahar_profile
             assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq=Esc" in azahar_profile
             assert r"Shortcuts\Main%20Window\Exit%20Citra\KeySeq\default=false" in azahar_profile
+            assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq=" in azahar_profile
+            assert r"Shortcuts\Main%20Window\Exit%20Fullscreen\KeySeq\default=false" in azahar_profile
 
 
 def test_seed_default_profiles_azahar_sets_stick_deadzone_defaults(workspace_tempdir) -> None:
