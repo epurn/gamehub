@@ -68,23 +68,3 @@ def macos_gc_button_pressed(
     if not button:
         return False
     return bool(objc_msg_send(objc, button, "isPressed", restype=ctypes.c_bool))
-
-
-def macos_gc_float_value(
-    objc: ctypes.CDLL,
-    receiver: ctypes.c_void_p,
-    selector: str,
-) -> float | None:
-    if not receiver:
-        return None
-    responds = objc_msg_send(
-        objc,
-        receiver,
-        "respondsToSelector:",
-        restype=ctypes.c_bool,
-        argtypes=(ctypes.c_void_p,),
-        args=(objc_selector(objc, selector),),
-    )
-    if not responds:
-        return None
-    return float(objc_msg_send(objc, receiver, selector, restype=ctypes.c_float))

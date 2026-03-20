@@ -12,12 +12,6 @@ _XINPUT_DLLS = ("xinput1_4", "xinput9_1_0", "xinput1_3")
 @dataclass(frozen=True)
 class XInputGamepadState:
     buttons: int
-    left_trigger: int
-    right_trigger: int
-    left_thumb_x: int
-    left_thumb_y: int
-    right_thumb_x: int
-    right_thumb_y: int
 
 
 class _XInputGamepad(ctypes.Structure):
@@ -86,15 +80,7 @@ def read_xinput_state(lib: ctypes.CDLL, *, slot: int) -> XInputGamepadState | No
     if result != _ERROR_SUCCESS:
         return None
     gamepad = state.Gamepad
-    return XInputGamepadState(
-        buttons=int(gamepad.wButtons),
-        left_trigger=int(gamepad.bLeftTrigger),
-        right_trigger=int(gamepad.bRightTrigger),
-        left_thumb_x=int(gamepad.sThumbLX),
-        left_thumb_y=int(gamepad.sThumbLY),
-        right_thumb_x=int(gamepad.sThumbRX),
-        right_thumb_y=int(gamepad.sThumbRY),
-    )
+    return XInputGamepadState(buttons=int(gamepad.wButtons))
 
 
 def read_xinput_subtype(lib: ctypes.CDLL, *, slot: int) -> int | None:
