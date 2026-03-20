@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Callable
 
 from ..common.config import GamehubConfig
-from ..common.platform_paths import AZAHAR_FLATPAK_APP_ID, DOLPHIN_FLATPAK_APP_ID
+from ..common.platform_paths import DOLPHIN_FLATPAK_APP_ID
 from ..common.shortcut_payload import ShortcutLaunchPayload, unquote_executable
-from ..controllers import azahar_exit_hook, azahar_mouse_bridge
+from ..controllers import azahar_exit_hook
 from ..controllers import xinput as controller_xinput
 from ..controllers.apply import apply_controller_profile, apply_named_controller_profile
-from ..controllers.detection import XboxController, detect_xbox_controllers, is_steam_deck_linux
+from ..controllers.detection import detect_xbox_controllers, is_steam_deck_linux
 from ..controllers.profiles import PROFILE_KBM, profile_name_for_controller_count
 from ..controllers.sdl_guid import _AZAHAR_WINDOWS_SDL_DIR_ENV
 
@@ -486,70 +486,15 @@ def _run_target(
     return _wait_for_shortcut_process(process, command=command)
 
 
-def _payload_targets_azahar_exit_hook_wrapper(payload: ShortcutLaunchPayload) -> bool:
-    if "azahar" not in payload.emulator.casefold():
-        return False
-    args_folded = {arg.casefold() for arg in payload.target_args}
-    return "gamehub_cli.controllers.azahar_exit_hook" in args_folded
-
-
-def _detect_azahar_mouse_bridge_controller(payload: ShortcutLaunchPayload) -> XboxController | None:
-    if "azahar" not in payload.emulator.casefold():
-        return None
-    if _payload_targets_azahar_exit_hook_wrapper(payload):
-        return None
-    if azahar_mouse_bridge.azahar_mouse_bridge_disabled_reason() is not None:
-        return None
-    try:
-        return azahar_mouse_bridge.detect_azahar_mouse_bridge_controller()
-    except Exception as exc:
-        warn_shortcut_runtime(
-            f"Azahar mouse bridge controller detection failed (error={exc}); continuing without synthetic mouse input"
-        )
-        return None
-
-
-def _azahar_mouse_bridge_app_id(payload: ShortcutLaunchPayload) -> str | None:
-    if _payload_targets_flatpak_app(payload, app_id=AZAHAR_FLATPAK_APP_ID):
-        return AZAHAR_FLATPAK_APP_ID
-    return None
-
-
-def _run_with_optional_azahar_mouse_bridge(
-    payload: ShortcutLaunchPayload,
-    *,
-    runner: Callable[..., int],
-) -> int:
-    controller = _detect_azahar_mouse_bridge_controller(payload)
-    if controller is None:
-        return runner(payload)
-
-    def _on_process_started(process: subprocess.Popen[bytes]) -> None:
-        try:
-            azahar_mouse_bridge.start_azahar_mouse_bridge(
-                process,
-                controller=controller,
-                app_id=_azahar_mouse_bridge_app_id(payload),
-            )
-        except azahar_mouse_bridge.AzaharMouseBridgeUnavailable as exc:
-            warn_shortcut_runtime(
-                f"Azahar mouse bridge unavailable (error={exc}); continuing without synthetic mouse input"
-            )
-        except Exception as exc:
-            warn_shortcut_runtime(f"Azahar mouse bridge failed (error={exc}); continuing without synthetic mouse input")
-
-    return runner(payload, on_process_started=_on_process_started)
-
-
 def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:
     if _should_use_windows_azahar_exit_hook(payload):
         try:
-            return _run_with_optional_azahar_mouse_bridge(payload, runner=_run_windows_azahar_target_with_exit_hook)
+            return _run_windows_azahar_target_with_exit_hook(payload)
         except Exception as exc:
             warn_shortcut_runtime(f"Azahar exit hook failed (error={exc}); falling back to direct launch")
     if _should_use_macos_azahar_exit_hook(payload):
         try:
-            return _run_with_optional_azahar_mouse_bridge(payload, runner=_run_macos_azahar_target_with_exit_hook)
+            return _run_macos_azahar_target_with_exit_hook(payload)
         except Exception as exc:
             warn_shortcut_runtime(f"Azahar macOS exit hook failed (error={exc}); falling back to managed launch")
     if _should_use_linux_dolphin_exit_hook(payload):
@@ -557,8 +502,6 @@ def _run_target_with_optional_exit_hook(payload: ShortcutLaunchPayload) -> int:
             return _run_linux_dolphin_target_with_exit_hook(payload)
         except Exception as exc:
             warn_shortcut_runtime(f"Dolphin exit hook failed (error={exc}); falling back to direct launch")
-    if "azahar" in payload.emulator.casefold():
-        return _run_with_optional_azahar_mouse_bridge(payload, runner=_run_target)
     return _run_target(payload)
 
 

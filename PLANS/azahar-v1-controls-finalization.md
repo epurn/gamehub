@@ -1,29 +1,27 @@
 # PLAN: azahar-v1-controls-finalization
 
 ## Context
-- Background: `v1.6.0` shipped Azahar runtime bootstrap, managed controller profiles, and platform-specific exit-hook support, but three Azahar control gaps still block a polished "final v1" experience.
+- Background: `v1.6.0` shipped Azahar runtime bootstrap, managed controller profiles, and platform-specific exit-hook support, but two Azahar control gaps still block a polished "final v1" experience.
 - Current behavior: GAMEHUB-managed Azahar sessions still lean on Azahar's platform-native quit shortcut instead of the repo's `Esc` exit/menu convention, the wrapper only handles `Start+Select` exit behavior, and joystick sensitivity is high enough that some managed controller paths can show ghost input without extra deadzone tuning.
-- Trigger/problem statement: finalize Azahar control behavior so quitting matches the rest of the emulator stack, Xbox controllers can drive Azahar touch input without upstream emulator changes, and managed stick deadzones are reasonable enough to stop ghost inputs by default.
+- Trigger/problem statement: finalize Azahar control behavior so quitting matches the rest of the emulator stack and managed stick deadzones are reasonable enough to stop ghost inputs by default, while removing the rejected non-live controller-to-mouse bridge branch work.
 
 ## Goals
 - Normalize the managed Azahar quit shortcut to `Esc`.
-- Add Xbox-controller mouse simulation for Azahar sessions: right stick moves the pointer and `R2` emits left click.
+- Remove the non-live Azahar mouse bridge implementation, package hooks, and operator guidance.
 - Normalize managed Azahar stick deadzones so ghost inputs stop without per-title operator tuning.
-- Keep Azahar pointer/touch config preservation-first; GAMEHUB should bridge controller input into ordinary OS mouse events instead of trying to invent unsupported native Azahar bindings.
-- Fail open when the mouse bridge cannot initialize so launches still work without destructive fallback behavior.
 
 ## Non-Goals
 - Patching or forking Azahar upstream.
 - Changing non-Azahar emulator bindings or hotkey policy.
 - Broad Steam Input template redesign.
-- Adding non-Xbox controller-family support in the first pass unless it falls out naturally from the chosen backend without extra policy.
+- Changing Steam Deck Steam Input template seed behavior.
 
 ## Constraints
-- Windows and macOS local development support are required; Linux support must explicitly call out X11/Wayland/Steam Deck behavior before shipping defaults.
+- Windows and macOS local development support are required.
 - Reuse existing atomic/backup/logged mutation paths for any `qt-config.ini` rewrite.
 - Keep wrapper/runtime logic in the Azahar controller/runtime modules; do not move emulator-specific policy into `common/`.
-- Avoid dependency/lockfile/packaging changes unless the mouse-bridge spike proves a clear cross-platform win and a packaging path for local CLI + packaged shortcuts.
 - Do not regress the existing Azahar `Start+Select` exit hook behavior on Windows, macOS, or Linux.
+- Do not change Steam Deck Steam Input seed payloads or configset sync as part of this work.
 
 ## Contract Surface
 - Existing contracts touched:
@@ -32,28 +30,23 @@
   - Azahar controller apply path in `src/gamehub_cli/controllers/apply_azahar.py`
   - Azahar managed shortcut runtime flow in `src/gamehub_cli/shortcuts/runtime.py`
   - platform-specific Azahar controller helpers in `src/gamehub_cli/controllers/azahar_exit_hook.py`
-  - Xbox controller discovery metadata in `src/gamehub_cli/controllers/detection.py`
+  - package metadata in `pyproject.toml`
 - New/updated contract artifacts:
-  - optional Azahar mouse-bridge env toggles and tuning knobs if the implementation needs them
-  - optional Azahar deadzone defaults or managed tuning knobs if ghost-input testing proves they are required
-  - operator docs covering Azahar `Esc` quit, mouse simulation behavior, and platform caveats
+  - active Azahar finalization stories centered on `Esc` and deadzones only
+  - operator docs covering Azahar `Esc` quit, deadzones, and existing exit-hook behavior
 - Cross-boundary implications:
   - none; this is CLI-only work
 
 ## Research Notes
-- Repo-grounded implementation note: Azahar pointer/touch keys are already preservation-first in the apply path, and existing tests prove that `touch_device`/pointer keys survive managed controller rewrites. That makes wrapper input -> OS mouse output the safest v1 design.
+- Repo-grounded implementation note: Azahar pointer/touch keys are already preservation-first in the apply path, and existing tests prove that `touch_device`/pointer keys survive managed controller rewrites.
 - Repo-grounded implementation note: existing Steam Deck template seeds already carry explicit stick deadzone values, which suggests the managed Azahar path should converge deterministic deadzone defaults instead of assuming zero-deadzone joystick behavior is stable across controllers.
-- Library candidate for controller polling: [pygame._sdl2.controller](https://www.pygame.org/docs/ref/sdl2_controller.html) exposes normalized controller buttons/axes, including `RIGHTX`, `RIGHTY`, and trigger axes, across common Xbox-class pads.
-- Library candidate for mouse output: [pynput.mouse.Controller](https://pynput.readthedocs.io/en/latest/mouse.html) can move the pointer and emit click events from Python on macOS, Windows, and Xorg Linux.
-- Linux caveat: [pynput platform limitations](https://pynput.readthedocs.io/en/latest/limitations.html) document X11 dependence by default and only limited Xwayland behavior under Wayland, so Linux/Deck validation is a hard gate rather than an assumption.
-- Linux-native fallback candidate: [python-evdev/uinput](https://python-evdev.readthedocs.io/en/latest/) can read and inject mouse events on Linux, but it is Linux-only and depends on `/dev/input` and `/dev/uinput` availability.
-- Recommendation: land the `Esc` shortcut story independently. For mouse simulation, explicitly choose between a dependency-backed bridge (`pygame` + `pynput`) and native per-OS emitters; do not silently ship partial support as the default.
+- Repo-grounded implementation note: the Azahar mouse bridge was branch-only work and is not a live shipped feature, so it can be removed outright rather than retained behind flags.
+- Recommendation: keep the plan focused on shipped Azahar controls only: `Esc` quit normalization, managed deadzones, and existing exit-hook behavior.
 
 ## Milestones
 1. M1: Converge Azahar quit shortcut state to `Esc` through existing managed/default + assisted QSettings paths.
-2. M2: Finalize the Azahar mouse-bridge backend strategy, including platform gating, failure mode, and packaging implications.
-3. M3: Implement Xbox right-stick mouse + `R2` left-click behavior, wire docs/tests, and preserve fail-open wrapper behavior.
-4. M4: Normalize managed Azahar stick deadzones so ghost inputs stop without manual deadzone tuning.
+2. M2: Remove the rejected Azahar mouse-bridge runtime, packaging hooks, and docs without regressing existing exit hooks.
+3. M3: Normalize managed Azahar stick deadzones so ghost inputs stop without manual deadzone tuning.
 
 ## Story Contracts
 
@@ -77,38 +70,41 @@
 
 ### STORY AZAHAR-V1-02
 - Type: CLI
-- Goal: add a fail-open Azahar mouse bridge for Xbox controllers at launch time.
+- Goal: hard-remove the non-live Azahar mouse bridge implementation and all runtime/package hooks.
 - Acceptance Criteria (deterministic):
-  - [ ] During managed Azahar launches, when an Xbox controller is detected and the host backend is supported, right-stick input drives OS mouse movement for the launch session only.
-  - [ ] `R2` emits a left-click press/release sequence for the same session, with debounce/hold behavior defined and covered by tests.
-  - [ ] The bridge is scoped to Azahar launches, shuts down cleanly on process exit, and does not interfere with the existing Azahar exit hook.
-  - [ ] When the controller/backend is unavailable or unsupported, launch continues without synthetic mouse input and the wrapper fails open.
-  - [ ] Linux support is either verified for the chosen default backend or explicitly gated off by host detection; there is no hidden partial Wayland/Deck support claim.
+  - [ ] `src/gamehub_cli/controllers/azahar_mouse_bridge.py` is deleted and no runtime code imports or references it.
+  - [ ] Azahar launch paths no longer attempt controller detection, background mouse threads, or mouse-bridge warning paths on Windows, macOS, or Linux.
+  - [ ] `pyproject.toml` no longer exposes `linux-input` / `evdev` for Azahar mouse-bridge support.
+  - [ ] Existing Windows/macOS `Start+Select` exit hooks and the Linux Flatpak Azahar wrapper keep their current quit behavior.
+  - [ ] Existing managed `Esc` quit convergence and managed deadzone behavior are unchanged.
+  - [ ] Steam Deck Steam Input seed/template sync behavior is unchanged.
 - Non-Goals:
-  - non-Azahar mouse emulation
-  - non-Xbox controller policy expansion
-  - background daemons or resident services
+  - changing Steam Deck Steam Input seeds or configset sync
+  - changing Azahar exit-hook policy or button combos
+  - changing deadzone values or `Esc` ownership keys
 - Tests Required (exact locations / names):
-  - `tests/test_shortcut_runtime.py::test_run_target_with_optional_azahar_mouse_bridge_starts_for_supported_xbox_controller`
-  - `tests/test_shortcut_runtime.py::test_run_target_with_optional_azahar_mouse_bridge_fails_open_when_backend_unavailable`
-  - `tests/test_shortcut_runtime.py::test_run_target_with_optional_azahar_mouse_bridge_coexists_with_exit_hook`
-  - `tests/test_azahar_exit_hook.py::test_azahar_mouse_bridge_translates_right_stick_and_r2`
-  - `tests/test_controller_detection.py::test_detect_xbox_controllers_returns_stable_slot_order_for_azahar_mouse_bridge`
-- PR Title Template: `[AZAHAR-V1-02] CLI: add Azahar Xbox mouse bridge`
-- Rollback Risk: Medium
+  - `tests/test_shortcut_runtime.py::test_run_target_with_windows_azahar_exit_hook_does_not_start_removed_mouse_bridge`
+  - `tests/test_shortcut_runtime.py::test_run_target_with_macos_azahar_exit_hook_does_not_start_removed_mouse_bridge`
+  - `tests/test_shortcut_runtime.py::test_run_target_azahar_direct_launch_does_not_start_removed_mouse_bridge`
+  - `tests/test_azahar_exit_hook.py::test_launch_azahar_flatpak_skips_removed_mouse_bridge_and_starts_combo_monitor`
+  - `tests/test_architecture.py::test_gamehub_install_has_no_azahar_mouse_bridge_optional_dependency`
+- PR Title Template: `[AZAHAR-V1-02] CLI: remove non-live Azahar mouse bridge`
+- Rollback Risk: Low
 
 ### STORY AZAHAR-V1-03
 - Type: DOCS
-- Goal: document the Azahar control changes and operator-visible platform caveats.
+- Goal: remove mouse-bridge/operator guidance and rewrite the active Azahar finalization plan around `Esc` + deadzones only.
 - Acceptance Criteria (deterministic):
-  - [ ] `docs/config-and-state.md` documents Azahar `Esc` quit behavior, mouse-bridge env toggles, and any platform gating.
-  - [ ] `docs/client-install.md` adds a concise verification flow for Azahar right-stick pointer movement, `R2` click, and `Esc` quit behavior.
-  - [ ] The next release-facing checklist/notes entry mentions the new Azahar control expectations if the behavior ships in a release branch.
+  - [ ] `PLANS/azahar-v1-controls-finalization.md` no longer lists mouse-bridge goals, milestones, research, or tests; `AZAHAR-V1-01` and `AZAHAR-V1-04` remain the live work.
+  - [ ] Operator docs remove `GAMEHUB_AZAHAR_MOUSE_BRIDGE`, `GAMEHUB_AZAHAR_MOUSE_BRIDGE_EVENT_DEVICE`, right-stick mouse, `R2` click, `evdev`, and `linux-input` guidance.
+  - [ ] Release/manual validation text no longer asks for Azahar mouse verification and instead keeps `Esc` + exit-hook expectations only.
+  - [ ] Steam Deck Steam Input docs remain intact except for removing any accidental coupling to the removed mouse bridge.
 - Non-Goals:
-  - broad doc rewrites outside Azahar/operator flows
+  - broad Steam Input doc rewrites
+  - changing non-Azahar controller documentation
 - Tests Required (exact locations / names):
   - none
-- PR Title Template: `[AZAHAR-V1-03] Docs: document Azahar quit and mouse bridge behavior`
+- PR Title Template: `[AZAHAR-V1-03] Docs: remove Azahar mouse bridge references`
 - Rollback Risk: Low
 
 ### STORY AZAHAR-V1-04
@@ -140,13 +136,13 @@
     - `AZAHAR-V1-03`
 - Conflict-avoidance notes:
   - keep `AZAHAR-V1-01` focused on managed defaults + assisted QSettings convergence only
-  - keep `AZAHAR-V1-02` focused on wrapper/runtime detection and mouse-emission helpers
+  - keep `AZAHAR-V1-02` focused on wrapper/runtime cleanup, package metadata cleanup, and preservation of existing exit hooks
   - keep `AZAHAR-V1-04` focused on managed deadzone defaults + assisted convergence only
-  - land docs after the backend decision in `AZAHAR-V1-02` is fixed
+  - land docs after the `AZAHAR-V1-02` removal diff is fixed
 - Merge order constraints:
   - `AZAHAR-V1-01` can merge independently before mouse-bridge work
+  - `AZAHAR-V1-02` should merge before the docs cleanup if the work is split
   - `AZAHAR-V1-04` should merge after whichever Azahar profile/convergence story most recently touched the same managed QSettings keys
-  - `AZAHAR-V1-03` should merge after whichever stories change shipped behavior
 
 ## Completion Criteria
 - All milestone acceptance criteria are complete.

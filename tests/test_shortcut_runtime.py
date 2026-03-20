@@ -132,7 +132,6 @@ def test_run_target_with_optional_exit_hook_uses_azahar_windows_exit_hook(monkey
 
     monkeypatch.setattr(runtime_module.sys, "platform", "win32")
     monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
-    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "detect_azahar_mouse_bridge_controller", lambda: None)
     monkeypatch.setattr(
         runtime_module,
         "_run_windows_azahar_target_with_exit_hook",
@@ -159,7 +158,6 @@ def test_run_target_with_optional_exit_hook_uses_azahar_macos_exit_hook(monkeypa
 
     monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
     monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "true")
-    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "detect_azahar_mouse_bridge_controller", lambda: None)
     monkeypatch.setattr(
         runtime_module,
         "_run_macos_azahar_target_with_exit_hook",
@@ -307,7 +305,6 @@ def test_run_target_with_optional_exit_hook_can_disable_dolphin_linux_exit_hook(
 def test_run_target_with_optional_exit_hook_can_disable_azahar_macos_exit_hook(monkeypatch) -> None:
     monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
     monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "false")
-    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "detect_azahar_mouse_bridge_controller", lambda: None)
     monkeypatch.setattr(
         runtime_module,
         "_run_macos_azahar_target_with_exit_hook",
@@ -328,118 +325,81 @@ def test_run_target_with_optional_exit_hook_can_disable_azahar_macos_exit_hook(m
     assert exit_code == 13
 
 
-def test_run_target_with_optional_azahar_mouse_bridge_starts_for_supported_xbox_controller(monkeypatch) -> None:
+def test_run_target_with_windows_azahar_exit_hook_does_not_start_removed_mouse_bridge(monkeypatch) -> None:
     observed: dict[str, object] = {}
 
-    class _Process:
-        pass
-
     monkeypatch.setattr(runtime_module.sys, "platform", "win32")
-    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "false")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
     monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "detect_azahar_mouse_bridge_controller",
-        lambda: XboxController(slot=2, name="XInput/2", subtype=7),
-    )
-    monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "start_azahar_mouse_bridge",
-        lambda process, *, controller, app_id=None: observed.update(
-            {"process": process, "controller": controller, "app_id": app_id}
+        runtime_module,
+        "_run_windows_azahar_target_with_exit_hook",
+        lambda payload, on_process_started=None: (
+            observed.update({"emulator": payload.emulator, "callback_present": on_process_started is not None}) or 21
         ),
     )
-
-    def _fake_run_target(payload, on_process_started=None):
-        process = _Process()
-        observed["payload_emulator"] = payload.emulator
-        assert on_process_started is not None
-        on_process_started(process)
-        return 21
-
-    monkeypatch.setattr(runtime_module, "_run_target", _fake_run_target)
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_target",
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(
+            AssertionError("direct launch should not be used")
+        ),
+    )
 
     exit_code = runtime_module._run_target_with_optional_exit_hook(
         _payload(emulator="azahar", target_exe="C:/Emu/Azahar.exe", target_args=("-f", "rom.3ds"))
     )
 
     assert exit_code == 21
-    assert observed["payload_emulator"] == "azahar"
-    assert observed["controller"] == XboxController(slot=2, name="XInput/2", subtype=7)
-    assert observed["app_id"] is None
-    assert isinstance(observed["process"], _Process)
+    assert observed == {"emulator": "azahar", "callback_present": False}
 
 
-def test_run_target_with_optional_azahar_mouse_bridge_fails_open_when_backend_unavailable(monkeypatch) -> None:
-    warnings: list[str] = []
+def test_run_target_with_macos_azahar_exit_hook_does_not_start_removed_mouse_bridge(monkeypatch) -> None:
+    observed: dict[str, object] = {}
 
-    class _Process:
-        pass
-
-    monkeypatch.setattr(runtime_module.sys, "platform", "linux")
-    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "false")
+    monkeypatch.setattr(runtime_module.sys, "platform", "darwin")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "true")
     monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "detect_azahar_mouse_bridge_controller",
-        lambda: XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
+        runtime_module,
+        "_run_macos_azahar_target_with_exit_hook",
+        lambda payload, on_process_started=None: (
+            observed.update({"emulator": payload.emulator, "callback_present": on_process_started is not None}) or 22
+        ),
     )
-    monkeypatch.setattr(runtime_module, "warn_shortcut_runtime", lambda message: warnings.append(message))
-
-    def _raise_unavailable(process, *, controller, app_id=None):
-        del process, controller, app_id
-        raise runtime_module.azahar_mouse_bridge.AzaharMouseBridgeUnavailable("Linux Azahar mouse bridge is disabled")
-
-    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "start_azahar_mouse_bridge", _raise_unavailable)
-
-    def _fake_run_target(payload, on_process_started=None):
-        assert on_process_started is not None
-        on_process_started(_Process())
-        return 7
-
-    monkeypatch.setattr(runtime_module, "_run_target", _fake_run_target)
+    monkeypatch.setattr(
+        runtime_module,
+        "_run_target",
+        lambda payload, on_process_started=None: (_ for _ in ()).throw(
+            AssertionError("managed launch should not be used")
+        ),
+    )
 
     exit_code = runtime_module._run_target_with_optional_exit_hook(
         _payload(
             emulator="azahar",
-            target_exe="flatpak",
-            target_args=("run", "--device=all", "org.azahar_emu.Azahar", "-f", "--", "@@", "rom.3ds", "@@"),
+            target_exe="/Users/tester/Applications/Azahar.app/Contents/MacOS/azahar",
+            target_args=("-f", "rom.3ds"),
+            macos_open_app="/Users/tester/Applications/Azahar.app",
+            macos_open_args=("-f", "rom.3ds"),
         )
     )
 
-    assert exit_code == 7
-    assert warnings == [
-        "Azahar mouse bridge unavailable (error=Linux Azahar mouse bridge is disabled); continuing without synthetic mouse input"
-    ]
+    assert exit_code == 22
+    assert observed == {"emulator": "azahar", "callback_present": False}
 
 
-def test_run_target_with_optional_azahar_mouse_bridge_starts_for_non_deck_linux_flatpak_launch(monkeypatch) -> None:
+def test_run_target_azahar_direct_launch_does_not_start_removed_mouse_bridge(monkeypatch) -> None:
     observed: dict[str, object] = {}
 
-    class _Process:
-        pass
-
     monkeypatch.setattr(runtime_module.sys, "platform", "linux")
-    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "azahar_mouse_bridge_disabled_reason", lambda: None)
+    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "false")
+    monkeypatch.setenv("GAMEHUB_AZAHAR_MACOS_EXIT_HOOK", "false")
     monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "detect_azahar_mouse_bridge_controller",
-        lambda: XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
-    )
-    monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "start_azahar_mouse_bridge",
-        lambda process, *, controller, app_id=None: observed.update(
-            {"process": process, "controller": controller, "app_id": app_id}
+        runtime_module,
+        "_run_target",
+        lambda payload, on_process_started=None: (
+            observed.update({"emulator": payload.emulator, "callback_present": on_process_started is not None}) or 17
         ),
     )
-
-    def _fake_run_target(payload, on_process_started=None):
-        process = _Process()
-        observed["payload_emulator"] = payload.emulator
-        assert on_process_started is not None
-        on_process_started(process)
-        return 17
-
-    monkeypatch.setattr(runtime_module, "_run_target", _fake_run_target)
 
     exit_code = runtime_module._run_target_with_optional_exit_hook(
         _payload(
@@ -450,117 +410,7 @@ def test_run_target_with_optional_azahar_mouse_bridge_starts_for_non_deck_linux_
     )
 
     assert exit_code == 17
-    assert observed["payload_emulator"] == "azahar"
-    assert observed["controller"] == XboxController(slot=0, name="Xbox Wireless Controller", subtype=None)
-    assert observed["app_id"] == "org.azahar_emu.Azahar"
-    assert isinstance(observed["process"], _Process)
-
-
-def test_run_target_with_optional_azahar_mouse_bridge_skips_wrapper_owned_linux_bridge(monkeypatch) -> None:
-    monkeypatch.setattr(runtime_module.sys, "platform", "linux")
-    monkeypatch.setattr(runtime_module.azahar_mouse_bridge, "azahar_mouse_bridge_disabled_reason", lambda: None)
-    monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "detect_azahar_mouse_bridge_controller",
-        lambda: (_ for _ in ()).throw(AssertionError("wrapper-owned bridge should skip detection")),
-    )
-    monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "start_azahar_mouse_bridge",
-        lambda process, *, controller, app_id=None: (_ for _ in ()).throw(
-            AssertionError("wrapper-owned bridge should skip startup")
-        ),
-    )
-    monkeypatch.setattr(runtime_module, "_run_target", lambda payload, on_process_started=None: 6)
-
-    exit_code = runtime_module._run_target_with_optional_exit_hook(
-        _payload(
-            emulator="azahar",
-            target_exe="/usr/bin/python3",
-            target_args=("-m", "gamehub_cli.controllers.azahar_exit_hook", "--app-id", "org.azahar_emu.Azahar"),
-        )
-    )
-
-    assert exit_code == 6
-
-
-def test_run_target_with_optional_azahar_mouse_bridge_never_starts_on_steam_deck_linux(monkeypatch) -> None:
-    monkeypatch.setattr(runtime_module.sys, "platform", "linux")
-    monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "azahar_mouse_bridge_disabled_reason",
-        lambda: "Linux Azahar mouse bridge is disabled on Steam Deck hosts",
-    )
-    monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "detect_azahar_mouse_bridge_controller",
-        lambda: (_ for _ in ()).throw(AssertionError("Steam Deck path should skip bridge detection")),
-    )
-    monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "start_azahar_mouse_bridge",
-        lambda process, *, controller, app_id=None: (_ for _ in ()).throw(
-            AssertionError("Steam Deck path should not start the bridge")
-        ),
-    )
-    monkeypatch.setattr(runtime_module, "_run_target", lambda payload, on_process_started=None: 14)
-
-    exit_code = runtime_module._run_target_with_optional_exit_hook(
-        _payload(
-            emulator="azahar",
-            target_exe="flatpak",
-            target_args=("run", "--device=all", "org.azahar_emu.Azahar", "-f", "--", "@@", "rom.3ds", "@@"),
-        )
-    )
-
-    assert exit_code == 14
-
-
-def test_run_target_with_optional_azahar_mouse_bridge_coexists_with_exit_hook(monkeypatch) -> None:
-    observed: dict[str, object] = {}
-
-    class _Process:
-        pass
-
-    monkeypatch.setattr(runtime_module.sys, "platform", "win32")
-    monkeypatch.setenv("GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK", "true")
-    monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "detect_azahar_mouse_bridge_controller",
-        lambda: XboxController(slot=0, name="XInput/0", subtype=3),
-    )
-    monkeypatch.setattr(
-        runtime_module.azahar_mouse_bridge,
-        "start_azahar_mouse_bridge",
-        lambda process, *, controller, app_id=None: observed.update(
-            {"process": process, "controller": controller, "app_id": app_id}
-        ),
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "_run_windows_azahar_target_with_exit_hook",
-        lambda payload, on_process_started=None: (
-            observed.update({"runner": payload.emulator, "callback_present": on_process_started is not None}),
-            on_process_started(_Process()) if on_process_started is not None else None,
-            31,
-        )[-1],
-    )
-    monkeypatch.setattr(
-        runtime_module,
-        "_run_target",
-        lambda payload, on_process_started=None: (_ for _ in ()).throw(AssertionError("direct launch should not run")),
-    )
-
-    exit_code = runtime_module._run_target_with_optional_exit_hook(
-        _payload(emulator="azahar", target_exe="C:/Emu/Azahar.exe", target_args=("-f", "rom.3ds"))
-    )
-
-    assert exit_code == 31
-    assert observed["runner"] == "azahar"
-    assert observed["callback_present"] is True
-    assert observed["controller"] == XboxController(slot=0, name="XInput/0", subtype=3)
-    assert observed["app_id"] is None
-    assert isinstance(observed["process"], _Process)
+    assert observed == {"emulator": "azahar", "callback_present": False}
 
 
 def test_run_target_macos_uses_bundle_safe_open_command(monkeypatch) -> None:

@@ -82,7 +82,7 @@ gamehub sync --config ./config.bazzite.toml --verbose --require-steam-closed
 ./venv/bin/python scripts/validate_steam_shortcuts.py --config ./config.bazzite.toml
 ```
 - [ ] Confirm at least one managed title launches on the non-Windows platform you are using for the release pass.
-- [ ] If the release candidate includes the Azahar control finalization stories, launch one managed Azahar title on a supported host and confirm `Esc` quit, right-stick pointer movement, `R2` left click, and `Start+Select` exit all match the shipped expectation; on Steam Deck, confirm the mouse bridge stays disabled.
+- [ ] If the release candidate includes the Azahar control finalization stories, launch one managed Azahar title on a supported host and confirm `Esc` quit and `Start+Select` exit all match the shipped expectation.
 
 ## 4. First-Live Operator Checklist
 

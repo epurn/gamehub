@@ -178,7 +178,7 @@ def test_detect_xbox_controllers_macos_uses_sdl_probe(monkeypatch) -> None:
     ]
 
 
-def test_detect_xbox_controllers_returns_stable_slot_order_for_azahar_mouse_bridge(monkeypatch) -> None:
+def test_detect_xbox_controllers_returns_stable_slot_order(monkeypatch) -> None:
     monkeypatch.setattr(controller_detection.sys, "platform", "darwin")
     monkeypatch.setattr(
         controller_detection,

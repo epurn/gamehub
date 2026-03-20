@@ -14,7 +14,6 @@ import time
 from pathlib import Path
 
 from ..common.platform_paths import macos_azahar_qt_config_candidates
-from . import azahar_mouse_bridge
 from .macos_gamecontroller import (
     load_macos_gamecontroller_runtime,
     macos_gc_button_pressed,
@@ -633,22 +632,6 @@ def _launch_azahar_flatpak(*, rom: str, app_id: str) -> int:
         "@@",
     ]
     process = subprocess.Popen(command, stdin=subprocess.DEVNULL)
-    try:
-        controller = azahar_mouse_bridge.detect_azahar_mouse_bridge_controller()
-    except Exception as exc:
-        _warn_azahar_runtime(
-            f"Azahar mouse bridge controller detection failed (error={exc}); continuing without synthetic mouse input"
-        )
-        controller = None
-    if controller is not None:
-        try:
-            azahar_mouse_bridge.start_azahar_mouse_bridge(process, controller=controller, app_id=app_id)
-        except azahar_mouse_bridge.AzaharMouseBridgeUnavailable as exc:
-            _warn_azahar_runtime(
-                f"Azahar mouse bridge unavailable (error={exc}); continuing without synthetic mouse input"
-            )
-        except Exception as exc:
-            _warn_azahar_runtime(f"Azahar mouse bridge failed (error={exc}); continuing without synthetic mouse input")
     select_button, start_button = _resolve_select_and_start_buttons()
     js_devices = _discover_js_devices()
     watcher = threading.Thread(

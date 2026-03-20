@@ -239,28 +239,19 @@ gamehub sync --config ./config.bazzite.toml --verbose
    - The Linux Azahar wrapper closes Azahar on strict `Select+Start` using:
      - `/dev/input/js*` joystick events, and
      - `/dev/input/event*` fallback (`BTN_SELECT` + `BTN_START`) when needed.
-   - On non-Steam-Deck Linux hosts such as Bazzite, the same wrapper also tries a fail-open Azahar mouse bridge for external Xbox pads:
-     - right stick drives OS mouse movement
-     - `R2` holds left click
-     - it requires a readable controller `/dev/input/event*` device and writable `/dev/uinput`
-     - Steam Deck hosts intentionally stay on the existing built-in-controller path and do not start this bridge
    - Optional overrides:
 ```bash
 export GAMEHUB_AZAHAR_LINUX_EXIT_HOOK=true
-export GAMEHUB_AZAHAR_MOUSE_BRIDGE=true
 export GAMEHUB_AZAHAR_EXIT_BUTTON_SELECT=4
 export GAMEHUB_AZAHAR_EXIT_BUTTON_START=6
 # Optional explicit joystick device:
 # export GAMEHUB_AZAHAR_EXIT_JS_DEVICE=/dev/input/js0
-# Optional explicit event device for the mouse bridge:
-# export GAMEHUB_AZAHAR_MOUSE_BRIDGE_EVENT_DEVICE=/dev/input/event18
 ```
    - `GAMEHUB_AZAHAR_LINUX_EXIT_HOOK` changes the Steam launch command emitted by sync. The Windows-only `GAMEHUB_AZAHAR_WINDOWS_EXIT_HOOK` controls the `shortcut-launch` runtime hook instead.
    - Quick Bazzite verification:
      - connect an external Xbox controller
-     - confirm `/dev/uinput` is available
      - launch one Azahar title from Steam
-     - verify right stick moves the pointer, `R2` clicks, and `Start+Select` still exits cleanly
+     - verify `Start+Select` still exits cleanly
 15. N3DS Steam Input templates on Steam Deck:
    - GAMEHUB auto-syncs managed per-title Steam Input templates for `N3DS` shortcuts during non-dry sync.
    - Use `gamehub sync --reseed-profiles` to refresh managed Deck template seeds when needed.
@@ -326,9 +317,7 @@ flatpak_remote = "flathub"
 ### Azahar control verification
 1. Run a non-dry `gamehub sync`, then launch one managed `Azahar` title from Steam.
 2. Verify `Esc` quits the managed Azahar session, and verify `Start+Select` still exits cleanly on hosts where the Azahar exit hook is enabled.
-3. On Windows, macOS, or non-Steam-Deck Linux with `GAMEHUB_AZAHAR_MOUSE_BRIDGE=true` (default), verify right stick moves the OS pointer and `R2` press/release maps to left click for that launch session.
-4. On Linux, if the mouse bridge does not start, confirm the controller exposes a readable `/dev/input/event*` device and `/dev/uinput` is writable, or set `GAMEHUB_AZAHAR_MOUSE_BRIDGE_EVENT_DEVICE=/dev/input/event<N>`.
-5. On Steam Deck, verify the managed `Esc`/`Start+Select` path only; the Azahar mouse bridge is intentionally disabled there.
+3. On Steam Deck, verify the managed `Esc`/`Start+Select` path only.
 
 ### Windows value-capture checkpoint
 Before customizing Windows mappings, inspect your current emulator config values and keep them for rollback/diff:

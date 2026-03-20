@@ -4,7 +4,6 @@ import plistlib
 from types import SimpleNamespace
 
 from gamehub_cli.controllers import azahar_exit_hook
-from gamehub_cli.controllers.detection import XboxController
 
 
 def test_handle_js_event_detects_select_start_combo() -> None:
@@ -73,7 +72,7 @@ def test_handle_ev_key_event_ignores_other_keys() -> None:
     assert pressed == set()
 
 
-def test_launch_azahar_flatpak_linux_mouse_bridge_coexists_with_exit_hook(monkeypatch) -> None:
+def test_launch_azahar_flatpak_skips_removed_mouse_bridge_and_starts_combo_monitor(monkeypatch) -> None:
     observed: dict[str, object] = {}
 
     class _Process:
@@ -96,18 +95,6 @@ def test_launch_azahar_flatpak_linux_mouse_bridge_coexists_with_exit_hook(monkey
         "Popen",
         lambda command, stdin=None: observed.update({"command": command, "stdin": stdin}) or _Process(),
     )
-    monkeypatch.setattr(
-        azahar_exit_hook.azahar_mouse_bridge,
-        "detect_azahar_mouse_bridge_controller",
-        lambda: XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
-    )
-    monkeypatch.setattr(
-        azahar_exit_hook.azahar_mouse_bridge,
-        "start_azahar_mouse_bridge",
-        lambda process, *, controller, app_id=None: observed.update(
-            {"bridge_process": process, "bridge_controller": controller, "bridge_app_id": app_id}
-        ),
-    )
     monkeypatch.setattr(azahar_exit_hook, "_resolve_select_and_start_buttons", lambda: (4, 6))
     monkeypatch.setattr(azahar_exit_hook, "_discover_js_devices", lambda: ["/dev/input/js0"])
     monkeypatch.setattr(azahar_exit_hook, "_wait_for_session_exit", lambda process, app_id: 0)
@@ -119,52 +106,20 @@ def test_launch_azahar_flatpak_linux_mouse_bridge_coexists_with_exit_hook(monkey
     )
 
     assert exit_code == 0
-    assert observed["bridge_controller"] == XboxController(slot=0, name="Xbox Wireless Controller", subtype=None)
-    assert observed["bridge_app_id"] == "org.azahar_emu.Azahar"
+    assert observed["command"] == [
+        "flatpak",
+        "run",
+        "--device=all",
+        "--file-forwarding",
+        "org.azahar_emu.Azahar",
+        "-f",
+        "--",
+        "@@",
+        "/var/home/deck/GameHub/roms/N3DS/Pilotwings Resort.3ds",
+        "@@",
+    ]
     assert observed["thread_target"] is azahar_exit_hook._monitor_combo_and_terminate
     assert observed["thread_started"] is True
-
-
-def test_launch_azahar_flatpak_linux_mouse_bridge_failure_warns_and_continues(monkeypatch) -> None:
-    warnings: list[str] = []
-
-    class _Process:
-        def poll(self):
-            return 0
-
-    class _Thread:
-        def __init__(self, *, target=None, args=(), kwargs=None, daemon=None):
-            del target, args, kwargs, daemon
-
-        def start(self) -> None:
-            return None
-
-    monkeypatch.setattr(azahar_exit_hook.sys, "platform", "linux")
-    monkeypatch.setattr(azahar_exit_hook.subprocess, "Popen", lambda command, stdin=None: _Process())
-    monkeypatch.setattr(
-        azahar_exit_hook.azahar_mouse_bridge,
-        "detect_azahar_mouse_bridge_controller",
-        lambda: XboxController(slot=0, name="Xbox Wireless Controller", subtype=None),
-    )
-    monkeypatch.setattr(
-        azahar_exit_hook.azahar_mouse_bridge,
-        "start_azahar_mouse_bridge",
-        lambda process, *, controller, app_id=None: (_ for _ in ()).throw(
-            azahar_exit_hook.azahar_mouse_bridge.AzaharMouseBridgeUnavailable("permission denied opening /dev/uinput")
-        ),
-    )
-    monkeypatch.setattr(azahar_exit_hook, "_warn_azahar_runtime", lambda message: warnings.append(message))
-    monkeypatch.setattr(azahar_exit_hook, "_resolve_select_and_start_buttons", lambda: (4, 6))
-    monkeypatch.setattr(azahar_exit_hook, "_discover_js_devices", lambda: [])
-    monkeypatch.setattr(azahar_exit_hook, "_wait_for_session_exit", lambda process, app_id: 0)
-    monkeypatch.setattr(azahar_exit_hook.threading, "Thread", _Thread)
-
-    exit_code = azahar_exit_hook._launch_azahar_flatpak(rom="/tmp/game.3ds", app_id="org.azahar_emu.Azahar")
-
-    assert exit_code == 0
-    assert warnings == [
-        "Azahar mouse bridge unavailable (error=permission denied opening /dev/uinput); continuing without synthetic mouse input"
-    ]
 
 
 def test_resolve_select_and_start_buttons_prefers_qt_config_when_env_unset(monkeypatch) -> None:
